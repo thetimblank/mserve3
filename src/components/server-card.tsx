@@ -54,7 +54,7 @@ const ServerCard: React.FC<Props> = ({ server, delay }) => {
 							<Boxes className='size-4' />
 							{server.file}
 						</div>
-						{server.status === 'online' && (
+						{server.status === 'online' && server.stats.uptime && (
 							<div className='flex items-center lg:text-lg gap-1'>
 								<Clock className='size-4' />
 								{(() => {

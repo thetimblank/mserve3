@@ -1,4 +1,4 @@
-import { Home, Server, Settings, Target, TrendingUp } from 'lucide-react';
+import { Home, Server, Settings } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 import {

@@ -147,31 +147,31 @@ const toUniqueBackups = (items?: Server['backups']) => {
 export const createServerId = (name: string, directory: string) => `${directory}::${name}`;
 
 export const createDefaultServers = (): Server[] => [
-	{
-		name: 'SMP',
-		status: 'online',
-		stats: {
-			players: 0,
-			tps: 0,
-			capacity: 100,
-			uptime: null,
-		},
-		version: '',
-		backups: [],
-		datapacks: [],
-		worlds: [
-			{ file: 'world', activated: true },
-			{ file: 'world_nether', activated: true },
-			{ file: 'world_the_end', activated: true },
-		],
-		plugins: [],
-		auto_backup: [],
-		ram: 5,
-		directory: '',
-		file: '',
-		auto_backup_interval: 120,
-		auto_restart: false,
-	},
+	// {
+	// 	name: 'SMP',
+	// 	status: 'offline',
+	// 	stats: {
+	// 		players: 0,
+	// 		tps: 0,
+	// 		capacity: 100,
+	// 		uptime: null,
+	// 	},
+	// 	version: '',
+	// 	backups: [],
+	// 	datapacks: [],
+	// 	worlds: [
+	// 		{ file: 'world', activated: true },
+	// 		{ file: 'world_nether', activated: true },
+	// 		{ file: 'world_the_end', activated: true },
+	// 	],
+	// 	plugins: [],
+	// 	auto_backup: [],
+	// 	ram: 5,
+	// 	directory: '',
+	// 	file: '',
+	// 	auto_backup_interval: 120,
+	// 	auto_restart: false,
+	// },
 ];
 
 export const normalizeServer = (server: Server): Server => {

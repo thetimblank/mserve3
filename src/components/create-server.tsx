@@ -18,7 +18,9 @@ import { Field, FieldGroup } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { AutoBackupMode, Server, useServers } from '@/data/servers';
-import { FolderOpen, Plus } from 'lucide-react';
+import { CircleAlert, FolderOpen, Plus, TriangleAlert } from 'lucide-react';
+import { Checkbox } from './ui/checkbox';
+import { ButtonGroup } from './ui/button-group';
 
 const defaultData = {
 	directory: '',
@@ -104,15 +106,20 @@ export const CreateServer: React.FC = () => {
 	};
 
 	const pickDirectory = async () => {
-		const selected = await openDialog({
-			directory: true,
-			multiple: false,
-			title: 'Choose server directory',
-		});
+		try {
+			const selected = await openDialog({
+				directory: true,
+				multiple: false,
+				title: 'Choose server directory',
+			});
 
-		if (typeof selected === 'string') {
-			updateField('directory', selected);
-			setError(null);
+			if (typeof selected === 'string') {
+				updateField('directory', selected);
+				setError(null);
+			}
+		} catch (err) {
+			const message = err instanceof Error ? err.message : 'Could not open directory picker.';
+			setError(message);
 		}
 	};
 
@@ -168,7 +175,7 @@ export const CreateServer: React.FC = () => {
 					<Plus /> Create new server
 				</Button>
 			</DialogTrigger>
-			<DialogContent className='sm:max-w-lg'>
+			<DialogContent className='sm:max-w-2xl'>
 				<DialogHeader>
 					<DialogTitle>Create a new server</DialogTitle>
 					<DialogDescription>Set up your server directory and runtime options.</DialogDescription>
@@ -192,10 +199,14 @@ export const CreateServer: React.FC = () => {
 						</Field>
 						<Field>
 							<Label className='flex items-center gap-3'>
-								<input
-									type='checkbox'
+								<Checkbox
 									checked={form.createDirectoryIfMissing}
-									onChange={(event) => updateField('createDirectoryIfMissing', event.target.checked)}
+									onCheckedChange={(checked) =>
+										updateField(
+											'createDirectoryIfMissing',
+											typeof checked === 'boolean' ? checked : false,
+										)
+									}
 								/>
 								Create directory if it doesn't exist
 							</Label>
@@ -209,43 +220,79 @@ export const CreateServer: React.FC = () => {
 								onChange={(event) => updateField('file', event.target.value)}
 								required
 							/>
+							<p className='text-sm text-muted-foreground flex gap-1 items-center'>
+								<CircleAlert className='size-4' />
+								If the selected jar exists in Downloads, it will be auto-moved.
+							</p>
 						</Field>
+
 						<Field>
 							<Label htmlFor='server-ram'>RAM (GB)</Label>
-							<Input
-								id='server-ram'
-								type='number'
-								value={form.ram}
-								onChange={(event) => updateField('ram', Number(event.target.value))}
-								min={1}
-								required
-							/>
-						</Field>
-						<Field>
-							<Label className='flex items-center gap-3'>
-								<input
-									type='checkbox'
-									checked={form.autoRestart}
-									onChange={(event) => updateField('autoRestart', event.target.checked)}
+							<div className='flex gap-3 items-center'>
+								<ButtonGroup>
+									<Button
+										type='button'
+										variant={form.ram === 1 ? 'default' : 'outline'}
+										onClick={() => updateField('ram', 1)}>
+										Very Low (1)
+									</Button>
+									<Button
+										type='button'
+										variant={form.ram === 2 ? 'default' : 'outline'}
+										onClick={() => updateField('ram', 2)}>
+										Low (2)
+									</Button>
+									<Button
+										type='button'
+										variant={form.ram === 3 ? 'default' : 'outline'}
+										onClick={() => updateField('ram', 3)}>
+										Medium (3)
+									</Button>
+									<Button
+										type='button'
+										variant={form.ram === 5 ? 'default' : 'outline'}
+										onClick={() => updateField('ram', 5)}>
+										High (5)
+									</Button>
+									<Button
+										type='button'
+										variant={form.ram === 10 ? 'default' : 'outline'}
+										onClick={() => updateField('ram', 10)}>
+										Very High (10)
+									</Button>
+								</ButtonGroup>
+								<p className='font-bold text-muted-foreground'>OR</p>
+								<Input
+									id='server-ram'
+									type='number'
+									value={form.ram}
+									onChange={(event) => updateField('ram', Number(event.target.value))}
+									min={1}
+									required
 								/>
-								Auto restart server when it closes
-							</Label>
+							</div>
 						</Field>
+
 						<Field>
 							<Label>Auto backup modes</Label>
 							<div className='space-y-2'>
 								{backupChoices.map((choice) => (
 									<Label key={choice.value} className='flex items-center gap-3'>
-										<input
-											type='checkbox'
+										<Checkbox
 											checked={form.autoBackup.includes(choice.value)}
-											onChange={(event) => toggleBackupMode(choice.value, event.target.checked)}
+											onCheckedChange={(checked) =>
+												toggleBackupMode(
+													choice.value,
+													typeof checked === 'boolean' ? checked : false,
+												)
+											}
 										/>
 										{choice.label}
 									</Label>
 								))}
 							</div>
-							<p className='text-xs text-muted-foreground'>
+							<p className='text-sm text-muted-foreground flex gap-1 items-center'>
+								<TriangleAlert className='size-4' />
 								Warning: backup features can use a high amount of storage space.
 							</p>
 						</Field>
@@ -264,18 +311,27 @@ export const CreateServer: React.FC = () => {
 						)}
 						<Field>
 							<Label className='flex items-center gap-3'>
-								<input
-									type='checkbox'
+								<Checkbox
+									checked={form.autoRestart}
+									onCheckedChange={(checked) =>
+										updateField('autoRestart', typeof checked === 'boolean' ? checked : false)
+									}
+								/>
+								Auto restart server when it closes
+							</Label>
+						</Field>
+						<Field>
+							<Label className='flex items-center gap-3'>
+								<Checkbox
 									checked={form.autoAgreeEula}
-									onChange={(event) => updateField('autoAgreeEula', event.target.checked)}
+									onCheckedChange={(checked) =>
+										updateField('autoAgreeEula', typeof checked === 'boolean' ? checked : false)
+									}
 								/>
 								Auto agree to eula.txt
 							</Label>
 						</Field>
 						{error && <p className='text-sm text-destructive'>{error}</p>}
-						<p className='text-xs text-muted-foreground'>
-							If the selected jar (or server.jar) exists in Downloads, it will be auto-moved.
-						</p>
 					</FieldGroup>
 					<DialogFooter>
 						<DialogClose asChild>
