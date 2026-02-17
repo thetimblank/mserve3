@@ -10,7 +10,6 @@ import { AppSidebar } from '@/components/app-sidebar';
 import { ServersProvider } from './data/servers';
 import Home from './pages/Home';
 import Settings from './pages/Settings';
-import Servers from './pages/Servers';
 import Server from './pages/Server';
 
 const RootLayout: React.FC = () => {
@@ -24,7 +23,6 @@ const RootLayout: React.FC = () => {
 							<AppSidebar />
 							<Routes>
 								<Route path='/' element={<Home />} />
-								<Route path='/servers' element={<Servers />} />
 								<Route path='/servers/:serverName' element={<Server />} />
 								<Route path='/settings' element={<Settings />} />
 							</Routes>

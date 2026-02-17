@@ -15,7 +15,7 @@ const ServerStatus: React.FC<Props> = ({ server, size = 'md' }) => {
 			ring: 'size-16 border-4',
 			icon: 'size-10',
 			tps: 'max-w-16 max-h-16 text-base',
-			tpsLabel: 'text-xs',
+			tpsLabel: 'text-xs leading-1',
 			status: 'text-base',
 		},
 		lg: {
@@ -24,7 +24,7 @@ const ServerStatus: React.FC<Props> = ({ server, size = 'md' }) => {
 			ring: 'size-20 border-[5px]',
 			icon: 'size-12',
 			tps: 'max-w-20 max-h-20 text-lg',
-			tpsLabel: 'text-sm',
+			tpsLabel: 'text-sm leading-[0.5]',
 			status: 'text-lg',
 		},
 		xl: {
@@ -33,7 +33,7 @@ const ServerStatus: React.FC<Props> = ({ server, size = 'md' }) => {
 			ring: 'size-24 border-6',
 			icon: 'size-14',
 			tps: 'max-w-24 max-h-24 text-xl',
-			tpsLabel: 'text-base',
+			tpsLabel: 'text-sm leading-[0.5]',
 			status: 'text-xl',
 		},
 	} as const;
@@ -52,13 +52,13 @@ const ServerStatus: React.FC<Props> = ({ server, size = 'md' }) => {
 				</div>
 			)}
 			{server.status === 'online' && (
-				<div className={`text-green-600 flex items-center flex-col ${classes.container}`}>
+				<div className={`text-green-500 flex items-center flex-col ${classes.container}`}>
 					<div className={`${classes.visual} flex flex-col items-center justify-center`}>
-						<div className={`absolute border-green-600 rounded-full ${classes.ring}`} />
+						<div className={`absolute border-green-500 rounded-full ${classes.ring}`} />
 						<p className={`${classes.tps} overflow-hidden font-bold`}>
 							{server.stats.tps.toPrecision(3)}
 						</p>
-						<p className={`leading-1 text-muted-foreground/60 ${classes.tpsLabel}`}>TPS</p>
+						<p className={`text-muted-foreground/60 ${classes.tpsLabel}`}>TPS</p>
 					</div>
 					<p className={`font-bold ${classes.status}`}>Online</p>
 				</div>

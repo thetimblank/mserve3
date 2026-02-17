@@ -3,13 +3,16 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::env;
 use std::fs;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 use tauri::{Emitter, State};
+use walkdir::WalkDir;
+use zip::write::SimpleFileOptions;
+use zip::CompressionMethod;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -31,6 +34,29 @@ struct InitServerResult {
     message: String,
     file: String,
     directory: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ToggleItemPayload {
+    directory: String,
+    item_type: String,
+    file: String,
+    activate: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ItemActionPayload {
+    directory: String,
+    item_type: String,
+    file: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ExportWorldResult {
+    path: String,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -58,6 +84,13 @@ struct ServerOutputEvent {
     directory: String,
     stream: String,
     line: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeStatusResult {
+    running: bool,
+    exit_code: Option<i32>,
 }
 
 #[derive(Debug, Serialize)]
@@ -160,7 +193,11 @@ fn maybe_auto_move_jar(directory: &Path, preferred_file: &str) -> (String, Strin
             if move_file_with_fallback(&candidate, &destination).is_ok() {
                 return (
                     name.clone(),
-                    format!("Auto-moved {name} from {} to {}.", candidate.display(), directory.display()),
+                    format!(
+                        "Auto-moved {name} from {} to {}.",
+                        candidate.display(),
+                        directory.display()
+                    ),
                 );
             }
         }
@@ -264,113 +301,204 @@ fn infer_datapack_name(file_name: &str, explicit: bool) -> Option<String> {
     }
 }
 
-fn list_plugins(directory: &Path, explicit: bool) -> Vec<ScannedPlugin> {
-    let plugins_dir = directory.join("plugins");
-    if !plugins_dir.exists() || !plugins_dir.is_dir() {
-        return vec![];
+fn path_size_bytes(path: &Path) -> u64 {
+    let Ok(metadata) = fs::metadata(path) else {
+        return 0;
+    };
+
+    if metadata.is_file() {
+        return metadata.len();
     }
 
-    let mut plugins = vec![];
+    if !metadata.is_dir() {
+        return 0;
+    }
 
-    if let Ok(entries) = fs::read_dir(&plugins_dir) {
+    let mut total = 0_u64;
+    if let Ok(entries) = fs::read_dir(path) {
         for entry in entries.flatten() {
-            let path = entry.path();
-            if !path.is_file() {
-                continue;
-            }
-
-            let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
-                continue;
-            };
-
-            if !file_name.ends_with(".jar") {
-                continue;
-            }
-
-            let size = fs::metadata(&path).ok().map(|metadata| metadata.len());
-
-            plugins.push(ScannedPlugin {
-                name: infer_plugin_name(file_name, explicit),
-                file: file_name.to_string(),
-                url: None,
-                size,
-                activated: true,
-            });
+            total = total.saturating_add(path_size_bytes(&entry.path()));
         }
     }
 
-    plugins.sort_by(|a, b| a.file.to_lowercase().cmp(&b.file.to_lowercase()));
-    plugins
+    total
+}
+
+fn list_plugins(directory: &Path, explicit: bool) -> Vec<ScannedPlugin> {
+    let mut plugins = vec![];
+
+    let read_plugins = |dir: PathBuf, activated: bool, into: &mut Vec<ScannedPlugin>| {
+        if !dir.exists() || !dir.is_dir() {
+            return;
+        }
+
+        if let Ok(entries) = fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.is_file() {
+                    continue;
+                }
+
+                let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+                    continue;
+                };
+
+                if !file_name.ends_with(".jar") {
+                    continue;
+                }
+
+                let size = fs::metadata(&path).ok().map(|metadata| metadata.len());
+
+                into.push(ScannedPlugin {
+                    name: infer_plugin_name(file_name, explicit),
+                    file: file_name.to_string(),
+                    url: None,
+                    size,
+                    activated,
+                });
+            }
+        }
+    };
+
+    read_plugins(directory.join("plugins"), true, &mut plugins);
+    read_plugins(directory.join("inactive").join("plugins"), false, &mut plugins);
+
+    let mut deduped: HashMap<String, ScannedPlugin> = HashMap::new();
+    for plugin in plugins {
+        let key = plugin.file.to_lowercase();
+        if let Some(existing) = deduped.get(&key) {
+            if existing.activated {
+                continue;
+            }
+        }
+        deduped.insert(key, plugin);
+    }
+
+    let mut result: Vec<ScannedPlugin> = deduped.into_values().collect();
+    result.sort_by(|a, b| a.file.to_lowercase().cmp(&b.file.to_lowercase()));
+    result
 }
 
 fn list_worlds(directory: &Path) -> Vec<ScannedWorld> {
     let mut worlds = vec![];
 
-    if let Ok(entries) = fs::read_dir(directory) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if !path.is_dir() {
-                continue;
-            }
-
-            let Some(name) = path.file_name().and_then(|file_name| file_name.to_str()) else {
-                continue;
-            };
-
-            let looks_like_world = name.eq_ignore_ascii_case("world")
-                || name.eq_ignore_ascii_case("world_nether")
-                || name.eq_ignore_ascii_case("world_the_end")
-                || path.join("level.dat").exists();
-
-            if !looks_like_world {
-                continue;
-            }
-
-            let size = fs::metadata(&path).ok().map(|metadata| metadata.len());
-            worlds.push(ScannedWorld {
-                name: Some(name.to_string()),
-                file: name.to_string(),
-                size,
-                activated: true,
-            });
+    let read_worlds = |dir: PathBuf,
+                       activated: bool,
+                       use_active_detection: bool,
+                       into: &mut Vec<ScannedWorld>| {
+        if !dir.exists() || !dir.is_dir() {
+            return;
         }
+
+        if let Ok(entries) = fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.is_dir() {
+                    continue;
+                }
+
+                let Some(name) = path.file_name().and_then(|file_name| file_name.to_str()) else {
+                    continue;
+                };
+
+                let looks_like_world = if use_active_detection {
+                    name.eq_ignore_ascii_case("world")
+                        || name.eq_ignore_ascii_case("world_nether")
+                        || name.eq_ignore_ascii_case("world_the_end")
+                        || path.join("level.dat").exists()
+                } else {
+                    true
+                };
+
+                if !looks_like_world {
+                    continue;
+                }
+
+                into.push(ScannedWorld {
+                    name: Some(name.to_string()),
+                    file: name.to_string(),
+                    size: Some(path_size_bytes(&path)),
+                    activated,
+                });
+            }
+        }
+    };
+
+    read_worlds(directory.to_path_buf(), true, true, &mut worlds);
+    read_worlds(
+        directory.join("inactive").join("worlds"),
+        false,
+        false,
+        &mut worlds,
+    );
+
+    let mut deduped: HashMap<String, ScannedWorld> = HashMap::new();
+    for world in worlds {
+        let key = world.file.to_lowercase();
+        if let Some(existing) = deduped.get(&key) {
+            if existing.activated {
+                continue;
+            }
+        }
+        deduped.insert(key, world);
     }
 
-    worlds.sort_by(|a, b| a.file.to_lowercase().cmp(&b.file.to_lowercase()));
-    worlds
+    let mut result: Vec<ScannedWorld> = deduped.into_values().collect();
+    result.sort_by(|a, b| a.file.to_lowercase().cmp(&b.file.to_lowercase()));
+    result
 }
 
 fn list_datapacks(directory: &Path, explicit: bool) -> Vec<ScannedDatapack> {
-    let datapacks_dir = directory.join("world").join("datapacks");
-    if !datapacks_dir.exists() || !datapacks_dir.is_dir() {
-        return vec![];
-    }
-
     let mut datapacks = vec![];
 
-    if let Ok(entries) = fs::read_dir(&datapacks_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let is_zip = path.extension().and_then(|ext| ext.to_str()) == Some("zip");
+    let read_datapacks = |dir: PathBuf, activated: bool, into: &mut Vec<ScannedDatapack>| {
+        if !dir.exists() || !dir.is_dir() {
+            return;
+        }
 
-            if !(path.is_dir() || is_zip) {
+        if let Ok(entries) = fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let is_zip = path.extension().and_then(|ext| ext.to_str()) == Some("zip");
+
+                if !(path.is_dir() || is_zip) {
+                    continue;
+                }
+
+                let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+                    continue;
+                };
+
+                into.push(ScannedDatapack {
+                    name: infer_datapack_name(file_name, explicit),
+                    file: file_name.to_string(),
+                    activated,
+                });
+            }
+        }
+    };
+
+    read_datapacks(directory.join("world").join("datapacks"), true, &mut datapacks);
+    read_datapacks(
+        directory.join("inactive").join("datapacks"),
+        false,
+        &mut datapacks,
+    );
+
+    let mut deduped: HashMap<String, ScannedDatapack> = HashMap::new();
+    for datapack in datapacks {
+        let key = datapack.file.to_lowercase();
+        if let Some(existing) = deduped.get(&key) {
+            if existing.activated {
                 continue;
             }
-
-            let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
-                continue;
-            };
-
-            datapacks.push(ScannedDatapack {
-                name: infer_datapack_name(file_name, explicit),
-                file: file_name.to_string(),
-                activated: true,
-            });
         }
+        deduped.insert(key, datapack);
     }
 
-    datapacks.sort_by(|a, b| a.file.to_lowercase().cmp(&b.file.to_lowercase()));
-    datapacks
+    let mut result: Vec<ScannedDatapack> = deduped.into_values().collect();
+    result.sort_by(|a, b| a.file.to_lowercase().cmp(&b.file.to_lowercase()));
+    result
 }
 
 fn emit_output_reader<R: std::io::Read + Send + 'static>(
@@ -401,13 +529,6 @@ fn drain_reader<R: std::io::Read + Send + 'static>(reader: R) {
     });
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct RuntimeStatusResult {
-    running: bool,
-    exit_code: Option<i32>,
-}
-
 fn stop_child_process(process: &mut RunningServerProcess) -> Result<(), String> {
     let _ = writeln!(process.stdin, "stop");
     let _ = process.stdin.flush();
@@ -428,8 +549,14 @@ fn stop_child_process(process: &mut RunningServerProcess) -> Result<(), String> 
 fn open_path_in_file_manager(path: &Path) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
+        let normalized = path
+            .canonicalize()
+            .unwrap_or_else(|_| path.to_path_buf())
+            .to_string_lossy()
+            .replace('/', "\\");
+
         Command::new("explorer")
-            .arg(path)
+            .arg(normalized)
             .spawn()
             .map_err(|err| err.to_string())?;
         return Ok(());
@@ -455,6 +582,119 @@ fn open_path_in_file_manager(path: &Path) -> Result<(), String> {
 
     #[allow(unreachable_code)]
     Err("Unsupported platform.".to_string())
+}
+
+fn is_simple_relative_name(name: &str) -> bool {
+    !name.is_empty() && !name.contains('/') && !name.contains('\\') && !name.contains("..")
+}
+
+fn item_roots(directory: &Path, item_type: &str) -> Result<(PathBuf, PathBuf), String> {
+    let inactive_root = directory.join("inactive");
+    match item_type {
+        "plugin" => Ok((directory.join("plugins"), inactive_root.join("plugins"))),
+        "world" => Ok((directory.to_path_buf(), inactive_root.join("worlds"))),
+        "datapack" => Ok((directory.join("world").join("datapacks"), inactive_root.join("datapacks"))),
+        _ => Err("Unsupported item type.".to_string()),
+    }
+}
+
+fn resolve_item_locations(directory: &Path, item_type: &str, file: &str) -> Result<(PathBuf, PathBuf), String> {
+    let (active_parent, inactive_parent) = item_roots(directory, item_type)?;
+    Ok((active_parent.join(file), inactive_parent.join(file)))
+}
+
+fn remove_item_to_trash(payload: &ItemActionPayload) -> Result<(), String> {
+    let directory = PathBuf::from(payload.directory.trim());
+    if !directory.exists() || !directory.is_dir() {
+        return Err("Server directory does not exist.".to_string());
+    }
+
+    let file = payload.file.trim();
+    if !is_simple_relative_name(file) {
+        return Err("Invalid item path.".to_string());
+    }
+
+    let (active_path, inactive_path) = resolve_item_locations(&directory, payload.item_type.as_str(), file)?;
+    let target = if active_path.exists() {
+        active_path
+    } else if inactive_path.exists() {
+        inactive_path
+    } else {
+        return Err("Item not found.".to_string());
+    };
+
+    trash::delete(&target).map_err(|err| err.to_string())?;
+    Ok(())
+}
+
+fn add_path_to_zip<W: Write + io::Seek>(
+    writer: &mut zip::ZipWriter<W>,
+    root: &Path,
+    path: &Path,
+    options: SimpleFileOptions,
+) -> Result<(), String> {
+    let relative = path
+        .strip_prefix(root)
+        .map_err(|err| err.to_string())?
+        .to_string_lossy()
+        .replace('\\', "/");
+
+    if relative.is_empty() {
+        return Ok(());
+    }
+
+    if path.is_dir() {
+        writer
+            .add_directory(format!("{relative}/"), options)
+            .map_err(|err| err.to_string())?;
+        return Ok(());
+    }
+
+    writer
+        .start_file(relative, options)
+        .map_err(|err| err.to_string())?;
+    let mut file = fs::File::open(path).map_err(|err| err.to_string())?;
+    let mut buffer = Vec::new();
+    file.read_to_end(&mut buffer).map_err(|err| err.to_string())?;
+    writer.write_all(&buffer).map_err(|err| err.to_string())?;
+    Ok(())
+}
+
+fn toggle_item_activation(payload: ToggleItemPayload) -> Result<(), String> {
+    let directory = PathBuf::from(payload.directory.trim());
+    if !directory.exists() || !directory.is_dir() {
+        return Err("Server directory does not exist.".to_string());
+    }
+
+    let file = payload.file.trim();
+    if !is_simple_relative_name(file) {
+        return Err("Invalid item path.".to_string());
+    }
+
+    let (active_parent, inactive_parent) = item_roots(&directory, payload.item_type.as_str())?;
+
+    let from_path = if payload.activate {
+        inactive_parent.join(file)
+    } else {
+        active_parent.join(file)
+    };
+
+    let to_path = if payload.activate {
+        active_parent.join(file)
+    } else {
+        inactive_parent.join(file)
+    };
+
+    if !from_path.exists() {
+        return Err("Item not found in expected source location.".to_string());
+    }
+
+    if let Some(parent) = to_path.parent() {
+        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+
+    fs::rename(&from_path, &to_path).map_err(|err| err.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -540,6 +780,89 @@ fn open_server_folder(directory: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn open_server_path(path: String) -> Result<(), String> {
+    let raw = path.trim();
+    let target = PathBuf::from(raw.replace('/', std::path::MAIN_SEPARATOR_STR));
+    if !target.exists() {
+        return Err("Target path does not exist.".to_string());
+    }
+
+    let open_target = if target.is_dir() {
+        target
+    } else {
+        target
+            .parent()
+            .map(|parent| parent.to_path_buf())
+            .ok_or_else(|| "Cannot resolve parent directory.".to_string())?
+    };
+
+    open_path_in_file_manager(&open_target)
+}
+
+#[tauri::command]
+fn delete_server_item(payload: ItemActionPayload) -> Result<(), String> {
+    remove_item_to_trash(&payload)
+}
+
+#[tauri::command]
+fn uninstall_server_item(payload: ItemActionPayload) -> Result<(), String> {
+    if payload.item_type != "plugin" {
+        return Err("Uninstall is only supported for plugins.".to_string());
+    }
+
+    remove_item_to_trash(&payload)
+}
+
+#[tauri::command]
+fn export_server_world(payload: ItemActionPayload) -> Result<ExportWorldResult, String> {
+    if payload.item_type != "world" {
+        return Err("Export is only supported for worlds.".to_string());
+    }
+
+    let directory = PathBuf::from(payload.directory.trim());
+    if !directory.exists() || !directory.is_dir() {
+        return Err("Server directory does not exist.".to_string());
+    }
+
+    let file = payload.file.trim();
+    if !is_simple_relative_name(file) {
+        return Err("Invalid world path.".to_string());
+    }
+
+    let (active_path, inactive_path) = resolve_item_locations(&directory, "world", file)?;
+    let world_path = if active_path.exists() {
+        active_path
+    } else if inactive_path.exists() {
+        inactive_path
+    } else {
+        return Err("World folder not found.".to_string());
+    };
+
+    if !world_path.is_dir() {
+        return Err("World export expects a directory.".to_string());
+    }
+
+    let downloads = home_dir().join("Downloads");
+    fs::create_dir_all(&downloads).map_err(|err| err.to_string())?;
+
+    let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+    let zip_path = downloads.join(format!("{}-{}.zip", file, timestamp));
+    let zip_file = fs::File::create(&zip_path).map_err(|err| err.to_string())?;
+    let mut zip = zip::ZipWriter::new(zip_file);
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+
+    for entry in WalkDir::new(&world_path).into_iter().flatten() {
+        add_path_to_zip(&mut zip, &world_path, entry.path(), options)?;
+    }
+
+    zip.finish().map_err(|err| err.to_string())?;
+
+    Ok(ExportWorldResult {
+        path: zip_path.to_string_lossy().to_string(),
+    })
+}
+
+#[tauri::command]
 fn start_server(
     directory: String,
     state: State<'_, RuntimeState>,
@@ -574,14 +897,7 @@ fn start_server(
         }
     }
 
-    // let default_flags = if file.contains("paper") || file.contains("spigot") || file.contains("bukkit") {
-    //     vec!["--nogui".to_string()]
-    // } else {
-    //     vec![]
-    // };
-
     let default_flags = vec!["--nogui".to_string()];
-
     let custom_flags = config.custom_flags.unwrap_or(default_flags);
 
     let mut args = vec![
@@ -711,6 +1027,11 @@ fn scan_server_contents(directory: String) -> Result<ServerScanResult, String> {
 }
 
 #[tauri::command]
+fn set_server_item_active(payload: ToggleItemPayload) -> Result<(), String> {
+    toggle_item_activation(payload)
+}
+
+#[tauri::command]
 fn delete_server(directory: String, state: State<'_, RuntimeState>) -> Result<String, String> {
     let directory_path = PathBuf::from(directory.trim());
     if !directory_path.exists() {
@@ -740,11 +1061,16 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             initialize_server,
             open_server_folder,
+            open_server_path,
+            delete_server_item,
+            uninstall_server_item,
+            export_server_world,
             start_server,
             stop_server,
             send_server_command,
             get_server_runtime_status,
             scan_server_contents,
+            set_server_item_active,
             delete_server
         ])
         .run(tauri::generate_context!())

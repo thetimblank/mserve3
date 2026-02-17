@@ -2,26 +2,27 @@ import React from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { createServerId, type Server as MserveServer, useServers } from '@/data/servers';
 import { Button } from '@/components/ui/button';
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
-	Archive,
+	ArrowDownToLine,
 	ArrowLeft,
-	ArrowUpRightFromSquare,
-	Check,
+	Boxes,
 	CircleCheck,
-	Folder,
-	HardDrive,
-	LinkIcon,
+	Clock,
+	Globe,
+	MemoryStick,
 	OctagonX,
+	Package,
+	Plug,
 	RefreshCcw,
 	Trash,
-	X,
+	Users,
 } from 'lucide-react';
 import ServerStatus from '@/components/server-status';
-import { openUrl } from '@tauri-apps/plugin-opener';
-import { Input } from '@/components/ui/input';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import OpenFolderButton from '@/components/open-folder-button';
+import ServerItemList from '@/components/server-item-list';
+import { ButtonGroup } from '@/components/ui/button-group';
 
 type ServerOutputEvent = {
 	directory: string;
@@ -39,6 +40,8 @@ type RuntimeStatusResult = {
 	running: boolean;
 	exitCode: number | null;
 };
+
+type ServerContentTab = 'plugins' | 'worlds' | 'datapacks';
 
 const terminalSessionStore = new Map<string, string[]>();
 
@@ -65,8 +68,21 @@ const parseTps = (line: string) => {
 	};
 };
 
+const parseVersion = (line: string) => {
+	const match = line.match(/This server is running\s+.+?\s+version\s+(.+)$/i);
+	if (!match) return null;
+	return match[1]?.trim() || null;
+};
+
 const shouldHideBackgroundLine = (cleaned: string) => {
-	return cleaned.includes('There are') || cleaned.includes('TPS from last 1m, 5m, 15m:');
+	return (
+		cleaned.includes('There are') ||
+		cleaned.includes('TPS from last 1m, 5m, 15m:') ||
+		cleaned.includes('Checking version, please wait...') ||
+		cleaned.includes('This server is running') ||
+		cleaned.includes('version(s) behind') ||
+		cleaned.includes('Download the new version at:')
+	);
 };
 
 const Server: React.FC = () => {
@@ -77,6 +93,7 @@ const Server: React.FC = () => {
 	const [isBusy, setIsBusy] = React.useState(false);
 	const [terminalInput, setTerminalInput] = React.useState('');
 	const [terminalLines, setTerminalLines] = React.useState<string[]>([]);
+	const [activeTab, setActiveTab] = React.useState<ServerContentTab>('plugins');
 	const terminalOutputRef = React.useRef<HTMLDivElement>(null);
 	const startAtRef = React.useRef<Date | null>(null);
 	const lastOutputRef = React.useRef<{ key: string; at: number }>({ key: '', at: 0 });
@@ -191,6 +208,13 @@ const Server: React.FC = () => {
 				});
 			}
 
+			const versionInfo = parseVersion(cleaned);
+			if (versionInfo) {
+				updateServer(serverId, {
+					version: versionInfo,
+				});
+			}
+
 			if (shouldHideBackgroundLine(cleaned)) {
 				return;
 			}
@@ -212,7 +236,7 @@ const Server: React.FC = () => {
 				unlisten();
 			}
 		};
-	}, [appendTerminalLine, server.directory, serverId, setServerStatus, updateServerStats]);
+	}, [appendTerminalLine, server.directory, serverId, setServerStatus, updateServer, updateServerStats]);
 
 	React.useEffect(() => {
 		if (server.status === 'offline') return;
@@ -239,6 +263,11 @@ const Server: React.FC = () => {
 	React.useEffect(() => {
 		if (server.status !== 'online') return;
 
+		void invoke('send_server_command', {
+			directory: server.directory,
+			command: 'version',
+		}).catch(() => {});
+
 		const timer = window.setInterval(async () => {
 			try {
 				await invoke('send_server_command', {
@@ -262,19 +291,6 @@ const Server: React.FC = () => {
 		if (!node) return;
 		node.scrollTop = node.scrollHeight;
 	}, [terminalLines]);
-
-	const handleOpenFolder = async () => {
-		if (isBusy) return;
-		setIsBusy(true);
-		try {
-			await invoke('open_server_folder', { directory: server.directory });
-		} catch (err) {
-			const message = err instanceof Error ? err.message : 'Failed to open folder.';
-			window.alert(message);
-		} finally {
-			setIsBusy(false);
-		}
-	};
 
 	const handleStart = async () => {
 		if (isBusy) return;
@@ -400,21 +416,22 @@ const Server: React.FC = () => {
 		}
 	};
 
+	const handleItemsChanged = React.useCallback(async () => {
+		await syncServerContents();
+	}, [syncServerContents]);
+
 	return (
 		<main className='pt-15 min-h-[calc(100vh-40px)] p-12 w-full overflow-y-auto'>
 			<div className='flex items-center justify-between mb-8'>
 				<div>
 					<div className='flex gap-2 items-center'>
-						<Link to='/servers'>
+						<Link to='/'>
 							<ArrowLeft className='size-8' />
 						</Link>
 
-						<h1 className='text-4xl font-black'>{server.name}</h1>
+						<h1 className='text-4xl font-bold'>{server.name}</h1>
 					</div>
 				</div>
-				<Button asChild variant='outline'>
-					<Link to='/servers'>All Servers</Link>
-				</Button>
 			</div>
 
 			<div className='flex my-6 gap-4'>
@@ -459,190 +476,132 @@ const Server: React.FC = () => {
 					</form>
 				</div>
 			</div>
-			<div className='mb-16 border-t border-border pt-4'>
+			<div className='mb-4 border-t border-border pt-4'>
 				<div className='flex gap-2 mb-2'>
-					<Button variant='secondary' onClick={handleOpenFolder} disabled={isBusy}>
-						<Folder />
-						<p>Open Folder</p>
-					</Button>
-					<Button variant='destructive' onClick={handleDelete} disabled={isBusy}>
+					<OpenFolderButton directory={server.directory} disabled={isBusy} />
+					<Button
+						disabled={isBusy || server.status === 'online'}
+						variant='destructive'
+						onClick={handleDelete}>
 						<Trash />
 						<p>Delete Server</p>
 					</Button>
 				</div>
 				{server.createdAt && (
 					<p className='text-sm text-muted-foreground mb-1'>
-						Server started {new Date(server.createdAt).toLocaleDateString()}
+						Server was created {new Date(server.createdAt).toLocaleDateString()}
 					</p>
 				)}
-				{server.ram && <p className='text-sm text-muted-foreground mb-1'>Ram {server.ram}</p>}
+				{server.status === 'online' && (
+					<div className='flex items-center lg:text-lg gap-2'>
+						<Users className='size-5' />
+						Players: {server.stats.players}/{server.stats.capacity}
+					</div>
+				)}
+				{server.version && (
+					<div className='flex items-center lg:text-lg gap-2'>
+						<ArrowDownToLine className='size-5' />
+						Version: {server.version}
+					</div>
+				)}
+				{server.ram && (
+					<div className='flex items-center lg:text-lg gap-2'>
+						<MemoryStick className='size-5' />
+						Memory: {server.ram}GB
+					</div>
+				)}
+				<div className='flex items-center lg:text-lg gap-2'>
+					<Boxes className='size-5' />
+					Jar File: {server.file}
+				</div>
+				{server.status === 'online' && server.stats.uptime && (
+					<div className='flex items-center lg:text-lg gap-2'>
+						<Clock className='size-5' />
+						Uptime:{' '}
+						{(() => {
+							const now = new Date();
+							const diff = now.getTime() - server.stats.uptime.getTime();
+							const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+							const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
+							const minutes = Math.floor((diff / (1000 * 60)) % 60);
+							const seconds = Math.floor((diff / 1000) % 60);
+
+							if (days > 0) return `${days}d ${hours}h ${seconds}s`;
+							if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
+							if (minutes < 0) return `Just started ${seconds}s ago`;
+							return `${minutes}m ${seconds}s`;
+						})()}
+					</div>
+				)}
 			</div>
 
-			<div className='grid gap-10 lg:grid-cols-[1.1fr_1fr]'>
-				<div className='flex flex-col gap-1'>
-					<div className='flex justify-between gap-5'>
-						<div className='flex-col gap-1'>
-							<p className='text-3xl font-bold'>Plugins</p>
-							<p className='text-muted-foreground'>See and manage the server plugins here.</p>
-						</div>
-						<Button onClick={() => openUrl('https://modrinth.com/discover/plugins')}>
-							Download More
-							<ArrowUpRightFromSquare />
-						</Button>
-					</div>
-					<Input type='search' placeholder='Search for Plugin...' />
-					<div className='flex flex-col gap-4 mt-4'>
-						{server.plugins.length <= 0 ? (
-							<p className='text-xl text-muted-foreground'>No Plugins were found.</p>
-						) : (
-							server.plugins.map((plugin, i) => (
-								<Card key={i}>
-									<CardHeader className='border-b border-b-border'>
-										<CardTitle>{plugin.name ?? plugin.file}</CardTitle>
-										<CardDescription className='flex gap-6'>
-											{plugin.activated ? (
-												<div className='flex items-center font-bold lg:text-lg gap-1 text-green-500'>
-													<Check className='size-4' />
-													Active
-												</div>
-											) : (
-												<div className='flex items-center font-bold lg:text-lg gap-1 text-red-400'>
-													<X className='size-4' />
-													Inactive
-												</div>
-											)}
-											{plugin.size && (
-												<div className='flex items-center lg:text-lg gap-1'>
-													<HardDrive className='size-4' />
-													{plugin.size > 100000
-														? `${(plugin.size / 1048576).toFixed(2)}TB`
-														: plugin.size > 1000
-															? `${(plugin.size / 1024).toFixed(2)}GB`
-															: `${plugin.size}MB`}
-												</div>
-											)}
-											{plugin.url && (
-												<div className='flex items-center lg:text-lg gap-1'>
-													<LinkIcon className='size-4' />
-													{plugin.url}
-												</div>
-											)}
-										</CardDescription>
-									</CardHeader>
-									<CardContent className='flex gap-2'>
-										<Button variant='secondary' onClick={handleOpenFolder} disabled={isBusy}>
-											Open Folder
-										</Button>
-										{plugin.activated ? (
-											<Button variant='secondary'>Deactivate</Button>
-										) : (
-											<Button variant='secondary'>Activate</Button>
-										)}
-										<Button variant='destructive'>Uninstall</Button>
-									</CardContent>
-								</Card>
-							))
-						)}
-					</div>
-				</div>
-				<div className='flex flex-col gap-1'>
-					<div className='flex justify-between gap-5'>
-						<div className='flex-col gap-1'>
-							<p className='text-3xl font-bold'>Worlds</p>
-							<p className='text-muted-foreground'>See and manage the server worlds here.</p>
-						</div>
-						<Button onClick={() => openUrl('https://modrinth.com/discover/plugins')}>
-							Backup Worlds
-							<Archive />
-						</Button>
-					</div>
-					<Input type='search' placeholder='Search for Plugin...' />
-					<div className='flex flex-col gap-4 mt-4'>
-						{server.worlds.length <= 0 ? (
-							<p className='text-xl text-muted-foreground'>No Worlds were found.</p>
-						) : (
-							server.worlds.map((world, i) => (
-								<Card key={i}>
-									<CardHeader className='border-b border-b-border'>
-										<CardTitle>{world.name ?? world.file}</CardTitle>
-										<CardDescription className='flex gap-6'>
-											{world.activated ? (
-												<div className='flex items-center font-bold lg:text-lg gap-1 text-green-500'>
-													<Check className='size-4' />
-													Active
-												</div>
-											) : (
-												<div className='flex items-center font-bold lg:text-lg gap-1 text-red-400'>
-													<X className='size-4' />
-													Inactive
-												</div>
-											)}
-											{world.size && (
-												<div className='flex items-center lg:text-lg gap-1'>
-													<HardDrive className='size-4' />
-													{world.size > 100000
-														? `${(world.size / 1048576).toFixed(2)}TB`
-														: world.size > 1000
-															? `${(world.size / 1024).toFixed(2)}GB`
-															: `${world.size}MB`}
-												</div>
-											)}
-										</CardDescription>
-										<CardAction></CardAction>
-									</CardHeader>
-									<CardContent className='flex gap-2'>
-										<Button variant='secondary'>Export</Button>
-										<Button variant='secondary' onClick={handleOpenFolder} disabled={isBusy}>
-											Open Folder
-										</Button>
-										{world.activated ? (
-											<Button variant='secondary'>Deactivate</Button>
-										) : (
-											<Button variant='secondary'>Activate</Button>
-										)}
-										<Button variant='destructive'>Delete</Button>
-									</CardContent>
-								</Card>
-							))
-						)}
-					</div>
-				</div>
-				<div className='flex flex-col gap-1'>
-					<div className='flex justify-between gap-5'>
-						<div className='flex-col gap-1'>
-							<p className='text-3xl font-bold'>Datapacks</p>
-							<p className='text-muted-foreground'>See and manage the server datapacks here.</p>
-						</div>
-						<Button onClick={() => openUrl('https://modrinth.com/discover/plugins')}>
-							Add More
-							<ArrowUpRightFromSquare />
-						</Button>
-					</div>
-					<Input type='search' placeholder='Search for Plugin...' />
-					<div className='flex flex-col gap-4 mt-4'>
-						{server.datapacks.length <= 0 ? (
-							<p className='text-xl text-muted-foreground'>No Datapacks were found.</p>
-						) : (
-							server.datapacks.map((datapack, i) => (
-								<Card key={i}>
-									<CardHeader className='border-b border-b-border'>
-										<CardTitle>{datapack.name ?? datapack.file}</CardTitle>
-										<CardDescription>50mb</CardDescription>
-										<CardAction></CardAction>
-									</CardHeader>
-									<CardContent className='flex gap-2'>
-										<Button variant='secondary'>Uninstall</Button>
-										<Button variant='secondary'>Unload</Button>
-										<Button variant='secondary' onClick={handleOpenFolder} disabled={isBusy}>
-											Open Folder
-										</Button>
-									</CardContent>
-								</Card>
-							))
-						)}
-					</div>
-				</div>
-			</div>
+			<hr className='w-full border-t border-border' />
+			<ButtonGroup className='mb-6 pt-4'>
+				<Button
+					variant={activeTab === 'plugins' ? 'default' : 'outline'}
+					onClick={() => setActiveTab('plugins')}>
+					Plugins
+				</Button>
+				<Button
+					variant={activeTab === 'worlds' ? 'default' : 'outline'}
+					onClick={() => setActiveTab('worlds')}>
+					Worlds
+				</Button>
+				<Button
+					variant={activeTab === 'datapacks' ? 'default' : 'outline'}
+					onClick={() => setActiveTab('datapacks')}>
+					Datapacks
+				</Button>
+			</ButtonGroup>
+
+			{activeTab === 'plugins' && (
+				<ServerItemList
+					icon={<Plug />}
+					type='plugin'
+					serverDirectory={server.directory}
+					title='Plugins'
+					description='See and manage the server plugins here.'
+					searchPlaceholder='Search for Plugin...'
+					emptyLabel='No Plugins were found.'
+					items={server.plugins}
+					onChanged={handleItemsChanged}
+					disabled={isBusy || server.status === 'online'}
+					ctaLabel='Download More'
+					ctaUrl='https://modrinth.com/discover/plugins'
+				/>
+			)}
+			{activeTab === 'worlds' && (
+				<ServerItemList
+					icon={<Globe />}
+					type='world'
+					serverDirectory={server.directory}
+					title='Worlds'
+					description='See and manage the server worlds here.'
+					searchPlaceholder='Search for World...'
+					emptyLabel='No Worlds were found.'
+					items={server.worlds}
+					onChanged={handleItemsChanged}
+					disabled={isBusy || server.status === 'online'}
+					ctaLabel='Backup Worlds'
+					ctaUrl='https://modrinth.com/discover/plugins'
+				/>
+			)}
+			{activeTab === 'datapacks' && (
+				<ServerItemList
+					icon={<Package />}
+					type='datapack'
+					serverDirectory={server.directory}
+					title='Datapacks'
+					description='See and manage the server datapacks here.'
+					searchPlaceholder='Search for Datapack...'
+					emptyLabel='No Datapacks were found.'
+					items={server.datapacks}
+					onChanged={handleItemsChanged}
+					disabled={isBusy || server.status === 'online'}
+					ctaLabel='Add More'
+					ctaUrl='https://modrinth.com/discover/plugins'
+				/>
+			)}
 		</main>
 	);
 };

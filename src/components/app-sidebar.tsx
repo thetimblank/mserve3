@@ -11,18 +11,14 @@ import {
 	SidebarMenuButton,
 	SidebarMenuItem,
 } from '@/components/ui/sidebar';
+import { useServers } from '@/data/servers';
 
 // Menu items.
 const items = [
 	{
-		title: 'Home',
+		title: 'Dashboard',
 		url: '/',
 		icon: Home,
-	},
-	{
-		title: 'Servers',
-		url: '/servers',
-		icon: Server,
 	},
 	{
 		title: 'Settings',
@@ -32,6 +28,8 @@ const items = [
 ];
 
 export function AppSidebar() {
+	const { servers } = useServers();
+
 	return (
 		<Sidebar className='mt-10'>
 			<SidebarContent>
@@ -45,6 +43,23 @@ export function AppSidebar() {
 										<Link to={item.url}>
 											<item.icon />
 											<span>{item.title}</span>
+										</Link>
+									</SidebarMenuButton>
+								</SidebarMenuItem>
+							))}
+						</SidebarMenu>
+					</SidebarGroupContent>
+				</SidebarGroup>
+				<SidebarGroup>
+					<SidebarGroupLabel>Servers</SidebarGroupLabel>
+					<SidebarGroupContent>
+						<SidebarMenu>
+							{servers.map((server) => (
+								<SidebarMenuItem key={server.name}>
+									<SidebarMenuButton asChild>
+										<Link to={`/servers/${server.name}`}>
+											<Server />
+											<span>{server.name}</span>
 										</Link>
 									</SidebarMenuButton>
 								</SidebarMenuItem>
