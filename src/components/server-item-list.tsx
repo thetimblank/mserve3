@@ -2,6 +2,7 @@ import React from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Archive, ArrowUpRightFromSquare, Check, HardDrive, LinkIcon, X } from 'lucide-react';
 import { openUrl } from '@tauri-apps/plugin-opener';
+import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -80,6 +81,7 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 }) => {
 	const [search, setSearch] = React.useState('');
 	const [busyFile, setBusyFile] = React.useState<string | null>(null);
+	const [isDragging, setIsDragging] = React.useState(false);
 
 	const filtered = React.useMemo(() => {
 		const term = search.trim().toLowerCase();
@@ -184,6 +186,77 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 		}
 	};
 
+	const uploadPath = async (sourcePath: string) => {
+		await invoke('upload_server_item', {
+			payload: {
+				directory: serverDirectory,
+				itemType: type,
+				sourcePath,
+			},
+		});
+	};
+
+	const handleAddItem = async () => {
+		if (disabled || busyFile) return;
+		setBusyFile('__upload__');
+		try {
+			const selected = await openDialog({
+				multiple: true,
+				directory: false,
+				title:
+					type === 'plugin'
+						? 'Add plugin(s)'
+						: type === 'world'
+							? 'Add world zip/folder'
+							: 'Add datapack(s)',
+			});
+
+			const paths = (Array.isArray(selected) ? selected : selected ? [selected] : []).filter(
+				(path): path is string => typeof path === 'string',
+			);
+
+			for (const path of paths) {
+				await uploadPath(path);
+			}
+			if (paths.length > 0) {
+				await onChanged?.();
+			}
+		} catch (err) {
+			const message = err instanceof Error ? err.message : 'Failed to upload item.';
+			window.alert(message);
+		} finally {
+			setBusyFile(null);
+		}
+	};
+
+	const handleDrop = async (event: React.DragEvent<HTMLDivElement>) => {
+		event.preventDefault();
+		setIsDragging(false);
+		if (disabled || busyFile) return;
+
+		const droppedPaths = Array.from(event.dataTransfer.files)
+			.map((file) => (file as File & { path?: string }).path)
+			.filter((path): path is string => typeof path === 'string' && path.length > 0);
+
+		if (droppedPaths.length === 0) {
+			window.alert('Could not read dropped file paths. Use Add to browse instead.');
+			return;
+		}
+
+		setBusyFile('__upload__');
+		try {
+			for (const path of droppedPaths) {
+				await uploadPath(path);
+			}
+			await onChanged?.();
+		} catch (err) {
+			const message = err instanceof Error ? err.message : 'Failed to upload dropped item.';
+			window.alert(message);
+		} finally {
+			setBusyFile(null);
+		}
+	};
+
 	return (
 		<div className='flex flex-col gap-1 min-h-100'>
 			<div className='flex justify-between gap-5'>
@@ -195,11 +268,26 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 					<p className='text-muted-foreground'>{description}</p>
 				</div>
 				{ctaLabel && ctaUrl && (
-					<Button onClick={() => openUrl(ctaUrl)}>
-						{ctaLabel}
-						{type === 'world' ? <Archive /> : <ArrowUpRightFromSquare />}
-					</Button>
+					<div className='flex gap-2'>
+						<Button onClick={handleAddItem} disabled={disabled || busyFile === '__upload__'}>
+							Add
+						</Button>
+						<Button onClick={() => openUrl(ctaUrl)}>
+							{ctaLabel}
+							{type === 'world' ? <Archive /> : <ArrowUpRightFromSquare />}
+						</Button>
+					</div>
 				)}
+			</div>
+			<div
+				onDragOver={(event) => {
+					event.preventDefault();
+					setIsDragging(true);
+				}}
+				onDragLeave={() => setIsDragging(false)}
+				onDrop={handleDrop}
+				className={`rounded-md border border-dashed p-3 text-sm ${isDragging ? 'border-primary' : 'border-border'}`}>
+				Drop files here to upload to {title.toLowerCase()}.
 			</div>
 			<Input
 				type='search'

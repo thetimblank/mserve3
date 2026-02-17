@@ -18,6 +18,7 @@ import ServerStatus from './server-status';
 import { invoke } from '@tauri-apps/api/core';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import OpenFolderButton from '@/components/open-folder-button';
+import { getPrimaryMinecraftVersion } from '@/lib/utils';
 
 interface Props {
 	server: Server;
@@ -114,7 +115,7 @@ const ServerCard: React.FC<Props> = ({ server, delay }) => {
 								<TooltipTrigger>
 									<div className='flex items-center lg:text-lg gap-2'>
 										<ArrowDownToLine className='size-5' />
-										{server.version}
+										{getPrimaryMinecraftVersion(server.version) ?? server.version}
 									</div>
 								</TooltipTrigger>
 								<TooltipContent>

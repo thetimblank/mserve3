@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import {
 	ArrowDownToLine,
 	ArrowLeft,
+	ArchiveRestore,
 	Boxes,
 	CircleCheck,
 	Clock,
@@ -23,6 +24,15 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import OpenFolderButton from '@/components/open-folder-button';
 import ServerItemList from '@/components/server-item-list';
 import { ButtonGroup } from '@/components/ui/button-group';
+import {
+	getPrimaryMinecraftVersion,
+	isServerReadyLine,
+	parseListPlayers,
+	parseTps,
+	parseVersion,
+	shouldHideBackgroundLine,
+	stripAnsi,
+} from '@/lib/utils';
 
 type ServerOutputEvent = {
 	directory: string;
@@ -34,6 +44,7 @@ type ScanServerContentsResult = {
 	plugins: MserveServer['plugins'];
 	worlds: MserveServer['worlds'];
 	datapacks: MserveServer['datapacks'];
+	backups: { directory: string; createdAt?: string; created_at?: string }[];
 };
 
 type RuntimeStatusResult = {
@@ -41,49 +52,9 @@ type RuntimeStatusResult = {
 	exitCode: number | null;
 };
 
-type ServerContentTab = 'plugins' | 'worlds' | 'datapacks';
+type ServerContentTab = 'plugins' | 'worlds' | 'datapacks' | 'backups';
 
 const terminalSessionStore = new Map<string, string[]>();
-
-const stripAnsi = (value: string) => value.replace(/\x1b\[[0-9;]*m/g, '');
-
-const isServerReadyLine = (line: string) => /Done \([\d.]+s\)! For help, type "help"/i.test(line);
-
-const parseListPlayers = (line: string) => {
-	const match = line.match(/There are\s+(\d+)\s+of a max of\s+(\d+)\s+players online/i);
-	if (!match) return null;
-	return {
-		players: Number(match[1]),
-		capacity: Number(match[2]),
-	};
-};
-
-const parseTps = (line: string) => {
-	const match = line.match(
-		/TPS from last 1m, 5m, 15m:\s*([0-9]+(?:\.[0-9]+)?),\s*([0-9]+(?:\.[0-9]+)?),\s*([0-9]+(?:\.[0-9]+)?)/i,
-	);
-	if (!match) return null;
-	return {
-		tps: Number(match[1]),
-	};
-};
-
-const parseVersion = (line: string) => {
-	const match = line.match(/This server is running\s+.+?\s+version\s+(.+)$/i);
-	if (!match) return null;
-	return match[1]?.trim() || null;
-};
-
-const shouldHideBackgroundLine = (cleaned: string) => {
-	return (
-		cleaned.includes('There are') ||
-		cleaned.includes('TPS from last 1m, 5m, 15m:') ||
-		cleaned.includes('Checking version, please wait...') ||
-		cleaned.includes('This server is running') ||
-		cleaned.includes('version(s) behind') ||
-		cleaned.includes('Download the new version at:')
-	);
-};
 
 const Server: React.FC = () => {
 	const navigate = useNavigate();
@@ -91,6 +62,7 @@ const Server: React.FC = () => {
 	const resolvedServerName = serverName ? decodeURIComponent(serverName) : undefined;
 	const { servers, isReady, removeServer, setServerStatus, updateServer, updateServerStats } = useServers();
 	const [isBusy, setIsBusy] = React.useState(false);
+	const [hideBackgroundTelemetry, setHideBackgroundTelemetry] = React.useState(true);
 	const [terminalInput, setTerminalInput] = React.useState('');
 	const [terminalLines, setTerminalLines] = React.useState<string[]>([]);
 	const [activeTab, setActiveTab] = React.useState<ServerContentTab>('plugins');
@@ -152,6 +124,10 @@ const Server: React.FC = () => {
 				plugins: result.plugins,
 				worlds: result.worlds,
 				datapacks: result.datapacks,
+				backups: result.backups.map((backup) => ({
+					directory: backup.directory,
+					createdAt: new Date(backup.createdAt ?? backup.created_at ?? Date.now()),
+				})),
 			});
 		} catch {}
 	}, [server.directory, serverId, updateServer]);
@@ -215,7 +191,7 @@ const Server: React.FC = () => {
 				});
 			}
 
-			if (shouldHideBackgroundLine(cleaned)) {
+			if (hideBackgroundTelemetry && shouldHideBackgroundLine(cleaned)) {
 				return;
 			}
 
@@ -236,7 +212,15 @@ const Server: React.FC = () => {
 				unlisten();
 			}
 		};
-	}, [appendTerminalLine, server.directory, serverId, setServerStatus, updateServer, updateServerStats]);
+	}, [
+		appendTerminalLine,
+		hideBackgroundTelemetry,
+		server.directory,
+		serverId,
+		setServerStatus,
+		updateServer,
+		updateServerStats,
+	]);
 
 	React.useEffect(() => {
 		if (server.status === 'offline') return;
@@ -263,10 +247,22 @@ const Server: React.FC = () => {
 	React.useEffect(() => {
 		if (server.status !== 'online') return;
 
-		void invoke('send_server_command', {
-			directory: server.directory,
-			command: 'version',
-		}).catch(() => {});
+		void (async () => {
+			try {
+				await invoke('send_server_command', {
+					directory: server.directory,
+					command: 'list',
+				});
+				await invoke('send_server_command', {
+					directory: server.directory,
+					command: 'tps',
+				});
+				await invoke('send_server_command', {
+					directory: server.directory,
+					command: 'version',
+				});
+			} catch {}
+		})();
 
 		const timer = window.setInterval(async () => {
 			try {
@@ -420,6 +416,44 @@ const Server: React.FC = () => {
 		await syncServerContents();
 	}, [syncServerContents]);
 
+	const handleCreateBackup = async () => {
+		if (isBusy || server.status === 'online') return;
+		setIsBusy(true);
+		try {
+			await invoke('create_server_backup', { directory: server.directory });
+			await syncServerContents();
+		} catch (err) {
+			const message = err instanceof Error ? err.message : 'Failed to create backup.';
+			window.alert(message);
+		} finally {
+			setIsBusy(false);
+		}
+	};
+
+	const handleRestoreBackup = async (backupDirectory: string) => {
+		if (isBusy || server.status === 'online') return;
+		const confirmed = window.confirm(
+			'Restore this backup? This will create a backup of current worlds first and then replace world files.',
+		);
+		if (!confirmed) return;
+
+		setIsBusy(true);
+		try {
+			await invoke('restore_server_backup', {
+				payload: {
+					directory: server.directory,
+					backupDirectory,
+				},
+			});
+			await syncServerContents();
+		} catch (err) {
+			const message = err instanceof Error ? err.message : 'Failed to restore backup.';
+			window.alert(message);
+		} finally {
+			setIsBusy(false);
+		}
+	};
+
 	return (
 		<main className='pt-15 min-h-[calc(100vh-40px)] p-12 w-full overflow-y-auto'>
 			<div className='flex items-center justify-between mb-8'>
@@ -480,6 +514,12 @@ const Server: React.FC = () => {
 				<div className='flex gap-2 mb-2'>
 					<OpenFolderButton directory={server.directory} disabled={isBusy} />
 					<Button
+						variant={hideBackgroundTelemetry ? 'outline' : 'default'}
+						onClick={() => setHideBackgroundTelemetry((prev) => !prev)}
+						disabled={isBusy || server.status !== 'online'}>
+						{hideBackgroundTelemetry ? 'Show TPS/List/Version logs' : 'Hide TPS/List/Version logs'}
+					</Button>
+					<Button
 						disabled={isBusy || server.status === 'online'}
 						variant='destructive'
 						onClick={handleDelete}>
@@ -501,7 +541,20 @@ const Server: React.FC = () => {
 				{server.version && (
 					<div className='flex items-center lg:text-lg gap-2'>
 						<ArrowDownToLine className='size-5' />
-						Version: {server.version}
+						{(() => {
+							const primary = getPrimaryMinecraftVersion(server.version);
+							if (!primary) return <span>{server.version}</span>;
+							const index = server.version.indexOf(primary);
+							const before = server.version.slice(0, index);
+							const after = server.version.slice(index + primary.length);
+							return (
+								<p className='flex items-baseline'>
+									Version: <span className='text-muted-foreground text-xs'>{before}</span>
+									<span className='font-semibold'>{primary}</span>
+									<span className='text-muted-foreground text-xs'>{after}</span>
+								</p>
+							);
+						})()}
 					</div>
 				)}
 				{server.ram && (
@@ -552,6 +605,11 @@ const Server: React.FC = () => {
 					onClick={() => setActiveTab('datapacks')}>
 					Datapacks
 				</Button>
+				<Button
+					variant={activeTab === 'backups' ? 'default' : 'outline'}
+					onClick={() => setActiveTab('backups')}>
+					Backups
+				</Button>
 			</ButtonGroup>
 
 			{activeTab === 'plugins' && (
@@ -601,6 +659,47 @@ const Server: React.FC = () => {
 					ctaLabel='Add More'
 					ctaUrl='https://modrinth.com/discover/plugins'
 				/>
+			)}
+			{activeTab === 'backups' && (
+				<div className='flex flex-col gap-4'>
+					<div className='flex justify-between items-center'>
+						<div>
+							<p className='text-3xl font-bold flex items-center gap-2'>
+								<ArchiveRestore />
+								Backups
+							</p>
+							<p className='text-muted-foreground'>Restore previous world snapshots.</p>
+						</div>
+						<Button onClick={handleCreateBackup} disabled={isBusy || server.status === 'online'}>
+							Create Backup
+						</Button>
+					</div>
+					{server.backups.length === 0 ? (
+						<p className='text-xl text-muted-foreground'>No backups were found.</p>
+					) : (
+						server.backups.map((backup) => (
+							<div
+								key={backup.directory}
+								className='border border-border rounded-lg p-3 flex items-center justify-between gap-3'>
+								<div>
+									<p className='font-semibold'>{backup.directory.split(/[\\/]/).pop()}</p>
+									<p className='text-sm text-muted-foreground'>
+										Created {new Date(backup.createdAt).toLocaleString()}
+									</p>
+								</div>
+								<div className='flex gap-2'>
+									<OpenFolderButton targetPath={backup.directory} disabled={isBusy} />
+									<Button
+										variant='secondary'
+										disabled={isBusy || server.status === 'online'}
+										onClick={() => handleRestoreBackup(backup.directory)}>
+										Restore
+									</Button>
+								</div>
+							</div>
+						))
+					)}
+				</div>
 			)}
 		</main>
 	);

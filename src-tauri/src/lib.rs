@@ -53,6 +53,21 @@ struct ItemActionPayload {
     file: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RestoreBackupPayload {
+    directory: String,
+    backup_directory: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UploadItemPayload {
+    directory: String,
+    item_type: String,
+    source_path: String,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ExportWorldResult {
@@ -126,6 +141,14 @@ struct ServerScanResult {
     plugins: Vec<ScannedPlugin>,
     worlds: Vec<ScannedWorld>,
     datapacks: Vec<ScannedDatapack>,
+    backups: Vec<ScannedBackup>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ScannedBackup {
+    directory: String,
+    created_at: String,
 }
 
 fn home_dir() -> PathBuf {
@@ -501,6 +524,144 @@ fn list_datapacks(directory: &Path, explicit: bool) -> Vec<ScannedDatapack> {
     result
 }
 
+fn list_backup_worlds(backup_directory: &Path) -> Vec<PathBuf> {
+    let mut worlds = vec![];
+    if let Ok(entries) = fs::read_dir(backup_directory) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() && path.join("level.dat").exists() {
+                worlds.push(path);
+            }
+        }
+    }
+    worlds
+}
+
+fn list_backups(directory: &Path) -> Vec<ScannedBackup> {
+    let backup_root = directory.join(".backups");
+    if !backup_root.exists() || !backup_root.is_dir() {
+        return vec![];
+    }
+
+    let mut backups = vec![];
+    if let Ok(entries) = fs::read_dir(&backup_root) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+
+            let Some(_) = path.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+
+            let created_at = fs::metadata(&path)
+                .ok()
+                .and_then(|metadata| metadata.modified().ok())
+                .map(|stamp| chrono::DateTime::<chrono::Local>::from(stamp).to_rfc3339())
+                .unwrap_or_else(|| chrono::Local::now().to_rfc3339());
+
+            backups.push(ScannedBackup {
+                directory: path.to_string_lossy().to_string(),
+                created_at,
+            });
+        }
+    }
+
+    backups.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    backups
+}
+
+fn copy_dir_filtered(source: &Path, destination: &Path) -> Result<(), String> {
+    fs::create_dir_all(destination).map_err(|err| err.to_string())?;
+
+    for entry in WalkDir::new(source).into_iter().flatten() {
+        let entry_path = entry.path();
+        let relative = entry_path.strip_prefix(source).map_err(|err| err.to_string())?;
+        if relative.as_os_str().is_empty() {
+            continue;
+        }
+
+        if relative.to_string_lossy().contains("session.lock") {
+            continue;
+        }
+
+        let dest_path = destination.join(relative);
+        if entry.file_type().is_dir() {
+            fs::create_dir_all(&dest_path).map_err(|err| err.to_string())?;
+        } else {
+            if let Some(parent) = dest_path.parent() {
+                fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+            }
+            fs::copy(entry_path, &dest_path).map_err(|err| err.to_string())?;
+        }
+    }
+
+    Ok(())
+}
+
+fn create_backup_snapshot(directory: &Path) -> Result<ScannedBackup, String> {
+    let worlds = list_worlds(directory)
+        .into_iter()
+        .filter(|world| world.activated)
+        .collect::<Vec<ScannedWorld>>();
+
+    if worlds.is_empty() {
+        return Err("No worlds found to backup.".to_string());
+    }
+
+    let backup_root = directory.join(".backups");
+    fs::create_dir_all(&backup_root).map_err(|err| err.to_string())?;
+
+    let timestamp = chrono::Local::now().format("%Y-%m-%d_%H.%M.%S").to_string();
+    let backup_dir = backup_root.join(timestamp.clone());
+    fs::create_dir_all(&backup_dir).map_err(|err| err.to_string())?;
+
+    for world in worlds {
+        let world_file = world.file;
+        let source = directory.join(&world_file);
+        let destination = backup_dir.join(&world_file);
+        if source.exists() && source.is_dir() {
+            copy_dir_filtered(&source, &destination)?;
+        }
+    }
+
+    Ok(ScannedBackup {
+        directory: backup_dir.to_string_lossy().to_string(),
+        created_at: chrono::Local::now().to_rfc3339(),
+    })
+}
+
+fn extract_zip_to_directory(zip_path: &Path, destination: &Path) -> Result<(), String> {
+    let zip_file = fs::File::open(zip_path).map_err(|err| err.to_string())?;
+    let mut archive = zip::ZipArchive::new(zip_file).map_err(|err| err.to_string())?;
+
+    fs::create_dir_all(destination).map_err(|err| err.to_string())?;
+
+    for index in 0..archive.len() {
+        let mut file = archive.by_index(index).map_err(|err| err.to_string())?;
+        let enclosed = file
+            .enclosed_name()
+            .map(|path| path.to_path_buf())
+            .ok_or_else(|| "Invalid zip entry path.".to_string())?;
+
+        let out_path = destination.join(enclosed);
+        if file.name().ends_with('/') {
+            fs::create_dir_all(&out_path).map_err(|err| err.to_string())?;
+            continue;
+        }
+
+        if let Some(parent) = out_path.parent() {
+            fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+        }
+
+        let mut outfile = fs::File::create(&out_path).map_err(|err| err.to_string())?;
+        io::copy(&mut file, &mut outfile).map_err(|err| err.to_string())?;
+    }
+
+    Ok(())
+}
+
 fn emit_output_reader<R: std::io::Read + Send + 'static>(
     reader: R,
     directory: String,
@@ -863,6 +1024,102 @@ fn export_server_world(payload: ItemActionPayload) -> Result<ExportWorldResult, 
 }
 
 #[tauri::command]
+fn create_server_backup(directory: String) -> Result<ScannedBackup, String> {
+    let server_directory = PathBuf::from(directory.trim());
+    if !server_directory.exists() || !server_directory.is_dir() {
+        return Err("Server directory does not exist.".to_string());
+    }
+
+    create_backup_snapshot(&server_directory)
+}
+
+#[tauri::command]
+fn restore_server_backup(payload: RestoreBackupPayload) -> Result<(), String> {
+    let server_directory = PathBuf::from(payload.directory.trim());
+    if !server_directory.exists() || !server_directory.is_dir() {
+        return Err("Server directory does not exist.".to_string());
+    }
+
+    let backup_root = server_directory.join(".backups");
+    let backup_directory = PathBuf::from(payload.backup_directory.trim());
+    if !backup_directory.exists() || !backup_directory.is_dir() {
+        return Err("Backup directory does not exist.".to_string());
+    }
+
+    let backup_root_canonical = backup_root.canonicalize().map_err(|err| err.to_string())?;
+    let selected_backup_canonical = backup_directory.canonicalize().map_err(|err| err.to_string())?;
+    if !selected_backup_canonical.starts_with(&backup_root_canonical) {
+        return Err("Backup path is outside the server backup directory.".to_string());
+    }
+
+    create_backup_snapshot(&server_directory)?;
+
+    let backup_worlds = list_backup_worlds(&selected_backup_canonical);
+    if backup_worlds.is_empty() {
+        return Err("Selected backup has no worlds.".to_string());
+    }
+
+    for backup_world in backup_worlds {
+        let Some(world_name) = backup_world.file_name() else {
+            continue;
+        };
+        let destination = server_directory.join(world_name);
+
+        if destination.exists() {
+            fs::remove_dir_all(&destination).map_err(|err| err.to_string())?;
+        }
+
+        copy_dir_filtered(&backup_world, &destination)?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+fn upload_server_item(payload: UploadItemPayload) -> Result<(), String> {
+    let server_directory = PathBuf::from(payload.directory.trim());
+    if !server_directory.exists() || !server_directory.is_dir() {
+        return Err("Server directory does not exist.".to_string());
+    }
+
+    let source_path = PathBuf::from(payload.source_path.trim());
+    if !source_path.exists() {
+        return Err("Source item does not exist.".to_string());
+    }
+
+    let (target_root, _) = item_roots(&server_directory, payload.item_type.as_str())?;
+    fs::create_dir_all(&target_root).map_err(|err| err.to_string())?;
+
+    let source_name = source_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "Invalid source file name.".to_string())?;
+
+    if source_path.is_dir() {
+        let destination = target_root.join(source_name);
+        if destination.exists() {
+            fs::remove_dir_all(&destination).map_err(|err| err.to_string())?;
+        }
+        copy_dir_filtered(&source_path, &destination)?;
+        return Ok(());
+    }
+
+    if payload.item_type == "world" && source_name.to_lowercase().ends_with(".zip") {
+        let world_name = source_name.trim_end_matches(".zip");
+        let destination = target_root.join(world_name);
+        if destination.exists() {
+            fs::remove_dir_all(&destination).map_err(|err| err.to_string())?;
+        }
+        extract_zip_to_directory(&source_path, &destination)?;
+        return Ok(());
+    }
+
+    let destination = target_root.join(source_name);
+    fs::copy(&source_path, &destination).map_err(|err| err.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 fn start_server(
     directory: String,
     state: State<'_, RuntimeState>,
@@ -1023,6 +1280,7 @@ fn scan_server_contents(directory: String) -> Result<ServerScanResult, String> {
         plugins: list_plugins(&directory_path, explicit),
         worlds: list_worlds(&directory_path),
         datapacks: list_datapacks(&directory_path, explicit),
+        backups: list_backups(&directory_path),
     })
 }
 
@@ -1065,6 +1323,9 @@ pub fn run() {
             delete_server_item,
             uninstall_server_item,
             export_server_world,
+            create_server_backup,
+            restore_server_backup,
+            upload_server_item,
             start_server,
             stop_server,
             send_server_command,
