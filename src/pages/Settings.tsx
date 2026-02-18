@@ -67,12 +67,12 @@ const Settings: React.FC = () => {
 								<CardDescription>Manage your data</CardDescription>
 							</CardHeader>
 							<CardContent className='space-y-3'>
-								<Button variant='outline' className='w-full justify-start'>
+								{/* <Button variant='outline' className='w-full justify-start'>
 									Export Data
 								</Button>
 								<Button variant='outline' className='w-full justify-start'>
 									Import Data
-								</Button>
+								</Button> */}
 								{dataMessage && (
 									<div className='p-3 rounded-md bg-green-500/10 text-green-600 dark:text-green-400 text-sm'>
 										{dataMessage}
@@ -88,6 +88,7 @@ const Settings: React.FC = () => {
 						</Card>
 					</m.div>
 				</div>
+				<p className='mt-3 text-muted-foreground'>Version 3.0.0</p>
 			</div>
 		</main>
 	);

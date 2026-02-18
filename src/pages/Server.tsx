@@ -663,12 +663,12 @@ const Server: React.FC = () => {
 								{hideBackgroundTelemetry ? <Eye /> : <EyeOff />}
 								{hideBackgroundTelemetry ? 'Show Status Check logs' : 'Hide Status Check logs'}
 							</Button>
+							<OpenFolderButton directory={server.directory} disabled={isBusy} />
 							<EditServerPropertiesButton
 								server={server}
 								disabled={isBusy}
 								onSaved={syncServerContents}
 							/>
-							<OpenFolderButton directory={server.directory} disabled={isBusy} />
 
 							<AlertDialog>
 								<AlertDialogTrigger asChild>

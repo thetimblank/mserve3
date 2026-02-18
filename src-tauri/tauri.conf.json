@@ -1,8 +1,8 @@
 {
 	"$schema": "https://schema.tauri.app/config/2",
-	"productName": "hallo",
-	"version": "0.1.0",
-	"identifier": "com.hallo.app",
+	"productName": "MSERVE",
+	"version": "3.0.0",
+	"identifier": "com.mserve.webapp",
 	"build": {
 		"beforeDevCommand": "npm run dev",
 		"devUrl": "http://localhost:1420",
@@ -12,9 +12,9 @@
 	"app": {
 		"windows": [
 			{
-				"title": "hallo",
-				"width": 1000,
-				"height": 500,
+				"title": "MSERVE",
+				"width": 1200,
+				"height": 800,
 				"decorations": false
 			}
 		],

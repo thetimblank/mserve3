@@ -27,6 +27,7 @@ const Nav: React.FC = () => {
 			<div className='h-full flex gap-2 items-center pl-2'>
 				<SidebarTrigger />
 				<p className='font-bold select-none'>MSERVE</p>
+				{/* <img src='/MSERVE.png' width={24} height={24} alt='MSERVE' /> */}
 			</div>
 			<div className='size-full z-10' data-tauri-drag-region />
 			<button className='cursor-pointer h-full w-8 center focusable rounded-xl' onClick={minimize}>
