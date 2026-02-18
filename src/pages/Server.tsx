@@ -783,7 +783,7 @@ const Server: React.FC = () => {
 				</div>
 			</div>
 
-			<ServerContentTabs serverStatus={server.status} activeTab={activeTab} onTabChange={setActiveTab} />
+			<ServerContentTabs activeTab={activeTab} onTabChange={setActiveTab} />
 
 			{activeTab === 'plugins' && (
 				<ServerItemList

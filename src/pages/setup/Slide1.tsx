@@ -7,28 +7,12 @@ import { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
+import { useSetup } from './SetupContext';
 
-const defaultData = {
-	port: 25565,
-};
-
-interface Props {
-	nextSlide: () => void;
-}
-
-export default function Slide1({ nextSlide }: Props) {
-	const [form, setForm] = useState(defaultData);
+export default function Slide1() {
+	const { nextSlide, updateData, data } = useSetup();
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [error, setError] = useState<string | null>(null);
-
-	const updateField = <K extends keyof typeof defaultData>(key: K, value: (typeof defaultData)[K]) => {
-		setForm((prev) => ({ ...prev, [key]: value }));
-	};
-
-	const resetForm = () => {
-		setForm(defaultData);
-		setError(null);
-	};
 
 	const onSubmit = async (event: React.FormEvent) => {
 		event.preventDefault();
@@ -75,25 +59,25 @@ export default function Slide1({ nextSlide }: Props) {
 			initial={{ scale: 0.75, y: 10, opacity: 0 }}
 			whileInView={{ scale: 1, y: 0, opacity: 1 }}
 			transition={{ type: 'spring', duration: 0.5, bounce: 0 }}
-			className='flex flex-col items-center text-center'>
-			<p className='text-3xl font-bold flex gap-5 items-center mb-2 w-fit'>
-				1. Setup Port Forwarding on your PC
+			className='flex flex-col items-center max-w-lg'>
+			<p className='text-center text-3xl font-bold flex gap-5 items-center mb-2 w-fit'>
+				Setup Port Forwarding on your PC
 			</p>
-			<p className='mb-20'>This will allow your server to be seen by other players. (Part 1/2)</p>
+			<p className='mb-20 text-center'>
+				This will allow your server to be seen by other players. (Part 1/2)
+			</p>
 			<form onSubmit={onSubmit} className='flex flex-col items-start'>
 				<p>Which Port would you like to use to port forward?</p>
 				<p className='text-muted-foreground text-sm'>
-					Recommended is 25565. We will automatically setup TCP and UDP rules.
+					Recommended is 25565. We will automatically setup TCP and UDP rules on your windows firewall.
 				</p>
 				<Field className='flex flex-col mt-8 gap-1'>
 					<Label htmlFor='server-port'>Port</Label>
 					<Input
 						id='server-port'
-						placeholder='25565'
-						defaultValue={25565}
 						type='number'
-						value={form.port}
-						onChange={(event) => updateField('port', Number(event.currentTarget.value))}
+						value={data.port}
+						onChange={(event) => updateData('port', Number(event.currentTarget.value))}
 						required
 					/>
 				</Field>

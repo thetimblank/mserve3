@@ -26,7 +26,7 @@ const Nav: React.FC = () => {
 		<div className='h-10 bg-sidebar border-b-sidebar-border border-b w-full flex fixed top-0 z-50'>
 			<div className='h-full flex gap-2 items-center pl-2'>
 				<SidebarTrigger />
-				<p className='font-bold select-none'>MSERVE</p>
+				<p className='font-bold select-none text-mserve-accent'>MSERVE</p>
 				{/* <img src='/MSERVE.png' width={24} height={24} alt='MSERVE' /> */}
 			</div>
 			<div className='size-full z-10' data-tauri-drag-region />

@@ -1,21 +1,16 @@
 import { Button } from '@/components/ui/button';
-import { useState } from 'react';
 import Slide1 from './setup/Slide1';
 import Slide0 from './setup/Slide0';
 import { ArrowLeft } from 'lucide-react';
 import Slide2 from './setup/Slide2';
+import Slide3 from './setup/Slide3';
+import { SetupProvider, useSetup } from './setup/SetupContext';
+import Slide4 from './setup/Slide4';
 
-const Setup: React.FC = () => {
-	const [slide, setSlide] = useState(0);
+const SetupContent: React.FC = () => {
+	const { slide, prevSlide } = useSetup();
 
-	const nextSlide = () => setSlide((prev) => prev + 1);
-	const prevSlide = () => setSlide((prev) => (prev > 0 ? prev - 1 : prev));
-
-	const slides = [
-		<Slide0 nextSlide={nextSlide} />,
-		<Slide1 nextSlide={nextSlide} />,
-		<Slide2 nextSlide={nextSlide} />,
-	];
+	const slides = [<Slide0 />, <Slide1 />, <Slide2 />, <Slide3 />, <Slide4 />];
 
 	return (
 		<main className='pt-15 min-h-[calc(100vh-40px)] flex items-center justify-center p-12 w-full overflow-y-auto'>
@@ -24,6 +19,14 @@ const Setup: React.FC = () => {
 			</Button>
 			{slides[slide]}
 		</main>
+	);
+};
+
+const Setup: React.FC = () => {
+	return (
+		<SetupProvider>
+			<SetupContent />
+		</SetupProvider>
 	);
 };
 
