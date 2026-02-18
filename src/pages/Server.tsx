@@ -94,29 +94,8 @@ const Server: React.FC = () => {
 		[servers, resolvedServerName],
 	);
 
-	if (!isReady) {
-		return (
-			<main className='pt-15 min-h-[calc(100vh-40px)] p-12 w-full overflow-y-auto'>
-				<div className='text-muted-foreground'>Loading server...</div>
-			</main>
-		);
-	}
-
-	if (!server) {
-		return (
-			<main className='pt-15 min-h-[calc(100vh-40px)] p-12 w-full overflow-y-auto'>
-				<div className='text-muted-foreground'>Server "{resolvedServerName ?? 'Unknown'}" not found.</div>
-				<div className='mt-6'>
-					<Button asChild variant='outline'>
-						<Link to='/servers'>Back to All Servers</Link>
-					</Button>
-				</div>
-			</main>
-		);
-	}
-
-	const serverId = createServerId(server.name, server.directory);
-	const terminalStoreKey = server.directory;
+	const serverId = server ? createServerId(server.name, server.directory) : '';
+	const terminalStoreKey = server?.directory ?? '';
 
 	const clearTerminalSession = React.useCallback(() => {
 		terminalSessionStore.delete(terminalStoreKey);
@@ -135,6 +114,7 @@ const Server: React.FC = () => {
 	);
 
 	const syncServerContents = React.useCallback(async () => {
+		if (!server) return;
 		try {
 			const result = await invoke<ScanServerContentsResult>('scan_server_contents', {
 				directory: server.directory,
@@ -146,10 +126,11 @@ const Server: React.FC = () => {
 				backups: mapScannedBackups(result.backups),
 			});
 		} catch {}
-	}, [server.directory, serverId, updateServer]);
+	}, [server?.directory, serverId, updateServer]);
 
 	const createAutomaticBackup = React.useCallback(
 		async (reason: 'on_start' | 'on_close' | 'interval') => {
+			if (!server) return;
 			if (isCreatingAutoBackupRef.current) return;
 			isCreatingAutoBackupRef.current = true;
 			try {
@@ -165,7 +146,7 @@ const Server: React.FC = () => {
 				isCreatingAutoBackupRef.current = false;
 			}
 		},
-		[appendTerminalLine, server.directory, syncServerContents],
+		[appendTerminalLine, server?.directory, syncServerContents],
 	);
 
 	React.useEffect(() => {
@@ -177,6 +158,7 @@ const Server: React.FC = () => {
 	}, [syncServerContents]);
 
 	React.useEffect(() => {
+		if (!server) return;
 		let unlisten: UnlistenFn | null = null;
 		let active = true;
 
@@ -251,7 +233,7 @@ const Server: React.FC = () => {
 	}, [
 		appendTerminalLine,
 		hideBackgroundTelemetry,
-		server.directory,
+		server?.directory,
 		serverId,
 		setServerStatus,
 		updateServer,
@@ -259,6 +241,7 @@ const Server: React.FC = () => {
 	]);
 
 	React.useEffect(() => {
+		if (!server) return;
 		if (server.status === 'offline') return;
 
 		const timer = window.setInterval(async () => {
@@ -320,10 +303,10 @@ const Server: React.FC = () => {
 		appendTerminalLine,
 		clearTerminalSession,
 		createAutomaticBackup,
-		server.auto_backup,
-		server.auto_restart,
-		server.directory,
-		server.status,
+		server?.auto_backup,
+		server?.auto_restart,
+		server?.directory,
+		server?.status,
 		serverId,
 		setServerStatus,
 		syncServerContents,
@@ -331,6 +314,7 @@ const Server: React.FC = () => {
 	]);
 
 	React.useEffect(() => {
+		if (!server) return;
 		if (server.status !== 'online') return;
 
 		void (async () => {
@@ -366,9 +350,10 @@ const Server: React.FC = () => {
 		return () => {
 			window.clearInterval(timer);
 		};
-	}, [server.directory, server.status]);
+	}, [server?.directory, server?.status]);
 
 	React.useEffect(() => {
+		if (!server) return;
 		const becameOnline = previousStatusRef.current !== 'online' && server.status === 'online';
 		if (becameOnline && server.auto_backup?.includes('on_start')) {
 			lastOnStartBackupRef.current = `${serverId}:${Date.now()}`;
@@ -376,9 +361,10 @@ const Server: React.FC = () => {
 		}
 
 		previousStatusRef.current = server.status;
-	}, [createAutomaticBackup, server.auto_backup, server.status, serverId]);
+	}, [createAutomaticBackup, server?.auto_backup, server?.status, serverId]);
 
 	React.useEffect(() => {
+		if (!server) return;
 		if (server.status !== 'online') return;
 		if (!server.auto_backup?.includes('interval')) return;
 
@@ -390,13 +376,62 @@ const Server: React.FC = () => {
 		return () => {
 			window.clearInterval(timer);
 		};
-	}, [createAutomaticBackup, server.auto_backup, server.auto_backup_interval, server.status]);
+	}, [createAutomaticBackup, server?.auto_backup, server?.auto_backup_interval, server?.status]);
 
 	React.useEffect(() => {
 		const node = terminalOutputRef.current;
 		if (!node) return;
 		node.scrollTop = node.scrollHeight;
 	}, [terminalLines]);
+
+	const handleItemsChanged = React.useCallback(async () => {
+		await syncServerContents();
+	}, [syncServerContents]);
+
+	const handleDeleteBackup = React.useCallback(
+		async (backupDirectory: string) => {
+			if (!server) return;
+			if (isBusy || server.status === 'online') return;
+
+			setIsBusy(true);
+			try {
+				await invoke('delete_server_backup', {
+					payload: {
+						directory: server.directory,
+						backupDirectory,
+					},
+				});
+				await syncServerContents();
+			} catch (err) {
+				const message = err instanceof Error ? err.message : 'Failed to delete backup.';
+				window.alert(message);
+			} finally {
+				setIsBusy(false);
+			}
+		},
+		[isBusy, server?.directory, server?.status, syncServerContents],
+	);
+
+	if (!isReady) {
+		return (
+			<main className='pt-15 min-h-[calc(100vh-40px)] p-12 w-full overflow-y-auto'>
+				<div className='text-muted-foreground'>Loading server...</div>
+			</main>
+		);
+	}
+
+	if (!server) {
+		return (
+			<main className='pt-15 min-h-[calc(100vh-40px)] p-12 w-full overflow-y-auto'>
+				<div className='text-muted-foreground'>Server "{resolvedServerName ?? 'Unknown'}" not found.</div>
+				<div className='mt-6'>
+					<Button asChild variant='outline'>
+						<Link to='/servers'>Back to All Servers</Link>
+					</Button>
+				</div>
+			</main>
+		);
+	}
 
 	const handleStart = async () => {
 		if (isBusy) return;
@@ -537,10 +572,6 @@ const Server: React.FC = () => {
 		}
 	};
 
-	const handleItemsChanged = React.useCallback(async () => {
-		await syncServerContents();
-	}, [syncServerContents]);
-
 	const handleCreateBackup = async () => {
 		if (isBusy || server.status === 'online') return;
 		setIsBusy(true);
@@ -554,29 +585,6 @@ const Server: React.FC = () => {
 			setIsBusy(false);
 		}
 	};
-
-	const handleDeleteBackup = React.useCallback(
-		async (backupDirectory: string) => {
-			if (isBusy || server.status === 'online') return;
-
-			setIsBusy(true);
-			try {
-				await invoke('delete_server_backup', {
-					payload: {
-						directory: server.directory,
-						backupDirectory,
-					},
-				});
-				await syncServerContents();
-			} catch (err) {
-				const message = err instanceof Error ? err.message : 'Failed to delete backup.';
-				window.alert(message);
-			} finally {
-				setIsBusy(false);
-			}
-		},
-		[isBusy, server.directory, server.status, syncServerContents],
-	);
 
 	const handleRestoreBackup = async (backupDirectory: string) => {
 		if (isBusy || server.status === 'online') return;

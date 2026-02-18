@@ -1,4 +1,4 @@
-import { Home, Server, Settings } from 'lucide-react';
+import { Home, Network, Server, Settings } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 import {
@@ -13,12 +13,16 @@ import {
 } from '@/components/ui/sidebar';
 import { useServers } from '@/data/servers';
 
-// Menu items.
 const items = [
 	{
 		title: 'Dashboard',
 		url: '/',
 		icon: Home,
+	},
+	{
+		title: 'Setup',
+		url: '/setup',
+		icon: Network,
 	},
 	{
 		title: 'Settings',

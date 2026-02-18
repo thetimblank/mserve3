@@ -12,6 +12,7 @@ import Home from './pages/Home';
 import Settings from './pages/Settings';
 import Server from './pages/Server';
 import { Toaster } from './components/ui/sonner';
+import Setup from './pages/Setup';
 
 const RootLayout: React.FC = () => {
 	return (
@@ -25,6 +26,7 @@ const RootLayout: React.FC = () => {
 							<AppSidebar />
 							<Routes>
 								<Route path='/' element={<Home />} />
+								<Route path='/setup' element={<Setup />} />
 								<Route path='/servers/:serverName' element={<Server />} />
 								<Route path='/settings' element={<Settings />} />
 							</Routes>

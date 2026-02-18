@@ -86,7 +86,7 @@ const backupChoices: { value: AutoBackupMode; label: string }[] = [
 	{ value: 'on_start', label: 'On start' },
 ];
 
-export const CreateServer: React.FC = () => {
+export const CreateServer: React.FC<React.HTMLAttributes<HTMLButtonElement>> = ({ ...props }) => {
 	const { addServer } = useServers();
 	const [open, setOpen] = React.useState(false);
 	const [form, setForm] = React.useState(defaultData);
@@ -214,7 +214,7 @@ export const CreateServer: React.FC = () => {
 	return (
 		<Dialog open={open} onOpenChange={setOpen}>
 			<DialogTrigger asChild>
-				<Button variant='link' className='mt-6'>
+				<Button variant='link' {...props}>
 					<Plus /> Create new server
 				</Button>
 			</DialogTrigger>
