@@ -33,6 +33,8 @@ import {
 	shouldHideBackgroundLine,
 	stripAnsi,
 } from '@/lib/utils';
+import clsx from 'clsx';
+import { m } from 'motion/react';
 
 type ServerOutputEvent = {
 	directory: string;
@@ -468,144 +470,163 @@ const Server: React.FC = () => {
 				</div>
 			</div>
 
-			<div className='flex my-6 gap-4'>
-				<div className='flex flex-col gap-2 min-w-40'>
+			<div>
+				{server.status !== 'offline' && (
+					<m.div
+						initial={{ scale: 0.75, y: 10, opacity: 0 }}
+						whileInView={{ scale: 1, y: 0, opacity: 1 }}
+						transition={{ type: 'spring', duration: 0.5, bounce: 0 }}
+						className='bg-black text-white rounded-xl w-full flex font-mono flex-col'>
+						<div ref={terminalOutputRef} className='h-64 overflow-y-auto px-4 py-2 text-sm space-y-1'>
+							{terminalLines.map((line, index) => (
+								<p key={`${index}-${line}`}>{line}</p>
+							))}
+						</div>
+						<form onSubmit={handleTerminalCommandSubmit}>
+							<input
+								className='text-white w-full outline-none border-t border-muted px-4 py-2'
+								placeholder='> '
+								value={terminalInput}
+								onChange={(event) => setTerminalInput(event.target.value)}
+								disabled={server.status !== 'online' || isBusy}
+							/>
+						</form>
+					</m.div>
+				)}
+			</div>
+			<div className='my-4'>
+				<div className='flex gap-10'>
 					<ServerStatus server={server} size='xl' />
-					{server.status === 'online' && (
-						<Button onClick={handleStop} disabled={isBusy}>
-							<OctagonX />
-							<p>Stop</p>
-						</Button>
-					)}
-					{server.status === 'online' && (
-						<Button variant='secondary' onClick={handleRestart} disabled={isBusy}>
-							<RefreshCcw />
-							<p>Restart</p>
-						</Button>
-					)}
-					{server.status === 'offline' && (
-						<Button onClick={handleStart} disabled={isBusy}>
-							<CircleCheck />
-							<p>Serve</p>
-						</Button>
-					)}
-				</div>
-				<div className='bg-black rounded-xl w-full flex font-mono flex-col'>
-					<div ref={terminalOutputRef} className='h-64 overflow-y-auto px-4 py-2 text-sm space-y-1'>
-						{terminalLines.length <= 0 && server.status === 'offline' && (
-							<p>Please start the server to see command output.</p>
+
+					<div className='flex flex-col'>
+						<div className='flex gap-2 mb-2'>
+							{server.status === 'online' && (
+								<Button onClick={handleStop} disabled={isBusy}>
+									<OctagonX />
+									<p>Stop</p>
+								</Button>
+							)}
+							{server.status === 'online' && (
+								<Button variant='secondary' onClick={handleRestart} disabled={isBusy}>
+									<RefreshCcw />
+									<p>Restart</p>
+								</Button>
+							)}
+							{server.status === 'offline' && (
+								<Button onClick={handleStart} disabled={isBusy}>
+									<CircleCheck />
+									<p>Serve</p>
+								</Button>
+							)}
+							<Button
+								variant={hideBackgroundTelemetry ? 'secondary' : 'default'}
+								onClick={() => setHideBackgroundTelemetry((prev) => !prev)}
+								disabled={isBusy}>
+								{hideBackgroundTelemetry ? 'Show Status Check logs' : 'Hide Status Check logs'}
+							</Button>
+							<OpenFolderButton directory={server.directory} disabled={isBusy} />
+							<Button
+								disabled={isBusy || server.status === 'online'}
+								variant='secondary'
+								className='hover:text-red-400'
+								onClick={handleDelete}>
+								<Trash />
+								<p>Delete Server</p>
+							</Button>
+						</div>
+						{server.createdAt && (
+							<p className='text-sm text-muted-foreground mb-1'>
+								Server was created {new Date(server.createdAt).toLocaleDateString()}
+							</p>
 						)}
-						{terminalLines.map((line, index) => (
-							<p key={`${index}-${line}`}>{line}</p>
-						))}
+						{server.status === 'online' && (
+							<div className='flex items-center lg:text-lg gap-2'>
+								<Users className='size-5' />
+								Players: {server.stats.players}/{server.stats.capacity}
+							</div>
+						)}
+						{server.version && (
+							<div className='flex items-center lg:text-lg gap-2'>
+								<ArrowDownToLine className='size-5' />
+								{(() => {
+									const primary = getPrimaryMinecraftVersion(server.version);
+									if (!primary) return <span>{server.version}</span>;
+									const index = server.version.indexOf(primary);
+									const before = server.version.slice(0, index);
+									const after = server.version.slice(index + primary.length);
+									return (
+										<p className='flex items-baseline'>
+											Version: <span className='text-muted-foreground text-xs'>{before}</span>
+											<span className='font-semibold'>{primary}</span>
+											<span className='text-muted-foreground text-xs'>{after}</span>
+										</p>
+									);
+								})()}
+							</div>
+						)}
+						{server.ram && (
+							<div className='flex items-center lg:text-lg gap-2'>
+								<MemoryStick className='size-5' />
+								Memory: {server.ram}GB
+							</div>
+						)}
+						<div className='flex items-center lg:text-lg gap-2'>
+							<Boxes className='size-5' />
+							Jar File: {server.file}
+						</div>
+						{server.status === 'online' && server.stats.uptime && (
+							<div className='flex items-center lg:text-lg gap-2'>
+								<Clock className='size-5' />
+								Uptime:{' '}
+								{(() => {
+									const now = new Date();
+									const diff = now.getTime() - server.stats.uptime.getTime();
+									const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+									const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
+									const minutes = Math.floor((diff / (1000 * 60)) % 60);
+									const seconds = Math.floor((diff / 1000) % 60);
+
+									if (days > 0) return `${days}d ${hours}h ${seconds}s`;
+									if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
+									if (minutes < 0) return `Just started ${seconds}s ago`;
+									return `${minutes}m ${seconds}s`;
+								})()}
+							</div>
+						)}
 					</div>
-					<form onSubmit={handleTerminalCommandSubmit}>
-						<input
-							className='w-full outline-none border-t border-muted px-4 py-2'
-							placeholder='> '
-							value={terminalInput}
-							onChange={(event) => setTerminalInput(event.target.value)}
-							disabled={server.status !== 'online' || isBusy}
-						/>
-					</form>
 				</div>
 			</div>
-			<div className='mb-4 border-t border-border pt-4'>
-				<div className='flex gap-2 mb-2'>
-					<OpenFolderButton directory={server.directory} disabled={isBusy} />
-					<Button
-						variant={hideBackgroundTelemetry ? 'outline' : 'default'}
-						onClick={() => setHideBackgroundTelemetry((prev) => !prev)}
-						disabled={isBusy || server.status !== 'online'}>
-						{hideBackgroundTelemetry ? 'Show TPS/List/Version logs' : 'Hide TPS/List/Version logs'}
-					</Button>
-					<Button
-						disabled={isBusy || server.status === 'online'}
-						variant='destructive'
-						onClick={handleDelete}>
-						<Trash />
-						<p>Delete Server</p>
-					</Button>
-				</div>
-				{server.createdAt && (
-					<p className='text-sm text-muted-foreground mb-1'>
-						Server was created {new Date(server.createdAt).toLocaleDateString()}
-					</p>
-				)}
-				{server.status === 'online' && (
-					<div className='flex items-center lg:text-lg gap-2'>
-						<Users className='size-5' />
-						Players: {server.stats.players}/{server.stats.capacity}
-					</div>
-				)}
-				{server.version && (
-					<div className='flex items-center lg:text-lg gap-2'>
-						<ArrowDownToLine className='size-5' />
-						{(() => {
-							const primary = getPrimaryMinecraftVersion(server.version);
-							if (!primary) return <span>{server.version}</span>;
-							const index = server.version.indexOf(primary);
-							const before = server.version.slice(0, index);
-							const after = server.version.slice(index + primary.length);
-							return (
-								<p className='flex items-baseline'>
-									Version: <span className='text-muted-foreground text-xs'>{before}</span>
-									<span className='font-semibold'>{primary}</span>
-									<span className='text-muted-foreground text-xs'>{after}</span>
-								</p>
-							);
-						})()}
-					</div>
-				)}
-				{server.ram && (
-					<div className='flex items-center lg:text-lg gap-2'>
-						<MemoryStick className='size-5' />
-						Memory: {server.ram}GB
-					</div>
-				)}
-				<div className='flex items-center lg:text-lg gap-2'>
-					<Boxes className='size-5' />
-					Jar File: {server.file}
-				</div>
-				{server.status === 'online' && server.stats.uptime && (
-					<div className='flex items-center lg:text-lg gap-2'>
-						<Clock className='size-5' />
-						Uptime:{' '}
-						{(() => {
-							const now = new Date();
-							const diff = now.getTime() - server.stats.uptime.getTime();
-							const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-							const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
-							const minutes = Math.floor((diff / (1000 * 60)) % 60);
-							const seconds = Math.floor((diff / 1000) % 60);
 
-							if (days > 0) return `${days}d ${hours}h ${seconds}s`;
-							if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
-							if (minutes < 0) return `Just started ${seconds}s ago`;
-							return `${minutes}m ${seconds}s`;
-						})()}
-					</div>
+			<hr
+				className={clsx(
+					'w-full border-t-2 border-border',
+					server.status === 'online' && 'border-green-500',
+					server.status === 'offline' && 'border-red-400',
+					(server.status === 'starting' || server.status === 'closing') &&
+						'border-orange-500 animate-pulse',
 				)}
-			</div>
-
-			<hr className='w-full border-t border-border' />
-			<ButtonGroup className='mb-6 pt-4'>
+			/>
+			<ButtonGroup className='mb-6 w-full'>
 				<Button
+					className='rounded-t-none flex-1'
 					variant={activeTab === 'plugins' ? 'default' : 'outline'}
 					onClick={() => setActiveTab('plugins')}>
 					Plugins
 				</Button>
 				<Button
+					className='rounded-t-none flex-1'
 					variant={activeTab === 'worlds' ? 'default' : 'outline'}
 					onClick={() => setActiveTab('worlds')}>
 					Worlds
 				</Button>
 				<Button
+					className='rounded-t-none flex-1'
 					variant={activeTab === 'datapacks' ? 'default' : 'outline'}
 					onClick={() => setActiveTab('datapacks')}>
 					Datapacks
 				</Button>
 				<Button
+					className='rounded-t-none flex-1'
 					variant={activeTab === 'backups' ? 'default' : 'outline'}
 					onClick={() => setActiveTab('backups')}>
 					Backups
@@ -618,7 +639,6 @@ const Server: React.FC = () => {
 					type='plugin'
 					serverDirectory={server.directory}
 					title='Plugins'
-					description='See and manage the server plugins here.'
 					searchPlaceholder='Search for Plugin...'
 					emptyLabel='No Plugins were found.'
 					items={server.plugins}
@@ -634,7 +654,6 @@ const Server: React.FC = () => {
 					type='world'
 					serverDirectory={server.directory}
 					title='Worlds'
-					description='See and manage the server worlds here.'
 					searchPlaceholder='Search for World...'
 					emptyLabel='No Worlds were found.'
 					items={server.worlds}
@@ -650,7 +669,6 @@ const Server: React.FC = () => {
 					type='datapack'
 					serverDirectory={server.directory}
 					title='Datapacks'
-					description='See and manage the server datapacks here.'
 					searchPlaceholder='Search for Datapack...'
 					emptyLabel='No Datapacks were found.'
 					items={server.datapacks}
@@ -661,21 +679,18 @@ const Server: React.FC = () => {
 				/>
 			)}
 			{activeTab === 'backups' && (
-				<div className='flex flex-col gap-4'>
+				<div className='flex flex-col gap-4 min-h-[50vh]'>
 					<div className='flex justify-between items-center'>
-						<div>
-							<p className='text-3xl font-bold flex items-center gap-2'>
-								<ArchiveRestore />
-								Backups
-							</p>
-							<p className='text-muted-foreground'>Restore previous world snapshots.</p>
-						</div>
+						<p className='text-2xl font-bold flex items-center gap-2'>
+							<ArchiveRestore />
+							Backups
+						</p>
 						<Button onClick={handleCreateBackup} disabled={isBusy || server.status === 'online'}>
 							Create Backup
 						</Button>
 					</div>
 					{server.backups.length === 0 ? (
-						<p className='text-xl text-muted-foreground'>No backups were found.</p>
+						<p className='text-muted-foreground text-center my-10'>No backups were found.</p>
 					) : (
 						server.backups.map((backup) => (
 							<div
@@ -694,6 +709,12 @@ const Server: React.FC = () => {
 										disabled={isBusy || server.status === 'online'}
 										onClick={() => handleRestoreBackup(backup.directory)}>
 										Restore
+									</Button>
+									<Button
+										variant='destructive'
+										disabled={isBusy || server.status === 'online'}
+										onClick={() => console.log('not implemented')}>
+										Delete
 									</Button>
 								</div>
 							</div>

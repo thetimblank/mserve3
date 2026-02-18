@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import OpenFolderButton from '@/components/open-folder-button';
+import clsx from 'clsx';
 
 type ItemType = 'plugin' | 'world' | 'datapack';
 
@@ -23,7 +24,7 @@ type ServerItemListProps = {
 	icon: React.ReactNode;
 	serverDirectory: string;
 	title: string;
-	description: string;
+	description?: string;
 	searchPlaceholder: string;
 	emptyLabel: string;
 	items: Item[];
@@ -259,35 +260,20 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 
 	return (
 		<div className='flex flex-col gap-1 min-h-100'>
-			<div className='flex justify-between gap-5'>
+			<div className='flex items-center justify-between gap-5'>
 				<div className='flex-col gap-1'>
 					<div className='flex items-center gap-2'>
 						{icon}
-						<p className='text-3xl font-bold'>{title}</p>
+						<p className='text-2xl font-bold'>{title}</p>
 					</div>
-					<p className='text-muted-foreground'>{description}</p>
+					{description && <p className='text-muted-foreground'>{description}</p>}
 				</div>
 				{ctaLabel && ctaUrl && (
-					<div className='flex gap-2'>
-						<Button onClick={handleAddItem} disabled={disabled || busyFile === '__upload__'}>
-							Add
-						</Button>
-						<Button onClick={() => openUrl(ctaUrl)}>
-							{ctaLabel}
-							{type === 'world' ? <Archive /> : <ArrowUpRightFromSquare />}
-						</Button>
-					</div>
+					<Button onClick={() => openUrl(ctaUrl)}>
+						{ctaLabel}
+						{type === 'world' ? <Archive /> : <ArrowUpRightFromSquare />}
+					</Button>
 				)}
-			</div>
-			<div
-				onDragOver={(event) => {
-					event.preventDefault();
-					setIsDragging(true);
-				}}
-				onDragLeave={() => setIsDragging(false)}
-				onDrop={handleDrop}
-				className={`rounded-md border border-dashed p-3 text-sm ${isDragging ? 'border-primary' : 'border-border'}`}>
-				Drop files here to upload to {title.toLowerCase()}.
 			</div>
 			<Input
 				type='search'
@@ -296,9 +282,7 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 				onChange={(e) => setSearch(e.target.value)}
 			/>
 			<div className='flex flex-col gap-4 mt-4'>
-				{filtered.length <= 0 ? (
-					<p className='text-xl text-muted-foreground'>{emptyLabel}</p>
-				) : (
+				{filtered.length > 0 &&
 					filtered.map((item) => (
 						<Card key={item.file}>
 							<CardHeader className='border-b border-b-border'>
@@ -366,9 +350,27 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 								</Button>
 							</CardContent>
 						</Card>
-					))
-				)}
+					))}
 			</div>
+			<div
+				onDragOver={(event) => {
+					event.preventDefault();
+					setIsDragging(true);
+				}}
+				onDragLeave={() => setIsDragging(false)}
+				onDrop={handleDrop}
+				onClick={handleAddItem}
+				className={clsx(
+					'flex flex-col gap-2 items-center justify-center rounded-md border-2 bg-sky-500/20 min-h-32 border-dashed p-4 cursor-pointer select-none font-bold text-sm ',
+					isDragging ? 'border-primary' : 'border-sky-500',
+					(disabled || busyFile === '__upload__') && 'opacity-50 pointer-events-none',
+				)}>
+				<p>
+					Drop files <span className='mx-2 text-muted-foreground'>OR</span> Click Here
+				</p>
+				<p className='text-muted-foreground'>to upload {title.toLowerCase()}.</p>
+			</div>
+			{filtered.length === 0 && <p className='text-center text-muted-foreground my-10'>{emptyLabel}</p>}
 		</div>
 	);
 };

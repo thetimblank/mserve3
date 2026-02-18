@@ -50,23 +50,25 @@ export function AppSidebar() {
 						</SidebarMenu>
 					</SidebarGroupContent>
 				</SidebarGroup>
-				<SidebarGroup>
-					<SidebarGroupLabel>Servers</SidebarGroupLabel>
-					<SidebarGroupContent>
-						<SidebarMenu>
-							{servers.map((server) => (
-								<SidebarMenuItem key={server.name}>
-									<SidebarMenuButton asChild>
-										<Link to={`/servers/${server.name}`}>
-											<Server />
-											<span>{server.name}</span>
-										</Link>
-									</SidebarMenuButton>
-								</SidebarMenuItem>
-							))}
-						</SidebarMenu>
-					</SidebarGroupContent>
-				</SidebarGroup>
+				{servers.length > 0 && (
+					<SidebarGroup>
+						<SidebarGroupLabel>Servers</SidebarGroupLabel>
+						<SidebarGroupContent>
+							<SidebarMenu>
+								{servers.map((server) => (
+									<SidebarMenuItem key={server.name}>
+										<SidebarMenuButton asChild>
+											<Link to={`/servers/${server.name}`}>
+												<Server />
+												<span>{server.name}</span>
+											</Link>
+										</SidebarMenuButton>
+									</SidebarMenuItem>
+								))}
+							</SidebarMenu>
+						</SidebarGroupContent>
+					</SidebarGroup>
+				)}
 			</SidebarContent>
 		</Sidebar>
 	);

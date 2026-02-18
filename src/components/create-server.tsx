@@ -25,7 +25,7 @@ import { ButtonGroup } from './ui/button-group';
 const defaultData = {
 	directory: '',
 	createDirectoryIfMissing: true,
-	file: 'server.jar',
+	file: '',
 	ram: 3,
 	autoRestart: false,
 	autoBackup: [] as AutoBackupMode[],
@@ -123,6 +123,30 @@ export const CreateServer: React.FC = () => {
 		}
 	};
 
+	const pickServerFile = async () => {
+		try {
+			const selected = await openDialog({
+				directory: false,
+				multiple: false,
+				filters: [
+					{
+						extensions: ['jar'],
+						name: 'Jar Files',
+					},
+				],
+				title: 'Choose server jar file',
+			});
+
+			if (typeof selected === 'string') {
+				updateField('file', selected);
+				setError(null);
+			}
+		} catch (err) {
+			const message = err instanceof Error ? err.message : 'Could not open file picker.';
+			setError(message);
+		}
+	};
+
 	const resetForm = () => {
 		setForm(defaultData);
 		setError(null);
@@ -134,7 +158,15 @@ export const CreateServer: React.FC = () => {
 
 		const directory = form.directory.trim();
 		if (!directory) {
+			// check if its a valid location and that if create dir is not checked and a invalid folder is picked it will error
 			setError('Please choose a server directory.');
+			return;
+		}
+
+		const file = form.file.trim();
+		if (!file) {
+			// TODO: check if its a valid location to a jar file
+			setError('Please choose a valid server jar file.');
 			return;
 		}
 
@@ -175,55 +207,58 @@ export const CreateServer: React.FC = () => {
 					<Plus /> Create new server
 				</Button>
 			</DialogTrigger>
-			<DialogContent className='sm:max-w-2xl'>
+			<DialogContent className='min-w-2xl'>
 				<DialogHeader>
 					<DialogTitle>Create a new server</DialogTitle>
 					<DialogDescription>Set up your server directory and runtime options.</DialogDescription>
 				</DialogHeader>
 				<form onSubmit={onSubmit} className='space-y-6'>
 					<FieldGroup>
+						<div className='space-y-2'>
+							<Field>
+								<Label htmlFor='server-directory'>Server Location</Label>
+								<div className='flex gap-2'>
+									<Input
+										id='server-directory'
+										placeholder='C:\servers\MyServer'
+										value={form.directory}
+										onChange={(event) => updateField('directory', event.target.value)}
+										required
+									/>
+									<Button type='button' variant='outline' onClick={pickDirectory}>
+										<FolderOpen /> Browse
+									</Button>
+								</div>
+							</Field>
+							<Field>
+								<Label className='flex items-center gap-3'>
+									<Checkbox
+										checked={form.createDirectoryIfMissing}
+										onCheckedChange={(checked) =>
+											updateField(
+												'createDirectoryIfMissing',
+												typeof checked === 'boolean' ? checked : false,
+											)
+										}
+									/>
+									Create directory if it doesn't exist
+								</Label>
+							</Field>
+						</div>
 						<Field>
-							<Label htmlFor='server-directory'>Server directory</Label>
+							<Label htmlFor='server-file'>Server Jar File Location</Label>
 							<div className='flex gap-2'>
 								<Input
-									id='server-directory'
-									placeholder='C:\\Servers\\MyServer'
-									value={form.directory}
-									onChange={(event) => updateField('directory', event.target.value)}
+									id='server-file'
+									placeholder='C:\servers\server-1.21.11.jar'
+									value={form.file}
+									onChange={(event) => updateField('file', event.target.value)}
 									required
 								/>
-								<Button type='button' variant='outline' onClick={pickDirectory}>
+								<Button type='button' variant='outline' onClick={pickServerFile}>
 									<FolderOpen /> Browse
 								</Button>
 							</div>
-						</Field>
-						<Field>
-							<Label className='flex items-center gap-3'>
-								<Checkbox
-									checked={form.createDirectoryIfMissing}
-									onCheckedChange={(checked) =>
-										updateField(
-											'createDirectoryIfMissing',
-											typeof checked === 'boolean' ? checked : false,
-										)
-									}
-								/>
-								Create directory if it doesn't exist
-							</Label>
-						</Field>
-						<Field>
-							<Label htmlFor='server-file'>Server jar filename</Label>
-							<Input
-								id='server-file'
-								placeholder='server.jar'
-								value={form.file}
-								onChange={(event) => updateField('file', event.target.value)}
-								required
-							/>
-							<p className='text-sm text-muted-foreground flex gap-1 items-center'>
-								<CircleAlert className='size-4' />
-								If the selected jar exists in Downloads, it will be auto-moved.
-							</p>
 						</Field>
 
 						<Field>
@@ -271,6 +306,11 @@ export const CreateServer: React.FC = () => {
 									required
 								/>
 							</div>
+							<p className='text-sm text-muted-foreground flex gap-2'>
+								<CircleAlert className='size-6' />
+								The more RAM the better up to a point. Please check your system memory as too much can
+								also cause system instability. Recommended is medium or high.
+							</p>
 						</Field>
 
 						<Field>

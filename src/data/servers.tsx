@@ -188,7 +188,7 @@ export const normalizeServer = (server: Server): Server => {
 		stats: {
 			players: Math.max(0, stats.players ?? 0),
 			capacity: Math.max(1, stats.capacity ?? 20),
-			tps: Math.max(0, stats.tps ?? 0),
+			tps: Math.max(0, stats.tps ?? 20),
 			uptime: stats.uptime && toDate(stats.uptime),
 		},
 		file: server.file || 'server.jar',
