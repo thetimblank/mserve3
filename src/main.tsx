@@ -11,10 +11,12 @@ import { ServersProvider } from './data/servers';
 import Home from './pages/Home';
 import Settings from './pages/Settings';
 import Server from './pages/Server';
+import { Toaster } from './components/ui/sonner';
 
 const RootLayout: React.FC = () => {
 	return (
 		<BrowserRouter>
+			<Toaster />
 			<Animations>
 				<ThemeProvider defaultTheme='dark' storageKey='vite-ui-theme'>
 					<SidebarProvider>

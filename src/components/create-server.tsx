@@ -21,6 +21,7 @@ import { AutoBackupMode, Server, useServers } from '@/data/servers';
 import { CircleAlert, FolderOpen, Plus, TriangleAlert } from 'lucide-react';
 import { Checkbox } from './ui/checkbox';
 import { ButtonGroup } from './ui/button-group';
+import { toast } from 'sonner';
 
 const defaultData = {
 	directory: '',
@@ -183,11 +184,21 @@ export const CreateServer: React.FC = () => {
 				autoAgreeEula: form.autoAgreeEula,
 			};
 
-			const result = await invoke<InitServerResult>('initialize_server', { payload });
-			if (!result.ok) {
-				setError(result.message || 'Failed to initialize server.');
-				return;
-			}
+			const initializePromise = (async () => {
+				const res = await invoke<InitServerResult>('initialize_server', { payload });
+				if (!res.ok) {
+					throw new Error(res.message || 'Failed to initialize server.');
+				}
+				return res;
+			})();
+
+			await toast.promise(initializePromise, {
+				loading: 'Creating server...',
+				success: () => `Server "${getDirectoryName(directory)}" has been created`,
+				error: (err) => (err instanceof Error ? err.message : 'Failed to create server.'),
+			});
+
+			const result = await initializePromise;
 
 			addServer(buildServer(payload, result));
 			resetForm();

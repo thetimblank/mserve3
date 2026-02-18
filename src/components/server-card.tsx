@@ -19,6 +19,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import OpenFolderButton from '@/components/open-folder-button';
 import { getPrimaryMinecraftVersion } from '@/lib/utils';
+import EditServerPropertiesButton from '@/components/edit-server-properties-button';
 
 interface Props {
 	server: Server;
@@ -199,6 +200,7 @@ const ServerCard: React.FC<Props> = ({ server, delay }) => {
 								<p>Start</p>
 							</Button>
 						)}
+						<EditServerPropertiesButton server={server} disabled={isBusy} />
 						<OpenFolderButton directory={server.directory} disabled={isBusy} />
 					</div>
 				</CardContent>

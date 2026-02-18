@@ -62,6 +62,25 @@ struct RestoreBackupPayload {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct UpdateServerSettingsPayload {
+    directory: String,
+    ram: u32,
+    auto_backup: Vec<String>,
+    auto_backup_interval: u32,
+    auto_restart: bool,
+    jar_swap_path: Option<String>,
+    new_directory: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateServerSettingsResult {
+    directory: String,
+    file: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct UploadItemPayload {
     directory: String,
     item_type: String,
@@ -175,65 +194,55 @@ fn move_file_with_fallback(src: &Path, dest: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn maybe_auto_move_jar(directory: &Path, preferred_file: &str) -> (String, String) {
-    let preferred = preferred_file.trim();
-    let filename = if preferred.is_empty() {
-        "server.jar"
-    } else {
-        preferred
-    };
-
-    let home = home_dir();
-
-    let mut names = vec![filename.to_string()];
-    if !filename.eq_ignore_ascii_case("server.jar") {
-        names.push("server.jar".to_string());
+fn copy_jar_to_server_directory(directory: &Path, jar_path: &str) -> Result<(String, String), String> {
+    let jar_path = jar_path.trim();
+    
+    if jar_path.is_empty() {
+        return Err("Server jar file path is required.".to_string());
     }
 
-    for name in names {
-        let candidates = vec![
-            env::current_dir().ok().map(|cwd| cwd.join(&name)),
-            Some(home.join("Downloads").join(&name)),
-            Some(home.join("downloads").join(&name)),
-            Some(home.join("Desktop").join(&name)),
-            Some(home.join(&name)),
-        ];
-
-        let destination = directory.join(&name);
-
-        for candidate in candidates.into_iter().flatten() {
-            if !candidate.exists() {
-                continue;
-            }
-
-            if destination.exists() {
-                return (
-                    name.clone(),
-                    format!("Couldn't auto-move {name}: destination already contains this file."),
-                );
-            }
-
-            if move_file_with_fallback(&candidate, &destination).is_ok() {
-                return (
-                    name.clone(),
-                    format!(
-                        "Auto-moved {name} from {} to {}.",
-                        candidate.display(),
-                        directory.display()
-                    ),
-                );
-            }
-        }
+    let source_path = PathBuf::from(jar_path);
+    
+    // Validate the source file exists
+    if !source_path.exists() {
+        return Err(format!("Server jar file not found: {}", jar_path));
     }
-
-    (
-        filename.to_string(),
-        format!(
-            "Couldn't auto-move {}. Please place the file manually in: {}",
-            filename,
-            directory.display()
-        ),
-    )
+    
+    if !source_path.is_file() {
+        return Err(format!("Path is not a file: {}", jar_path));
+    }
+    
+    // Validate it's a jar file
+    if !jar_path.to_lowercase().ends_with(".jar") {
+        return Err("Server file must be a .jar file.".to_string());
+    }
+    
+    // Get the filename from the source path
+    let filename = source_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "Invalid jar filename.".to_string())?
+        .to_string();
+    
+    let destination = directory.join(&filename);
+    
+    // Check if destination already exists
+    if destination.exists() {
+        return Ok((
+            filename.clone(),
+            format!("Server jar file '{}' already exists in the server directory.", filename),
+        ));
+    }
+    
+    // Copy the file to the server directory
+    fs::copy(&source_path, &destination).map_err(|err| {
+        format!("Failed to copy jar file to server directory: {}", err)
+    })?;
+    
+    Ok((
+        filename.clone(),
+        format!("Copied '{}' to server directory.", filename),
+    ))
 }
 
 fn write_eula(directory: &Path) -> Result<(), String> {
@@ -632,6 +641,60 @@ fn create_backup_snapshot(directory: &Path) -> Result<ScannedBackup, String> {
     })
 }
 
+fn move_directory_with_fallback(src: &Path, dest: &Path) -> Result<(), String> {
+    if src == dest {
+        return Ok(());
+    }
+
+    if let Some(parent) = dest.parent() {
+        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+
+    if fs::rename(src, dest).is_ok() {
+        return Ok(());
+    }
+
+    copy_dir_filtered(src, dest)?;
+    fs::remove_dir_all(src).map_err(|err| err.to_string())?;
+    Ok(())
+}
+
+fn swap_files(path_a: &Path, path_b: &Path) -> Result<(), String> {
+    if path_a == path_b {
+        return Ok(());
+    }
+
+    if !path_a.exists() || !path_a.is_file() {
+        return Err("Current server jar file does not exist in server directory.".to_string());
+    }
+
+    if !path_b.exists() || !path_b.is_file() {
+        return Err("Selected jar file does not exist.".to_string());
+    }
+
+    let temp_name = format!(
+        ".mserve.swap.{}.tmp",
+        chrono::Local::now().timestamp_nanos_opt().unwrap_or(0)
+    );
+
+    let temp_path = path_b
+        .parent()
+        .ok_or_else(|| "Invalid selected jar location.".to_string())?
+        .join(temp_name);
+
+    move_file_with_fallback(path_b, &temp_path)?;
+    if let Err(err) = move_file_with_fallback(path_a, path_b) {
+        let _ = move_file_with_fallback(&temp_path, path_b);
+        return Err(err);
+    }
+
+    if let Err(err) = move_file_with_fallback(&temp_path, path_a) {
+        return Err(format!("Swap completed partially. Manual fix may be required: {err}"));
+    }
+
+    Ok(())
+}
+
 fn extract_zip_to_directory(zip_path: &Path, destination: &Path) -> Result<(), String> {
     let zip_file = fs::File::open(zip_path).map_err(|err| err.to_string())?;
     let mut archive = zip::ZipArchive::new(zip_file).map_err(|err| err.to_string())?;
@@ -900,19 +963,19 @@ fn initialize_server(payload: InitServerPayload) -> Result<InitServerResult, Str
         .filter(|value| matches!(value.as_str(), "interval" | "on_close" | "on_start"))
         .collect();
 
-    let mut content = json!({
+    // Copy the jar file to the server directory
+    let (resolved_file, copy_message) = copy_jar_to_server_directory(&directory, payload.file.trim())?;
+
+    let content = json!({
         "explicit_info_names": false,
         "auto_backup": auto_backup,
         "ram": payload.ram.max(1),
         "directory": directory_str,
-        "file": payload.file.trim(),
+        "file": resolved_file.clone(),
         "auto_backup_interval": payload.auto_backup_interval.max(1),
         "auto_restart": payload.auto_restart,
         "createdAt": chrono::Local::now().to_rfc3339(),
     });
-
-    let (resolved_file, move_message) = maybe_auto_move_jar(&directory, payload.file.trim());
-    content["file"] = serde_json::Value::String(resolved_file.clone());
 
     let mserve_file = directory.join("mserve.json");
     fs::write(mserve_file, serde_json::to_vec_pretty(&content).map_err(|err| err.to_string())?)
@@ -924,8 +987,110 @@ fn initialize_server(payload: InitServerPayload) -> Result<InitServerResult, Str
 
     Ok(InitServerResult {
         ok: true,
-        message: format!("Initialization complete. {move_message}"),
+        message: format!("Initialization complete. {copy_message}"),
         file: resolved_file,
+        directory: directory_str.to_string(),
+    })
+}
+
+#[tauri::command]
+fn import_server(directory: String) -> Result<InitServerResult, String> {
+    let directory_str = directory.trim();
+    if directory_str.is_empty() {
+        return Ok(InitServerResult {
+            ok: false,
+            message: "Server directory is required.".to_string(),
+            file: String::new(),
+            directory: directory.clone(),
+        });
+    }
+
+    let directory_path = PathBuf::from(directory_str);
+    
+    if !directory_path.exists() {
+        return Ok(InitServerResult {
+            ok: false,
+            message: "Directory does not exist.".to_string(),
+            file: String::new(),
+            directory: directory_str.to_string(),
+        });
+    }
+    
+    if !directory_path.is_dir() {
+        return Ok(InitServerResult {
+            ok: false,
+            message: "Path is not a directory.".to_string(),
+            file: String::new(),
+            directory: directory_str.to_string(),
+        });
+    }
+
+    // Check if mserve.json already exists
+    let mserve_json_path = directory_path.join("mserve.json");
+
+    let (jar_file, message) = if mserve_json_path.exists() {
+        let data = fs::read_to_string(&mserve_json_path).map_err(|err| err.to_string())?;
+        let parsed: serde_json::Value = serde_json::from_str(&data).map_err(|err| err.to_string())?;
+        let existing_jar = parsed
+            .get("file")
+            .and_then(|f| f.as_str())
+            .unwrap_or_default()
+            .to_string();
+
+        (
+            existing_jar,
+            "Server already has mserve.json configuration.".to_string(),
+        )
+    } else {
+        let mut found_jar = String::new();
+
+        if let Ok(entries) = fs::read_dir(&directory_path) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() {
+                    if let Some(filename) = path.file_name().and_then(|name| name.to_str()) {
+                        if filename.to_lowercase().ends_with(".jar") {
+                            found_jar = filename.to_string();
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        if found_jar.is_empty() {
+            return Ok(InitServerResult {
+                ok: false,
+                message: "No jar file found in server directory. Please add a server.jar file first.".to_string(),
+                file: String::new(),
+                directory: directory_str.to_string(),
+            });
+        }
+
+        let content = json!({
+            "explicit_info_names": false,
+            "auto_backup": [],
+            "ram": 3,
+            "directory": directory_str,
+            "file": found_jar.clone(),
+            "auto_backup_interval": 120,
+            "auto_restart": false,
+            "createdAt": chrono::Local::now().to_rfc3339(),
+        });
+
+        fs::write(&mserve_json_path, serde_json::to_vec_pretty(&content).map_err(|err| err.to_string())?)
+            .map_err(|err| err.to_string())?;
+
+        (
+            found_jar.clone(),
+            format!("Created mserve.json with default settings. Found jar file: {}", found_jar),
+        )
+    };
+
+    Ok(InitServerResult {
+        ok: true,
+        message,
+        file: jar_file,
         directory: directory_str.to_string(),
     })
 }
@@ -1034,6 +1199,112 @@ fn create_server_backup(directory: String) -> Result<ScannedBackup, String> {
 }
 
 #[tauri::command]
+fn update_server_settings(
+    payload: UpdateServerSettingsPayload,
+    state: State<'_, RuntimeState>,
+) -> Result<UpdateServerSettingsResult, String> {
+    let current_directory = payload.directory.trim();
+    if current_directory.is_empty() {
+        return Err("Server directory is required.".to_string());
+    }
+
+    let key = server_key(current_directory);
+    {
+        let mut processes = state.processes.lock().map_err(|_| "Runtime lock failed.")?;
+        if let Some(existing) = processes.get_mut(&key) {
+            if existing.child.try_wait().map_err(|err| err.to_string())?.is_none() {
+                return Err("Server must be offline before editing settings.".to_string());
+            }
+            processes.remove(&key);
+        }
+    }
+
+    let mut directory_path = PathBuf::from(current_directory);
+    if !directory_path.exists() || !directory_path.is_dir() {
+        return Err("Server directory does not exist.".to_string());
+    }
+
+    let mserve_path = directory_path.join("mserve.json");
+    if !mserve_path.exists() {
+        return Err("mserve.json not found in server directory.".to_string());
+    }
+
+    let config_text = fs::read_to_string(&mserve_path).map_err(|err| err.to_string())?;
+    let mut config: serde_json::Value = serde_json::from_str(&config_text).map_err(|err| err.to_string())?;
+    let object = config
+        .as_object_mut()
+        .ok_or_else(|| "Invalid mserve.json format.".to_string())?;
+
+    let file_name = object
+        .get("file")
+        .and_then(|value| value.as_str())
+        .unwrap_or("server.jar")
+        .trim()
+        .to_string();
+
+    if file_name.is_empty() {
+        return Err("Invalid server jar file in mserve.json.".to_string());
+    }
+
+    if let Some(raw_swap_path) = payload.jar_swap_path.as_deref() {
+        let swap_path = raw_swap_path.trim();
+        if !swap_path.is_empty() {
+            if !swap_path.to_lowercase().ends_with(".jar") {
+                return Err("Selected file must be a .jar file.".to_string());
+            }
+            let current_jar = directory_path.join(&file_name);
+            let selected_jar = PathBuf::from(swap_path);
+            swap_files(&current_jar, &selected_jar)?;
+        }
+    }
+
+    if let Some(new_directory_raw) = payload.new_directory.as_deref() {
+        let target_trimmed = new_directory_raw.trim();
+        if !target_trimmed.is_empty() {
+            let target_directory = PathBuf::from(target_trimmed);
+            if directory_path != target_directory {
+                if target_directory.exists() {
+                    return Err("Target server directory already exists.".to_string());
+                }
+
+                move_directory_with_fallback(&directory_path, &target_directory)?;
+                directory_path = target_directory;
+            }
+        }
+    }
+
+    let auto_backup: Vec<String> = payload
+        .auto_backup
+        .into_iter()
+        .filter(|value| matches!(value.as_str(), "interval" | "on_close" | "on_start"))
+        .collect();
+
+    object.insert("ram".to_string(), json!(payload.ram.max(1)));
+    object.insert(
+        "auto_backup_interval".to_string(),
+        json!(payload.auto_backup_interval.max(1)),
+    );
+    object.insert("auto_backup".to_string(), json!(auto_backup));
+    object.insert("auto_restart".to_string(), json!(payload.auto_restart));
+    object.insert(
+        "directory".to_string(),
+        json!(directory_path.to_string_lossy().to_string()),
+    );
+
+    let final_mserve_path = directory_path.join("mserve.json");
+    fs::write(
+        &final_mserve_path,
+        serde_json::to_vec_pretty(&config).map_err(|err| err.to_string())?,
+    )
+    .map_err(|err| err.to_string())?;
+
+    Ok(UpdateServerSettingsResult {
+        directory: directory_path.to_string_lossy().to_string(),
+        file: file_name,
+    })
+}
+
+#[tauri::command]
 fn restore_server_backup(payload: RestoreBackupPayload) -> Result<(), String> {
     let server_directory = PathBuf::from(payload.directory.trim());
     if !server_directory.exists() || !server_directory.is_dir() {
@@ -1072,6 +1343,33 @@ fn restore_server_backup(payload: RestoreBackupPayload) -> Result<(), String> {
         copy_dir_filtered(&backup_world, &destination)?;
     }
 
+    Ok(())
+}
+
+#[tauri::command]
+fn delete_server_backup(payload: RestoreBackupPayload) -> Result<(), String> {
+    let server_directory = PathBuf::from(payload.directory.trim());
+    if !server_directory.exists() || !server_directory.is_dir() {
+        return Err("Server directory does not exist.".to_string());
+    }
+
+    let backup_root = server_directory.join(".backups");
+    if !backup_root.exists() || !backup_root.is_dir() {
+        return Err("Backup directory does not exist.".to_string());
+    }
+
+    let backup_directory = PathBuf::from(payload.backup_directory.trim());
+    if !backup_directory.exists() || !backup_directory.is_dir() {
+        return Err("Backup directory does not exist.".to_string());
+    }
+
+    let backup_root_canonical = backup_root.canonicalize().map_err(|err| err.to_string())?;
+    let selected_backup_canonical = backup_directory.canonicalize().map_err(|err| err.to_string())?;
+    if !selected_backup_canonical.starts_with(&backup_root_canonical) {
+        return Err("Backup path is outside the server backup directory.".to_string());
+    }
+
+    trash::delete(&selected_backup_canonical).map_err(|err| err.to_string())?;
     Ok(())
 }
 
@@ -1318,13 +1616,16 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             initialize_server,
+            import_server,
             open_server_folder,
             open_server_path,
             delete_server_item,
             uninstall_server_item,
             export_server_world,
             create_server_backup,
+            update_server_settings,
             restore_server_backup,
+            delete_server_backup,
             upload_server_item,
             start_server,
             stop_server,

@@ -1,9 +1,9 @@
 [package]
-name = "hallo"
-version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
-edition = "2021"
+name = "MSERVE"
+version = "3.0.0"
+description = "A minecraft server management tool"
+authors = ["thetimblank"]
+edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

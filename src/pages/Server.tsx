@@ -1,11 +1,11 @@
 import React from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { createServerId, type Server as MserveServer, useServers } from '@/data/servers';
+import { createServerId, useServers } from '@/data/servers';
 import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
 import {
 	ArrowDownToLine,
 	ArrowLeft,
-	ArchiveRestore,
 	Boxes,
 	CircleCheck,
 	Clock,
@@ -17,13 +17,14 @@ import {
 	RefreshCcw,
 	Trash,
 	Users,
+	Eye,
+	EyeOff,
 } from 'lucide-react';
 import ServerStatus from '@/components/server-status';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import OpenFolderButton from '@/components/open-folder-button';
 import ServerItemList from '@/components/server-item-list';
-import { ButtonGroup } from '@/components/ui/button-group';
 import {
 	getPrimaryMinecraftVersion,
 	isServerReadyLine,
@@ -33,28 +34,36 @@ import {
 	shouldHideBackgroundLine,
 	stripAnsi,
 } from '@/lib/utils';
-import clsx from 'clsx';
-import { m } from 'motion/react';
-
-type ServerOutputEvent = {
-	directory: string;
-	stream: string;
-	line: string;
-};
-
-type ScanServerContentsResult = {
-	plugins: MserveServer['plugins'];
-	worlds: MserveServer['worlds'];
-	datapacks: MserveServer['datapacks'];
-	backups: { directory: string; createdAt?: string; created_at?: string }[];
-};
-
-type RuntimeStatusResult = {
-	running: boolean;
-	exitCode: number | null;
-};
-
-type ServerContentTab = 'plugins' | 'worlds' | 'datapacks' | 'backups';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+	AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import ServerTerminalPanel from './server/server-terminal-panel';
+import ServerContentTabs from './server/server-content-tabs';
+import ServerBackupsTab from './server/server-backups-tab';
+import EditServerPropertiesButton from '@/components/edit-server-properties-button';
+import {
+	type RuntimeStatusResult,
+	type ScanServerContentsResult,
+	type ServerContentTab,
+	type ServerOutputEvent,
+} from './server/server-types';
+import {
+	didRequestStop,
+	formatUptime,
+	getBackupNameFromPath,
+	isStopCommand,
+	makeCloseBackupKey,
+	mapScannedBackups,
+} from './server/server-utils';
 
 const terminalSessionStore = new Map<string, string[]>();
 
@@ -71,6 +80,14 @@ const Server: React.FC = () => {
 	const terminalOutputRef = React.useRef<HTMLDivElement>(null);
 	const startAtRef = React.useRef<Date | null>(null);
 	const lastOutputRef = React.useRef<{ key: string; at: number }>({ key: '', at: 0 });
+	const stopRequestedRef = React.useRef(false);
+	const restartRequestedRef = React.useRef(false);
+	const lastOnStartBackupRef = React.useRef<string>('');
+	const lastOnCloseBackupRef = React.useRef<string>('');
+	const isAutoRestartingRef = React.useRef(false);
+	const manualStopRequestedRef = React.useRef(false);
+	const previousStatusRef = React.useRef<'online' | 'offline' | 'starting' | 'closing'>('offline');
+	const isCreatingAutoBackupRef = React.useRef(false);
 
 	const server = React.useMemo(
 		() => servers.find((item) => item.name === resolvedServerName),
@@ -126,13 +143,30 @@ const Server: React.FC = () => {
 				plugins: result.plugins,
 				worlds: result.worlds,
 				datapacks: result.datapacks,
-				backups: result.backups.map((backup) => ({
-					directory: backup.directory,
-					createdAt: new Date(backup.createdAt ?? backup.created_at ?? Date.now()),
-				})),
+				backups: mapScannedBackups(result.backups),
 			});
 		} catch {}
 	}, [server.directory, serverId, updateServer]);
+
+	const createAutomaticBackup = React.useCallback(
+		async (reason: 'on_start' | 'on_close' | 'interval') => {
+			if (isCreatingAutoBackupRef.current) return;
+			isCreatingAutoBackupRef.current = true;
+			try {
+				await invoke('create_server_backup', { directory: server.directory });
+				if (reason !== 'interval') {
+					appendTerminalLine(`[system] Auto backup created (${reason.replace('_', ' ')})`);
+				}
+				await syncServerContents();
+			} catch (err) {
+				const message = err instanceof Error ? err.message : 'Failed to create automatic backup.';
+				appendTerminalLine(`[system] Auto backup failed: ${message}`);
+			} finally {
+				isCreatingAutoBackupRef.current = false;
+			}
+		},
+		[appendTerminalLine, server.directory, syncServerContents],
+	);
 
 	React.useEffect(() => {
 		setTerminalLines(terminalSessionStore.get(terminalStoreKey) ?? []);
@@ -233,10 +267,48 @@ const Server: React.FC = () => {
 					directory: server.directory,
 				});
 				if (!runtime.running) {
+					const stopWasRequested = didRequestStop(
+						stopRequestedRef.current,
+						restartRequestedRef.current,
+						manualStopRequestedRef.current,
+					);
+					const closeBackupKey = makeCloseBackupKey(serverId, runtime.exitCode);
+
+					if (
+						!stopWasRequested &&
+						server.auto_backup?.includes('on_close') &&
+						lastOnCloseBackupRef.current !== closeBackupKey
+					) {
+						lastOnCloseBackupRef.current = closeBackupKey;
+						await createAutomaticBackup('on_close');
+					}
+
+					if (!stopWasRequested && server.auto_restart && !isAutoRestartingRef.current) {
+						isAutoRestartingRef.current = true;
+						setServerStatus(serverId, 'starting');
+						appendTerminalLine('[system] Server closed. Auto restart is enabled, starting again...');
+						startAtRef.current = new Date();
+						updateServerStats(serverId, {
+							players: 0,
+							tps: 0,
+							uptime: startAtRef.current,
+						});
+
+						try {
+							await invoke('start_server', { directory: server.directory });
+							await syncServerContents();
+							isAutoRestartingRef.current = false;
+							return;
+						} catch {
+							isAutoRestartingRef.current = false;
+						}
+					}
+
 					setServerStatus(serverId, 'offline');
 					updateServerStats(serverId, { players: 0, tps: 0, uptime: null });
 					clearTerminalSession();
 					startAtRef.current = null;
+					manualStopRequestedRef.current = false;
 				}
 			} catch {}
 		}, 2000);
@@ -244,7 +316,19 @@ const Server: React.FC = () => {
 		return () => {
 			window.clearInterval(timer);
 		};
-	}, [clearTerminalSession, server.directory, server.status, serverId, setServerStatus, updateServerStats]);
+	}, [
+		appendTerminalLine,
+		clearTerminalSession,
+		createAutomaticBackup,
+		server.auto_backup,
+		server.auto_restart,
+		server.directory,
+		server.status,
+		serverId,
+		setServerStatus,
+		syncServerContents,
+		updateServerStats,
+	]);
 
 	React.useEffect(() => {
 		if (server.status !== 'online') return;
@@ -285,6 +369,30 @@ const Server: React.FC = () => {
 	}, [server.directory, server.status]);
 
 	React.useEffect(() => {
+		const becameOnline = previousStatusRef.current !== 'online' && server.status === 'online';
+		if (becameOnline && server.auto_backup?.includes('on_start')) {
+			lastOnStartBackupRef.current = `${serverId}:${Date.now()}`;
+			void createAutomaticBackup('on_start');
+		}
+
+		previousStatusRef.current = server.status;
+	}, [createAutomaticBackup, server.auto_backup, server.status, serverId]);
+
+	React.useEffect(() => {
+		if (server.status !== 'online') return;
+		if (!server.auto_backup?.includes('interval')) return;
+
+		const intervalMs = Math.max(1, server.auto_backup_interval ?? 1) * 60_000;
+		const timer = window.setInterval(() => {
+			void createAutomaticBackup('interval');
+		}, intervalMs);
+
+		return () => {
+			window.clearInterval(timer);
+		};
+	}, [createAutomaticBackup, server.auto_backup, server.auto_backup_interval, server.status]);
+
+	React.useEffect(() => {
 		const node = terminalOutputRef.current;
 		if (!node) return;
 		node.scrollTop = node.scrollHeight;
@@ -292,6 +400,9 @@ const Server: React.FC = () => {
 
 	const handleStart = async () => {
 		if (isBusy) return;
+		manualStopRequestedRef.current = false;
+		stopRequestedRef.current = false;
+		restartRequestedRef.current = false;
 		setIsBusy(true);
 		clearTerminalSession();
 		startAtRef.current = new Date();
@@ -316,11 +427,17 @@ const Server: React.FC = () => {
 
 	const handleStop = async () => {
 		if (isBusy) return;
+		manualStopRequestedRef.current = true;
+		stopRequestedRef.current = true;
 		setIsBusy(true);
 		setServerStatus(serverId, 'closing');
 		appendTerminalLine('[system] Stopping server...');
 		try {
 			await invoke('stop_server', { directory: server.directory });
+			if (server.auto_backup?.includes('on_close')) {
+				await createAutomaticBackup('on_close');
+				lastOnCloseBackupRef.current = `${serverId}:${Date.now()}`;
+			}
 			setServerStatus(serverId, 'offline');
 			clearTerminalSession();
 			startAtRef.current = null;
@@ -334,18 +451,26 @@ const Server: React.FC = () => {
 			const message = err instanceof Error ? err.message : 'Failed to stop server.';
 			appendTerminalLine(`[system] ${message}`);
 		} finally {
+			stopRequestedRef.current = false;
 			setIsBusy(false);
 		}
 	};
 
 	const handleRestart = async () => {
 		if (isBusy) return;
+		manualStopRequestedRef.current = false;
+		restartRequestedRef.current = true;
+		stopRequestedRef.current = true;
 		setIsBusy(true);
 		setServerStatus(serverId, 'closing');
 		clearTerminalSession();
 		appendTerminalLine('[system] Restarting server...');
 		try {
 			await invoke('stop_server', { directory: server.directory });
+			if (server.auto_backup?.includes('on_close')) {
+				await createAutomaticBackup('on_close');
+				lastOnCloseBackupRef.current = `${serverId}:${Date.now()}`;
+			}
 		} catch {}
 
 		startAtRef.current = new Date();
@@ -363,6 +488,8 @@ const Server: React.FC = () => {
 			appendTerminalLine(`[system] ${message}`);
 			window.alert(message);
 		} finally {
+			restartRequestedRef.current = false;
+			stopRequestedRef.current = false;
 			setIsBusy(false);
 		}
 	};
@@ -377,7 +504,7 @@ const Server: React.FC = () => {
 		setTerminalInput('');
 		appendTerminalLine(`> ${command}`);
 
-		if (command.replace(/^\//, '').trim().toLowerCase() === 'stop') {
+		if (isStopCommand(command)) {
 			setServerStatus(serverId, 'closing');
 		}
 
@@ -395,10 +522,6 @@ const Server: React.FC = () => {
 
 	const handleDelete = async () => {
 		if (isBusy) return;
-		const confirmed = window.confirm(
-			`Move server "${server.name}" to your recycle bin? This removes it from the app too.`,
-		);
-		if (!confirmed) return;
 
 		setIsBusy(true);
 		try {
@@ -432,25 +555,52 @@ const Server: React.FC = () => {
 		}
 	};
 
+	const handleDeleteBackup = React.useCallback(
+		async (backupDirectory: string) => {
+			if (isBusy || server.status === 'online') return;
+
+			setIsBusy(true);
+			try {
+				await invoke('delete_server_backup', {
+					payload: {
+						directory: server.directory,
+						backupDirectory,
+					},
+				});
+				await syncServerContents();
+			} catch (err) {
+				const message = err instanceof Error ? err.message : 'Failed to delete backup.';
+				window.alert(message);
+			} finally {
+				setIsBusy(false);
+			}
+		},
+		[isBusy, server.directory, server.status, syncServerContents],
+	);
+
 	const handleRestoreBackup = async (backupDirectory: string) => {
 		if (isBusy || server.status === 'online') return;
-		const confirmed = window.confirm(
-			'Restore this backup? This will create a backup of current worlds first and then replace world files.',
-		);
-		if (!confirmed) return;
 
 		setIsBusy(true);
 		try {
-			await invoke('restore_server_backup', {
-				payload: {
-					directory: server.directory,
-					backupDirectory,
+			const backupName = getBackupNameFromPath(backupDirectory);
+			toast.promise(
+				(async () => {
+					await invoke('restore_server_backup', {
+						payload: {
+							directory: server.directory,
+							backupDirectory,
+						},
+					});
+					await syncServerContents();
+					return { backupName };
+				})(),
+				{
+					loading: 'Creating backup of current state and restoring...',
+					success: (data) => `Backup created and ${data.backupName} has been restored`,
+					error: (err) => (err instanceof Error ? err.message : 'Failed to restore backup.'),
 				},
-			});
-			await syncServerContents();
-		} catch (err) {
-			const message = err instanceof Error ? err.message : 'Failed to restore backup.';
-			window.alert(message);
+			);
 		} finally {
 			setIsBusy(false);
 		}
@@ -471,30 +621,18 @@ const Server: React.FC = () => {
 			</div>
 
 			<div>
-				{server.status !== 'offline' && (
-					<m.div
-						initial={{ scale: 0.75, y: 10, opacity: 0 }}
-						whileInView={{ scale: 1, y: 0, opacity: 1 }}
-						transition={{ type: 'spring', duration: 0.5, bounce: 0 }}
-						className='bg-black text-white rounded-xl w-full flex font-mono flex-col'>
-						<div ref={terminalOutputRef} className='h-64 overflow-y-auto px-4 py-2 text-sm space-y-1'>
-							{terminalLines.map((line, index) => (
-								<p key={`${index}-${line}`}>{line}</p>
-							))}
-						</div>
-						<form onSubmit={handleTerminalCommandSubmit}>
-							<input
-								className='text-white w-full outline-none border-t border-muted px-4 py-2'
-								placeholder='> '
-								value={terminalInput}
-								onChange={(event) => setTerminalInput(event.target.value)}
-								disabled={server.status !== 'online' || isBusy}
-							/>
-						</form>
-					</m.div>
-				)}
+				<ServerTerminalPanel
+					isVisible={server.status !== 'offline'}
+					isBusy={isBusy}
+					status={server.status}
+					terminalLines={terminalLines}
+					terminalInput={terminalInput}
+					onTerminalInputChange={setTerminalInput}
+					onSubmit={handleTerminalCommandSubmit}
+					terminalOutputRef={terminalOutputRef}
+				/>
 			</div>
-			<div className='my-4'>
+			<div className='mt-4 mb-8'>
 				<div className='flex gap-10'>
 					<ServerStatus server={server} size='xl' />
 
@@ -519,30 +657,75 @@ const Server: React.FC = () => {
 								</Button>
 							)}
 							<Button
-								variant={hideBackgroundTelemetry ? 'secondary' : 'default'}
+								variant='secondary'
 								onClick={() => setHideBackgroundTelemetry((prev) => !prev)}
 								disabled={isBusy}>
+								{hideBackgroundTelemetry ? <Eye /> : <EyeOff />}
 								{hideBackgroundTelemetry ? 'Show Status Check logs' : 'Hide Status Check logs'}
 							</Button>
+							<EditServerPropertiesButton
+								server={server}
+								disabled={isBusy}
+								onSaved={syncServerContents}
+							/>
 							<OpenFolderButton directory={server.directory} disabled={isBusy} />
-							<Button
-								disabled={isBusy || server.status === 'online'}
-								variant='secondary'
-								className='hover:text-red-400'
-								onClick={handleDelete}>
-								<Trash />
-								<p>Delete Server</p>
-							</Button>
+
+							<AlertDialog>
+								<AlertDialogTrigger asChild>
+									<Button
+										disabled={isBusy || server.status === 'online'}
+										variant='secondary'
+										className='hover:text-red-400'>
+										<Trash />
+										<p>Delete Server</p>
+									</Button>
+								</AlertDialogTrigger>
+								<AlertDialogContent>
+									<AlertDialogHeader>
+										<AlertDialogTitle>Are you sure?</AlertDialogTitle>
+										<AlertDialogDescription>
+											This will move the server to the recycling bin.
+										</AlertDialogDescription>
+									</AlertDialogHeader>
+									<AlertDialogFooter>
+										<AlertDialogCancel>Cancel</AlertDialogCancel>
+										<AlertDialogAction
+											variant='destructive'
+											className='capitalize'
+											onClick={handleDelete}>
+											Delete Server
+										</AlertDialogAction>
+									</AlertDialogFooter>
+								</AlertDialogContent>
+							</AlertDialog>
 						</div>
-						{server.createdAt && (
-							<p className='text-sm text-muted-foreground mb-1'>
-								Server was created {new Date(server.createdAt).toLocaleDateString()}
-							</p>
-						)}
+						<div className='flex items-center gap-2 mb-1'>
+							{server.createdAt && (
+								<p className='text-sm text-muted-foreground'>
+									Server was created {new Date(server.createdAt).toLocaleDateString()}
+								</p>
+							)}
+							{server.createdAt && server.status !== 'offline' && (
+								<p className='text-sm text-muted-foreground'>•</p>
+							)}
+							{server.status !== 'offline' && (
+								<p className='text-sm text-muted-foreground'>
+									Note: Some features may be unavailiable when the server is online
+								</p>
+							)}
+						</div>
 						{server.status === 'online' && (
 							<div className='flex items-center lg:text-lg gap-2'>
 								<Users className='size-5' />
 								Players: {server.stats.players}/{server.stats.capacity}
+							</div>
+						)}
+						{server.auto_restart && (
+							<div className='flex items-center lg:text-lg gap-2'>
+								<RefreshCcw className='size-5' />
+								<p>
+									Server automatically <span className='font-bold'>restarts on shutdown</span>.
+								</p>
 							</div>
 						)}
 						{server.version && (
@@ -551,14 +734,18 @@ const Server: React.FC = () => {
 								{(() => {
 									const primary = getPrimaryMinecraftVersion(server.version);
 									if (!primary) return <span>{server.version}</span>;
-									const index = server.version.indexOf(primary);
-									const before = server.version.slice(0, index);
-									const after = server.version.slice(index + primary.length);
 									return (
 										<p className='flex items-baseline'>
-											Version: <span className='text-muted-foreground text-xs'>{before}</span>
-											<span className='font-semibold'>{primary}</span>
-											<span className='text-muted-foreground text-xs'>{after}</span>
+											<Tooltip>
+												<TooltipTrigger>
+													<p>
+														The server version is <span className='font-bold'>{primary}</span>.
+													</p>
+												</TooltipTrigger>
+												<TooltipContent className='max-w-40 text-warp text-white dark:text-black'>
+													{server.version}
+												</TooltipContent>
+											</Tooltip>
 										</p>
 									);
 								})()}
@@ -567,71 +754,28 @@ const Server: React.FC = () => {
 						{server.ram && (
 							<div className='flex items-center lg:text-lg gap-2'>
 								<MemoryStick className='size-5' />
-								Memory: {server.ram}GB
+								<p>
+									The server has <span className='font-bold'>{server.ram}GB</span> of memory.
+								</p>
 							</div>
 						)}
 						<div className='flex items-center lg:text-lg gap-2'>
 							<Boxes className='size-5' />
-							Jar File: {server.file}
+							<p>
+								The server jar file is <span className='font-bold'>{server.file}</span>.
+							</p>
 						</div>
 						{server.status === 'online' && server.stats.uptime && (
 							<div className='flex items-center lg:text-lg gap-2'>
 								<Clock className='size-5' />
-								Uptime:{' '}
-								{(() => {
-									const now = new Date();
-									const diff = now.getTime() - server.stats.uptime.getTime();
-									const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-									const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
-									const minutes = Math.floor((diff / (1000 * 60)) % 60);
-									const seconds = Math.floor((diff / 1000) % 60);
-
-									if (days > 0) return `${days}d ${hours}h ${seconds}s`;
-									if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
-									if (minutes < 0) return `Just started ${seconds}s ago`;
-									return `${minutes}m ${seconds}s`;
-								})()}
+								Uptime: {formatUptime(server.stats.uptime)}
 							</div>
 						)}
 					</div>
 				</div>
 			</div>
 
-			<hr
-				className={clsx(
-					'w-full border-t-2 border-border',
-					server.status === 'online' && 'border-green-500',
-					server.status === 'offline' && 'border-red-400',
-					(server.status === 'starting' || server.status === 'closing') &&
-						'border-orange-500 animate-pulse',
-				)}
-			/>
-			<ButtonGroup className='mb-6 w-full'>
-				<Button
-					className='rounded-t-none flex-1'
-					variant={activeTab === 'plugins' ? 'default' : 'outline'}
-					onClick={() => setActiveTab('plugins')}>
-					Plugins
-				</Button>
-				<Button
-					className='rounded-t-none flex-1'
-					variant={activeTab === 'worlds' ? 'default' : 'outline'}
-					onClick={() => setActiveTab('worlds')}>
-					Worlds
-				</Button>
-				<Button
-					className='rounded-t-none flex-1'
-					variant={activeTab === 'datapacks' ? 'default' : 'outline'}
-					onClick={() => setActiveTab('datapacks')}>
-					Datapacks
-				</Button>
-				<Button
-					className='rounded-t-none flex-1'
-					variant={activeTab === 'backups' ? 'default' : 'outline'}
-					onClick={() => setActiveTab('backups')}>
-					Backups
-				</Button>
-			</ButtonGroup>
+			<ServerContentTabs serverStatus={server.status} activeTab={activeTab} onTabChange={setActiveTab} />
 
 			{activeTab === 'plugins' && (
 				<ServerItemList
@@ -659,8 +803,6 @@ const Server: React.FC = () => {
 					items={server.worlds}
 					onChanged={handleItemsChanged}
 					disabled={isBusy || server.status === 'online'}
-					ctaLabel='Backup Worlds'
-					ctaUrl='https://modrinth.com/discover/plugins'
 				/>
 			)}
 			{activeTab === 'datapacks' && (
@@ -675,52 +817,18 @@ const Server: React.FC = () => {
 					onChanged={handleItemsChanged}
 					disabled={isBusy || server.status === 'online'}
 					ctaLabel='Add More'
-					ctaUrl='https://modrinth.com/discover/plugins'
+					ctaUrl='https://modrinth.com/discover/datapacks'
 				/>
 			)}
 			{activeTab === 'backups' && (
-				<div className='flex flex-col gap-4 min-h-[50vh]'>
-					<div className='flex justify-between items-center'>
-						<p className='text-2xl font-bold flex items-center gap-2'>
-							<ArchiveRestore />
-							Backups
-						</p>
-						<Button onClick={handleCreateBackup} disabled={isBusy || server.status === 'online'}>
-							Create Backup
-						</Button>
-					</div>
-					{server.backups.length === 0 ? (
-						<p className='text-muted-foreground text-center my-10'>No backups were found.</p>
-					) : (
-						server.backups.map((backup) => (
-							<div
-								key={backup.directory}
-								className='border border-border rounded-lg p-3 flex items-center justify-between gap-3'>
-								<div>
-									<p className='font-semibold'>{backup.directory.split(/[\\/]/).pop()}</p>
-									<p className='text-sm text-muted-foreground'>
-										Created {new Date(backup.createdAt).toLocaleString()}
-									</p>
-								</div>
-								<div className='flex gap-2'>
-									<OpenFolderButton targetPath={backup.directory} disabled={isBusy} />
-									<Button
-										variant='secondary'
-										disabled={isBusy || server.status === 'online'}
-										onClick={() => handleRestoreBackup(backup.directory)}>
-										Restore
-									</Button>
-									<Button
-										variant='destructive'
-										disabled={isBusy || server.status === 'online'}
-										onClick={() => console.log('not implemented')}>
-										Delete
-									</Button>
-								</div>
-							</div>
-						))
-					)}
-				</div>
+				<ServerBackupsTab
+					backups={server.backups}
+					isBusy={isBusy}
+					isOnline={server.status === 'online'}
+					onCreateBackup={handleCreateBackup}
+					onRestoreBackup={handleRestoreBackup}
+					onDeleteBackup={handleDeleteBackup}
+				/>
 			)}
 		</main>
 	);

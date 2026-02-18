@@ -59,24 +59,24 @@ const ServerStatus: React.FC<Props> = ({ server, size = 'md' }) => {
 									className={clsx(
 										'absolute rounded-full border-green-500',
 										classes.ring,
-										server.stats.tps > 19 && 'border-green-500',
-										server.stats.tps > 18 && 'border-green-600',
-										server.stats.tps > 17 && 'border-yellow-500',
-										server.stats.tps > 15 && 'border-orange-500',
-										server.stats.tps > 10 && 'border-red-400',
-										server.stats.tps <= 5 && 'border-red-800',
+										server.stats.tps <= 10 && 'border-red-800',
+										server.stats.tps > 10 && server.stats.tps <= 15 && 'border-red-400',
+										server.stats.tps > 15 && server.stats.tps <= 17 && 'border-orange-500',
+										server.stats.tps > 17 && server.stats.tps <= 18 && 'border-yellow-500',
+										server.stats.tps > 18 && server.stats.tps <= 19 && 'border-green-600',
+										server.stats.tps > 19 && server.stats.tps <= 20 && 'border-green-500',
 									)}
 								/>
 								<p
 									className={clsx(
 										'overflow-hidden font-bold',
 										classes.tps,
-										server.stats.tps > 19 && 'text-green-500',
-										server.stats.tps > 18 && 'text-green-600',
-										server.stats.tps > 17 && 'text-yellow-500',
-										server.stats.tps > 15 && 'text-orange-500',
-										server.stats.tps > 10 && 'text-red-400',
 										server.stats.tps <= 5 && 'text-red-800',
+										server.stats.tps > 10 && server.stats.tps <= 15 && 'text-red-400',
+										server.stats.tps > 15 && server.stats.tps <= 17 && 'text-orange-500',
+										server.stats.tps > 17 && server.stats.tps <= 18 && 'text-yellow-500',
+										server.stats.tps > 18 && server.stats.tps <= 19 && 'text-green-600',
+										server.stats.tps > 19 && server.stats.tps <= 20 && 'text-green-500',
 									)}>
 									{server.stats.tps.toPrecision(3)}
 								</p>
@@ -90,13 +90,13 @@ const ServerStatus: React.FC<Props> = ({ server, size = 'md' }) => {
 				</div>
 			)}
 			{server.status === 'starting' && (
-				<div className={`text-yellow-500 flex items-center flex-col ${classes.container}`}>
+				<div className={`text-yellow-500 flex items-center flex-col animate-pulse ${classes.container}`}>
 					<LoaderCircle className={`animate-spin ${classes.visual}`} />
 					<p className={`font-bold ${classes.status}`}>Starting</p>
 				</div>
 			)}
 			{server.status === 'closing' && (
-				<div className={`text-yellow-500 flex items-center flex-col ${classes.container}`}>
+				<div className={`text-yellow-500 flex items-center flex-col animate-pulse ${classes.container}`}>
 					<LoaderCircle className={`animate-spin ${classes.visual}`} />
 					<p className={`font-bold ${classes.status}`}>Closing</p>
 				</div>

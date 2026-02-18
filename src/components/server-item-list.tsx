@@ -1,6 +1,15 @@
 import React from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Archive, ArrowUpRightFromSquare, Check, HardDrive, LinkIcon, X } from 'lucide-react';
+import {
+	Archive,
+	ArrowUpRightFromSquare,
+	HardDrive,
+	Link,
+	Link2,
+	Link2Off,
+	Trash,
+	Upload,
+} from 'lucide-react';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { Button } from '@/components/ui/button';
@@ -8,6 +17,20 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import OpenFolderButton from '@/components/open-folder-button';
 import clsx from 'clsx';
+import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+	AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { toast } from 'sonner';
+import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
+import { m } from 'motion/react';
 
 type ItemType = 'plugin' | 'world' | 'datapack';
 
@@ -166,22 +189,29 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 	const handleExport = async (item: Item) => {
 		if (disabled || busyFile) return;
 		setBusyFile(item.file);
+
 		try {
-			if (onExportItem) {
-				await onExportItem(item, type);
-			} else {
-				const result = await invoke<{ path: string }>('export_server_world', {
-					payload: {
-						directory: serverDirectory,
-						itemType: type,
-						file: item.file,
-					},
-				});
-				window.alert(`World exported to: ${result.path}`);
-			}
-		} catch (err) {
-			const message = err instanceof Error ? err.message : 'Failed to export item.';
-			window.alert(message);
+			toast.promise(
+				(async () => {
+					if (onExportItem) {
+						await onExportItem(item, type);
+					} else {
+						await invoke<{ path: string }>('export_server_world', {
+							payload: {
+								directory: serverDirectory,
+								itemType: type,
+								file: item.file,
+							},
+						});
+					}
+					return { name: item.file };
+				})(),
+				{
+					loading: 'Loading...',
+					success: (data) => `${data.name} has been exported to your downloads!`,
+					error: (err) => (err instanceof Error ? err.message : 'Failed to export item.'),
+				},
+			);
 		} finally {
 			setBusyFile(null);
 		}
@@ -260,7 +290,7 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 
 	return (
 		<div className='flex flex-col gap-1 min-h-100'>
-			<div className='flex items-center justify-between gap-5'>
+			<div className='flex items-center justify-between gap-5 min-h-10'>
 				<div className='flex-col gap-1'>
 					<div className='flex items-center gap-2'>
 						{icon}
@@ -269,7 +299,7 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 					{description && <p className='text-muted-foreground'>{description}</p>}
 				</div>
 				{ctaLabel && ctaUrl && (
-					<Button onClick={() => openUrl(ctaUrl)}>
+					<Button onClick={() => openUrl(ctaUrl)} variant='link'>
 						{ctaLabel}
 						{type === 'world' ? <Archive /> : <ArrowUpRightFromSquare />}
 					</Button>
@@ -283,73 +313,167 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 			/>
 			<div className='flex flex-col gap-4 mt-4'>
 				{filtered.length > 0 &&
-					filtered.map((item) => (
-						<Card key={item.file}>
-							<CardHeader className='border-b border-b-border'>
-								<CardTitle>{item.name ?? item.file}</CardTitle>
-								<CardDescription className='flex gap-6'>
+					filtered.map((item, i) => (
+						<m.div
+							initial={{ scale: 0.75, y: 10, opacity: 0 }}
+							animate={{ scale: 1, y: 0, opacity: 1 }}
+							transition={{ type: 'spring', duration: 0.3, bounce: 0, delay: i * 0.05 }}>
+							<Card key={item.file}>
+								<CardHeader className='border-b border-b-border'>
+									<CardTitle>{item.name ?? item.file}</CardTitle>
+									<CardDescription className='flex gap-6'>
+										{item.activated ? (
+											<div className='flex items-center font-bold lg:text-lg gap-1 text-green-500'>
+												<Link2 className='size-5' />
+												Active
+											</div>
+										) : (
+											<div className='flex items-center font-bold lg:text-lg gap-1 text-red-400'>
+												<Link2Off className='size-5' />
+												Inactive
+											</div>
+										)}
+
+										{typeof item.size === 'number' && (
+											<Tooltip>
+												<TooltipTrigger>
+													<div className='flex items-center lg:text-lg gap-1'>
+														<HardDrive className='size-4' />
+														{formatBytes(item.size)}
+													</div>
+												</TooltipTrigger>
+												<TooltipContent>
+													<p className='font-bold'>World Folder Size</p>
+												</TooltipContent>
+											</Tooltip>
+										)}
+										{item.url && (
+											<div className='flex items-center lg:text-lg gap-1'>
+												<Link className='size-4' />
+												{item.url}
+											</div>
+										)}
+									</CardDescription>
+								</CardHeader>
+								<CardContent className='flex gap-2'>
+									<OpenFolderButton
+										targetPath={getItemPath(serverDirectory, type, item)}
+										disabled={busyFile === item.file}
+									/>
+									{type === 'world' && (
+										<Button
+											variant='secondary'
+											disabled={disabled || busyFile === item.file}
+											onClick={() => handleExport(item)}>
+											<Upload />
+											Export
+										</Button>
+									)}
 									{item.activated ? (
-										<div className='flex items-center font-bold lg:text-lg gap-1 text-green-500'>
-											<Check className='size-5' />
-											Active
-										</div>
+										<AlertDialog>
+											<AlertDialogTrigger asChild>
+												<Button variant='secondary' disabled={disabled || busyFile === item.file}>
+													<Link2Off />
+													Deactivate
+												</Button>
+											</AlertDialogTrigger>
+											<AlertDialogContent>
+												<AlertDialogHeader>
+													<AlertDialogTitle>Are you sure?</AlertDialogTitle>
+													<AlertDialogDescription>
+														Deactivating this {type} will temporarily move it to another
+														directory so it is not loaded when the server runs until it is
+														reactivated. <br /> Deactivating this may cause unwanted behavior.
+														{type === 'plugin' &&
+															' Plugins that rely on this plugin may break.'}
+														{type === 'datapack' &&
+															' Datapacks may regenerate new or features might stop working.'}
+														{type === 'world' &&
+															' Worlds may regnerate new or other unwanted effects may occur.'}
+													</AlertDialogDescription>
+												</AlertDialogHeader>
+												<AlertDialogFooter>
+													<AlertDialogCancel>Cancel</AlertDialogCancel>
+													<AlertDialogAction
+														className='capitalize'
+														onClick={() => handleToggleActive(item)}>
+														Deactivate {type}
+													</AlertDialogAction>
+												</AlertDialogFooter>
+											</AlertDialogContent>
+										</AlertDialog>
 									) : (
-										<div className='flex items-center font-bold lg:text-lg gap-1 text-red-400'>
-											<X className='size-5' />
-											Inactive
-										</div>
+										<Button
+											onClick={() => handleToggleActive(item)}
+											variant='secondary'
+											disabled={disabled || busyFile === item.file}>
+											<Link2 />
+											Activate
+										</Button>
 									)}
-									{typeof item.size === 'number' && (
-										<div className='flex items-center lg:text-lg gap-1'>
-											<HardDrive className='size-4' />
-											{formatBytes(item.size)}
-										</div>
+									{type === 'plugin' && (
+										<AlertDialog>
+											<AlertDialogTrigger asChild>
+												<Button
+													variant='secondary'
+													className='hover:text-red-400'
+													disabled={disabled || busyFile === item.file}>
+													<Trash />
+													Uninstall
+												</Button>
+											</AlertDialogTrigger>
+											<AlertDialogContent>
+												<AlertDialogHeader>
+													<AlertDialogTitle>Are you sure?</AlertDialogTitle>
+													<AlertDialogDescription>
+														This will move the {type} to the recycling bin.
+													</AlertDialogDescription>
+												</AlertDialogHeader>
+												<AlertDialogFooter>
+													<AlertDialogCancel>Cancel</AlertDialogCancel>
+													<AlertDialogAction
+														className='capitalize'
+														variant='destructive'
+														onClick={() => handleUninstall(item)}>
+														Uninstall {type}
+													</AlertDialogAction>
+												</AlertDialogFooter>
+											</AlertDialogContent>
+										</AlertDialog>
 									)}
-									{item.url && (
-										<div className='flex items-center lg:text-lg gap-1'>
-											<LinkIcon className='size-4' />
-											{item.url}
-										</div>
+									{(type === 'world' || type === 'datapack') && (
+										<AlertDialog>
+											<AlertDialogTrigger asChild>
+												<Button
+													variant='secondary'
+													className='hover:text-red-400'
+													disabled={disabled || busyFile === item.file}>
+													<Trash />
+													Delete
+												</Button>
+											</AlertDialogTrigger>
+											<AlertDialogContent>
+												<AlertDialogHeader>
+													<AlertDialogTitle>Are you sure?</AlertDialogTitle>
+													<AlertDialogDescription>
+														This will move the {type} to the recycling bin.
+													</AlertDialogDescription>
+												</AlertDialogHeader>
+												<AlertDialogFooter>
+													<AlertDialogCancel>Cancel</AlertDialogCancel>
+													<AlertDialogAction
+														variant='destructive'
+														className='capitalize'
+														onClick={() => handleDelete(item)}>
+														Delete {type}
+													</AlertDialogAction>
+												</AlertDialogFooter>
+											</AlertDialogContent>
+										</AlertDialog>
 									)}
-								</CardDescription>
-							</CardHeader>
-							<CardContent className='flex gap-2'>
-								{type === 'world' && (
-									<Button
-										variant='secondary'
-										disabled={disabled || busyFile === item.file}
-										onClick={() => handleExport(item)}>
-										Export
-									</Button>
-								)}
-								<OpenFolderButton
-									targetPath={getItemPath(serverDirectory, type, item)}
-									disabled={busyFile === item.file}
-								/>
-								{type === 'plugin' && (
-									<Button
-										variant='destructive'
-										disabled={disabled || busyFile === item.file}
-										onClick={() => handleUninstall(item)}>
-										Uninstall
-									</Button>
-								)}
-								{(type === 'world' || type === 'datapack') && (
-									<Button
-										variant='destructive'
-										disabled={disabled || busyFile === item.file}
-										onClick={() => handleDelete(item)}>
-										Delete
-									</Button>
-								)}
-								<Button
-									variant='secondary'
-									disabled={disabled || busyFile === item.file}
-									onClick={() => handleToggleActive(item)}>
-									{item.activated ? 'Deactivate' : 'Activate'}
-								</Button>
-							</CardContent>
-						</Card>
+								</CardContent>
+							</Card>
+						</m.div>
 					))}
 			</div>
 			<div
@@ -361,8 +485,8 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 				onDrop={handleDrop}
 				onClick={handleAddItem}
 				className={clsx(
-					'flex flex-col gap-2 items-center justify-center rounded-md border-2 bg-sky-500/20 min-h-32 border-dashed p-4 cursor-pointer select-none font-bold text-sm ',
-					isDragging ? 'border-primary' : 'border-sky-500',
+					'flex flex-col gap-2 mt-3 items-center justify-center rounded-md border-2 bg-blue-500/20  hover:bg-blue-500/30 transition-colors min-h-32 border-dashed p-4 cursor-pointer select-none font-bold text-sm ',
+					isDragging ? 'border-primary' : 'border-blue-500/75',
 					(disabled || busyFile === '__upload__') && 'opacity-50 pointer-events-none',
 				)}>
 				<p>

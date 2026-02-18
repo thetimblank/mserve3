@@ -17,29 +17,12 @@ import {
 import { Field, FieldGroup } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { AutoBackupMode, Server, useServers } from '@/data/servers';
+import { Server, useServers } from '@/data/servers';
 import { FolderOpen, Plus } from 'lucide-react';
+import { toast } from 'sonner';
 
 const defaultData = {
 	directory: '',
-	createDirectoryIfMissing: true,
-	file: '',
-	ram: 3,
-	autoRestart: false,
-	autoBackup: [] as AutoBackupMode[],
-	autoBackupInterval: 120,
-	autoAgreeEula: true,
-};
-
-type InitServerPayload = {
-	directory: string;
-	createDirectoryIfMissing: boolean;
-	file: string;
-	ram: number;
-	autoRestart: boolean;
-	autoBackup: AutoBackupMode[];
-	autoBackupInterval: number;
-	autoAgreeEula: boolean;
 };
 
 type InitServerResult = {
@@ -54,7 +37,7 @@ const getDirectoryName = (directory: string) => {
 	return segments[segments.length - 1] || 'Server';
 };
 
-const buildServer = (form: InitServerPayload, result: InitServerResult): Server => ({
+const buildServer = (result: InitServerResult): Server => ({
 	name: getDirectoryName(result.directory),
 	directory: result.directory,
 	status: 'offline',
@@ -69,10 +52,10 @@ const buildServer = (form: InitServerPayload, result: InitServerResult): Server 
 		uptime: null,
 	},
 	file: result.file,
-	ram: Math.max(1, Number(form.ram) || 1),
-	auto_backup: form.autoBackup,
-	auto_backup_interval: Math.max(1, Number(form.autoBackupInterval) || 120),
-	auto_restart: form.autoRestart,
+	ram: 3,
+	auto_backup: [],
+	auto_backup_interval: 120,
+	auto_restart: false,
 	explicit_info_names: false,
 	createdAt: new Date(),
 });
@@ -117,42 +100,33 @@ export const ImportServer: React.FC<React.HTMLAttributes<HTMLButtonElement>> = (
 
 		const directory = form.directory.trim();
 		if (!directory) {
-			// check if its a valid location and that if create dir is not checked and a invalid folder is picked it will error
 			setError('Please choose a server directory.');
-			return;
-		}
-
-		const file = form.file.trim();
-		if (!file) {
-			// TODO: check if its a valid location to a jar file
-			setError('Please choose a valid server jar file.');
 			return;
 		}
 
 		setIsSubmitting(true);
 		try {
-			const payload: InitServerPayload = {
-				directory,
-				createDirectoryIfMissing: form.createDirectoryIfMissing,
-				file: form.file.trim() || 'server.jar',
-				ram: Math.max(1, Number(form.ram) || 3),
-				autoRestart: form.autoRestart,
-				autoBackup: form.autoBackup,
-				autoBackupInterval: Math.max(1, Number(form.autoBackupInterval) || 120),
-				autoAgreeEula: form.autoAgreeEula,
-			};
+			const importPromise = (async () => {
+				const res = await invoke<InitServerResult>('import_server', { directory });
+				if (!res.ok) {
+					throw new Error(res.message || 'Failed to import server.');
+				}
+				return res;
+			})();
 
-			const result = await invoke<InitServerResult>('initialize_server', { payload });
-			if (!result.ok) {
-				setError(result.message || 'Failed to initialize server.');
-				return;
-			}
+			await toast.promise(importPromise, {
+				loading: 'Importing server...',
+				success: () => `Server "${getDirectoryName(directory)}" has been imported`,
+				error: (err) => (err instanceof Error ? err.message : 'Failed to import server.'),
+			});
 
-			addServer(buildServer(payload, result));
+			const result = await importPromise;
+
+			addServer(buildServer(result));
 			resetForm();
 			setOpen(false);
 		} catch (err) {
-			const message = err instanceof Error ? err.message : 'Failed to initialize server.';
+			const message = err instanceof Error ? err.message : 'Failed to import server.';
 			setError(message);
 		} finally {
 			setIsSubmitting(false);
@@ -170,7 +144,8 @@ export const ImportServer: React.FC<React.HTMLAttributes<HTMLButtonElement>> = (
 				<DialogHeader>
 					<DialogTitle>Import an existing server</DialogTitle>
 					<DialogDescription>
-						The server will automatically be made compatible with mserve.
+						The server will automatically be made compatible with mserve. If no mserve.json is found,
+						one will be created with default settings.
 					</DialogDescription>
 				</DialogHeader>
 				<form onSubmit={onSubmit} className='space-y-6'>

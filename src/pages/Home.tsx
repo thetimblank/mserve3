@@ -29,14 +29,16 @@ const Home: React.FC = () => {
 					transition={{ type: 'spring', duration: 0.5, bounce: 0 }}
 					className='flex flex-col min-w-1/2'>
 					<h1 className='text-3xl font-bold flex gap-5 items-center mb-4 w-fit'>Welcome back</h1>
-					{servers.map((server, i) => (
-						<ServerCard
-							delay={(i + 1) * 0.05}
-							server={server}
-							key={createServerId(server.name, server.directory)}
-						/>
-					))}
-					<div className='w-full flex items-center justify-center my-4'>
+					<div className='flex flex-col gap-4'>
+						{servers.map((server, i) => (
+							<ServerCard
+								delay={(i + 1) * 0.05}
+								server={server}
+								key={createServerId(server.name, server.directory)}
+							/>
+						))}
+					</div>
+					<div className='w-full flex flex-col items-center justify-center my-4'>
 						<CreateServer />
 						<ImportServer />
 					</div>
