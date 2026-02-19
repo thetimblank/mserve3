@@ -58,6 +58,21 @@ export default function Slide3() {
 							</p>
 						</AccordionContent>
 					</AccordionItem>
+					<AccordionItem value='3'>
+						<AccordionTrigger>Players can&apos;t connect?</AccordionTrigger>
+						<AccordionContent className='flex flex-col items-start'>
+							{[
+								'Check if you correctly setup port forwarding on your PC',
+								'Check if you correctly setup port forwarding on your Network',
+								'Check if your server is online',
+								'Check if you can connect with "localhost" or "127.0.0.1" on your own PC',
+								"Check if you correctly setup your custom domain if you're using one",
+								`Check if others can successfully "ping" your IP ${data.ip_hidden ? '' : `(Tell them to type "ping ${data.ip}" in command prompt/terminal)`}`,
+							].map((item, i) => (
+								<p key={i}>- {item}</p>
+							))}
+						</AccordionContent>
+					</AccordionItem>
 				</Accordion>
 				<Button className='mt-4 ml-auto' onClick={nextSlide}>
 					Continue

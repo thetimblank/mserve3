@@ -1,23 +1,34 @@
 import { Button } from '@/components/ui/button';
-import Slide1 from './setup/Slide1';
-import Slide0 from './setup/Slide0';
 import { ArrowLeft } from 'lucide-react';
+import SlideRepeatSetup from './setup/SlideRepeatSetup';
+import SlideInitialSetup from './setup/SlideInitialSetup';
+import Slide1 from './setup/Slide1';
 import Slide2 from './setup/Slide2';
 import Slide3 from './setup/Slide3';
-import { SetupProvider, useSetup } from './setup/SetupContext';
 import Slide4 from './setup/Slide4';
+import { SetupProvider, useSetup } from './setup/SetupContext';
+import { useUser } from '@/data/user';
 
 const SetupContent: React.FC = () => {
 	const { slide, prevSlide } = useSetup();
+	const { user } = useUser();
 
-	const slides = [<Slide0 />, <Slide1 />, <Slide2 />, <Slide3 />, <Slide4 />];
+	let slides = [<SlideInitialSetup />, <Slide1 />, <Slide2 />, <Slide3 />, <Slide4 />];
+
+	if (user.initial_setup_hosting_tutorial_completed) {
+		slides = [<SlideRepeatSetup />, <Slide1 />, <Slide2 />, <Slide3 />, <Slide4 />];
+	}
 
 	return (
-		<main className='pt-15 min-h-[calc(100vh-40px)] flex items-center justify-center p-12 w-full overflow-y-auto'>
-			<Button variant='ghost' className='absolute left-[20%] top-0 m-20' onClick={prevSlide}>
-				<ArrowLeft className='size-10' />
-			</Button>
-			{slides[slide]}
+		<main className='w-full min-h-[calc(100vh-40px)] relative overflow-hidden'>
+			{slide > 0 && (
+				<Button variant='ghost' className='absolute mt-12 ml-2 size-12' onClick={prevSlide}>
+					<ArrowLeft className='size-10' />
+				</Button>
+			)}
+			<div className='pt-15 min-h-full flex items-center justify-center p-12 w-full overflow-y-auto'>
+				{slides[slide]}
+			</div>
 		</main>
 	);
 };

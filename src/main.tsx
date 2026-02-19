@@ -8,6 +8,7 @@ import { ThemeProvider } from '@/components/theme-provider';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { AppSidebar } from '@/components/app-sidebar';
 import { ServersProvider } from './data/servers';
+import { UserProvider } from './data/user';
 import Home from './pages/Home';
 import Settings from './pages/Settings';
 import Server from './pages/Server';
@@ -21,16 +22,18 @@ const RootLayout: React.FC = () => {
 			<Animations>
 				<ThemeProvider defaultTheme='dark' storageKey='vite-ui-theme'>
 					<SidebarProvider>
-						<ServersProvider>
-							<Nav />
-							<AppSidebar />
-							<Routes>
-								<Route path='/' element={<Home />} />
-								<Route path='/setup' element={<Setup />} />
-								<Route path='/servers/:serverName' element={<Server />} />
-								<Route path='/settings' element={<Settings />} />
-							</Routes>
-						</ServersProvider>
+						<UserProvider>
+							<ServersProvider>
+								<Nav />
+								<AppSidebar />
+								<Routes>
+									<Route path='/' element={<Home />} />
+									<Route path='/setup' element={<Setup />} />
+									<Route path='/servers/:serverName' element={<Server />} />
+									<Route path='/settings' element={<Settings />} />
+								</Routes>
+							</ServersProvider>
+						</UserProvider>
 					</SidebarProvider>
 				</ThemeProvider>
 			</Animations>

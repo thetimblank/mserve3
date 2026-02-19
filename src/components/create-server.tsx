@@ -52,6 +52,12 @@ type InitServerResult = {
 	directory: string;
 };
 
+type PathValidationResult = {
+	exists: boolean;
+	isDirectory: boolean;
+	isFile: boolean;
+};
+
 const getDirectoryName = (directory: string) => {
 	const segments = directory.split(/[\\/]/).filter(Boolean);
 	return segments[segments.length - 1] || 'Server';
@@ -159,14 +165,38 @@ export const CreateServer: React.FC<React.HTMLAttributes<HTMLButtonElement>> = (
 
 		const directory = form.directory.trim();
 		if (!directory) {
-			// check if its a valid location and that if create dir is not checked and a invalid folder is picked it will error
 			setError('Please choose a server directory.');
+			return;
+		}
+
+		const directoryValidation = await invoke<PathValidationResult>('validate_path', {
+			path: directory,
+		});
+		if (directoryValidation.exists && !directoryValidation.isDirectory) {
+			setError('Server location must be a directory.');
+			return;
+		}
+
+		if (!form.createDirectoryIfMissing && !directoryValidation.exists) {
+			setError(
+				"Directory does not exist. Enable 'Create directory if it doesn't exist' or choose another path.",
+			);
 			return;
 		}
 
 		const file = form.file.trim();
 		if (!file) {
-			// TODO: check if its a valid location to a jar file
+			setError('Please choose a server jar file.');
+			return;
+		}
+
+		if (!file.toLowerCase().endsWith('.jar')) {
+			setError('Server file must be a .jar file.');
+			return;
+		}
+
+		const fileValidation = await invoke<PathValidationResult>('validate_path', { path: file });
+		if (!fileValidation.exists || !fileValidation.isFile) {
 			setError('Please choose a valid server jar file.');
 			return;
 		}

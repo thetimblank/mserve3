@@ -3,51 +3,55 @@ import { Field } from '@/components/ui/field';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { useSetup } from './SetupContext';
+import { useUser } from '@/data/user';
 
 export default function Slide1() {
 	const { nextSlide, updateData, data } = useSetup();
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const { user } = useUser();
+
+	useEffect(() => {
+		if (user.completed_setup_hosting_ports.includes(data.port)) {
+			setError('You have already set firewall port ' + data.port);
+		} else {
+			setError(null);
+		}
+	}, [user.completed_setup_hosting_ports, data.port]);
 
 	const onSubmit = async (event: React.FormEvent) => {
 		event.preventDefault();
 		setError(null);
 
+		const port = Number(data.port);
+		if (!Number.isInteger(port) || port < 1 || port > 65535) {
+			setError('Port must be between 1 and 65535.');
+			return;
+		}
+
+		if (user.completed_setup_hosting_ports.includes(data.port)) {
+			setError('You have already set firewall port ' + data.port + '.');
+			return;
+		}
+
 		setIsSubmitting(true);
 		try {
-			// const payload: InitServerPayload = {
-			// 	directory,
-			// 	createDirectoryIfMissing: form.createDirectoryIfMissing,
-			// 	file: form.file.trim() || 'server.jar',
-			// 	ram: Math.max(1, Number(form.ram) || 3),
-			// 	autoRestart: form.autoRestart,
-			// 	autoBackup: form.autoBackup,
-			// 	autoBackupInterval: Math.max(1, Number(form.autoBackupInterval) || 120),
-			// 	autoAgreeEula: form.autoAgreeEula,
-			// };
-			// const initializePromise = (async () => {
-			// 	const res = await invoke<InitServerResult>('initialize_server', { payload });
-			// 	if (!res.ok) {
-			// 		throw new Error(res.message || 'Failed to initialize server.');
-			// 	}
-			// 	return res;
-			// })();
-			// toast.promise(initializePromise, {
-			// 	loading: 'Creating server...',
-			// 	success: () => `Server "${getDirectoryName(directory)}" has been created`,
-			// 	error: (err) => (err instanceof Error ? err.message : 'Failed to create server.'),
-			// });
-			// const result = await initializePromise;
-			// addServer(buildServer(payload, result));
-			// resetForm();
+			const forwardPromise = invoke<string[]>('forward_port_windows_firewall', { port });
+			toast.promise(forwardPromise, {
+				loading: `Adding firewall rules for port ${port}...`,
+				success: 'Firewall rules created.',
+				error: (err) => (err instanceof Error ? err.message : 'Failed to create firewall rules.'),
+			});
+
+			await forwardPromise;
 			nextSlide();
 		} catch (err) {
-			const message = err instanceof Error ? err.message : 'Failed to initialize server.';
+			const message = err instanceof Error ? err.message : 'Failed to create firewall rules.';
 			setError(message);
 		} finally {
 			setIsSubmitting(false);
@@ -81,11 +85,16 @@ export default function Slide1() {
 						required
 					/>
 				</Field>
-				{error && <p className='text-sm text-destructive'>{error}</p>}
-				<Button type='submit' disabled={isSubmitting} className='mt-4 ml-auto'>
-					{isSubmitting && <Spinner />}
-					Forward Port
-				</Button>
+				{error && <p className='text-sm text-destructive mt-1'>{error}</p>}
+				<div className='ml-auto mt-4 flex gap-2'>
+					<Button type='button' variant='secondary' onClick={nextSlide}>
+						Skip Step
+					</Button>
+					<Button type='submit' disabled={isSubmitting || !!error}>
+						{isSubmitting && <Spinner />}
+						Forward Port
+					</Button>
+				</div>
 			</form>
 		</m.div>
 	);

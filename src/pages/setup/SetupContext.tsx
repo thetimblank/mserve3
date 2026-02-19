@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 
 export interface SetupData {
 	port: number;
@@ -33,9 +34,7 @@ export const SetupProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 	useEffect(() => {
 		const fetchIp = async () => {
 			try {
-				// TODO: locally fetch the IP through rust
-				const response = await fetch('https://api.ipify.org?format=json');
-				const { ip } = await response.json();
+				const ip = await invoke<string>('get_local_ip');
 				updateData('ip', ip);
 			} catch (err) {
 				console.error(err);

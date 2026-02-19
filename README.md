@@ -13,16 +13,17 @@ This template should help get you started developing with Tauri, React and Types
 
 ## Roadmap
 
-- add clearing backups, storage limit, & interval clearing
-- more settings
-- update server
-- auto fetch mc server jars
-- setup proxies and server groups
-- fix issues with other server jars/parsing
-- update from app
-- motd generator
-- read minercaft settings and change
-- smoother side bar animation
-- modded servers?
-- change plugin settings?
-- accounts and remote start on website?
+⬛ add clearing backups, storage limit, & interval clearing
+⬛ more settings
+⬛ update server
+⬛ auto fetch mc server jars
+⬛ setup proxies and server groups
+⬛ fix issues with other server jars/parsing
+⬛ update from app
+⬛ motd generator
+⬛ read minercaft settings and change
+⬛ read from mserve.json
+✅ smoother side bar animation
+⬛ modded servers?
+⬛ change plugin settings?
+⬛ accounts and remote start on website?

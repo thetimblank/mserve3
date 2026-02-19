@@ -615,229 +615,230 @@ const Server: React.FC = () => {
 	};
 
 	return (
-		<main className='pt-15 min-h-[calc(100vh-40px)] p-12 w-full overflow-y-auto'>
-			<div className='flex items-center justify-between mb-8'>
+		<main className='w-full min-h-[calc(100vh-40px)] relative overflow-y-auto'>
+			<div className='min-h-full flex flex-col p-12 pt-20 w-full overflow-y-auto'>
+				<div className='flex items-center justify-between mb-8'>
+					<div>
+						<div className='flex gap-2 items-center'>
+							<Link to='/'>
+								<ArrowLeft className='size-8' />
+							</Link>
+
+							<h1 className='text-4xl font-bold'>{server.name}</h1>
+						</div>
+					</div>
+				</div>
+
 				<div>
-					<div className='flex gap-2 items-center'>
-						<Link to='/'>
-							<ArrowLeft className='size-8' />
-						</Link>
-
-						<h1 className='text-4xl font-bold'>{server.name}</h1>
-					</div>
+					<ServerTerminalPanel
+						isVisible={server.status !== 'offline'}
+						isBusy={isBusy}
+						status={server.status}
+						terminalLines={terminalLines}
+						terminalInput={terminalInput}
+						onTerminalInputChange={setTerminalInput}
+						onSubmit={handleTerminalCommandSubmit}
+						terminalOutputRef={terminalOutputRef}
+					/>
 				</div>
-			</div>
-
-			<div>
-				<ServerTerminalPanel
-					isVisible={server.status !== 'offline'}
-					isBusy={isBusy}
-					status={server.status}
-					terminalLines={terminalLines}
-					terminalInput={terminalInput}
-					onTerminalInputChange={setTerminalInput}
-					onSubmit={handleTerminalCommandSubmit}
-					terminalOutputRef={terminalOutputRef}
-				/>
-			</div>
-			<div className='mt-4 mb-8'>
-				<div className='flex gap-10'>
-					<ServerStatus server={server} size='xl' />
-
-					<div className='flex flex-col'>
-						<div className='flex gap-2 mb-2'>
-							{server.status === 'online' && (
-								<Button onClick={handleStop} disabled={isBusy}>
-									<OctagonX />
-									<p>Stop</p>
-								</Button>
-							)}
-							{server.status === 'online' && (
-								<Button variant='secondary' onClick={handleRestart} disabled={isBusy}>
-									<RefreshCcw />
-									<p>Restart</p>
-								</Button>
-							)}
-							{server.status === 'offline' && (
-								<Button onClick={handleStart} disabled={isBusy}>
-									<CircleCheck />
-									<p>Serve</p>
-								</Button>
-							)}
-							<Button
-								variant='secondary'
-								onClick={() => setHideBackgroundTelemetry((prev) => !prev)}
-								disabled={isBusy}>
-								{hideBackgroundTelemetry ? <Eye /> : <EyeOff />}
-								{hideBackgroundTelemetry ? 'Show Status Check logs' : 'Hide Status Check logs'}
-							</Button>
-							<OpenFolderButton directory={server.directory} disabled={isBusy} />
-							<EditServerPropertiesButton
-								server={server}
-								disabled={isBusy}
-								onSaved={syncServerContents}
-							/>
-
-							<AlertDialog>
-								<AlertDialogTrigger asChild>
-									<Button
-										disabled={isBusy || server.status === 'online'}
-										variant='secondary'
-										className='hover:text-red-400'>
-										<Trash />
-										<p>Delete Server</p>
+				<div className='mt-4 mb-8'>
+					<div className='flex gap-10'>
+						<ServerStatus server={server} size='xl' />
+						<div className='flex flex-col'>
+							<div className='flex gap-2 mb-2 flex-wrap'>
+								{server.status === 'online' && (
+									<Button onClick={handleStop} disabled={isBusy}>
+										<OctagonX />
+										<p>Stop</p>
 									</Button>
-								</AlertDialogTrigger>
-								<AlertDialogContent>
-									<AlertDialogHeader>
-										<AlertDialogTitle>Are you sure?</AlertDialogTitle>
-										<AlertDialogDescription>
-											This will move the server to the recycling bin.
-										</AlertDialogDescription>
-									</AlertDialogHeader>
-									<AlertDialogFooter>
-										<AlertDialogCancel>Cancel</AlertDialogCancel>
-										<AlertDialogAction
-											variant='destructive'
-											className='capitalize'
-											onClick={handleDelete}>
-											Delete Server
-										</AlertDialogAction>
-									</AlertDialogFooter>
-								</AlertDialogContent>
-							</AlertDialog>
-						</div>
-						<div className='flex items-center gap-2 mb-1'>
-							{server.createdAt && (
-								<p className='text-sm text-muted-foreground'>
-									Server was created {new Date(server.createdAt).toLocaleDateString()}
-								</p>
-							)}
-							{server.createdAt && server.status !== 'offline' && (
-								<p className='text-sm text-muted-foreground'>•</p>
-							)}
-							{server.status !== 'offline' && (
-								<p className='text-sm text-muted-foreground'>
-									Note: Some features may be unavailiable when the server is online
-								</p>
-							)}
-						</div>
-						{server.status === 'online' && (
-							<div className='flex items-center lg:text-lg gap-2'>
-								<Users className='size-5' />
-								Players: {server.stats.players}/{server.stats.capacity}
+								)}
+								{server.status === 'online' && (
+									<Button variant='secondary' onClick={handleRestart} disabled={isBusy}>
+										<RefreshCcw />
+										<p>Restart</p>
+									</Button>
+								)}
+								{server.status === 'offline' && (
+									<Button onClick={handleStart} disabled={isBusy}>
+										<CircleCheck />
+										<p>Serve</p>
+									</Button>
+								)}
+								<Button
+									variant='secondary'
+									onClick={() => setHideBackgroundTelemetry((prev) => !prev)}
+									disabled={isBusy}>
+									{hideBackgroundTelemetry ? <Eye /> : <EyeOff />}
+									{hideBackgroundTelemetry ? 'Show Status Check logs' : 'Hide Status Check logs'}
+								</Button>
+								<OpenFolderButton directory={server.directory} disabled={isBusy} />
+								<EditServerPropertiesButton
+									server={server}
+									disabled={isBusy}
+									onSaved={syncServerContents}
+								/>
+
+								<AlertDialog>
+									<AlertDialogTrigger asChild>
+										<Button
+											disabled={isBusy || server.status === 'online'}
+											variant='destructive-secondary'>
+											<Trash />
+											<p>Delete Server</p>
+										</Button>
+									</AlertDialogTrigger>
+									<AlertDialogContent>
+										<AlertDialogHeader>
+											<AlertDialogTitle>Are you sure?</AlertDialogTitle>
+											<AlertDialogDescription>
+												This will move the server to the recycling bin.
+											</AlertDialogDescription>
+										</AlertDialogHeader>
+										<AlertDialogFooter>
+											<AlertDialogCancel>Cancel</AlertDialogCancel>
+											<AlertDialogAction
+												variant='destructive'
+												className='capitalize'
+												onClick={handleDelete}>
+												Delete Server
+											</AlertDialogAction>
+										</AlertDialogFooter>
+									</AlertDialogContent>
+								</AlertDialog>
 							</div>
-						)}
-						{server.auto_restart && (
+							<div className='flex items-center gap-2 mb-1'>
+								{server.createdAt && (
+									<p className='text-sm text-muted-foreground'>
+										Server was created {new Date(server.createdAt).toLocaleDateString()}
+									</p>
+								)}
+								{server.createdAt && server.status !== 'offline' && (
+									<p className='text-sm text-muted-foreground'>•</p>
+								)}
+								{server.status !== 'offline' && (
+									<p className='text-sm text-muted-foreground'>
+										Note: Some features may be unavailiable when the server is online
+									</p>
+								)}
+							</div>
+							{server.status === 'online' && (
+								<div className='flex items-center lg:text-lg gap-2'>
+									<Users className='size-5' />
+									Players: {server.stats.players}/{server.stats.capacity}
+								</div>
+							)}
+							{server.auto_restart && (
+								<div className='flex items-center lg:text-lg gap-2'>
+									<RefreshCcw className='size-5' />
+									<p>
+										Server automatically <span className='font-bold'>restarts on shutdown</span>.
+									</p>
+								</div>
+							)}
+							{server.version && (
+								<div className='flex items-center lg:text-lg gap-2'>
+									<ArrowDownToLine className='size-5' />
+									{(() => {
+										const primary = getPrimaryMinecraftVersion(server.version);
+										if (!primary) return <span>{server.version}</span>;
+										return (
+											<p className='flex items-baseline'>
+												<Tooltip>
+													<TooltipTrigger>
+														<p>
+															The server version is{' '}
+															<span className='font-bold'>{primary}</span>.
+														</p>
+													</TooltipTrigger>
+													<TooltipContent className='max-w-40 text-warp text-white dark:text-black'>
+														{server.version}
+													</TooltipContent>
+												</Tooltip>
+											</p>
+										);
+									})()}
+								</div>
+							)}
+							{server.ram && (
+								<div className='flex items-center lg:text-lg gap-2'>
+									<MemoryStick className='size-5' />
+									<p>
+										The server has <span className='font-bold'>{server.ram}GB</span> of memory.
+									</p>
+								</div>
+							)}
 							<div className='flex items-center lg:text-lg gap-2'>
-								<RefreshCcw className='size-5' />
+								<Boxes className='size-5' />
 								<p>
-									Server automatically <span className='font-bold'>restarts on shutdown</span>.
+									The server jar file is <span className='font-bold'>{server.file}</span>.
 								</p>
 							</div>
-						)}
-						{server.version && (
-							<div className='flex items-center lg:text-lg gap-2'>
-								<ArrowDownToLine className='size-5' />
-								{(() => {
-									const primary = getPrimaryMinecraftVersion(server.version);
-									if (!primary) return <span>{server.version}</span>;
-									return (
-										<p className='flex items-baseline'>
-											<Tooltip>
-												<TooltipTrigger>
-													<p>
-														The server version is <span className='font-bold'>{primary}</span>.
-													</p>
-												</TooltipTrigger>
-												<TooltipContent className='max-w-40 text-warp text-white dark:text-black'>
-													{server.version}
-												</TooltipContent>
-											</Tooltip>
-										</p>
-									);
-								})()}
-							</div>
-						)}
-						{server.ram && (
-							<div className='flex items-center lg:text-lg gap-2'>
-								<MemoryStick className='size-5' />
-								<p>
-									The server has <span className='font-bold'>{server.ram}GB</span> of memory.
-								</p>
-							</div>
-						)}
-						<div className='flex items-center lg:text-lg gap-2'>
-							<Boxes className='size-5' />
-							<p>
-								The server jar file is <span className='font-bold'>{server.file}</span>.
-							</p>
+							{server.status === 'online' && server.stats.uptime && (
+								<div className='flex items-center lg:text-lg gap-2'>
+									<Clock className='size-5' />
+									Uptime: {formatUptime(server.stats.uptime)}
+								</div>
+							)}
 						</div>
-						{server.status === 'online' && server.stats.uptime && (
-							<div className='flex items-center lg:text-lg gap-2'>
-								<Clock className='size-5' />
-								Uptime: {formatUptime(server.stats.uptime)}
-							</div>
-						)}
 					</div>
 				</div>
+
+				<ServerContentTabs activeTab={activeTab} onTabChange={setActiveTab} />
+
+				{activeTab === 'plugins' && (
+					<ServerItemList
+						icon={<Plug />}
+						type='plugin'
+						serverDirectory={server.directory}
+						title='Plugins'
+						searchPlaceholder='Search for Plugin...'
+						emptyLabel='No Plugins were found.'
+						items={server.plugins}
+						onChanged={handleItemsChanged}
+						disabled={isBusy || server.status === 'online'}
+						ctaLabel='Download More'
+						ctaUrl='https://modrinth.com/discover/plugins'
+					/>
+				)}
+				{activeTab === 'worlds' && (
+					<ServerItemList
+						icon={<Globe />}
+						type='world'
+						serverDirectory={server.directory}
+						title='Worlds'
+						searchPlaceholder='Search for World...'
+						emptyLabel='No Worlds were found.'
+						items={server.worlds}
+						onChanged={handleItemsChanged}
+						disabled={isBusy || server.status === 'online'}
+					/>
+				)}
+				{activeTab === 'datapacks' && (
+					<ServerItemList
+						icon={<Package />}
+						type='datapack'
+						serverDirectory={server.directory}
+						title='Datapacks'
+						searchPlaceholder='Search for Datapack...'
+						emptyLabel='No Datapacks were found.'
+						items={server.datapacks}
+						onChanged={handleItemsChanged}
+						disabled={isBusy || server.status === 'online'}
+						ctaLabel='Add More'
+						ctaUrl='https://modrinth.com/discover/datapacks'
+					/>
+				)}
+				{activeTab === 'backups' && (
+					<ServerBackupsTab
+						backups={server.backups}
+						isBusy={isBusy}
+						isOnline={server.status === 'online'}
+						onCreateBackup={handleCreateBackup}
+						onRestoreBackup={handleRestoreBackup}
+						onDeleteBackup={handleDeleteBackup}
+					/>
+				)}
 			</div>
-
-			<ServerContentTabs activeTab={activeTab} onTabChange={setActiveTab} />
-
-			{activeTab === 'plugins' && (
-				<ServerItemList
-					icon={<Plug />}
-					type='plugin'
-					serverDirectory={server.directory}
-					title='Plugins'
-					searchPlaceholder='Search for Plugin...'
-					emptyLabel='No Plugins were found.'
-					items={server.plugins}
-					onChanged={handleItemsChanged}
-					disabled={isBusy || server.status === 'online'}
-					ctaLabel='Download More'
-					ctaUrl='https://modrinth.com/discover/plugins'
-				/>
-			)}
-			{activeTab === 'worlds' && (
-				<ServerItemList
-					icon={<Globe />}
-					type='world'
-					serverDirectory={server.directory}
-					title='Worlds'
-					searchPlaceholder='Search for World...'
-					emptyLabel='No Worlds were found.'
-					items={server.worlds}
-					onChanged={handleItemsChanged}
-					disabled={isBusy || server.status === 'online'}
-				/>
-			)}
-			{activeTab === 'datapacks' && (
-				<ServerItemList
-					icon={<Package />}
-					type='datapack'
-					serverDirectory={server.directory}
-					title='Datapacks'
-					searchPlaceholder='Search for Datapack...'
-					emptyLabel='No Datapacks were found.'
-					items={server.datapacks}
-					onChanged={handleItemsChanged}
-					disabled={isBusy || server.status === 'online'}
-					ctaLabel='Add More'
-					ctaUrl='https://modrinth.com/discover/datapacks'
-				/>
-			)}
-			{activeTab === 'backups' && (
-				<ServerBackupsTab
-					backups={server.backups}
-					isBusy={isBusy}
-					isOnline={server.status === 'online'}
-					onCreateBackup={handleCreateBackup}
-					onRestoreBackup={handleRestoreBackup}
-					onDeleteBackup={handleDeleteBackup}
-				/>
-			)}
 		</main>
 	);
 };

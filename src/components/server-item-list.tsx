@@ -315,10 +315,11 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 				{filtered.length > 0 &&
 					filtered.map((item, i) => (
 						<m.div
+							key={item.file}
 							initial={{ scale: 0.75, y: 10, opacity: 0 }}
 							animate={{ scale: 1, y: 0, opacity: 1 }}
 							transition={{ type: 'spring', duration: 0.3, bounce: 0, delay: i * 0.05 }}>
-							<Card key={item.file}>
+							<Card>
 								<CardHeader className='border-b border-b-border'>
 									<CardTitle>{item.name ?? item.file}</CardTitle>
 									<CardDescription className='flex gap-6'>
@@ -415,8 +416,7 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 										<AlertDialog>
 											<AlertDialogTrigger asChild>
 												<Button
-													variant='secondary'
-													className='hover:text-red-400'
+													variant='destructive-secondary'
 													disabled={disabled || busyFile === item.file}>
 													<Trash />
 													Uninstall
@@ -433,7 +433,7 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 													<AlertDialogCancel>Cancel</AlertDialogCancel>
 													<AlertDialogAction
 														className='capitalize'
-														variant='destructive'
+														variant='destructive-secondary'
 														onClick={() => handleUninstall(item)}>
 														Uninstall {type}
 													</AlertDialogAction>
@@ -445,8 +445,7 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 										<AlertDialog>
 											<AlertDialogTrigger asChild>
 												<Button
-													variant='secondary'
-													className='hover:text-red-400'
+													variant='destructive-secondary'
 													disabled={disabled || busyFile === item.file}>
 													<Trash />
 													Delete
@@ -462,7 +461,7 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 												<AlertDialogFooter>
 													<AlertDialogCancel>Cancel</AlertDialogCancel>
 													<AlertDialogAction
-														variant='destructive'
+														variant='destructive-secondary'
 														className='capitalize'
 														onClick={() => handleDelete(item)}>
 														Delete {type}

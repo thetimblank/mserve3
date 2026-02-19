@@ -87,10 +87,7 @@ const ServerBackupsTab: React.FC<ServerBackupsTabProps> = ({
 						</AlertDialog>
 						<AlertDialog>
 							<AlertDialogTrigger asChild>
-								<Button
-									variant='secondary'
-									className='hover:text-red-400'
-									disabled={isBusy || isOnline}>
+								<Button variant='destructive-secondary' disabled={isBusy || isOnline}>
 									<Trash />
 									Delete
 								</Button>

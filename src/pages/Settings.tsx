@@ -3,23 +3,34 @@ import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { m } from 'motion/react';
 import { ModeToggle } from '../components/mode-toggle';
-import { Palette } from 'lucide-react';
+import { Palette, Trash } from 'lucide-react';
 import { useServers } from '../data/servers';
+import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+	AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { toast } from 'sonner';
 
 const Settings: React.FC = () => {
 	const [dataMessage, setDataMessage] = React.useState('');
 	const { resetServers } = useServers();
 
 	const handleClearAllData = () => {
-		if (!window.confirm('This will remove all servers and restore defaults. Continue?')) return;
 		resetServers();
-		setDataMessage('All server data cleared and restored to defaults.');
+		toast.success('All data has been cleared!');
 		setTimeout(() => setDataMessage(''), 3000);
 	};
 
 	return (
-		<main className='pt-15 min-h-[calc(100vh-40px)] p-12 w-full overflow-y-auto'>
-			<div className='flex flex-col min-w-1/2 max-w-2xl'>
+		<main className='min-h-[calc(100vh-40px)] px-12 py-18 w-full overflow-y-auto'>
+			<div className='flex flex-col'>
 				<m.h1
 					initial={{ y: 50, opacity: 0 }}
 					whileInView={{ y: 0, opacity: 1 }}
@@ -31,8 +42,8 @@ const Settings: React.FC = () => {
 				<div className='space-y-6'>
 					{/* Theme Settings */}
 					<m.div
-						initial={{ y: 50, opacity: 0 }}
-						whileInView={{ y: 0, opacity: 1 }}
+						initial={{ scale: 0.75, y: 10, opacity: 0 }}
+						whileInView={{ scale: 1, y: 0, opacity: 1 }}
 						transition={{ type: 'spring', duration: 0.5, bounce: 0 }}>
 						<Card>
 							<CardHeader>
@@ -58,9 +69,9 @@ const Settings: React.FC = () => {
 
 					{/* Data & Privacy */}
 					<m.div
-						initial={{ y: 50, opacity: 0 }}
-						whileInView={{ y: 0, opacity: 1 }}
-						transition={{ type: 'spring', duration: 0.5, delay: 0.2, bounce: 0 }}>
+						initial={{ scale: 0.75, y: 10, opacity: 0 }}
+						whileInView={{ scale: 1, y: 0, opacity: 1 }}
+						transition={{ type: 'spring', duration: 0.5, delay: 0.1, bounce: 0 }}>
 						<Card>
 							<CardHeader>
 								<CardTitle>Data & Privacy</CardTitle>
@@ -78,17 +89,42 @@ const Settings: React.FC = () => {
 										{dataMessage}
 									</div>
 								)}
-								<Button
-									variant='outline'
-									className='w-full justify-start text-destructive'
-									onClick={handleClearAllData}>
-									Clear All Data
-								</Button>
+								<AlertDialog>
+									<AlertDialogTrigger asChild>
+										<Button variant='destructive-secondary'>
+											<Trash />
+											Clear All Data
+										</Button>
+									</AlertDialogTrigger>
+									<AlertDialogContent>
+										<AlertDialogHeader>
+											<AlertDialogTitle>Are you sure?</AlertDialogTitle>
+											<AlertDialogDescription>
+												This will remove all servers and restore defaults forever.
+											</AlertDialogDescription>
+										</AlertDialogHeader>
+										<AlertDialogFooter>
+											<AlertDialogCancel>Cancel</AlertDialogCancel>
+											<AlertDialogAction
+												variant='destructive'
+												className='capitalize'
+												onClick={handleClearAllData}>
+												Clear All Data
+											</AlertDialogAction>
+										</AlertDialogFooter>
+									</AlertDialogContent>
+								</AlertDialog>
 							</CardContent>
 						</Card>
 					</m.div>
 				</div>
-				<p className='mt-3 text-muted-foreground'>Version 3.0.0</p>
+				<m.p
+					initial={{ scale: 0.75, y: 10, opacity: 0 }}
+					whileInView={{ scale: 1, y: 0, opacity: 1 }}
+					transition={{ type: 'spring', duration: 0.5, delay: 0.2, bounce: 0 }}
+					className='mt-3 text-muted-foreground'>
+					Version 3.0.0
+				</m.p>
 			</div>
 		</main>
 	);

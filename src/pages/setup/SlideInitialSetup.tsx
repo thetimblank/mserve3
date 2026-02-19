@@ -3,7 +3,7 @@ import { m } from 'motion/react';
 import { useSetup } from './SetupContext';
 import { Network } from 'lucide-react';
 
-export default function Slide0() {
+export default function SlideInitialSetup() {
 	const { nextSlide } = useSetup();
 
 	return (

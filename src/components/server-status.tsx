@@ -1,5 +1,5 @@
 import { Server } from '@/data/servers';
-import { LoaderCircle, X } from 'lucide-react';
+import { Circle, LoaderCircle, X } from 'lucide-react';
 import React from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import clsx from 'clsx';
@@ -14,7 +14,7 @@ const ServerStatus: React.FC<Props> = ({ server, size = 'md' }) => {
 		md: {
 			container: 'gap-1',
 			visual: 'size-16',
-			ring: 'size-16 border-4',
+			ring: 'size-16',
 			icon: 'size-10',
 			tps: 'max-w-16 max-h-16 text-base',
 			status: 'text-base',
@@ -22,7 +22,7 @@ const ServerStatus: React.FC<Props> = ({ server, size = 'md' }) => {
 		lg: {
 			container: 'gap-2',
 			visual: 'size-20',
-			ring: 'size-20 border-[5px]',
+			ring: 'size-20',
 			icon: 'size-12',
 			tps: 'max-w-20 max-h-20 text-lg',
 			status: 'text-lg',
@@ -30,7 +30,7 @@ const ServerStatus: React.FC<Props> = ({ server, size = 'md' }) => {
 		xl: {
 			container: 'gap-2',
 			visual: 'size-24',
-			ring: 'size-24 border-6',
+			ring: 'size-24',
 			icon: 'size-14',
 			tps: 'max-w-24 max-h-24 text-xl',
 			status: 'text-xl',
@@ -44,7 +44,7 @@ const ServerStatus: React.FC<Props> = ({ server, size = 'md' }) => {
 			{server.status === 'offline' && (
 				<div className={`text-red-400 flex items-center flex-col ${classes.container}`}>
 					<div className={`${classes.visual} flex flex-col items-center justify-center`}>
-						<div className={`absolute border-red-400 rounded-full ${classes.ring}`} />
+						<Circle className={`absolute text-red-400 ${classes.ring}`} />
 						<X className={classes.icon} />
 					</div>
 					<p className={`font-bold ${classes.status}`}>Offline</p>
@@ -55,16 +55,16 @@ const ServerStatus: React.FC<Props> = ({ server, size = 'md' }) => {
 					<Tooltip>
 						<TooltipTrigger>
 							<div className={`${classes.visual} flex items-center justify-center`}>
-								<div
+								<Circle
 									className={clsx(
-										'absolute rounded-full border-green-500',
+										'absolute',
 										classes.ring,
-										server.stats.tps <= 10 && 'border-red-800',
-										server.stats.tps > 10 && server.stats.tps <= 15 && 'border-red-400',
-										server.stats.tps > 15 && server.stats.tps <= 17 && 'border-orange-500',
-										server.stats.tps > 17 && server.stats.tps <= 18 && 'border-yellow-500',
-										server.stats.tps > 18 && server.stats.tps <= 19 && 'border-green-600',
-										server.stats.tps > 19 && server.stats.tps <= 20 && 'border-green-500',
+										server.stats.tps <= 10 && 'text-red-800',
+										server.stats.tps > 10 && server.stats.tps <= 15 && 'text-red-400',
+										server.stats.tps > 15 && server.stats.tps <= 17 && 'text-orange-500',
+										server.stats.tps > 17 && server.stats.tps <= 18 && 'text-yellow-500',
+										server.stats.tps > 18 && server.stats.tps <= 19 && 'text-green-600',
+										server.stats.tps > 19 && server.stats.tps <= 20 && 'text-green-500',
 									)}
 								/>
 								<p
