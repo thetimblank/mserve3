@@ -1,0 +1,86 @@
+name: Release Tauri
+
+on:
+   push:
+      tags:
+         - 'v*'
+
+permissions:
+   contents: write
+
+jobs:
+   release:
+      runs-on: windows-latest
+
+      steps:
+         - name: Checkout
+           uses: actions/checkout@v4
+
+         - name: Setup Node
+           uses: actions/setup-node@v4
+           with:
+              node-version: 20
+              cache: npm
+
+         - name: Setup Rust
+           uses: dtolnay/rust-toolchain@stable
+
+         - name: Install frontend dependencies
+           run: npm ci
+
+         - name: Build signed Tauri release artifacts
+           shell: pwsh
+           env:
+              TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+              TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+           run: npm run release:build
+
+         - name: Generate latest.json for updater
+           shell: pwsh
+           run: |
+              $ErrorActionPreference = 'Stop'
+              $tag = '${{ github.ref_name }}'
+              $repo = '${{ github.repository }}'
+
+              $tauriConfig = Get-Content 'src-tauri/tauri.conf.json' -Raw | ConvertFrom-Json
+              $version = $tauriConfig.version
+
+              $nsisBundleDir = 'src-tauri/target/release/bundle/nsis'
+              $setupExe = Get-ChildItem $nsisBundleDir -Filter '*-setup.exe' | Select-Object -First 1
+              if (-not $setupExe) {
+                throw 'No NSIS setup executable found in bundle output.'
+              }
+
+              $setupSigPath = "$($setupExe.FullName).sig"
+              if (-not (Test-Path $setupSigPath)) {
+                throw "Missing signature file for $($setupExe.Name): $setupSigPath"
+              }
+
+              $signature = (Get-Content $setupSigPath -Raw).Trim()
+              $downloadUrl = "https://github.com/$repo/releases/download/$tag/$($setupExe.Name)"
+
+              $latest = @{
+                version = $version
+                notes = 'See release notes on GitHub.'
+                pub_date = (Get-Date).ToUniversalTime().ToString('o')
+                platforms = @{
+                  'windows-x86_64' = @{
+                    signature = $signature
+                    url = $downloadUrl
+                  }
+                }
+              }
+
+              $latest | ConvertTo-Json -Depth 6 | Out-File -FilePath latest.json -Encoding utf8
+
+         - name: Upload GitHub release assets
+           uses: softprops/action-gh-release@v2
+           with:
+              tag_name: ${{ github.ref_name }}
+              make_latest: true
+              files: |
+                 src-tauri/target/release/bundle/nsis/*-setup.exe
+                 src-tauri/target/release/bundle/nsis/*-setup.exe.sig
+                 src-tauri/target/release/bundle/msi/*.msi
+                 src-tauri/target/release/bundle/msi/*.msi.sig
+                 latest.json

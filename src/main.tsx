@@ -14,11 +14,13 @@ import Settings from './pages/Settings';
 import Server from './pages/Server';
 import { Toaster } from './components/ui/sonner';
 import Setup from './pages/Setup';
+import MserveRepairDialog from '@/components/mserve-repair-dialog';
 
 const RootLayout: React.FC = () => {
 	return (
 		<BrowserRouter>
 			<Toaster />
+			<MserveRepairDialog />
 			<Animations>
 				<ThemeProvider defaultTheme='dark' storageKey='vite-ui-theme'>
 					<SidebarProvider>

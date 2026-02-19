@@ -56,6 +56,8 @@ import {
 	type ServerContentTab,
 	type ServerOutputEvent,
 } from './server/server-types';
+import { repairServerMserveJson, syncServerMserveJson } from '@/lib/mserve-sync';
+import { requestMserveRepair } from '@/lib/mserve-repair-controller';
 import {
 	didRequestStop,
 	formatUptime,
@@ -586,6 +588,59 @@ const Server: React.FC = () => {
 		}
 	};
 
+	const handleManualSync = async () => {
+		if (isBusy || server.status !== 'offline') return;
+
+		setIsBusy(true);
+		try {
+			let synced = await syncServerMserveJson(server.directory);
+
+			if (synced.status === 'needs_setup') {
+				const repairPayload = await requestMserveRepair({
+					directory: server.directory,
+					file: server.file,
+					ram: server.ram ?? 3,
+					auto_backup: server.auto_backup ?? [],
+					auto_backup_interval: server.auto_backup_interval ?? 120,
+					auto_restart: server.auto_restart ?? false,
+					explicit_info_names: server.explicit_info_names ?? false,
+					custom_flags: server.custom_flags ?? [],
+				});
+
+				if (!repairPayload) {
+					toast.error('Sync cancelled. mserve.json rebuild was not completed.');
+					return;
+				}
+
+				synced = await repairServerMserveJson(repairPayload);
+			}
+
+			if (!synced.config) {
+				throw new Error('Valid mserve.json data could not be resolved.');
+			}
+
+			updateServer(serverId, {
+				file: synced.config.file,
+				ram: synced.config.ram,
+				auto_backup: synced.config.auto_backup,
+				auto_backup_interval: synced.config.auto_backup_interval,
+				auto_restart: synced.config.auto_restart,
+				explicit_info_names: synced.config.explicit_info_names,
+				custom_flags: synced.config.custom_flags,
+				provider: synced.config.provider,
+				version: synced.config.version,
+				createdAt: new Date(synced.config.createdAt),
+			});
+
+			toast.success(synced.message);
+		} catch (err) {
+			const message = err instanceof Error ? err.message : 'Failed to sync mserve.json.';
+			toast.error(message);
+		} finally {
+			setIsBusy(false);
+		}
+	};
+
 	const handleRestoreBackup = async (backupDirectory: string) => {
 		if (isBusy || server.status === 'online') return;
 
@@ -672,6 +727,13 @@ const Server: React.FC = () => {
 									{hideBackgroundTelemetry ? 'Show Status Check logs' : 'Hide Status Check logs'}
 								</Button>
 								<OpenFolderButton directory={server.directory} disabled={isBusy} />
+								<Button
+									variant='secondary'
+									onClick={handleManualSync}
+									disabled={isBusy || server.status !== 'offline'}>
+									<RefreshCcw />
+									<p>Sync mserve.json</p>
+								</Button>
 								<EditServerPropertiesButton
 									server={server}
 									disabled={isBusy}

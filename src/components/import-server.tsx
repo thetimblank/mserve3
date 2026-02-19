@@ -18,6 +18,8 @@ import { Field, FieldGroup } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Server, useServers } from '@/data/servers';
+import { repairServerMserveJson, syncServerMserveJson, type SyncedMserveConfig } from '@/lib/mserve-sync';
+import { requestMserveRepair } from '@/lib/mserve-repair-controller';
 import { FolderOpen, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -37,7 +39,7 @@ const getDirectoryName = (directory: string) => {
 	return segments[segments.length - 1] || 'Server';
 };
 
-const buildServer = (result: InitServerResult): Server => ({
+const buildServer = (result: InitServerResult, config: SyncedMserveConfig): Server => ({
 	name: getDirectoryName(result.directory),
 	directory: result.directory,
 	status: 'offline',
@@ -51,13 +53,16 @@ const buildServer = (result: InitServerResult): Server => ({
 		tps: 0,
 		uptime: null,
 	},
-	file: result.file,
-	ram: 3,
-	auto_backup: [],
-	auto_backup_interval: 120,
-	auto_restart: false,
-	explicit_info_names: false,
-	createdAt: new Date(),
+	file: config.file,
+	ram: config.ram,
+	auto_backup: config.auto_backup,
+	auto_backup_interval: config.auto_backup_interval,
+	auto_restart: config.auto_restart,
+	explicit_info_names: config.explicit_info_names,
+	custom_flags: config.custom_flags,
+	provider: config.provider,
+	version: config.version,
+	createdAt: new Date(config.createdAt),
 });
 
 export const ImportServer: React.FC<React.HTMLAttributes<HTMLButtonElement>> = ({ ...props }) => {
@@ -113,16 +118,54 @@ export const ImportServer: React.FC<React.HTMLAttributes<HTMLButtonElement>> = (
 				}
 				return res;
 			})();
+			const importAndSyncPromise = (async () => {
+				const result = await importPromise;
 
-			await toast.promise(importPromise, {
+				let synced = await syncServerMserveJson(result.directory);
+				let usedRepairDialog = false;
+
+				if (synced.status === 'needs_setup') {
+					const repairPayload = await requestMserveRepair({
+						directory: result.directory,
+						file: result.file || 'server.jar',
+						ram: synced.config?.ram ?? 3,
+						auto_backup: synced.config?.auto_backup ?? [],
+						auto_backup_interval: synced.config?.auto_backup_interval ?? 120,
+						auto_restart: synced.config?.auto_restart ?? false,
+						explicit_info_names: synced.config?.explicit_info_names ?? false,
+						custom_flags: synced.config?.custom_flags ?? [],
+					});
+
+					if (!repairPayload) {
+						throw new Error('Import cancelled because mserve.json rebuild was not completed.');
+					}
+
+					synced = await repairServerMserveJson(repairPayload);
+					usedRepairDialog = true;
+				}
+
+				if (!synced.config) {
+					throw new Error('Could not resolve valid mserve.json data for this server.');
+				}
+
+				addServer(buildServer(result, synced.config));
+				return {
+					usedRepairDialog,
+					autoRepaired: synced.updated,
+				};
+			})();
+
+			await toast.promise(importAndSyncPromise, {
 				loading: 'Importing server...',
-				success: () => `Server "${getDirectoryName(directory)}" has been imported`,
+				success: (result) =>
+					result.usedRepairDialog
+						? `Server "${getDirectoryName(directory)}" was imported and rebuilt mserve.json`
+						: result.autoRepaired
+							? `Server "${getDirectoryName(directory)}" was imported and automatically repaired mserve.json`
+							: `Server "${getDirectoryName(directory)}" has been imported`,
 				error: (err) => (err instanceof Error ? err.message : 'Failed to import server.'),
 			});
 
-			const result = await importPromise;
-
-			addServer(buildServer(result));
 			resetForm();
 			setOpen(false);
 		} catch (err) {

@@ -3,8 +3,11 @@ import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { m } from 'motion/react';
 import { ModeToggle } from '../components/mode-toggle';
-import { Palette, Trash } from 'lucide-react';
+import { Download, Palette, Trash } from 'lucide-react';
 import { useServers } from '../data/servers';
+import { isTauri } from '@tauri-apps/api/core';
+import { getVersion } from '@tauri-apps/api/app';
+import { check, type Update } from '@tauri-apps/plugin-updater';
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -19,13 +22,86 @@ import {
 import { toast } from 'sonner';
 
 const Settings: React.FC = () => {
-	const [dataMessage, setDataMessage] = React.useState('');
+	const [currentVersion, setCurrentVersion] = React.useState('unknown');
+	const [isCheckingUpdate, setIsCheckingUpdate] = React.useState(false);
+	const [isInstallingUpdate, setIsInstallingUpdate] = React.useState(false);
+	const [availableUpdate, setAvailableUpdate] = React.useState<Update | null>(null);
+	const [updateMessage, setUpdateMessage] = React.useState('Not checked yet.');
 	const { resetServers } = useServers();
+
+	React.useEffect(() => {
+		if (!isTauri()) {
+			setUpdateMessage('Updater is available in desktop app builds only.');
+			return;
+		}
+
+		let mounted = true;
+		getVersion()
+			.then((version) => {
+				if (mounted) {
+					setCurrentVersion(version);
+				}
+			})
+			.catch(() => {
+				setCurrentVersion('unknown');
+			});
+
+		return () => {
+			mounted = false;
+		};
+	}, []);
 
 	const handleClearAllData = () => {
 		resetServers();
 		toast.success('All data has been cleared!');
-		setTimeout(() => setDataMessage(''), 3000);
+	};
+
+	const handleCheckForUpdates = async () => {
+		if (!isTauri()) {
+			toast.error('Updater is only available in desktop app builds.');
+			return;
+		}
+
+		setIsCheckingUpdate(true);
+		try {
+			const update = await check();
+			if (!update) {
+				setAvailableUpdate(null);
+				setUpdateMessage('You are on the latest version.');
+				toast.success('You are on the latest version.');
+				return;
+			}
+
+			setAvailableUpdate(update);
+			setUpdateMessage(`Update ${update.version} is available.`);
+			toast.info(`Update ${update.version} is available.`);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : 'Failed to check for updates.';
+			setUpdateMessage(message);
+			toast.error(message);
+		} finally {
+			setIsCheckingUpdate(false);
+		}
+	};
+
+	const handleInstallUpdate = async () => {
+		if (!availableUpdate) {
+			return;
+		}
+
+		setIsInstallingUpdate(true);
+		try {
+			await availableUpdate.downloadAndInstall();
+			setAvailableUpdate(null);
+			setUpdateMessage('Update installed. Restart MSERVE to finish updating.');
+			toast.success('Update installed. Restart MSERVE to finish updating.');
+		} catch (error) {
+			const message = error instanceof Error ? error.message : 'Failed to install update.';
+			setUpdateMessage(message);
+			toast.error(message);
+		} finally {
+			setIsInstallingUpdate(false);
+		}
 	};
 
 	return (
@@ -84,11 +160,6 @@ const Settings: React.FC = () => {
 								<Button variant='outline' className='w-full justify-start'>
 									Import Data
 								</Button> */}
-								{dataMessage && (
-									<div className='p-3 rounded-md bg-green-500/10 text-green-600 dark:text-green-400 text-sm'>
-										{dataMessage}
-									</div>
-								)}
 								<AlertDialog>
 									<AlertDialogTrigger asChild>
 										<Button variant='destructive-secondary'>
@@ -117,14 +188,43 @@ const Settings: React.FC = () => {
 							</CardContent>
 						</Card>
 					</m.div>
+
+					<m.div
+						initial={{ scale: 0.75, y: 10, opacity: 0 }}
+						whileInView={{ scale: 1, y: 0, opacity: 1 }}
+						transition={{ type: 'spring', duration: 0.5, bounce: 0 }}>
+						<Card>
+							<CardHeader>
+								<CardTitle>Updates</CardTitle>
+								<CardDescription>Check and install over-the-air updates.</CardDescription>
+							</CardHeader>
+							<CardContent className='space-y-4'>
+								<div>
+									<p className='font-medium'>Current version: {currentVersion}</p>
+									<p className='text-sm text-muted-foreground'>{updateMessage}</p>
+								</div>
+								<div className='flex items-center gap-3'>
+									<Button
+										variant='outline'
+										onClick={handleCheckForUpdates}
+										disabled={isCheckingUpdate || isInstallingUpdate}>
+										<Download />
+										{isCheckingUpdate ? 'Checking...' : 'Check for updates'}
+									</Button>
+									<Button
+										onClick={handleInstallUpdate}
+										disabled={!availableUpdate || isCheckingUpdate || isInstallingUpdate}>
+										{isInstallingUpdate
+											? 'Installing...'
+											: availableUpdate
+												? `Install ${availableUpdate.version}`
+												: 'Install update'}
+									</Button>
+								</div>
+							</CardContent>
+						</Card>
+					</m.div>
 				</div>
-				<m.p
-					initial={{ scale: 0.75, y: 10, opacity: 0 }}
-					whileInView={{ scale: 1, y: 0, opacity: 1 }}
-					transition={{ type: 'spring', duration: 0.5, delay: 0.2, bounce: 0 }}
-					className='mt-3 text-muted-foreground'>
-					Version 3.0.0
-				</m.p>
 			</div>
 		</main>
 	);

@@ -1,13 +1,16 @@
 {
 	"name": "mserve",
 	"private": true,
-	"version": "3.0.0",
+	"version": "3.1.0",
 	"type": "module",
 	"scripts": {
 		"dev": "vite",
 		"build": "tsc && vite build",
 		"preview": "vite preview",
-		"tauri": "tauri"
+		"tauri": "tauri",
+		"tauri:build": "tauri build",
+		"release:signer:generate": "tauri signer generate",
+		"release:build": "tauri build"
 	},
 	"dependencies": {
 		"@number-flow/react": "^0.5.7",
@@ -21,6 +24,7 @@
 		"@tauri-apps/api": "^2.10.1",
 		"@tauri-apps/plugin-dialog": "^2.6.0",
 		"@tauri-apps/plugin-opener": "^2.5.3",
+		"@tauri-apps/plugin-updater": "^2.9.0",
 		"chart.js": "^4.5.1",
 		"class-variance-authority": "^0.7.1",
 		"clsx": "^2.1.1",

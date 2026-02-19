@@ -1,5 +1,7 @@
+use serde::de::{self, MapAccess, Visitor};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::env;
 use std::fs;
@@ -14,6 +16,43 @@ use tauri::{Emitter, State};
 use walkdir::WalkDir;
 use zip::write::SimpleFileOptions;
 use zip::CompressionMethod;
+
+struct TopLevelObject(Map<String, Value>);
+
+impl<'de> Deserialize<'de> for TopLevelObject {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct TopLevelObjectVisitor;
+
+        impl<'de> Visitor<'de> for TopLevelObjectVisitor {
+            type Value = TopLevelObject;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a JSON object")
+            }
+
+            fn visit_map<M>(self, mut access: M) -> Result<Self::Value, M::Error>
+            where
+                M: MapAccess<'de>,
+            {
+                let mut values = Map::new();
+
+                while let Some((key, value)) = access.next_entry::<String, Value>()? {
+                    if values.contains_key(&key) {
+                        return Err(de::Error::custom(format!("Duplicate key found: {key}")));
+                    }
+                    values.insert(key, value);
+                }
+
+                Ok(TopLevelObject(values))
+            }
+        }
+
+        deserializer.deserialize_map(TopLevelObjectVisitor)
+    }
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -35,6 +74,44 @@ struct InitServerResult {
     message: String,
     file: String,
     directory: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RepairMserveJsonPayload {
+    directory: String,
+    file: String,
+    ram: u32,
+    auto_backup: Vec<String>,
+    auto_backup_interval: u32,
+    auto_restart: bool,
+    explicit_info_names: bool,
+    custom_flags: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct SyncedMserveConfig {
+    directory: String,
+    file: String,
+    ram: u32,
+    auto_backup: Vec<String>,
+    auto_backup_interval: u32,
+    auto_restart: bool,
+    explicit_info_names: bool,
+    custom_flags: Vec<String>,
+    provider: Option<String>,
+    version: Option<String>,
+    created_at: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SyncMserveJsonResult {
+    status: String,
+    message: String,
+    config: Option<SyncedMserveConfig>,
+    updated: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -279,6 +356,256 @@ fn get_runtime_config(directory: &Path) -> Result<RuntimeServerConfig, String> {
     let parsed: RuntimeServerConfig = serde_json::from_str(&data).map_err(|err| err.to_string())?;
 
     Ok(parsed)
+}
+
+fn default_auto_backup() -> Vec<String> {
+    vec![]
+}
+
+fn default_synced_config(directory: &Path) -> SyncedMserveConfig {
+    let fallback_file = find_first_jar_file_name(directory).unwrap_or_else(|| "server.jar".to_string());
+    SyncedMserveConfig {
+        directory: directory.to_string_lossy().to_string(),
+        file: fallback_file,
+        ram: 3,
+        auto_backup: default_auto_backup(),
+        auto_backup_interval: 120,
+        auto_restart: false,
+        explicit_info_names: false,
+        custom_flags: vec![],
+        provider: None,
+        version: None,
+        created_at: chrono::Local::now().to_rfc3339(),
+    }
+}
+
+fn find_first_jar_file_name(directory: &Path) -> Option<String> {
+    if let Ok(entries) = fs::read_dir(directory) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            let Some(name) = path.file_name().and_then(|value| value.to_str()) else {
+                continue;
+            };
+            if name.to_lowercase().ends_with(".jar") {
+                return Some(name.to_string());
+            }
+        }
+    }
+
+    None
+}
+
+fn normalize_auto_backup(raw: Option<&serde_json::Value>) -> Option<Vec<String>> {
+    let Some(value) = raw else {
+        return Some(default_auto_backup());
+    };
+
+    let Some(items) = value.as_array() else {
+        return None;
+    };
+
+    let mut output = Vec::new();
+    for item in items {
+        let Some(mode) = item.as_str() else {
+            continue;
+        };
+        if matches!(mode, "interval" | "on_close" | "on_start") {
+            if !output.iter().any(|existing| existing == mode) {
+                output.push(mode.to_string());
+            }
+        }
+    }
+
+    Some(output)
+}
+
+fn sanitize_custom_flags(raw: Option<&serde_json::Value>) -> Vec<String> {
+    let Some(value) = raw else {
+        return vec![];
+    };
+
+    let Some(items) = value.as_array() else {
+        return vec![];
+    };
+
+    let mut output = Vec::new();
+    for item in items {
+        if let Some(flag) = item.as_str() {
+            let trimmed = flag.trim();
+            if !trimmed.is_empty() && !output.iter().any(|existing| existing == trimmed) {
+                output.push(trimmed.to_string());
+            }
+        }
+    }
+
+    output
+}
+
+fn sanitize_mserve_value_config(
+    directory: &Path,
+    object: &serde_json::Map<String, serde_json::Value>,
+) -> SyncedMserveConfig {
+    let mut config = default_synced_config(directory);
+
+    let normalized_file = object
+        .get("file")
+        .and_then(|value| value.as_str())
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty() && value.to_lowercase().ends_with(".jar"))
+        .map(|value| value.to_string())
+        .or_else(|| find_first_jar_file_name(directory))
+        .unwrap_or_else(|| "server.jar".to_string());
+
+    let normalized_ram = object
+        .get("ram")
+        .and_then(|value| value.as_u64())
+        .map(|value| value.max(1) as u32)
+        .unwrap_or(3);
+
+    let normalized_auto_backup = normalize_auto_backup(object.get("auto_backup"))
+        .unwrap_or_else(default_auto_backup);
+
+    let normalized_interval = object
+        .get("auto_backup_interval")
+        .and_then(|value| value.as_u64())
+        .map(|value| value.max(1) as u32)
+        .unwrap_or(120);
+
+    let normalized_auto_restart = object
+        .get("auto_restart")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+
+    let normalized_explicit_info_names = object
+        .get("explicit_info_names")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+
+    let normalized_custom_flags = sanitize_custom_flags(object.get("custom_flags"));
+
+    let normalized_provider = object
+        .get("provider")
+        .and_then(|value| value.as_str())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    let normalized_version = object
+        .get("version")
+        .and_then(|value| value.as_str())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    let normalized_created_at = object
+        .get("createdAt")
+        .and_then(|value| value.as_str())
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| chrono::Local::now().to_rfc3339());
+
+    config.file = normalized_file;
+    config.ram = normalized_ram;
+    config.auto_backup = normalized_auto_backup;
+    config.auto_backup_interval = normalized_interval;
+    config.auto_restart = normalized_auto_restart;
+    config.explicit_info_names = normalized_explicit_info_names;
+    config.custom_flags = normalized_custom_flags;
+    config.provider = normalized_provider;
+    config.version = normalized_version;
+    config.created_at = normalized_created_at;
+
+    config
+}
+
+fn write_synced_mserve_json(directory: &Path, config: &SyncedMserveConfig) -> Result<(), String> {
+    let content = json!({
+        "explicit_info_names": config.explicit_info_names,
+        "auto_backup": config.auto_backup,
+        "ram": config.ram.max(1),
+        "directory": config.directory,
+        "file": config.file,
+        "auto_backup_interval": config.auto_backup_interval.max(1),
+        "auto_restart": config.auto_restart,
+        "custom_flags": config.custom_flags,
+        "provider": config.provider,
+        "version": config.version,
+        "createdAt": config.created_at,
+    });
+
+    fs::write(
+        directory.join("mserve.json"),
+        serde_json::to_vec_pretty(&content).map_err(|err| err.to_string())?,
+    )
+    .map_err(|err| err.to_string())
+}
+
+fn validate_mserve_json_keys(
+    object: &serde_json::Map<String, serde_json::Value>,
+) -> Result<(), String> {
+    let allowed = [
+        "file",
+        "ram",
+        "auto_backup",
+        "auto_backup_interval",
+        "auto_restart",
+        "explicit_info_names",
+        "custom_flags",
+        "provider",
+        "version",
+        "directory",
+        "createdAt",
+    ];
+
+    for key in object.keys() {
+        if !allowed.iter().any(|allowed_key| allowed_key == key) {
+            return Err(format!("Unsupported key found: {key}"));
+        }
+    }
+
+    Ok(())
+}
+
+fn parse_mserve_top_level_object(raw: &str) -> Result<Map<String, Value>, String> {
+    let parsed: TopLevelObject = serde_json::from_str(raw).map_err(|err| err.to_string())?;
+    Ok(parsed.0)
+}
+
+fn resolve_repair_file(directory: &Path, raw_file: &str) -> Result<String, String> {
+    let trimmed = raw_file.trim();
+    if trimmed.is_empty() {
+        return Ok(find_first_jar_file_name(directory).unwrap_or_else(|| "server.jar".to_string()));
+    }
+
+    let input_path = PathBuf::from(trimmed);
+
+    if input_path.is_absolute() || input_path.components().count() > 1 {
+        if !trimmed.to_lowercase().ends_with(".jar") {
+            return Err("Server file must be a .jar file.".to_string());
+        }
+
+        if let Ok((copied_file, _)) = copy_jar_to_server_directory(directory, trimmed) {
+            return Ok(copied_file);
+        }
+
+        let fallback_name = input_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(|name| name.trim())
+            .filter(|name| !name.is_empty() && name.to_lowercase().ends_with(".jar"))
+            .map(|name| name.to_string())
+            .unwrap_or_else(|| "server.jar".to_string());
+
+        return Ok(fallback_name);
+    }
+
+    if !trimmed.to_lowercase().ends_with(".jar") {
+        return Err("Server file must be a .jar file.".to_string());
+    }
+
+    Ok(trimmed.to_string())
 }
 
 fn to_alpha_prefix(value: &str) -> Option<String> {
@@ -1250,17 +1577,10 @@ fn import_server(directory: String) -> Result<InitServerResult, String> {
     let mserve_json_path = directory_path.join("mserve.json");
 
     let (jar_file, message) = if mserve_json_path.exists() {
-        let data = fs::read_to_string(&mserve_json_path).map_err(|err| err.to_string())?;
-        let parsed: serde_json::Value = serde_json::from_str(&data).map_err(|err| err.to_string())?;
-        let existing_jar = parsed
-            .get("file")
-            .and_then(|f| f.as_str())
-            .unwrap_or_default()
-            .to_string();
-
+        let detected = find_first_jar_file_name(&directory_path).unwrap_or_default();
         (
-            existing_jar,
-            "Server already has mserve.json configuration.".to_string(),
+            detected,
+            "Server already has mserve.json configuration. It will be validated and synced on import.".to_string(),
         )
     } else {
         let mut found_jar = String::new();
@@ -1313,6 +1633,129 @@ fn import_server(directory: String) -> Result<InitServerResult, String> {
         message,
         file: jar_file,
         directory: directory_str.to_string(),
+    })
+}
+
+#[tauri::command]
+fn sync_server_mserve_json(directory: String) -> Result<SyncMserveJsonResult, String> {
+    let directory_str = directory.trim();
+    if directory_str.is_empty() {
+        return Err("Server directory is required.".to_string());
+    }
+
+    let directory_path = PathBuf::from(directory_str);
+    if !directory_path.exists() || !directory_path.is_dir() {
+        return Err("Server directory does not exist.".to_string());
+    }
+
+    let mserve_path = directory_path.join("mserve.json");
+    if !mserve_path.exists() {
+        return Ok(SyncMserveJsonResult {
+            status: "needs_setup".to_string(),
+            message: "mserve.json is missing and needs to be rebuilt.".to_string(),
+            config: Some(default_synced_config(&directory_path)),
+            updated: false,
+        });
+    }
+
+    let raw = fs::read_to_string(&mserve_path).map_err(|err| err.to_string())?;
+    let object = match parse_mserve_top_level_object(&raw) {
+        Ok(value) => value,
+        Err(_) => {
+            return Ok(SyncMserveJsonResult {
+                status: "needs_setup".to_string(),
+                message: "The data found was invalid. Please rebuild mserve.json.".to_string(),
+                config: Some(default_synced_config(&directory_path)),
+                updated: false,
+            });
+        }
+    };
+
+    if validate_mserve_json_keys(&object).is_err() {
+        return Ok(SyncMserveJsonResult {
+            status: "needs_setup".to_string(),
+            message: "The data found was invalid. Please rebuild mserve.json.".to_string(),
+            config: Some(default_synced_config(&directory_path)),
+            updated: false,
+        });
+    }
+
+    let normalized = sanitize_mserve_value_config(&directory_path, &object);
+    let normalized_json = serde_json::to_string_pretty(&json!({
+        "explicit_info_names": normalized.explicit_info_names,
+        "auto_backup": normalized.auto_backup,
+        "ram": normalized.ram,
+        "directory": normalized.directory,
+        "file": normalized.file,
+        "auto_backup_interval": normalized.auto_backup_interval,
+        "auto_restart": normalized.auto_restart,
+        "custom_flags": normalized.custom_flags,
+        "provider": normalized.provider,
+        "version": normalized.version,
+        "createdAt": normalized.created_at,
+    }))
+    .map_err(|err| err.to_string())?;
+
+    let existing_trimmed = raw.trim();
+    let normalized_trimmed = normalized_json.trim();
+    let updated = existing_trimmed != normalized_trimmed;
+
+    if updated {
+        write_synced_mserve_json(&directory_path, &normalized)?;
+    }
+
+    Ok(SyncMserveJsonResult {
+        status: "synced".to_string(),
+        message: if updated {
+            "mserve.json was validated and repaired.".to_string()
+        } else {
+            "mserve.json is valid.".to_string()
+        },
+        config: Some(normalized),
+        updated,
+    })
+}
+
+#[tauri::command]
+fn repair_server_mserve_json(payload: RepairMserveJsonPayload) -> Result<SyncMserveJsonResult, String> {
+    let directory_str = payload.directory.trim();
+    if directory_str.is_empty() {
+        return Err("Server directory is required.".to_string());
+    }
+
+    let directory_path = PathBuf::from(directory_str);
+    if !directory_path.exists() || !directory_path.is_dir() {
+        return Err("Server directory does not exist.".to_string());
+    }
+
+    let resolved_file = resolve_repair_file(&directory_path, &payload.file)?;
+    let auto_backup: Vec<String> = payload
+        .auto_backup
+        .into_iter()
+        .filter(|value| matches!(value.as_str(), "interval" | "on_close" | "on_start"))
+        .collect();
+
+    let config = SyncedMserveConfig {
+        directory: directory_path.to_string_lossy().to_string(),
+        file: resolved_file,
+        ram: payload.ram.max(1),
+        auto_backup,
+        auto_backup_interval: payload.auto_backup_interval.max(1),
+        auto_restart: payload.auto_restart,
+        explicit_info_names: payload.explicit_info_names,
+        custom_flags: payload.custom_flags,
+        provider: None,
+        version: None,
+        created_at: chrono::Local::now().to_rfc3339(),
+    };
+
+    write_synced_mserve_json(&directory_path, &config)?;
+
+    Ok(SyncMserveJsonResult {
+        status: "synced".to_string(),
+        message: "mserve.json was rebuilt successfully.".to_string(),
+        config: Some(config),
+        updated: true,
     })
 }
 
@@ -1835,12 +2278,15 @@ pub fn run() {
         .manage(RuntimeState::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             forward_port_windows_firewall,
             validate_path,
             get_local_ip,
             initialize_server,
             import_server,
+            sync_server_mserve_json,
+            repair_server_mserve_json,
             open_server_folder,
             open_server_path,
             delete_server_item,

@@ -1,4 +1,7 @@
 import React from 'react';
+import { toast } from 'sonner';
+import { repairServerMserveJson, syncServerMserveJson } from '@/lib/mserve-sync';
+import { requestMserveRepair } from '@/lib/mserve-repair-controller';
 
 export type AutoBackupMode = 'interval' | 'on_close' | 'on_start';
 export type ServerStatus = 'online' | 'offline' | 'starting' | 'closing';
@@ -102,6 +105,13 @@ const toDate = (value?: string | Date): Date => {
 const toUniqueList = (items?: string[]) =>
 	Array.from(new Set((items ?? []).map((item) => item.trim()).filter(Boolean)));
 
+const sameStringList = (left?: string[], right?: string[]) => {
+	const a = left ?? [];
+	const b = right ?? [];
+	if (a.length !== b.length) return false;
+	return a.every((value, index) => value === b[index]);
+};
+
 const toUniqueToggleFileList = <T extends { name?: string; file: string; activated: boolean }>(
 	items?: T[],
 ) => {
@@ -195,9 +205,7 @@ export const normalizeServer = (server: Server): Server => {
 		provider: server.provider,
 		version: server.version,
 		ram: Math.max(1, server.ram ?? 3),
-		auto_backup: server.auto_backup?.length
-			? Array.from(new Set(server.auto_backup))
-			: ['interval', 'on_close'],
+		auto_backup: server.auto_backup ? Array.from(new Set(server.auto_backup)) : [],
 		auto_backup_interval: Math.max(1, server.auto_backup_interval ?? 120),
 		auto_restart: server.auto_restart ?? false,
 		explicit_info_names: server.explicit_info_names ?? false,
@@ -262,6 +270,7 @@ const ServersContext = React.createContext<ServersContextValue | undefined>(unde
 export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 	const [servers, setServers] = React.useState<Server[]>([]);
 	const [isReady, setIsReady] = React.useState(false);
+	const didInitialDiskSyncRef = React.useRef(false);
 
 	React.useEffect(() => {
 		let active = true;
@@ -279,6 +288,97 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 		if (!isReady) return;
 		saveServers(servers);
 	}, [servers, isReady]);
+
+	React.useEffect(() => {
+		if (!isReady || didInitialDiskSyncRef.current) return;
+		didInitialDiskSyncRef.current = true;
+
+		let active = true;
+
+		const syncServerFromDisk = async (server: Server) => {
+			let synced = await syncServerMserveJson(server.directory);
+
+			if (synced.status === 'needs_setup') {
+				const repairPayload = await requestMserveRepair({
+					directory: server.directory,
+					file: server.file || synced.config?.file || 'server.jar',
+					ram: server.ram ?? synced.config?.ram ?? 3,
+					auto_backup: server.auto_backup ?? synced.config?.auto_backup ?? [],
+					auto_backup_interval:
+						server.auto_backup_interval ?? synced.config?.auto_backup_interval ?? 120,
+					auto_restart: server.auto_restart ?? synced.config?.auto_restart ?? false,
+					explicit_info_names: server.explicit_info_names ?? synced.config?.explicit_info_names ?? false,
+					custom_flags: server.custom_flags ?? synced.config?.custom_flags ?? [],
+				});
+
+				if (!repairPayload) {
+					toast.error(`Skipped rebuild for ${server.name} because setup was cancelled.`);
+					return;
+				}
+
+				synced = await repairServerMserveJson(repairPayload);
+			}
+
+			const config = synced.config;
+			if (!config) return;
+
+			if (!active) return;
+
+			const changed =
+				server.file !== config.file ||
+				(server.ram ?? 3) !== config.ram ||
+				(server.auto_backup_interval ?? 120) !== config.auto_backup_interval ||
+				(server.auto_restart ?? false) !== config.auto_restart ||
+				(server.explicit_info_names ?? false) !== config.explicit_info_names ||
+				!sameStringList(server.auto_backup, config.auto_backup) ||
+				!sameStringList(server.custom_flags, config.custom_flags) ||
+				server.provider !== config.provider ||
+				server.version !== config.version;
+
+			if (!changed) return;
+
+			setServers((prev) =>
+				prev.map((candidate) => {
+					if (
+						createServerId(candidate.name, candidate.directory) !==
+						createServerId(server.name, server.directory)
+					) {
+						return candidate;
+					}
+
+					return normalizeServer({
+						...candidate,
+						file: config.file,
+						ram: config.ram,
+						auto_backup: config.auto_backup,
+						auto_backup_interval: config.auto_backup_interval,
+						auto_restart: config.auto_restart,
+						explicit_info_names: config.explicit_info_names,
+						custom_flags: config.custom_flags,
+						provider: config.provider,
+						version: config.version,
+						createdAt: new Date(config.createdAt),
+					});
+				}),
+			);
+		};
+
+		void (async () => {
+			for (const server of servers) {
+				if (!active) return;
+				try {
+					await syncServerFromDisk(server);
+				} catch (err) {
+					const message = err instanceof Error ? err.message : 'Failed to sync mserve.json.';
+					toast.error(`${server.name}: ${message}`);
+				}
+			}
+		})();
+
+		return () => {
+			active = false;
+		};
+	}, [isReady, servers]);
 
 	const addServer = React.useCallback((server: Server) => {
 		const normalized = normalizeServer(server);
