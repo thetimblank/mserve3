@@ -23,6 +23,7 @@ export interface Server extends MserveJson {
 	name: string;
 	directory: string;
 	status: ServerStatus;
+	storage_limit: number;
 	backups: {
 		createdAt: Date;
 		directory: string;
@@ -188,6 +189,7 @@ export const normalizeServer = (server: Server): Server => {
 	const now = new Date();
 	const stats = server.stats ?? { players: 0, capacity: 20, tps: 0, uptime: now };
 	return {
+		storage_limit: server.storage_limit ?? null,
 		name: server.name,
 		directory: server.directory,
 		status: server.status ?? 'offline',

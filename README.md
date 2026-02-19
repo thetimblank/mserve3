@@ -17,14 +17,18 @@ This template should help get you started developing with Tauri, React and Types
 ## Roadmap
 
 ✅ OTA updates
-✅ read from mserve.json <!-- Repairing servers does not work correctly at the moment -->
+✅ read from mserve.json
+
+- Repairing servers does not work correctly at the moment
+
+🟨 remove server from app
 ⬛ validate/fix issues with other server jars/parsing
 ⬛ add clearing backups, storage limit, & interval clearing
 ⬛ read minercaft settings and change
 ⬛ auto fetch mc server jars
 ⬛ update server
 ⬛ setup proxies and server groups
-⬛ motd generator
+🟨 motd generator
 ⬛ more settings
 ⬛ add statistics of players joined, uptime, etc.
 ✅ smoother side bar animation

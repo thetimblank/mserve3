@@ -746,6 +746,35 @@ const Server: React.FC = () => {
 											disabled={isBusy || server.status === 'online'}
 											variant='destructive-secondary'>
 											<Trash />
+											<p>Remove Server</p>
+										</Button>
+									</AlertDialogTrigger>
+									<AlertDialogContent>
+										<AlertDialogHeader>
+											<AlertDialogTitle>Are you sure?</AlertDialogTitle>
+											<AlertDialogDescription>
+												This will remove the server from the MSERVE app. It will lose it&apos;s
+												data associated with the app. However, it will NOT delete any files and it
+												will NOT remove mserve.json. You can always import the server again.
+											</AlertDialogDescription>
+										</AlertDialogHeader>
+										<AlertDialogFooter>
+											<AlertDialogCancel>Cancel</AlertDialogCancel>
+											<AlertDialogAction
+												variant='destructive'
+												// TODO: complete this function
+												className='capitalize'>
+												Remove Server
+											</AlertDialogAction>
+										</AlertDialogFooter>
+									</AlertDialogContent>
+								</AlertDialog>
+								<AlertDialog>
+									<AlertDialogTrigger asChild>
+										<Button
+											disabled={isBusy || server.status === 'online'}
+											variant='destructive-secondary'>
+											<Trash />
 											<p>Delete Server</p>
 										</Button>
 									</AlertDialogTrigger>
@@ -892,6 +921,7 @@ const Server: React.FC = () => {
 				)}
 				{activeTab === 'backups' && (
 					<ServerBackupsTab
+						server={server}
 						backups={server.backups}
 						isBusy={isBusy}
 						isOnline={server.status === 'online'}
