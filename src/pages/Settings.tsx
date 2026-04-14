@@ -34,6 +34,9 @@ const Settings: React.FC = () => {
 			setUpdateMessage('Updater is available in desktop app builds only.');
 			return;
 		}
+		let test = 5;
+
+		test = 3;
 
 		let mounted = true;
 		getVersion()

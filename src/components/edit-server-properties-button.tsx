@@ -4,6 +4,7 @@ import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { FolderOpen, Settings } from 'lucide-react';
 import { toast } from 'sonner';
 import { createServerId, type Server, useServers } from '@/data/servers';
+import RamSliderField from '@/components/ram-slider-field';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -175,16 +176,11 @@ const EditServerPropertiesButton: React.FC<EditServerPropertiesButtonProps> = ({
 				</DialogHeader>
 
 				<div className='space-y-4'>
-					<div className='space-y-2'>
-						<Label htmlFor='edit-server-ram'>RAM (GB)</Label>
-						<Input
-							id='edit-server-ram'
-							type='number'
-							min={1}
-							value={settingsForm.ram}
-							onChange={(event) => updateSettingsField('ram', Number(event.target.value))}
-						/>
-					</div>
+					<RamSliderField
+						id='edit-server-ram'
+						value={settingsForm.ram}
+						onChange={(value) => updateSettingsField('ram', value)}
+					/>
 
 					<div className='space-y-2'>
 						<Label htmlFor='edit-jar-swap'>Swap server jar with selected jar file</Label>

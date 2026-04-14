@@ -1,0 +1,296 @@
+use super::super::*;
+use super::*;
+use serde::de::{self, MapAccess, Visitor};
+use serde::Deserialize;
+use serde_json::json;
+use serde_json::{Map, Value};
+use std::fs;
+use std::path::{Path, PathBuf};
+
+struct TopLevelObject(Map<String, Value>);
+
+impl<'de> Deserialize<'de> for TopLevelObject {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct TopLevelObjectVisitor;
+
+        impl<'de> Visitor<'de> for TopLevelObjectVisitor {
+            type Value = TopLevelObject;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a JSON object")
+            }
+
+            fn visit_map<M>(self, mut access: M) -> Result<Self::Value, M::Error>
+            where
+                M: MapAccess<'de>,
+            {
+                let mut values = Map::new();
+
+                while let Some((key, value)) = access.next_entry::<String, Value>()? {
+                    if values.contains_key(&key) {
+                        return Err(de::Error::custom(format!("Duplicate key found: {key}")));
+                    }
+                    values.insert(key, value);
+                }
+
+                Ok(TopLevelObject(values))
+            }
+        }
+
+        deserializer.deserialize_map(TopLevelObjectVisitor)
+    }
+}
+
+pub(in crate::app) fn default_auto_backup() -> Vec<String> {
+    vec![]
+}
+
+pub(in crate::app) fn default_synced_config(directory: &Path) -> SyncedMserveConfig {
+    let fallback_file = find_first_jar_file_name(directory).unwrap_or_else(|| "server.jar".to_string());
+    SyncedMserveConfig {
+        directory: directory.to_string_lossy().to_string(),
+        file: fallback_file,
+        ram: 3,
+        auto_backup: default_auto_backup(),
+        auto_backup_interval: 120,
+        auto_restart: false,
+        explicit_info_names: false,
+        custom_flags: vec![],
+        provider: None,
+        version: None,
+        created_at: chrono::Local::now().to_rfc3339(),
+    }
+}
+
+pub(in crate::app) fn find_first_jar_file_name(directory: &Path) -> Option<String> {
+    if let Ok(entries) = fs::read_dir(directory) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            let Some(name) = path.file_name().and_then(|value| value.to_str()) else {
+                continue;
+            };
+            if name.to_lowercase().ends_with(".jar") {
+                return Some(name.to_string());
+            }
+        }
+    }
+
+    None
+}
+
+pub(in crate::app) fn normalize_auto_backup(raw: Option<&serde_json::Value>) -> Option<Vec<String>> {
+    let Some(value) = raw else {
+        return Some(default_auto_backup());
+    };
+
+    let Some(items) = value.as_array() else {
+        return None;
+    };
+
+    let mut output = Vec::new();
+    for item in items {
+        let Some(mode) = item.as_str() else {
+            continue;
+        };
+        if matches!(mode, "interval" | "on_close" | "on_start") {
+            if !output.iter().any(|existing| existing == mode) {
+                output.push(mode.to_string());
+            }
+        }
+    }
+
+    Some(output)
+}
+
+pub(in crate::app) fn sanitize_custom_flags(raw: Option<&serde_json::Value>) -> Vec<String> {
+    let Some(value) = raw else {
+        return vec![];
+    };
+
+    let Some(items) = value.as_array() else {
+        return vec![];
+    };
+
+    let mut output = Vec::new();
+    for item in items {
+        if let Some(flag) = item.as_str() {
+            let trimmed = flag.trim();
+            if !trimmed.is_empty() && !output.iter().any(|existing| existing == trimmed) {
+                output.push(trimmed.to_string());
+            }
+        }
+    }
+
+    output
+}
+
+pub(in crate::app) fn sanitize_mserve_value_config(
+    directory: &Path,
+    object: &serde_json::Map<String, serde_json::Value>,
+) -> SyncedMserveConfig {
+    let mut config = default_synced_config(directory);
+
+    let normalized_file = object
+        .get("file")
+        .and_then(|value| value.as_str())
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty() && value.to_lowercase().ends_with(".jar"))
+        .map(|value| value.to_string())
+        .or_else(|| find_first_jar_file_name(directory))
+        .unwrap_or_else(|| "server.jar".to_string());
+
+    let normalized_ram = object
+        .get("ram")
+        .and_then(|value| value.as_u64())
+        .map(|value| value.max(1) as u32)
+        .unwrap_or(3);
+
+    let normalized_auto_backup = normalize_auto_backup(object.get("auto_backup"))
+        .unwrap_or_else(default_auto_backup);
+
+    let normalized_interval = object
+        .get("auto_backup_interval")
+        .and_then(|value| value.as_u64())
+        .map(|value| value.max(1) as u32)
+        .unwrap_or(120);
+
+    let normalized_auto_restart = object
+        .get("auto_restart")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+
+    let normalized_explicit_info_names = object
+        .get("explicit_info_names")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+
+    let normalized_custom_flags = sanitize_custom_flags(object.get("custom_flags"));
+
+    let normalized_provider = object
+        .get("provider")
+        .and_then(|value| value.as_str())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    let normalized_version = object
+        .get("version")
+        .and_then(|value| value.as_str())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    let normalized_created_at = object
+        .get("createdAt")
+        .and_then(|value| value.as_str())
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| chrono::Local::now().to_rfc3339());
+
+    config.file = normalized_file;
+    config.ram = normalized_ram;
+    config.auto_backup = normalized_auto_backup;
+    config.auto_backup_interval = normalized_interval;
+    config.auto_restart = normalized_auto_restart;
+    config.explicit_info_names = normalized_explicit_info_names;
+    config.custom_flags = normalized_custom_flags;
+    config.provider = normalized_provider;
+    config.version = normalized_version;
+    config.created_at = normalized_created_at;
+
+    config
+}
+
+pub(in crate::app) fn write_synced_mserve_json(directory: &Path, config: &SyncedMserveConfig) -> Result<(), String> {
+    let content = json!({
+        "explicit_info_names": config.explicit_info_names,
+        "auto_backup": config.auto_backup,
+        "ram": config.ram.max(1),
+        "directory": config.directory,
+        "file": config.file,
+        "auto_backup_interval": config.auto_backup_interval.max(1),
+        "auto_restart": config.auto_restart,
+        "custom_flags": config.custom_flags,
+        "provider": config.provider,
+        "version": config.version,
+        "createdAt": config.created_at,
+    });
+
+    fs::write(
+        directory.join("mserve.json"),
+        serde_json::to_vec_pretty(&content).map_err(|err| err.to_string())?,
+    )
+    .map_err(|err| err.to_string())
+}
+
+pub(in crate::app) fn validate_mserve_json_keys(
+    object: &serde_json::Map<String, serde_json::Value>,
+) -> Result<(), String> {
+    let allowed = [
+        "file",
+        "ram",
+        "auto_backup",
+        "auto_backup_interval",
+        "auto_restart",
+        "explicit_info_names",
+        "custom_flags",
+        "provider",
+        "version",
+        "directory",
+        "createdAt",
+    ];
+
+    for key in object.keys() {
+        if !allowed.iter().any(|allowed_key| allowed_key == key) {
+            return Err(format!("Unsupported key found: {key}"));
+        }
+    }
+
+    Ok(())
+}
+
+pub(in crate::app) fn parse_mserve_top_level_object(raw: &str) -> Result<Map<String, Value>, String> {
+    let parsed: TopLevelObject = serde_json::from_str(raw).map_err(|err| err.to_string())?;
+    Ok(parsed.0)
+}
+
+pub(in crate::app) fn resolve_repair_file(directory: &Path, raw_file: &str) -> Result<String, String> {
+    let trimmed = raw_file.trim();
+    if trimmed.is_empty() {
+        return Ok(find_first_jar_file_name(directory).unwrap_or_else(|| "server.jar".to_string()));
+    }
+
+    let input_path = PathBuf::from(trimmed);
+
+    if input_path.is_absolute() || input_path.components().count() > 1 {
+        if !trimmed.to_lowercase().ends_with(".jar") {
+            return Err("Server file must be a .jar file.".to_string());
+        }
+
+        if let Ok((copied_file, _)) = copy_jar_to_server_directory(directory, trimmed) {
+            return Ok(copied_file);
+        }
+
+        let fallback_name = input_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(|name| name.trim())
+            .filter(|name| !name.is_empty() && name.to_lowercase().ends_with(".jar"))
+            .map(|name| name.to_string())
+            .unwrap_or_else(|| "server.jar".to_string());
+
+        return Ok(fallback_name);
+    }
+
+    if !trimmed.to_lowercase().ends_with(".jar") {
+        return Err("Server file must be a .jar file.".to_string());
+    }
+
+    Ok(trimmed.to_string())
+}
+

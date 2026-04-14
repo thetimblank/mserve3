@@ -1,5 +1,6 @@
 import React from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { getCurrentWebview } from '@tauri-apps/api/webview';
 import {
 	Archive,
 	ArrowUpRightFromSquare,
@@ -106,6 +107,17 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 	const [search, setSearch] = React.useState('');
 	const [busyFile, setBusyFile] = React.useState<string | null>(null);
 	const [isDragging, setIsDragging] = React.useState(false);
+	const dropZoneRef = React.useRef<HTMLDivElement | null>(null);
+	const disabledRef = React.useRef(disabled);
+	const busyFileRef = React.useRef<string | null>(busyFile);
+
+	React.useEffect(() => {
+		disabledRef.current = disabled;
+	}, [disabled]);
+
+	React.useEffect(() => {
+		busyFileRef.current = busyFile;
+	}, [busyFile]);
 
 	const filtered = React.useMemo(() => {
 		const term = search.trim().toLowerCase();
@@ -217,15 +229,98 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 		}
 	};
 
-	const uploadPath = async (sourcePath: string) => {
-		await invoke('upload_server_item', {
-			payload: {
-				directory: serverDirectory,
-				itemType: type,
-				sourcePath,
-			},
-		});
-	};
+	const uploadPath = React.useCallback(
+		async (sourcePath: string) => {
+			await invoke('upload_server_item', {
+				payload: {
+					directory: serverDirectory,
+					itemType: type,
+					sourcePath,
+				},
+			});
+		},
+		[serverDirectory, type],
+	);
+
+	const isInDropZone = React.useCallback((x: number, y: number) => {
+		const element = dropZoneRef.current;
+		if (!element) return false;
+		const rect = element.getBoundingClientRect();
+		return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+	}, []);
+
+	const handleDroppedPaths = React.useCallback(
+		async (paths: string[]) => {
+			if (disabledRef.current || busyFileRef.current) return;
+
+			const droppedPaths = paths.filter(
+				(path): path is string => typeof path === 'string' && path.length > 0,
+			);
+
+			if (droppedPaths.length === 0) {
+				window.alert('Could not read dropped file paths. Use Add to browse instead.');
+				return;
+			}
+
+			busyFileRef.current = '__upload__';
+			setBusyFile('__upload__');
+			try {
+				for (const path of droppedPaths) {
+					await uploadPath(path);
+				}
+				await onChanged?.();
+			} catch (err) {
+				const message = err instanceof Error ? err.message : 'Failed to upload dropped item.';
+				window.alert(message);
+			} finally {
+				busyFileRef.current = null;
+				setBusyFile(null);
+			}
+		},
+		[onChanged, uploadPath],
+	);
+
+	React.useEffect(() => {
+		let unlisten: (() => void) | undefined;
+		let disposed = false;
+
+		void getCurrentWebview()
+			.onDragDropEvent((event) => {
+				const payload = event.payload;
+
+				if (payload.type === 'over') {
+					setIsDragging(isInDropZone(payload.position.x, payload.position.y));
+					return;
+				}
+
+				if (payload.type === 'drop') {
+					setIsDragging(false);
+					if (!isInDropZone(payload.position.x, payload.position.y)) {
+						return;
+					}
+					void handleDroppedPaths(payload.paths);
+					return;
+				}
+
+				setIsDragging(false);
+			})
+			.then((unlistenFn) => {
+				if (disposed) {
+					unlistenFn();
+					return;
+				}
+				unlisten = unlistenFn;
+			})
+			.catch(() => {
+				setIsDragging(false);
+			});
+
+		return () => {
+			disposed = true;
+			setIsDragging(false);
+			unlisten?.();
+		};
+	}, [handleDroppedPaths, isInDropZone]);
 
 	const handleAddItem = async () => {
 		if (disabled || busyFile) return;
@@ -254,34 +349,6 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 			}
 		} catch (err) {
 			const message = err instanceof Error ? err.message : 'Failed to upload item.';
-			window.alert(message);
-		} finally {
-			setBusyFile(null);
-		}
-	};
-
-	const handleDrop = async (event: React.DragEvent<HTMLDivElement>) => {
-		event.preventDefault();
-		setIsDragging(false);
-		if (disabled || busyFile) return;
-
-		const droppedPaths = Array.from(event.dataTransfer.files)
-			.map((file) => (file as File & { path?: string }).path)
-			.filter((path): path is string => typeof path === 'string' && path.length > 0);
-
-		if (droppedPaths.length === 0) {
-			window.alert('Could not read dropped file paths. Use Add to browse instead.');
-			return;
-		}
-
-		setBusyFile('__upload__');
-		try {
-			for (const path of droppedPaths) {
-				await uploadPath(path);
-			}
-			await onChanged?.();
-		} catch (err) {
-			const message = err instanceof Error ? err.message : 'Failed to upload dropped item.';
 			window.alert(message);
 		} finally {
 			setBusyFile(null);
@@ -476,22 +543,25 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 					))}
 			</div>
 			<div
-				onDragOver={(event) => {
-					event.preventDefault();
-					setIsDragging(true);
-				}}
-				onDragLeave={() => setIsDragging(false)}
-				onDrop={handleDrop}
+				ref={dropZoneRef}
 				onClick={handleAddItem}
 				className={clsx(
-					'flex flex-col gap-2 mt-3 items-center justify-center rounded-md border-2 bg-accent/20  hover:bg-accent/30 transition-colors min-h-32 border-dashed p-4 cursor-pointer select-none font-bold text-sm ',
-					isDragging ? 'border-primary' : 'border-accent/75',
+					'flex flex-col gap-2 mt-3 items-center justify-center rounded-md border-2 hover:bg-accent/30 transition-colors min-h-32 p-4 cursor-pointer select-none font-bold text-sm',
+					isDragging
+						? 'border-accent bg-accent/30 border-solid'
+						: 'border-accent/75 bg-accent/20 border-dashed',
 					(disabled || busyFile === '__upload__') && 'opacity-50 pointer-events-none',
 				)}>
-				<p>
-					Drop files <span className='mx-2 text-muted-foreground'>OR</span> Click Here
-				</p>
-				<p className='text-muted-foreground'>to upload {title.toLowerCase()}.</p>
+				{isDragging ? (
+					<p>Drop to upload {title.slice(0, title.length - 1).toLowerCase()}! </p>
+				) : (
+					<>
+						<p>
+							Drop files <span className='mx-2 text-muted-foreground'>OR</span> Click Here
+						</p>
+						<p className='text-muted-foreground'>to upload {title.toLowerCase()}.</p>
+					</>
+				)}
 			</div>
 			{filtered.length === 0 && <p className='text-center text-muted-foreground my-10'>{emptyLabel}</p>}
 		</div>

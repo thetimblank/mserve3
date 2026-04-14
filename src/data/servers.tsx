@@ -58,6 +58,7 @@ export interface ServerUpdate {
 	name?: string;
 	directory?: string;
 	status?: ServerStatus;
+	storage_limit?: number;
 	backups?: Server['backups'];
 	datapacks?: Server['datapacks'];
 	worlds?: Server['worlds'];
@@ -299,18 +300,21 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
 		const syncServerFromDisk = async (server: Server) => {
 			let synced = await syncServerMserveJson(server.directory);
+			let resolvedStorageLimit = server.storage_limit ?? 200;
 
 			if (synced.status === 'needs_setup') {
 				const repairPayload = await requestMserveRepair({
 					directory: server.directory,
 					file: server.file || synced.config?.file || 'server.jar',
 					ram: server.ram ?? synced.config?.ram ?? 3,
-					auto_backup: server.auto_backup ?? synced.config?.auto_backup ?? [],
-					auto_backup_interval:
-						server.auto_backup_interval ?? synced.config?.auto_backup_interval ?? 120,
-					auto_restart: server.auto_restart ?? synced.config?.auto_restart ?? false,
-					explicit_info_names: server.explicit_info_names ?? synced.config?.explicit_info_names ?? false,
-					custom_flags: server.custom_flags ?? synced.config?.custom_flags ?? [],
+					storageLimit: resolvedStorageLimit,
+					autoBackup: server.auto_backup ?? synced.config?.auto_backup ?? [],
+					autoBackupInterval: server.auto_backup_interval ?? synced.config?.auto_backup_interval ?? 120,
+					autoRestart: server.auto_restart ?? synced.config?.auto_restart ?? false,
+					createDirectoryIfMissing: true,
+					autoAgreeEula: true,
+					explicitInfoNames: server.explicit_info_names ?? synced.config?.explicit_info_names ?? false,
+					customFlags: server.custom_flags ?? synced.config?.custom_flags ?? [],
 				});
 
 				if (!repairPayload) {
@@ -318,6 +322,7 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 					return;
 				}
 
+				resolvedStorageLimit = repairPayload.storageLimit;
 				synced = await repairServerMserveJson(repairPayload);
 			}
 
@@ -332,6 +337,7 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 				(server.auto_backup_interval ?? 120) !== config.auto_backup_interval ||
 				(server.auto_restart ?? false) !== config.auto_restart ||
 				(server.explicit_info_names ?? false) !== config.explicit_info_names ||
+				server.storage_limit !== resolvedStorageLimit ||
 				!sameStringList(server.auto_backup, config.auto_backup) ||
 				!sameStringList(server.custom_flags, config.custom_flags) ||
 				server.provider !== config.provider ||
@@ -352,6 +358,7 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 						...candidate,
 						file: config.file,
 						ram: config.ram,
+						storage_limit: resolvedStorageLimit,
 						auto_backup: config.auto_backup,
 						auto_backup_interval: config.auto_backup_interval,
 						auto_restart: config.auto_restart,

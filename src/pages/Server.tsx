@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { createServerId, useServers } from '@/data/servers';
+import { createServerId, type AutoBackupMode, useServers } from '@/data/servers';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import {
@@ -574,6 +574,20 @@ const Server: React.FC = () => {
 		}
 	};
 
+	const handleRemoveServer = async () => {
+		if (isBusy || server.status === 'online') return;
+
+		setIsBusy(true);
+		try {
+			clearTerminalSession();
+			removeServer(serverId);
+			toast.success(`Removed ${server.name} from mserve.`);
+			navigate('/servers');
+		} finally {
+			setIsBusy(false);
+		}
+	};
+
 	const handleCreateBackup = async () => {
 		if (isBusy || server.status === 'online') return;
 		setIsBusy(true);
@@ -588,23 +602,92 @@ const Server: React.FC = () => {
 		}
 	};
 
+	const handleSetStorageLimit = React.useCallback(
+		(storageLimitGb: number) => {
+			const nextLimit = Math.max(1, Math.round(Number(storageLimitGb) || server.storage_limit || 200));
+			updateServer(serverId, { storage_limit: nextLimit });
+			toast.success(`Backup storage limit updated to ${nextLimit} GB.`);
+		},
+		[server.storage_limit, serverId, updateServer],
+	);
+
+	const handleSetDeleteInterval = React.useCallback(
+		(intervalMinutes: number) => {
+			const nextInterval = Math.max(
+				1,
+				Math.round(Number(intervalMinutes) || server.auto_backup_interval || 120),
+			);
+			const autoBackupModes: AutoBackupMode[] = server.auto_backup ?? [];
+			const nextAutoBackup: AutoBackupMode[] = autoBackupModes.includes('interval')
+				? [...autoBackupModes]
+				: [...autoBackupModes, 'interval'];
+
+			updateServer(serverId, {
+				auto_backup_interval: nextInterval,
+				auto_backup: nextAutoBackup,
+			});
+			toast.success(`Old backup cleanup interval updated to ${nextInterval} minutes.`);
+		},
+		[server.auto_backup, server.auto_backup_interval, serverId, updateServer],
+	);
+
+	const handleClearAllBackups = React.useCallback(async () => {
+		if (isBusy || server.status === 'online') return;
+
+		const backupsToDelete = [...server.backups];
+		if (backupsToDelete.length === 0) {
+			toast.success('No backups to clear.');
+			return;
+		}
+
+		setIsBusy(true);
+		try {
+			await toast.promise(
+				(async () => {
+					for (const backup of backupsToDelete) {
+						await invoke('delete_server_backup', {
+							payload: {
+								directory: server.directory,
+								backupDirectory: backup.directory,
+							},
+						});
+					}
+
+					await syncServerContents();
+					return backupsToDelete.length;
+				})(),
+				{
+					loading: 'Clearing all backups...',
+					success: (count) => `Cleared ${count} backups.`,
+					error: (err) => (err instanceof Error ? err.message : 'Failed to clear all backups.'),
+				},
+			);
+		} finally {
+			setIsBusy(false);
+		}
+	}, [isBusy, server.backups, server.directory, server.status, syncServerContents]);
+
 	const handleManualSync = async () => {
 		if (isBusy || server.status !== 'offline') return;
 
 		setIsBusy(true);
 		try {
 			let synced = await syncServerMserveJson(server.directory);
+			let resolvedStorageLimit = server.storage_limit ?? 200;
 
 			if (synced.status === 'needs_setup') {
 				const repairPayload = await requestMserveRepair({
 					directory: server.directory,
 					file: server.file,
 					ram: server.ram ?? 3,
-					auto_backup: server.auto_backup ?? [],
-					auto_backup_interval: server.auto_backup_interval ?? 120,
-					auto_restart: server.auto_restart ?? false,
-					explicit_info_names: server.explicit_info_names ?? false,
-					custom_flags: server.custom_flags ?? [],
+					storageLimit: resolvedStorageLimit,
+					autoBackup: server.auto_backup ?? [],
+					autoBackupInterval: server.auto_backup_interval ?? 120,
+					autoRestart: server.auto_restart ?? false,
+					createDirectoryIfMissing: true,
+					autoAgreeEula: true,
+					explicitInfoNames: server.explicit_info_names ?? false,
+					customFlags: server.custom_flags ?? [],
 				});
 
 				if (!repairPayload) {
@@ -612,6 +695,7 @@ const Server: React.FC = () => {
 					return;
 				}
 
+				resolvedStorageLimit = repairPayload.storageLimit;
 				synced = await repairServerMserveJson(repairPayload);
 			}
 
@@ -622,6 +706,7 @@ const Server: React.FC = () => {
 			updateServer(serverId, {
 				file: synced.config.file,
 				ram: synced.config.ram,
+				storage_limit: resolvedStorageLimit,
 				auto_backup: synced.config.auto_backup,
 				auto_backup_interval: synced.config.auto_backup_interval,
 				auto_restart: synced.config.auto_restart,
@@ -762,7 +847,7 @@ const Server: React.FC = () => {
 											<AlertDialogCancel>Cancel</AlertDialogCancel>
 											<AlertDialogAction
 												variant='destructive'
-												// TODO: complete this function
+												onClick={handleRemoveServer}
 												className='capitalize'>
 												Remove Server
 											</AlertDialogAction>
@@ -928,6 +1013,9 @@ const Server: React.FC = () => {
 						onCreateBackup={handleCreateBackup}
 						onRestoreBackup={handleRestoreBackup}
 						onDeleteBackup={handleDeleteBackup}
+						onSetStorageLimit={handleSetStorageLimit}
+						onSetDeleteInterval={handleSetDeleteInterval}
+						onClearAllBackups={handleClearAllBackups}
 					/>
 				)}
 			</div>

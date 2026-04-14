@@ -39,7 +39,7 @@ const getDirectoryName = (directory: string) => {
 	return segments[segments.length - 1] || 'Server';
 };
 
-const buildServer = (result: InitServerResult, config: SyncedMserveConfig): Server => ({
+const buildServer = (result: InitServerResult, config: SyncedMserveConfig, storageLimit: number): Server => ({
 	name: getDirectoryName(result.directory),
 	directory: result.directory,
 	status: 'offline',
@@ -47,6 +47,7 @@ const buildServer = (result: InitServerResult, config: SyncedMserveConfig): Serv
 	datapacks: [],
 	worlds: [],
 	plugins: [],
+	storage_limit: Math.max(1, Number(storageLimit) || 200),
 	stats: {
 		players: 0,
 		capacity: 20,
@@ -123,23 +124,28 @@ export const ImportServer: React.FC<React.HTMLAttributes<HTMLButtonElement>> = (
 
 				let synced = await syncServerMserveJson(result.directory);
 				let usedRepairDialog = false;
+				let storageLimit = 200;
 
 				if (synced.status === 'needs_setup') {
 					const repairPayload = await requestMserveRepair({
 						directory: result.directory,
 						file: result.file || 'server.jar',
 						ram: synced.config?.ram ?? 3,
-						auto_backup: synced.config?.auto_backup ?? [],
-						auto_backup_interval: synced.config?.auto_backup_interval ?? 120,
-						auto_restart: synced.config?.auto_restart ?? false,
-						explicit_info_names: synced.config?.explicit_info_names ?? false,
-						custom_flags: synced.config?.custom_flags ?? [],
+						storageLimit,
+						autoBackup: synced.config?.auto_backup ?? [],
+						autoBackupInterval: synced.config?.auto_backup_interval ?? 120,
+						autoRestart: synced.config?.auto_restart ?? false,
+						createDirectoryIfMissing: true,
+						autoAgreeEula: true,
+						explicitInfoNames: synced.config?.explicit_info_names ?? false,
+						customFlags: synced.config?.custom_flags ?? [],
 					});
 
 					if (!repairPayload) {
 						throw new Error('Import cancelled because mserve.json rebuild was not completed.');
 					}
 
+					storageLimit = repairPayload.storageLimit;
 					synced = await repairServerMserveJson(repairPayload);
 					usedRepairDialog = true;
 				}
@@ -148,7 +154,7 @@ export const ImportServer: React.FC<React.HTMLAttributes<HTMLButtonElement>> = (
 					throw new Error('Could not resolve valid mserve.json data for this server.');
 				}
 
-				addServer(buildServer(result, synced.config));
+				addServer(buildServer(result, synced.config, storageLimit));
 				return {
 					usedRepairDialog,
 					autoRepaired: synced.updated,

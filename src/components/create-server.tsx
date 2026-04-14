@@ -3,6 +3,9 @@
 import * as React from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
+import { Plus } from 'lucide-react';
+import { toast } from 'sonner';
+import { ServerSetupFormFields } from '@/components/server-setup-form-fields';
 import { Button } from '@/components/ui/button';
 import {
 	Dialog,
@@ -14,25 +17,13 @@ import {
 	DialogTitle,
 	DialogTrigger,
 } from '@/components/ui/dialog';
-import { Field, FieldGroup } from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { AutoBackupMode, Server, useServers } from '@/data/servers';
-import { CircleAlert, FolderOpen, Plus, TriangleAlert } from 'lucide-react';
-import { Checkbox } from './ui/checkbox';
-import { ButtonGroup } from './ui/button-group';
-import { toast } from 'sonner';
-
-const defaultData = {
-	directory: '',
-	createDirectoryIfMissing: true,
-	file: '',
-	ram: 3,
-	autoRestart: false,
-	autoBackup: [] as AutoBackupMode[],
-	autoBackupInterval: 120,
-	autoAgreeEula: true,
-};
+import { FieldGroup } from '@/components/ui/field';
+import { Server, useServers } from '@/data/servers';
+import {
+	type AutoBackupMode,
+	type ServerSetupFormData,
+	createDefaultServerSetupForm,
+} from '@/lib/mserve-sync';
 
 type InitServerPayload = {
 	directory: string;
@@ -63,7 +54,7 @@ const getDirectoryName = (directory: string) => {
 	return segments[segments.length - 1] || 'Server';
 };
 
-const buildServer = (form: InitServerPayload, result: InitServerResult): Server => ({
+const buildServer = (form: ServerSetupFormData, result: InitServerResult): Server => ({
 	name: getDirectoryName(result.directory),
 	directory: result.directory,
 	status: 'offline',
@@ -71,6 +62,7 @@ const buildServer = (form: InitServerPayload, result: InitServerResult): Server 
 	datapacks: [],
 	worlds: [],
 	plugins: [],
+	storage_limit: Math.max(1, Number(form.storageLimit) || 200),
 	stats: {
 		players: 0,
 		capacity: 20,
@@ -86,30 +78,15 @@ const buildServer = (form: InitServerPayload, result: InitServerResult): Server 
 	createdAt: new Date(),
 });
 
-const backupChoices: { value: AutoBackupMode; label: string }[] = [
-	{ value: 'interval', label: 'Interval' },
-	{ value: 'on_close', label: 'On close' },
-	{ value: 'on_start', label: 'On start' },
-];
-
 export const CreateServer: React.FC<React.HTMLAttributes<HTMLButtonElement>> = ({ ...props }) => {
 	const { addServer } = useServers();
 	const [open, setOpen] = React.useState(false);
-	const [form, setForm] = React.useState(defaultData);
+	const [form, setForm] = React.useState<ServerSetupFormData>(() => createDefaultServerSetupForm());
 	const [isSubmitting, setIsSubmitting] = React.useState(false);
 	const [error, setError] = React.useState<string | null>(null);
 
-	const updateField = <K extends keyof typeof defaultData>(key: K, value: (typeof defaultData)[K]) => {
+	const updateField = <K extends keyof ServerSetupFormData>(key: K, value: ServerSetupFormData[K]) => {
 		setForm((prev) => ({ ...prev, [key]: value }));
-	};
-
-	const toggleBackupMode = (mode: AutoBackupMode, enabled: boolean) => {
-		setForm((prev) => ({
-			...prev,
-			autoBackup: enabled
-				? Array.from(new Set([...prev.autoBackup, mode]))
-				: prev.autoBackup.filter((item) => item !== mode),
-		}));
 	};
 
 	const pickDirectory = async () => {
@@ -155,7 +132,7 @@ export const CreateServer: React.FC<React.HTMLAttributes<HTMLButtonElement>> = (
 	};
 
 	const resetForm = () => {
-		setForm(defaultData);
+		setForm(createDefaultServerSetupForm());
 		setError(null);
 	};
 
@@ -206,7 +183,7 @@ export const CreateServer: React.FC<React.HTMLAttributes<HTMLButtonElement>> = (
 			const payload: InitServerPayload = {
 				directory,
 				createDirectoryIfMissing: form.createDirectoryIfMissing,
-				file: form.file.trim() || 'server.jar',
+				file: file || 'server.jar',
 				ram: Math.max(1, Number(form.ram) || 3),
 				autoRestart: form.autoRestart,
 				autoBackup: form.autoBackup,
@@ -230,7 +207,7 @@ export const CreateServer: React.FC<React.HTMLAttributes<HTMLButtonElement>> = (
 
 			const result = await initializePromise;
 
-			addServer(buildServer(payload, result));
+			addServer(buildServer(form, result));
 			resetForm();
 			setOpen(false);
 		} catch (err) {
@@ -255,163 +232,16 @@ export const CreateServer: React.FC<React.HTMLAttributes<HTMLButtonElement>> = (
 				</DialogHeader>
 				<form onSubmit={onSubmit} className='space-y-6'>
 					<FieldGroup>
-						<div className='space-y-2'>
-							<Field>
-								<Label htmlFor='server-directory'>Server Location</Label>
-								<div className='flex gap-2'>
-									<Input
-										id='server-directory'
-										placeholder='C:\servers\MyServer'
-										value={form.directory}
-										onChange={(event) => updateField('directory', event.target.value)}
-										required
-									/>
-									<Button type='button' variant='outline' onClick={pickDirectory}>
-										<FolderOpen /> Browse
-									</Button>
-								</div>
-							</Field>
-							<Field>
-								<Label className='flex items-center gap-3'>
-									<Checkbox
-										checked={form.createDirectoryIfMissing}
-										onCheckedChange={(checked) =>
-											updateField(
-												'createDirectoryIfMissing',
-												typeof checked === 'boolean' ? checked : false,
-											)
-										}
-									/>
-									Create directory if it doesn't exist
-								</Label>
-							</Field>
-						</div>
-						<Field>
-							<Label htmlFor='server-file'>Server Jar File Location</Label>
-							<div className='flex gap-2'>
-								<Input
-									id='server-file'
-									placeholder='C:\servers\server-1.21.11.jar'
-									value={form.file}
-									onChange={(event) => updateField('file', event.target.value)}
-									required
-								/>
-								<Button type='button' variant='outline' onClick={pickServerFile}>
-									<FolderOpen /> Browse
-								</Button>
-							</div>
-						</Field>
-
-						<Field>
-							<Label htmlFor='server-ram'>RAM (GB)</Label>
-							<div className='flex gap-3 items-center'>
-								<ButtonGroup>
-									<Button
-										type='button'
-										variant={form.ram === 1 ? 'default' : 'outline'}
-										onClick={() => updateField('ram', 1)}>
-										Very Low (1)
-									</Button>
-									<Button
-										type='button'
-										variant={form.ram === 2 ? 'default' : 'outline'}
-										onClick={() => updateField('ram', 2)}>
-										Low (2)
-									</Button>
-									<Button
-										type='button'
-										variant={form.ram === 3 ? 'default' : 'outline'}
-										onClick={() => updateField('ram', 3)}>
-										Medium (3)
-									</Button>
-									<Button
-										type='button'
-										variant={form.ram === 5 ? 'default' : 'outline'}
-										onClick={() => updateField('ram', 5)}>
-										High (5)
-									</Button>
-									<Button
-										type='button'
-										variant={form.ram === 10 ? 'default' : 'outline'}
-										onClick={() => updateField('ram', 10)}>
-										Very High (10)
-									</Button>
-								</ButtonGroup>
-								<p className='font-bold text-muted-foreground'>OR</p>
-								<Input
-									id='server-ram'
-									type='number'
-									value={form.ram}
-									onChange={(event) => updateField('ram', Number(event.target.value))}
-									min={1}
-									required
-								/>
-							</div>
-							<p className='text-sm text-muted-foreground flex gap-2'>
-								<CircleAlert className='size-6' />
-								The more RAM the better up to a point. Please check your system memory as too much can
-								also cause system instability. Recommended is medium or high.
-							</p>
-						</Field>
-
-						<Field>
-							<Label>Auto backup modes</Label>
-							<div className='space-y-2'>
-								{backupChoices.map((choice) => (
-									<Label key={choice.value} className='flex items-center gap-3'>
-										<Checkbox
-											checked={form.autoBackup.includes(choice.value)}
-											onCheckedChange={(checked) =>
-												toggleBackupMode(
-													choice.value,
-													typeof checked === 'boolean' ? checked : false,
-												)
-											}
-										/>
-										{choice.label}
-									</Label>
-								))}
-							</div>
-							<p className='text-sm text-muted-foreground flex gap-1 items-center'>
-								<TriangleAlert className='size-4' />
-								Warning: backup features can use a high amount of storage space.
-							</p>
-						</Field>
-						{form.autoBackup.includes('interval') && (
-							<Field>
-								<Label htmlFor='server-backup-interval'>Backup interval (minutes)</Label>
-								<Input
-									id='server-backup-interval'
-									type='number'
-									value={form.autoBackupInterval}
-									onChange={(event) => updateField('autoBackupInterval', Number(event.target.value))}
-									min={1}
-									required
-								/>
-							</Field>
-						)}
-						<Field>
-							<Label className='flex items-center gap-3'>
-								<Checkbox
-									checked={form.autoRestart}
-									onCheckedChange={(checked) =>
-										updateField('autoRestart', typeof checked === 'boolean' ? checked : false)
-									}
-								/>
-								Auto restart server when it closes
-							</Label>
-						</Field>
-						<Field>
-							<Label className='flex items-center gap-3'>
-								<Checkbox
-									checked={form.autoAgreeEula}
-									onCheckedChange={(checked) =>
-										updateField('autoAgreeEula', typeof checked === 'boolean' ? checked : false)
-									}
-								/>
-								Auto agree to eula.txt
-							</Label>
-						</Field>
+						<ServerSetupFormFields
+							form={form}
+							onFieldChange={updateField}
+							onPickDirectory={pickDirectory}
+							onPickServerFile={pickServerFile}
+							idPrefix='server'
+							showDirectory
+							showCreateDirectoryIfMissing
+							showAutoAgreeEula
+						/>
 						{error && <p className='text-sm text-destructive'>{error}</p>}
 					</FieldGroup>
 					<DialogFooter>
