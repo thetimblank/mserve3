@@ -9,7 +9,10 @@ import {
 	Boxes,
 	CircleCheck,
 	Clock,
+	Eye,
+	EyeOff,
 	Globe,
+	Link2Off,
 	MemoryStick,
 	OctagonX,
 	Package,
@@ -17,8 +20,6 @@ import {
 	RefreshCcw,
 	Trash,
 	Users,
-	Eye,
-	EyeOff,
 } from 'lucide-react';
 import ServerStatus from '@/components/server-status';
 import { invoke } from '@tauri-apps/api/core';
@@ -49,7 +50,7 @@ import {
 import ServerTerminalPanel from './server/server-terminal-panel';
 import ServerContentTabs from './server/server-content-tabs';
 import ServerBackupsTab from './server/server-backups-tab';
-import EditServerPropertiesButton from '@/components/edit-server-properties-button';
+import EditServerPropertiesForm from '@/components/edit-server-properties-form';
 import {
 	type RuntimeStatusResult,
 	type ScanServerContentsResult,
@@ -804,83 +805,7 @@ const Server: React.FC = () => {
 										<p>Serve</p>
 									</Button>
 								)}
-								<Button
-									variant='secondary'
-									onClick={() => setHideBackgroundTelemetry((prev) => !prev)}
-									disabled={isBusy}>
-									{hideBackgroundTelemetry ? <Eye /> : <EyeOff />}
-									{hideBackgroundTelemetry ? 'Show Status Check logs' : 'Hide Status Check logs'}
-								</Button>
 								<OpenFolderButton directory={server.directory} disabled={isBusy} />
-								<Button
-									variant='secondary'
-									onClick={handleManualSync}
-									disabled={isBusy || server.status !== 'offline'}>
-									<RefreshCcw />
-									<p>Sync mserve.json</p>
-								</Button>
-								<EditServerPropertiesButton
-									server={server}
-									disabled={isBusy}
-									onSaved={syncServerContents}
-								/>
-
-								<AlertDialog>
-									<AlertDialogTrigger asChild>
-										<Button
-											disabled={isBusy || server.status === 'online'}
-											variant='destructive-secondary'>
-											<Trash />
-											<p>Remove Server</p>
-										</Button>
-									</AlertDialogTrigger>
-									<AlertDialogContent>
-										<AlertDialogHeader>
-											<AlertDialogTitle>Are you sure?</AlertDialogTitle>
-											<AlertDialogDescription>
-												This will remove the server from the MSERVE app. It will lose it&apos;s
-												data associated with the app. However, it will NOT delete any files and it
-												will NOT remove mserve.json. You can always import the server again.
-											</AlertDialogDescription>
-										</AlertDialogHeader>
-										<AlertDialogFooter>
-											<AlertDialogCancel>Cancel</AlertDialogCancel>
-											<AlertDialogAction
-												variant='destructive'
-												onClick={handleRemoveServer}
-												className='capitalize'>
-												Remove Server
-											</AlertDialogAction>
-										</AlertDialogFooter>
-									</AlertDialogContent>
-								</AlertDialog>
-								<AlertDialog>
-									<AlertDialogTrigger asChild>
-										<Button
-											disabled={isBusy || server.status === 'online'}
-											variant='destructive-secondary'>
-											<Trash />
-											<p>Delete Server</p>
-										</Button>
-									</AlertDialogTrigger>
-									<AlertDialogContent>
-										<AlertDialogHeader>
-											<AlertDialogTitle>Are you sure?</AlertDialogTitle>
-											<AlertDialogDescription>
-												This will move the server to the recycling bin.
-											</AlertDialogDescription>
-										</AlertDialogHeader>
-										<AlertDialogFooter>
-											<AlertDialogCancel>Cancel</AlertDialogCancel>
-											<AlertDialogAction
-												variant='destructive'
-												className='capitalize'
-												onClick={handleDelete}>
-												Delete Server
-											</AlertDialogAction>
-										</AlertDialogFooter>
-									</AlertDialogContent>
-								</AlertDialog>
 							</div>
 							<div className='flex items-center gap-2 mb-1'>
 								{server.createdAt && (
@@ -1017,6 +942,103 @@ const Server: React.FC = () => {
 						onSetDeleteInterval={handleSetDeleteInterval}
 						onClearAllBackups={handleClearAllBackups}
 					/>
+				)}
+				{activeTab === 'settings' && (
+					<div className='flex flex-col gap-6'>
+						<div className='border border-border rounded-lg p-4 space-y-4'>
+							<p className='text-2xl font-bold'>Settings</p>
+							<div className='flex flex-wrap gap-2'>
+								<Button
+									variant='secondary'
+									onClick={() => setHideBackgroundTelemetry((prev) => !prev)}
+									disabled={isBusy}>
+									{hideBackgroundTelemetry ? <Eye /> : <EyeOff />}
+									{hideBackgroundTelemetry ? 'Show Status Check logs' : 'Hide Status Check logs'}
+								</Button>
+								<Button
+									variant='secondary'
+									onClick={handleManualSync}
+									disabled={isBusy || server.status !== 'offline'}>
+									<RefreshCcw />
+									<p>Sync mserve.json</p>
+								</Button>
+							</div>
+							<p className='text-sm text-muted-foreground'>
+								Sync and save operations require the server to be offline.
+							</p>
+						</div>
+
+						<div className='border border-border rounded-lg p-4 space-y-4'>
+							<p className='text-2xl font-bold'>Edit Properties</p>
+							<EditServerPropertiesForm
+								server={server}
+								disabled={isBusy}
+								onSaved={syncServerContents}
+							/>
+						</div>
+
+						<div className='border border-destructive/50 rounded-lg p-4 space-y-4'>
+							<p className='text-2xl font-bold text-destructive'>Danger Zone</p>
+							<div className='flex flex-wrap gap-2'>
+								<AlertDialog>
+									<AlertDialogTrigger asChild>
+										<Button
+											disabled={isBusy || server.status === 'online'}
+											variant='destructive-secondary'>
+											<Link2Off />
+											<p>Remove Server</p>
+										</Button>
+									</AlertDialogTrigger>
+									<AlertDialogContent>
+										<AlertDialogHeader>
+											<AlertDialogTitle>Are you sure?</AlertDialogTitle>
+											<AlertDialogDescription>
+												This will remove the server from the MSERVE app. It will lose it&apos;s
+												data associated with the app. However, it will NOT delete any files and it
+												will NOT remove mserve.json. You can always import the server again.
+											</AlertDialogDescription>
+										</AlertDialogHeader>
+										<AlertDialogFooter>
+											<AlertDialogCancel>Cancel</AlertDialogCancel>
+											<AlertDialogAction
+												variant='destructive'
+												onClick={handleRemoveServer}
+												className='capitalize'>
+												Remove Server
+											</AlertDialogAction>
+										</AlertDialogFooter>
+									</AlertDialogContent>
+								</AlertDialog>
+								<AlertDialog>
+									<AlertDialogTrigger asChild>
+										<Button
+											disabled={isBusy || server.status === 'online'}
+											variant='destructive-secondary'>
+											<Trash />
+											<p>Delete Server</p>
+										</Button>
+									</AlertDialogTrigger>
+									<AlertDialogContent>
+										<AlertDialogHeader>
+											<AlertDialogTitle>Are you sure?</AlertDialogTitle>
+											<AlertDialogDescription>
+												This will move the server to the recycling bin.
+											</AlertDialogDescription>
+										</AlertDialogHeader>
+										<AlertDialogFooter>
+											<AlertDialogCancel>Cancel</AlertDialogCancel>
+											<AlertDialogAction
+												variant='destructive'
+												className='capitalize'
+												onClick={handleDelete}>
+												Delete Server
+											</AlertDialogAction>
+										</AlertDialogFooter>
+									</AlertDialogContent>
+								</AlertDialog>
+							</div>
+						</div>
+					</div>
 				)}
 			</div>
 		</main>

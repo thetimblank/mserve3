@@ -1,5 +1,5 @@
 import { Server } from '@/data/servers';
-import { Circle, LoaderCircle, X } from 'lucide-react';
+import { Circle, LoaderCircle } from 'lucide-react';
 import React from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import clsx from 'clsx';
@@ -45,7 +45,6 @@ const ServerStatus: React.FC<Props> = ({ server, size = 'md' }) => {
 				<div className={`text-red-400 flex items-center flex-col ${classes.container}`}>
 					<div className={`${classes.visual} flex flex-col items-center justify-center`}>
 						<Circle className={`absolute text-red-400 ${classes.ring}`} />
-						<X className={classes.icon} />
 					</div>
 					<p className={`font-bold ${classes.status}`}>Offline</p>
 				</div>

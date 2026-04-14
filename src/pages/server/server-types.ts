@@ -39,7 +39,7 @@ export type UpdateServerSettingsResult = {
 	file: string;
 };
 
-export type ServerContentTab = 'plugins' | 'worlds' | 'datapacks' | 'backups';
+export type ServerContentTab = 'plugins' | 'worlds' | 'datapacks' | 'backups' | 'settings';
 
 export type ServerSettingsForm = {
 	ram: number;

@@ -28,6 +28,7 @@ const items = [
 		title: 'Settings',
 		url: '/settings',
 		icon: Settings,
+		bottom: true,
 	},
 ];
 
@@ -35,22 +36,24 @@ export function AppSidebar() {
 	const { servers } = useServers();
 
 	return (
-		<Sidebar className='mt-10'>
+		<Sidebar className='pt-10'>
 			<SidebarContent>
 				<SidebarGroup>
 					<SidebarGroupLabel>Application</SidebarGroupLabel>
 					<SidebarGroupContent>
 						<SidebarMenu>
-							{items.map((item) => (
-								<SidebarMenuItem key={item.title}>
-									<SidebarMenuButton asChild>
-										<Link to={item.url}>
-											<item.icon />
-											<span>{item.title}</span>
-										</Link>
-									</SidebarMenuButton>
-								</SidebarMenuItem>
-							))}
+							{items
+								.filter((item) => !item.bottom)
+								.map((item) => (
+									<SidebarMenuItem key={item.title}>
+										<SidebarMenuButton asChild>
+											<Link to={item.url}>
+												<item.icon />
+												<span>{item.title}</span>
+											</Link>
+										</SidebarMenuButton>
+									</SidebarMenuItem>
+								))}
 						</SidebarMenu>
 					</SidebarGroupContent>
 				</SidebarGroup>
@@ -73,6 +76,23 @@ export function AppSidebar() {
 						</SidebarGroupContent>
 					</SidebarGroup>
 				)}
+
+				<SidebarGroup className='mt-auto'>
+					<SidebarGroupContent>
+						{items
+							.filter((item) => item.bottom)
+							.map((item) => (
+								<SidebarMenuItem key={item.title}>
+									<SidebarMenuButton asChild>
+										<Link to={item.url}>
+											<item.icon />
+											<span>{item.title}</span>
+										</Link>
+									</SidebarMenuButton>
+								</SidebarMenuItem>
+							))}
+					</SidebarGroupContent>
+				</SidebarGroup>
 			</SidebarContent>
 		</Sidebar>
 	);
