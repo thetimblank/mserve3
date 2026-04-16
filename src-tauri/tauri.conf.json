@@ -1,7 +1,7 @@
 {
 	"$schema": "https://schema.tauri.app/config/2",
 	"productName": "MSERVE",
-	"version": "3.1.0",
+	"version": "3.2.1",
 	"identifier": "com.mserve.webapp",
 	"build": {
 		"beforeDevCommand": "npm run dev",

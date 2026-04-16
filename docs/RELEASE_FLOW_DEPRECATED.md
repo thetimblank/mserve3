@@ -1,4 +1,6 @@
-# Release flow (OTA updates)
+# OLD DOCS, YOU MAY IGNORE
+
+## Release flow (OTA updates)
 
 This project now uses the Tauri updater plugin.
 
