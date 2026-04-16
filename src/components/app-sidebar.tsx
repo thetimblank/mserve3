@@ -63,9 +63,9 @@ export function AppSidebar() {
 						<SidebarGroupContent>
 							<SidebarMenu>
 								{servers.map((server) => (
-									<SidebarMenuItem key={server.name}>
+									<SidebarMenuItem key={server.id}>
 										<SidebarMenuButton asChild>
-											<Link to={`/servers/${server.name}`}>
+											<Link to={`/servers/${encodeURIComponent(server.id)}`}>
 												<Server />
 												<span>{server.name}</span>
 											</Link>

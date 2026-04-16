@@ -11,6 +11,7 @@ pub(in crate::app) fn initialize_server(payload: InitServerPayload) -> Result<In
         return Ok(InitServerResult {
             ok: false,
             message: "Server directory is required.".to_string(),
+            id: String::new(),
             file: payload.file,
             directory: payload.directory,
         });
@@ -23,6 +24,7 @@ pub(in crate::app) fn initialize_server(payload: InitServerPayload) -> Result<In
             return Ok(InitServerResult {
                 ok: false,
                 message: "Directory does not exist. Enable 'Create directory if it doesn't exist' or choose another path.".to_string(),
+                id: String::new(),
                 file: payload.file,
                 directory: directory_str.to_string(),
             });
@@ -35,6 +37,7 @@ pub(in crate::app) fn initialize_server(payload: InitServerPayload) -> Result<In
         return Ok(InitServerResult {
             ok: false,
             message: "There is already a server in this location.".to_string(),
+            id: String::new(),
             file: payload.file,
             directory: directory_str.to_string(),
         });
@@ -48,8 +51,10 @@ pub(in crate::app) fn initialize_server(payload: InitServerPayload) -> Result<In
 
     // Copy the jar file to the server directory
     let (resolved_file, copy_message) = copy_jar_to_server_directory(&directory, payload.file.trim())?;
+    let server_id = generate_server_id();
 
     let content = json!({
+        "id": server_id,
         "explicit_info_names": false,
         "auto_backup": auto_backup,
         "ram": payload.ram.max(1),
@@ -71,6 +76,7 @@ pub(in crate::app) fn initialize_server(payload: InitServerPayload) -> Result<In
     Ok(InitServerResult {
         ok: true,
         message: format!("Initialization complete. {copy_message}"),
+        id: server_id,
         file: resolved_file,
         directory: directory_str.to_string(),
     })
@@ -83,6 +89,7 @@ pub(in crate::app) fn import_server(directory: String) -> Result<InitServerResul
         return Ok(InitServerResult {
             ok: false,
             message: "Server directory is required.".to_string(),
+            id: String::new(),
             file: String::new(),
             directory: directory.clone(),
         });
@@ -94,6 +101,7 @@ pub(in crate::app) fn import_server(directory: String) -> Result<InitServerResul
         return Ok(InitServerResult {
             ok: false,
             message: "Directory does not exist.".to_string(),
+            id: String::new(),
             file: String::new(),
             directory: directory_str.to_string(),
         });
@@ -103,6 +111,7 @@ pub(in crate::app) fn import_server(directory: String) -> Result<InitServerResul
         return Ok(InitServerResult {
             ok: false,
             message: "Path is not a directory.".to_string(),
+            id: String::new(),
             file: String::new(),
             directory: directory_str.to_string(),
         });
@@ -111,9 +120,15 @@ pub(in crate::app) fn import_server(directory: String) -> Result<InitServerResul
     // Check if mserve.json already exists
     let mserve_json_path = directory_path.join("mserve.json");
 
-    let (jar_file, message) = if mserve_json_path.exists() {
+    let (server_id, jar_file, message) = if mserve_json_path.exists() {
         let detected = find_first_jar_file_name(&directory_path).unwrap_or_default();
+        let resolved_id = fs::read_to_string(&mserve_json_path)
+            .ok()
+            .and_then(|raw| parse_mserve_top_level_object(&raw).ok())
+            .map(|object| sanitize_mserve_value_config(&directory_path, &object).id)
+            .unwrap_or_else(generate_server_id);
         (
+            resolved_id,
             detected,
             "Server already has mserve.json configuration. It will be validated and synced on import.".to_string(),
         )
@@ -138,12 +153,16 @@ pub(in crate::app) fn import_server(directory: String) -> Result<InitServerResul
             return Ok(InitServerResult {
                 ok: false,
                 message: "No jar file found in server directory. Please add a server.jar file first.".to_string(),
+                id: String::new(),
                 file: String::new(),
                 directory: directory_str.to_string(),
             });
         }
 
+        let server_id = generate_server_id();
+
         let content = json!({
+            "id": server_id,
             "explicit_info_names": false,
             "auto_backup": [],
             "ram": 3,
@@ -158,6 +177,7 @@ pub(in crate::app) fn import_server(directory: String) -> Result<InitServerResul
             .map_err(|err| err.to_string())?;
 
         (
+            server_id,
             found_jar.clone(),
             format!("Created mserve.json with default settings. Found jar file: {}", found_jar),
         )
@@ -166,6 +186,7 @@ pub(in crate::app) fn import_server(directory: String) -> Result<InitServerResul
     Ok(InitServerResult {
         ok: true,
         message,
+        id: server_id,
         file: jar_file,
         directory: directory_str.to_string(),
     })
@@ -217,6 +238,7 @@ pub(in crate::app) fn sync_server_mserve_json(directory: String) -> Result<SyncM
 
     let normalized = sanitize_mserve_value_config(&directory_path, &object);
     let normalized_json = serde_json::to_string_pretty(&json!({
+        "id": normalized.id,
         "explicit_info_names": normalized.explicit_info_names,
         "auto_backup": normalized.auto_backup,
         "ram": normalized.ram,
@@ -270,7 +292,21 @@ pub(in crate::app) fn repair_server_mserve_json(payload: RepairMserveJsonPayload
         .filter(|value| matches!(value.as_str(), "interval" | "on_close" | "on_start"))
         .collect();
 
+    let existing_id = fs::read_to_string(directory_path.join("mserve.json"))
+        .ok()
+        .and_then(|raw| parse_mserve_top_level_object(&raw).ok())
+        .and_then(|object| {
+            object
+                .get("id")
+                .and_then(|value| value.as_str())
+                .map(|value| value.trim())
+                .filter(|value| !value.is_empty())
+                .map(|value| value.to_string())
+        })
+        .unwrap_or_else(generate_server_id);
+
     let config = SyncedMserveConfig {
+        id: existing_id,
         directory: directory_path.to_string_lossy().to_string(),
         file: resolved_file,
         ram: payload.ram.max(1),

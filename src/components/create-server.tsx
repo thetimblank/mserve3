@@ -39,6 +39,7 @@ type InitServerPayload = {
 type InitServerResult = {
 	ok: boolean;
 	message: string;
+	id: string;
 	file: string;
 	directory: string;
 };
@@ -55,6 +56,7 @@ const getDirectoryName = (directory: string) => {
 };
 
 const buildServer = (form: ServerSetupFormData, result: InitServerResult): Server => ({
+	id: result.id,
 	name: getDirectoryName(result.directory),
 	directory: result.directory,
 	status: 'offline',

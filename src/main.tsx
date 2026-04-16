@@ -31,7 +31,7 @@ const RootLayout: React.FC = () => {
 								<Routes>
 									<Route path='/' element={<Home />} />
 									<Route path='/setup' element={<Setup />} />
-									<Route path='/servers/:serverName' element={<Server />} />
+									<Route path='/servers/:serverId' element={<Server />} />
 									<Route path='/settings' element={<Settings />} />
 								</Routes>
 							</ServersProvider>

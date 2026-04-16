@@ -20,6 +20,7 @@ export interface MserveJson {
 }
 
 export interface Server extends MserveJson {
+	id: string;
 	name: string;
 	directory: string;
 	status: ServerStatus;
@@ -55,6 +56,7 @@ export interface Server extends MserveJson {
 }
 
 export interface ServerUpdate {
+	id?: string;
 	name?: string;
 	directory?: string;
 	status?: ServerStatus;
@@ -86,16 +88,19 @@ interface ServersContextValue {
 	removeServer: (id: string) => void;
 	setServerStatus: (id: string, status: ServerStatus) => void;
 	updateServerStats: (id: string, stats: Partial<Server['stats']>) => void;
-	incrementPlayers: (id: string, delta: number) => void;
-	toggleAutoRestart: (id: string) => void;
-	setBackupMode: (id: string, mode: AutoBackupMode, enabled: boolean) => void;
 	getServerById: (id: string) => Server | undefined;
-	getOnlineServers: () => Server[];
-	isServerOnline: (id: string) => boolean;
 }
 
-const STORAGE_KEY = 'mserve.servers.v1';
+const STORAGE_KEY = 'mserve.servers.v3';
 let memoryStore: Server[] | null = null;
+
+const generateServerId = () => {
+	if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+		return crypto.randomUUID();
+	}
+
+	return `server-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+};
 
 const toDate = (value?: string | Date): Date => {
 	if (value instanceof Date) return value;
@@ -156,8 +161,6 @@ const toUniqueBackups = (items?: Server['backups']) => {
 	return normalized;
 };
 
-export const createServerId = (name: string, directory: string) => `${directory}::${name}`;
-
 export const createDefaultServers = (): Server[] => [
 	// {
 	// 	name: 'SMP',
@@ -190,6 +193,7 @@ export const normalizeServer = (server: Server): Server => {
 	const now = new Date();
 	const stats = server.stats ?? { players: 0, capacity: 20, tps: 0, uptime: now };
 	return {
+		id: server.id?.trim() || generateServerId(),
 		storage_limit: server.storage_limit ?? null,
 		name: server.name,
 		directory: server.directory,
@@ -266,7 +270,7 @@ const saveServers = async (servers: Server[]): Promise<void> => {
 };
 
 const updateServerInList = (servers: Server[], id: string, updater: (server: Server) => Server) =>
-	servers.map((server) => (createServerId(server.name, server.directory) === id ? updater(server) : server));
+	servers.map((server) => (server.id === id ? updater(server) : server));
 
 const ServersContext = React.createContext<ServersContextValue | undefined>(undefined);
 
@@ -332,6 +336,7 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 			if (!active) return;
 
 			const changed =
+				server.id !== config.id ||
 				server.file !== config.file ||
 				(server.ram ?? 3) !== config.ram ||
 				(server.auto_backup_interval ?? 120) !== config.auto_backup_interval ||
@@ -347,15 +352,13 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
 			setServers((prev) =>
 				prev.map((candidate) => {
-					if (
-						createServerId(candidate.name, candidate.directory) !==
-						createServerId(server.name, server.directory)
-					) {
+					if (candidate.id !== server.id) {
 						return candidate;
 					}
 
 					return normalizeServer({
 						...candidate,
+						id: config.id,
 						file: config.file,
 						ram: config.ram,
 						storage_limit: resolvedStorageLimit,
@@ -391,9 +394,9 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
 	const addServer = React.useCallback((server: Server) => {
 		const normalized = normalizeServer(server);
-		const id = createServerId(normalized.name, normalized.directory);
+		const id = normalized.id;
 		setServers((prev) => {
-			if (prev.some((item) => createServerId(item.name, item.directory) === id)) {
+			if (prev.some((item) => item.id === id)) {
 				return prev;
 			}
 			return [...prev, normalized];
@@ -403,9 +406,9 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
 	const upsertServer = React.useCallback((server: Server) => {
 		const normalized = normalizeServer(server);
-		const id = createServerId(normalized.name, normalized.directory);
+		const id = normalized.id;
 		setServers((prev) => {
-			const existing = prev.findIndex((item) => createServerId(item.name, item.directory) === id);
+			const existing = prev.findIndex((item) => item.id === id);
 			if (existing === -1) return [...prev, normalized];
 			return prev.map((item, index) => (index === existing ? normalized : item));
 		});
@@ -432,7 +435,7 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 	}, []);
 
 	const removeServer = React.useCallback((id: string) => {
-		setServers((prev) => prev.filter((server) => createServerId(server.name, server.directory) !== id));
+		setServers((prev) => prev.filter((server) => server.id !== id));
 	}, []);
 
 	const setServerStatus = React.useCallback((id: string, status: ServerStatus) => {
@@ -453,54 +456,8 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 		);
 	}, []);
 
-	const incrementPlayers = React.useCallback((id: string, delta: number) => {
-		setServers((prev) =>
-			updateServerInList(prev, id, (server) =>
-				normalizeServer({
-					...server,
-					stats: {
-						...server.stats,
-						players: Math.max(0, server.stats.players + delta),
-					},
-				}),
-			),
-		);
-	}, []);
-
-	const toggleAutoRestart = React.useCallback((id: string) => {
-		setServers((prev) =>
-			updateServerInList(prev, id, (server) =>
-				normalizeServer({ ...server, auto_restart: !server.auto_restart }),
-			),
-		);
-	}, []);
-
-	const setBackupMode = React.useCallback((id: string, mode: AutoBackupMode, enabled: boolean) => {
-		setServers((prev) =>
-			updateServerInList(prev, id, (server) => {
-				const current = new Set(server.auto_backup ?? []);
-				if (enabled) current.add(mode);
-				else current.delete(mode);
-				return normalizeServer({ ...server, auto_backup: Array.from(current) });
-			}),
-		);
-	}, []);
-
 	const getServerById = React.useCallback(
-		(id: string) => servers.find((server) => createServerId(server.name, server.directory) === id),
-		[servers],
-	);
-
-	const getOnlineServers = React.useCallback(
-		() => servers.filter((server) => server.status === 'online'),
-		[servers],
-	);
-
-	const isServerOnline = React.useCallback(
-		(id: string) =>
-			servers.some(
-				(server) => createServerId(server.name, server.directory) === id && server.status === 'online',
-			),
+		(id: string) => servers.find((server) => server.id === id),
 		[servers],
 	);
 
@@ -514,12 +471,7 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 		removeServer,
 		setServerStatus,
 		updateServerStats,
-		incrementPlayers,
-		toggleAutoRestart,
-		setBackupMode,
 		getServerById,
-		getOnlineServers,
-		isServerOnline,
 	};
 
 	return <ServersContext.Provider value={value}>{children}</ServersContext.Provider>;

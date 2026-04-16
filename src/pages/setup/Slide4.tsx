@@ -1,6 +1,6 @@
 import { m } from 'motion/react';
 import { Circle, CircleCheck } from 'lucide-react';
-import { createServerId, Server, useServers } from '@/data/servers';
+import { Server, useServers } from '@/data/servers';
 import { Button } from '@/components/ui/button';
 import { Link } from 'react-router-dom';
 import {
@@ -13,6 +13,7 @@ import { useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useSetup } from './SetupContext';
 import { useUser } from '@/data/user';
+import { toast } from 'sonner';
 
 export default function Slide4() {
 	const { servers, setServerStatus, updateServerStats } = useServers();
@@ -32,7 +33,7 @@ export default function Slide4() {
 	}, [data.port, onlineServersCount, updateUserField]);
 
 	const handleStart = async (server: Server) => {
-		const serverId = createServerId(server.name, server.directory);
+		const serverId = server.id;
 
 		if (isBusy) return;
 		setIsBusy(true);
@@ -44,7 +45,7 @@ export default function Slide4() {
 		} catch (err) {
 			setServerStatus(serverId, 'offline');
 			const message = err instanceof Error ? err.message : 'Failed to start server.';
-			window.alert(message);
+			toast.error(message);
 		} finally {
 			setIsBusy(false);
 		}

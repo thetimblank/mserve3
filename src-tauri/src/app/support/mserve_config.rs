@@ -48,9 +48,17 @@ pub(in crate::app) fn default_auto_backup() -> Vec<String> {
     vec![]
 }
 
+pub(in crate::app) fn generate_server_id() -> String {
+    let stamp = chrono::Utc::now()
+        .timestamp_nanos_opt()
+        .unwrap_or_else(|| chrono::Utc::now().timestamp_micros());
+    format!("srv-{stamp}")
+}
+
 pub(in crate::app) fn default_synced_config(directory: &Path) -> SyncedMserveConfig {
     let fallback_file = find_first_jar_file_name(directory).unwrap_or_else(|| "server.jar".to_string());
     SyncedMserveConfig {
+        id: generate_server_id(),
         directory: directory.to_string_lossy().to_string(),
         file: fallback_file,
         ram: 3,
@@ -136,6 +144,14 @@ pub(in crate::app) fn sanitize_mserve_value_config(
 ) -> SyncedMserveConfig {
     let mut config = default_synced_config(directory);
 
+    let normalized_id = object
+        .get("id")
+        .and_then(|value| value.as_str())
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string())
+        .unwrap_or_else(generate_server_id);
+
     let normalized_file = object
         .get("file")
         .and_then(|value| value.as_str())
@@ -193,6 +209,7 @@ pub(in crate::app) fn sanitize_mserve_value_config(
         .unwrap_or_else(|| chrono::Local::now().to_rfc3339());
 
     config.file = normalized_file;
+    config.id = normalized_id;
     config.ram = normalized_ram;
     config.auto_backup = normalized_auto_backup;
     config.auto_backup_interval = normalized_interval;
@@ -208,6 +225,7 @@ pub(in crate::app) fn sanitize_mserve_value_config(
 
 pub(in crate::app) fn write_synced_mserve_json(directory: &Path, config: &SyncedMserveConfig) -> Result<(), String> {
     let content = json!({
+        "id": config.id,
         "explicit_info_names": config.explicit_info_names,
         "auto_backup": config.auto_backup,
         "ram": config.ram.max(1),
@@ -232,6 +250,7 @@ pub(in crate::app) fn validate_mserve_json_keys(
     object: &serde_json::Map<String, serde_json::Value>,
 ) -> Result<(), String> {
     let allowed = [
+        "id",
         "file",
         "ram",
         "auto_backup",

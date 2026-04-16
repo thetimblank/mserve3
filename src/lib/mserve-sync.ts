@@ -27,6 +27,7 @@ export const createDefaultServerSetupForm = (): ServerSetupFormData => ({
 });
 
 export type SyncedMserveConfig = {
+	id: string;
 	directory: string;
 	file: string;
 	ram: number;

@@ -2,9 +2,10 @@ import CreateServer from '@/components/create-server';
 import ImportServer from '@/components/import-server';
 import Logo from '@/components/logo';
 import ServerCard from '@/components/server-card';
-import { createServerId, useServers } from '@/data/servers';
+import { useServers } from '@/data/servers';
 import clsx from 'clsx';
 import { m } from 'motion/react';
+import { Skeleton } from '@/components/ui/skeleton';
 
 const Home: React.FC = () => {
 	const { servers, isReady } = useServers();
@@ -15,7 +16,14 @@ const Home: React.FC = () => {
 				'min-h-[calc(100vh-40px)] flex px-12 py-18 w-full overflow-y-auto',
 				servers.length > 0 ? 'flex-col' : 'items-center justify-center',
 			)}>
-			{!isReady && <div className='w-full min-h-[50vh]'>Loading servers...</div>}
+			{!isReady && (
+				<div className='w-full min-h-[50vh] space-y-4'>
+					<Skeleton className='h-10 w-64' />
+					<Skeleton className='h-32 w-full' />
+					<Skeleton className='h-32 w-full' />
+					<Skeleton className='h-32 w-full' />
+				</div>
+			)}
 			{isReady && servers.length === 0 && (
 				<m.div
 					initial={{ scale: 0.75, y: 10, opacity: 0 }}
@@ -41,11 +49,7 @@ const Home: React.FC = () => {
 					</div>
 					<div className='flex flex-col gap-4'>
 						{servers.map((server, i) => (
-							<ServerCard
-								delay={(i + 1) * 0.05}
-								server={server}
-								key={createServerId(server.name, server.directory)}
-							/>
+							<ServerCard delay={(i + 1) * 0.05} server={server} key={server.id} />
 						))}
 					</div>
 					<div className='w-full flex flex-col items-center justify-center my-4'>

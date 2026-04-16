@@ -4,7 +4,7 @@ import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { FolderOpen } from 'lucide-react';
 import { toast } from 'sonner';
 import clsx from 'clsx';
-import { createServerId, type Server, useServers } from '@/data/servers';
+import { type Server, useServers } from '@/data/servers';
 import RamSliderField from '@/components/ram-slider-field';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -49,7 +49,7 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 		newDirectory: '',
 	});
 
-	const serverId = createServerId(server.name, server.directory);
+	const serverId = server.id;
 
 	React.useEffect(() => {
 		setSettingsForm({

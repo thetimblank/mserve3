@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { createServerId, Server, useServers } from '@/data/servers';
+import { Server, useServers } from '@/data/servers';
 import {
 	ArrowDownToLine,
 	Boxes,
@@ -19,7 +19,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import OpenFolderButton from '@/components/open-folder-button';
 import { getPrimaryMinecraftVersion } from '@/lib/utils';
-import EditServerPropertiesButton from '@/components/edit-server-properties-button';
+import { toast } from 'sonner';
 
 interface Props {
 	server: Server;
@@ -29,7 +29,7 @@ interface Props {
 const ServerCard: React.FC<Props> = ({ server, delay }) => {
 	const { setServerStatus, updateServerStats } = useServers();
 	const [isBusy, setIsBusy] = React.useState(false);
-	const serverId = createServerId(server.name, server.directory);
+	const serverId = server.id;
 
 	const handleStart = async () => {
 		if (isBusy) return;
@@ -42,7 +42,7 @@ const ServerCard: React.FC<Props> = ({ server, delay }) => {
 		} catch (err) {
 			setServerStatus(serverId, 'offline');
 			const message = err instanceof Error ? err.message : 'Failed to start server.';
-			window.alert(message);
+			toast.error(message);
 		} finally {
 			setIsBusy(false);
 		}
@@ -60,7 +60,7 @@ const ServerCard: React.FC<Props> = ({ server, delay }) => {
 			setServerStatus(serverId, 'offline');
 			updateServerStats(serverId, { players: 0, tps: 0, uptime: null });
 			const message = err instanceof Error ? err.message : 'Failed to stop server.';
-			window.alert(message);
+			toast.error(message);
 		} finally {
 			setIsBusy(false);
 		}
@@ -83,7 +83,7 @@ const ServerCard: React.FC<Props> = ({ server, delay }) => {
 			setServerStatus(serverId, 'offline');
 			updateServerStats(serverId, { players: 0, tps: 0, uptime: null });
 			const message = err instanceof Error ? err.message : 'Failed to restart server.';
-			window.alert(message);
+			toast.error(message);
 		} finally {
 			setIsBusy(false);
 		}
@@ -179,7 +179,7 @@ const ServerCard: React.FC<Props> = ({ server, delay }) => {
 				</CardHeader>
 				<CardContent>
 					<div className='flex items-center gap-2'>
-						<Link to={`/servers/${encodeURIComponent(server.name)}`}>
+						<Link to={`/servers/${encodeURIComponent(server.id)}`}>
 							<Button>View More Details</Button>
 						</Link>
 						{server.status === 'online' && (
@@ -200,7 +200,6 @@ const ServerCard: React.FC<Props> = ({ server, delay }) => {
 								<p>Start</p>
 							</Button>
 						)}
-						<EditServerPropertiesButton server={server} disabled={isBusy} />
 						<OpenFolderButton directory={server.directory} disabled={isBusy} />
 					</div>
 				</CardContent>

@@ -26,6 +26,7 @@ struct InitServerPayload {
 struct InitServerResult {
     ok: bool,
     message: String,
+    id: String,
     file: String,
     directory: String,
 }
@@ -46,6 +47,7 @@ struct RepairMserveJsonPayload {
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct SyncedMserveConfig {
+    id: String,
     directory: String,
     file: String,
     ram: u32,

@@ -30,6 +30,7 @@ const defaultData = {
 type InitServerResult = {
 	ok: boolean;
 	message: string;
+	id: string;
 	file: string;
 	directory: string;
 };
@@ -40,6 +41,7 @@ const getDirectoryName = (directory: string) => {
 };
 
 const buildServer = (result: InitServerResult, config: SyncedMserveConfig, storageLimit: number): Server => ({
+	id: config.id || result.id,
 	name: getDirectoryName(result.directory),
 	directory: result.directory,
 	status: 'offline',
