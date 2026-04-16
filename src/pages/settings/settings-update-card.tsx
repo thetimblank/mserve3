@@ -1,4 +1,4 @@
-import { Download } from 'lucide-react';
+import { Download, RefreshCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -47,15 +47,16 @@ const SettingsUpdateCard: React.FC<SettingsUpdateCardProps> = ({
 				</div>
 				<div className='flex items-center gap-3'>
 					<Button
-						variant='outline'
+						variant='secondary'
 						onClick={onCheckForUpdates}
 						disabled={isCheckingUpdate || isInstallingUpdate}>
-						<Download />
+						<RefreshCcw className={isCheckingUpdate ? 'animate-spin size-4' : 'size-4'} />
 						{isCheckingUpdate ? 'Checking...' : 'Check for updates'}
 					</Button>
 					<Button
 						onClick={onInstallUpdate}
 						disabled={!availableUpdateVersion || isCheckingUpdate || isInstallingUpdate}>
+						<Download className={isInstallingUpdate ? 'animate-bounce size-4' : 'size-4'} />
 						{isInstallingUpdate
 							? 'Installing...'
 							: availableUpdateVersion

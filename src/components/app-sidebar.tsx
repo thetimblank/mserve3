@@ -1,4 +1,4 @@
-import { Home, Network, Server, Settings } from 'lucide-react';
+import { Home, Network, Plus, Server, Settings } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 import {
@@ -20,7 +20,7 @@ const items = [
 		icon: Home,
 	},
 	{
-		title: 'Setup',
+		title: 'Setup Hosting',
 		url: '/setup',
 		icon: Network,
 	},
@@ -57,27 +57,42 @@ export function AppSidebar() {
 						</SidebarMenu>
 					</SidebarGroupContent>
 				</SidebarGroup>
-				{servers.length > 0 && (
-					<SidebarGroup>
-						<SidebarGroupLabel>Servers</SidebarGroupLabel>
-						<SidebarGroupContent>
-							<SidebarMenu>
-								{servers.map((server) => (
-									<SidebarMenuItem key={server.id}>
-										<SidebarMenuButton asChild>
-											<Link to={`/servers/${encodeURIComponent(server.id)}`}>
-												<Server />
-												<span>{server.name}</span>
-											</Link>
-										</SidebarMenuButton>
-									</SidebarMenuItem>
-								))}
-							</SidebarMenu>
-						</SidebarGroupContent>
-					</SidebarGroup>
-				)}
+				<SidebarGroup>
+					<SidebarGroupLabel>Servers</SidebarGroupLabel>
+					<SidebarGroupContent>
+						<SidebarMenu>
+							<SidebarMenuItem>
+								<SidebarMenuButton asChild>
+									<Link to='/servers/new'>
+										<Plus />
+										<span>Create Server</span>
+									</Link>
+								</SidebarMenuButton>
+							</SidebarMenuItem>
+							{servers.length === 0 && (
+								<SidebarMenuItem>
+									<SidebarMenuButton disabled>
+										<Server />
+										<span>No servers yet</span>
+									</SidebarMenuButton>
+								</SidebarMenuItem>
+							)}
+							{servers.map((server) => (
+								<SidebarMenuItem key={server.id}>
+									<SidebarMenuButton asChild>
+										<Link to={`/servers/${encodeURIComponent(server.id)}`}>
+											<Server />
+											<span>{server.name}</span>
+										</Link>
+									</SidebarMenuButton>
+								</SidebarMenuItem>
+							))}
+						</SidebarMenu>
+					</SidebarGroupContent>
+				</SidebarGroup>
 
 				<SidebarGroup className='mt-auto'>
+					<SidebarGroupLabel>Extra</SidebarGroupLabel>
 					<SidebarGroupContent>
 						{items
 							.filter((item) => item.bottom)

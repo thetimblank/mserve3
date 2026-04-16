@@ -7,7 +7,6 @@ import { ArrowLeft, Globe, Package, Plug } from 'lucide-react';
 import ServerItemList from '@/components/server-item-list';
 
 import ServerTerminalPanel from './server/server-terminal-panel';
-import ServerContentTabs from './server/server-content-tabs';
 import ServerBackupsTab from './server/server-backups-tab';
 import ServerSettingsTab from './server/server-settings-tab';
 import ServerPageSkeleton from '@/pages/server/server-page-skeleton';
@@ -100,7 +99,7 @@ const Server: React.FC = () => {
 
 	if (!server) {
 		return (
-			<main className='pt-15 min-h-[calc(100vh-40px)] p-12 w-full overflow-y-auto'>
+			<main className='h-full pt-15 p-12 w-full overflow-y-auto app-scroll-area app-scroll-stable'>
 				<div className='text-muted-foreground'>
 					Server not found{resolvedServerId ? ` for id "${resolvedServerId}".` : '.'}
 				</div>
@@ -114,8 +113,8 @@ const Server: React.FC = () => {
 	}
 
 	return (
-		<main className='w-full min-h-[calc(100vh-40px)] relative overflow-y-auto'>
-			<div className='min-h-full flex flex-col p-12 pt-20 w-full overflow-y-auto'>
+		<main className='w-full h-full relative overflow-y-auto app-scroll-area app-scroll-stable'>
+			<div className='min-h-full flex flex-col p-12 pt-20 w-full'>
 				{errorMessage && (
 					<div className='mb-4 rounded-lg border border-destructive/40 bg-destructive/10 p-3'>
 						<div className='flex items-center justify-between gap-3'>
@@ -156,9 +155,9 @@ const Server: React.FC = () => {
 					onStart={handleStart}
 					onStop={handleStop}
 					onRestart={handleRestart}
+					activeTab={activeTab}
+					onTabChange={setActiveTab}
 				/>
-
-				<ServerContentTabs activeTab={activeTab} onTabChange={setActiveTab} />
 
 				{activeTab === 'plugins' && (
 					<ServerItemList

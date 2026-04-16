@@ -112,7 +112,7 @@ export default function ServerSettingsTab({
 			await invoke('delete_server', { directory: server.directory });
 			clearTerminalSession();
 			removeServer(serverId);
-			navigate('/servers');
+			navigate('/');
 		} catch (err) {
 			const message = err instanceof Error ? err.message : 'Failed to delete server.';
 			toast.error(message);
@@ -129,7 +129,7 @@ export default function ServerSettingsTab({
 			clearTerminalSession();
 			removeServer(serverId);
 			toast.success(`Removed ${server.name} from mserve.`);
-			navigate('/servers');
+			navigate('/');
 		} finally {
 			setIsBusy(false);
 		}
@@ -137,8 +137,8 @@ export default function ServerSettingsTab({
 
 	return (
 		<div className='flex flex-col gap-6'>
-			<div className='border border-border rounded-lg p-4 space-y-4'>
-				<p className='text-2xl font-bold'>Settings</p>
+			<div className='rounded-lg'>
+				<p className='text-2xl font-bold mb-2'>Settings</p>
 				<div className='flex flex-wrap gap-2'>
 					<Button
 						variant='secondary'
@@ -155,18 +155,18 @@ export default function ServerSettingsTab({
 						<p>Sync mserve.json</p>
 					</Button>
 				</div>
-				<p className='text-sm text-muted-foreground'>
+				<p className='text-sm text-muted-foreground mt-1'>
 					Sync and save operations require the server to be offline.
 				</p>
 			</div>
 
-			<div className='border border-border rounded-lg p-4 space-y-4'>
+			<div className='space-y-4 bg-secondary p-6 rounded-lg'>
 				<p className='text-2xl font-bold'>Edit Properties</p>
 				<EditServerPropertiesForm server={server} disabled={isBusy} onSaved={syncServerContents} />
 			</div>
 
-			<div className='bg-destructive/20 rounded-lg p-4 space-y-4'>
-				<p className='text-2xl font-bold text-destructive-foreground'>Danger Zone</p>
+			<div className='bg-destructive/10 rounded-lg p-6 space-y-4'>
+				<p className='text-2xl font-bold'>Danger Zone</p>
 				<div className='flex flex-wrap gap-2'>
 					<AlertDialog>
 						<AlertDialogTrigger asChild>
@@ -197,7 +197,7 @@ export default function ServerSettingsTab({
 					</AlertDialog>
 					<AlertDialog>
 						<AlertDialogTrigger asChild>
-							<Button disabled={isBusy || server.status === 'online'} variant='destructive-secondary'>
+							<Button disabled={isBusy || server.status === 'online'} variant='destructive'>
 								<Trash />
 								<p>Delete Server</p>
 							</Button>

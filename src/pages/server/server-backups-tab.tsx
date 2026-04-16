@@ -1,5 +1,5 @@
 import React from 'react';
-import { Archive, ArchiveRestore, EllipsisVertical, Trash } from 'lucide-react';
+import { Archive, ArchiveRestore, CircleX, EllipsisVertical, Trash } from 'lucide-react';
 import OpenFolderButton from '@/components/open-folder-button';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -95,7 +95,7 @@ const ServerBackupsTab: React.FC<ServerBackupsTabProps> = ({
 	};
 
 	return (
-		<div className='flex flex-col gap-4 min-h-[50vh]'>
+		<div className='flex flex-col gap-4'>
 			<div className='flex justify-between items-center min-h-10'>
 				<p className='text-2xl font-bold flex items-center gap-2'>
 					<Archive />
@@ -130,7 +130,10 @@ const ServerBackupsTab: React.FC<ServerBackupsTabProps> = ({
 				</div>
 			</div>
 			{backups.length === 0 ? (
-				<p className='text-muted-foreground text-center my-10'>No backups were found.</p>
+				<div className='my-10 text-muted-foreground text-center flex flex-col items-center gap-4'>
+					<CircleX className='size-20' />
+					<p>No backups were found.</p>
+				</div>
 			) : (
 				backups.map((backup) => (
 					<div

@@ -12,7 +12,7 @@ interface Props {
 const ServerStatus: React.FC<Props> = ({ server, size = 'md' }) => {
 	const sizeClasses = {
 		md: {
-			container: 'gap-1',
+			container: 'gap-1 relative',
 			visual: 'size-16',
 			ring: 'size-16',
 			icon: 'size-10',
@@ -20,7 +20,7 @@ const ServerStatus: React.FC<Props> = ({ server, size = 'md' }) => {
 			status: 'text-base',
 		},
 		lg: {
-			container: 'gap-2',
+			container: 'gap-2 relative',
 			visual: 'size-20',
 			ring: 'size-20',
 			icon: 'size-12',
@@ -28,7 +28,7 @@ const ServerStatus: React.FC<Props> = ({ server, size = 'md' }) => {
 			status: 'text-lg',
 		},
 		xl: {
-			container: 'gap-2',
+			container: 'gap-2 relative',
 			visual: 'size-24',
 			ring: 'size-24',
 			icon: 'size-14',

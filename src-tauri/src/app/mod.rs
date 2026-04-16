@@ -171,6 +171,20 @@ struct PathValidationResult {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct ServerDirectoryInspectionResult {
+    kind: String,
+    exists: bool,
+    is_directory: bool,
+    is_empty: bool,
+    has_mserve_json: bool,
+    has_server_properties: bool,
+    has_eula_txt: bool,
+    first_jar_file: Option<String>,
+    message: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct ScannedPlugin {
     name: Option<String>,
     file: String,
@@ -226,6 +240,7 @@ pub fn run() {
             get_local_ip,
             get_system_memory_gb,
             initialize_server,
+            inspect_server_directory,
             import_server,
             sync_server_mserve_json,
             repair_server_mserve_json,

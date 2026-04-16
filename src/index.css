@@ -50,6 +50,10 @@
 
 :root {
 	--radius: 0.625rem;
+	--scrollbar-size: 10px;
+	--scrollbar-thumb: color-mix(in oklch, var(--foreground) 24%, transparent);
+	--scrollbar-thumb-hover: color-mix(in oklch, var(--foreground) 40%, transparent);
+	--scrollbar-track: color-mix(in oklch, var(--background) 85%, var(--foreground) 15%);
 	--background: oklch(1 0 0);
 	--foreground: oklch(0.145 0 0);
 	--card: oklch(1 0 0);
@@ -59,7 +63,7 @@
 	--primary: oklch(0.205 0 0);
 	--primary-foreground: oklch(0.985 0 0);
 	--secondary: oklch(0.97 0 0);
-	--secondary-active: oklch(0.87 0 0);
+	--secondary-active: oklch(0.94 0 0);
 	--secondary-foreground: oklch(0.205 0 0);
 	--muted: oklch(0.97 0 0);
 	--muted-foreground: oklch(0.556 0 0);
@@ -89,6 +93,9 @@
 }
 
 .dark {
+	--scrollbar-thumb: color-mix(in oklch, var(--foreground) 30%, transparent);
+	--scrollbar-thumb-hover: color-mix(in oklch, var(--foreground) 50%, transparent);
+	--scrollbar-track: color-mix(in oklch, var(--background) 80%, var(--foreground) 20%);
 	--background: oklch(0.145 0 0);
 	--foreground: oklch(0.985 0 0);
 	--card: oklch(0.205 0 0);
@@ -160,8 +167,14 @@ input.progress:hover::-moz-range-thumb {
 	* {
 		@apply border-border outline-ring/50;
 	}
+	html,
+	body,
+	#root {
+		height: 100%;
+	}
 	body {
 		@apply bg-background text-foreground;
+		overflow: hidden;
 	}
 }
 
@@ -207,4 +220,32 @@ input.progress:hover::-moz-range-thumb {
 
 body {
 	font-family: 'Satoshi', sans-serif;
+}
+
+.app-scroll-area {
+	scrollbar-width: thin;
+	scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+.app-scroll-area::-webkit-scrollbar {
+	width: var(--scrollbar-size);
+	height: var(--scrollbar-size);
+}
+
+.app-scroll-area::-webkit-scrollbar-track {
+	background: var(--scrollbar-track);
+}
+
+.app-scroll-area::-webkit-scrollbar-thumb {
+	background: var(--scrollbar-thumb);
+	border-radius: 999px;
+	border: 2px solid var(--scrollbar-track);
+}
+
+.app-scroll-area::-webkit-scrollbar-thumb:hover {
+	background: var(--scrollbar-thumb-hover);
+}
+
+.app-scroll-stable {
+	scrollbar-gutter: stable;
 }

@@ -1,7 +1,7 @@
 import React from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
-import { FolderOpen } from 'lucide-react';
+import { Check, FolderOpen, Loader } from 'lucide-react';
 import { toast } from 'sonner';
 import clsx from 'clsx';
 import { type Server, useServers } from '@/data/servers';
@@ -165,10 +165,11 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 				onChange={(value) => updateSettingsField('ram', value)}
 			/>
 
-			<div className='space-y-2'>
+			<div className='space-y-2 mt-6'>
 				<Label htmlFor='edit-jar-swap'>Swap server jar with selected jar file</Label>
 				<div className='flex gap-2'>
 					<Input
+						className='border-secondary-foreground/50'
 						id='edit-jar-swap'
 						placeholder='C:\path\to\another-server.jar'
 						value={settingsForm.jarSwapPath}
@@ -194,6 +195,7 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 					{backupChoices.map((choice) => (
 						<Label key={choice.value} className='flex items-center gap-3'>
 							<Checkbox
+								className='border-secondary-foreground/50'
 								checked={settingsForm.autoBackup.includes(choice.value)}
 								onCheckedChange={(checked) =>
 									toggleSettingsBackupMode(
@@ -213,6 +215,7 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 				<div className='space-y-2'>
 					<Label htmlFor='edit-backup-interval'>Backup interval (minutes)</Label>
 					<Input
+						className='border-secondary-foreground/50'
 						id='edit-backup-interval'
 						type='number'
 						min={1}
@@ -225,6 +228,7 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 
 			<Label className='flex items-center gap-3'>
 				<Checkbox
+					className='border-secondary-foreground/50'
 					checked={settingsForm.autoRestart}
 					onCheckedChange={(checked) =>
 						updateSettingsField('autoRestart', typeof checked === 'boolean' ? checked : false)
@@ -238,6 +242,7 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 				<Label htmlFor='edit-new-location'>Move server location</Label>
 				<div className='flex gap-2'>
 					<Input
+						className='border-secondary-foreground/50'
 						id='edit-new-location'
 						placeholder='C:\servers\MyServer'
 						value={settingsForm.newDirectory}
@@ -261,19 +266,22 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 			)}
 			{settingsError && <p className='text-sm text-destructive'>{settingsError}</p>}
 
-			<div className='flex justify-end gap-2'>
-				{showCancel && (
-					<Button variant='outline' type='button' onClick={onCancel} disabled={isSaving}>
-						Cancel
-					</Button>
-				)}
-				<Button
-					type='button'
-					onClick={handleSaveSettings}
-					disabled={disabled || isSaving || server.status !== 'offline'}>
-					{isSaving ? 'Saving...' : (saveLabel ?? 'Save properties')}
+			{showCancel && (
+				<Button variant='outline' type='button' onClick={onCancel} disabled={isSaving}>
+					Cancel
 				</Button>
-			</div>
+			)}
+			<Button
+				type='button'
+				onClick={handleSaveSettings}
+				disabled={disabled || isSaving || server.status !== 'offline'}>
+				{isSaving ? (
+					<Loader className='animate-spin size-4' />
+				) : (
+					(saveLabel ?? <Check className='size-4' />)
+				)}
+				{isSaving ? 'Saving...' : (saveLabel ?? 'Save properties')}
+			</Button>
 		</div>
 	);
 };

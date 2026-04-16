@@ -20,15 +20,15 @@ const tabMeta: Record<ServerContentTab, { icon: React.ReactNode; label: string }
 const tabs: ServerContentTab[] = ['plugins', 'worlds', 'datapacks', 'backups', 'settings'];
 
 const ServerContentTabs: React.FC<ServerContentTabsProps> = ({ activeTab, onTabChange }) => (
-	<div className='mb-6  w-full flex'>
+	<>
 		{tabs.map((item) => (
 			<Button
 				key={item}
 				className={clsx(
-					'border-t-2 border-border hover:border-black hover:dark:border-white rounded-md rounded-t-none flex-1',
-					activeTab === item && 'border-black dark:border-white',
+					'flex-1',
+					activeTab === item && 'bg-accent text-accent-foreground hover:bg-accent cursor-default',
 				)}
-				variant={activeTab === item ? 'secondary' : 'ghost'}
+				variant='secondary'
 				onClick={() => onTabChange(item)}>
 				<span className='flex items-center justify-center gap-2'>
 					{tabMeta[item].icon}
@@ -36,7 +36,7 @@ const ServerContentTabs: React.FC<ServerContentTabsProps> = ({ activeTab, onTabC
 				</span>
 			</Button>
 		))}
-	</div>
+	</>
 );
 
 export default React.memo(ServerContentTabs);

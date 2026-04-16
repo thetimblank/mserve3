@@ -27,7 +27,7 @@ const Settings: React.FC = () => {
 	};
 
 	return (
-		<main className='min-h-[calc(100vh-40px)] px-12 py-18 w-full overflow-y-auto'>
+		<main className='h-full px-12 py-18 w-full overflow-y-auto app-scroll-area'>
 			<div className='flex flex-col'>
 				<m.h1
 					initial={{ y: 50, opacity: 0 }}

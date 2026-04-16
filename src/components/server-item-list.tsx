@@ -4,6 +4,7 @@ import { getCurrentWebview } from '@tauri-apps/api/webview';
 import {
 	Archive,
 	ArrowUpRightFromSquare,
+	CircleX,
 	HardDrive,
 	Link,
 	Link2,
@@ -378,7 +379,7 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 				value={search}
 				onChange={(e) => setSearch(e.target.value)}
 			/>
-			<div className='flex flex-col gap-4 mt-4'>
+			<div className='flex flex-col gap-3 mt-2'>
 				{filtered.length > 0 &&
 					filtered.map((item, i) => (
 						<m.div
@@ -546,10 +547,10 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 				ref={dropZoneRef}
 				onClick={handleAddItem}
 				className={clsx(
-					'flex flex-col gap-2 mt-3 items-center justify-center rounded-md border-2 hover:bg-accent/30 transition-colors min-h-32 p-4 cursor-pointer select-none font-bold text-sm',
+					'flex flex-col gap-2 mt-3 items-center justify-center rounded-md border-2 hover:border-accent/30 hover:bg-accent/30 transition-colors min-h-32 p-4 cursor-pointer select-none font-bold text-sm',
 					isDragging
 						? 'border-accent bg-accent/30 border-solid'
-						: 'border-accent/75 bg-accent/20 border-dashed',
+						: 'border-border bg-secondary border-dashed',
 					(disabled || busyFile === '__upload__') && 'opacity-50 pointer-events-none',
 				)}>
 				{isDragging ? (
@@ -563,7 +564,13 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 					</>
 				)}
 			</div>
-			{filtered.length === 0 && <p className='text-center text-muted-foreground my-10'>{emptyLabel}</p>}
+
+			{filtered.length === 0 && (
+				<div className='my-10 text-muted-foreground text-center flex flex-col items-center gap-4'>
+					<CircleX className='size-20' />
+					<p>{emptyLabel}</p>
+				</div>
+			)}
 		</div>
 	);
 };

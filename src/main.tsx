@@ -5,7 +5,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Nav from './components/nav';
 import Animations from './lib/animations/lazy';
 import { ThemeProvider } from '@/components/theme-provider';
-import { SidebarProvider } from '@/components/ui/sidebar';
+import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { AppSidebar } from '@/components/app-sidebar';
 import { ServersProvider } from './data/servers';
 import { UserProvider } from './data/user';
@@ -15,6 +15,8 @@ import Server from './pages/Server';
 import { Toaster } from './components/ui/sonner';
 import Setup from './pages/Setup';
 import MserveRepairDialog from '@/components/mserve-repair-dialog';
+import CreateServerPage from './pages/CreateServer';
+import { CreateServerProvider } from './pages/create-server/CreateServerContext';
 
 const RootLayout: React.FC = () => {
 	return (
@@ -23,17 +25,22 @@ const RootLayout: React.FC = () => {
 			<MserveRepairDialog />
 			<Animations>
 				<ThemeProvider defaultTheme='dark' storageKey='vite-ui-theme'>
-					<SidebarProvider>
+					<SidebarProvider className='h-svh overflow-hidden pt-10'>
 						<UserProvider>
 							<ServersProvider>
-								<Nav />
-								<AppSidebar />
-								<Routes>
-									<Route path='/' element={<Home />} />
-									<Route path='/setup' element={<Setup />} />
-									<Route path='/servers/:serverId' element={<Server />} />
-									<Route path='/settings' element={<Settings />} />
-								</Routes>
+								<CreateServerProvider>
+									<Nav />
+									<AppSidebar />
+									<SidebarInset className='h-full min-h-0 overflow-hidden'>
+										<Routes>
+											<Route path='/' element={<Home />} />
+											<Route path='/setup' element={<Setup />} />
+											<Route path='/servers/new' element={<CreateServerPage />} />
+											<Route path='/servers/:serverId' element={<Server />} />
+											<Route path='/settings' element={<Settings />} />
+										</Routes>
+									</SidebarInset>
+								</CreateServerProvider>
 							</ServersProvider>
 						</UserProvider>
 					</SidebarProvider>

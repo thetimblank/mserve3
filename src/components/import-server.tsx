@@ -22,6 +22,7 @@ import { repairServerMserveJson, syncServerMserveJson, type SyncedMserveConfig }
 import { requestMserveRepair } from '@/lib/mserve-repair-controller';
 import { FolderOpen, Plus } from 'lucide-react';
 import { toast } from 'sonner';
+import { useNavigate } from 'react-router-dom';
 
 const defaultData = {
 	directory: '',
@@ -39,6 +40,9 @@ const getDirectoryName = (directory: string) => {
 	const segments = directory.split(/[\\/]/).filter(Boolean);
 	return segments[segments.length - 1] || 'Server';
 };
+
+const normalizeDirectoryPath = (value: string) =>
+	value.trim().replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
 
 const buildServer = (result: InitServerResult, config: SyncedMserveConfig, storageLimit: number): Server => ({
 	id: config.id || result.id,
@@ -69,7 +73,8 @@ const buildServer = (result: InitServerResult, config: SyncedMserveConfig, stora
 });
 
 export const ImportServer: React.FC<React.HTMLAttributes<HTMLButtonElement>> = ({ ...props }) => {
-	const { addServer } = useServers();
+	const navigate = useNavigate();
+	const { servers, addServer } = useServers();
 	const [open, setOpen] = React.useState(false);
 	const [form, setForm] = React.useState(defaultData);
 	const [isSubmitting, setIsSubmitting] = React.useState(false);
@@ -109,6 +114,19 @@ export const ImportServer: React.FC<React.HTMLAttributes<HTMLButtonElement>> = (
 		const directory = form.directory.trim();
 		if (!directory) {
 			setError('Please choose a server directory.');
+			return;
+		}
+
+		const normalizedDirectory = normalizeDirectoryPath(directory);
+		const existingServer =
+			servers.find((server) => normalizeDirectoryPath(server.directory) === normalizedDirectory) ?? null;
+		if (existingServer) {
+			toast.info(
+				`Nothing was imported. This server already exists in MSERVE as "${existingServer.name}".`,
+			);
+			resetForm();
+			setOpen(false);
+			navigate(`/servers/${encodeURIComponent(existingServer.id)}`);
 			return;
 		}
 

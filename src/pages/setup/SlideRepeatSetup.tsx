@@ -18,12 +18,16 @@ export default function SlideRepeatSetup() {
 			<h1 className='text-3xl font-bold flex gap-5 items-center mb-2 w-fit'>
 				Setup Hosting Another Server
 			</h1>
-			<p className='mb-2'>This page will help you add another port and host another server.</p>
-			<p className='mb-10'>
+			<p className='mb-4'>
+				This page will help you add another port and host another server. <br />
+				Note, you may of only had to of done this once.
+			</p>
+			<p className='mb-10 font-bold'>
 				You have already port forwarded{' '}
 				{user.completed_setup_hosting_ports.map((value, i) => (
 					<span key={i}>"{value}"</span>
-				))}
+				))}{' '}
+				on this PC.
 			</p>
 
 			<Button onClick={nextSlide}>Continue</Button>

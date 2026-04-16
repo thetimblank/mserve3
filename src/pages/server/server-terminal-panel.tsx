@@ -30,7 +30,9 @@ const ServerTerminalPanel: React.FC<ServerTerminalPanelProps> = ({
 			animate={{ scale: 1, y: 0, opacity: 1 }}
 			transition={{ type: 'spring', duration: 0.5, bounce: 0 }}
 			className='bg-black text-white rounded-xl w-full flex font-mono flex-col'>
-			<div ref={terminalOutputRef} className='h-64 overflow-y-auto px-4 py-2 text-sm space-y-1'>
+			<div
+				ref={terminalOutputRef}
+				className='h-64 overflow-y-auto app-scroll-area px-4 py-2 text-sm space-y-1'>
 				{terminalLines.map((line, index) => (
 					<p key={`${index}-${line}`}>{line}</p>
 				))}

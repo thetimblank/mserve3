@@ -20,13 +20,13 @@ const SetupContent: React.FC = () => {
 	}
 
 	return (
-		<main className='w-full min-h-[calc(100vh-40px)] relative overflow-hidden'>
+		<main className='w-full h-full relative overflow-hidden'>
 			{slide > 0 && (
 				<Button variant='ghost' className='absolute mt-12 ml-2 size-12' onClick={prevSlide}>
 					<ArrowLeft className='size-10' />
 				</Button>
 			)}
-			<div className='pt-15 min-h-full flex items-center justify-center p-12 w-full overflow-y-auto'>
+			<div className='pt-15 h-full min-h-0 flex items-center justify-center p-12 w-full overflow-y-auto app-scroll-area'>
 				{slides[slide]}
 			</div>
 		</main>

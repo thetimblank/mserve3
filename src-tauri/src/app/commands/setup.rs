@@ -83,6 +83,171 @@ pub(in crate::app) fn initialize_server(payload: InitServerPayload) -> Result<In
 }
 
 #[tauri::command]
+pub(in crate::app) fn inspect_server_directory(
+    directory: String,
+    create_directory_if_missing: bool,
+) -> Result<ServerDirectoryInspectionResult, String> {
+    let directory_str = directory.trim();
+    if directory_str.is_empty() {
+        return Ok(ServerDirectoryInspectionResult {
+            kind: "empty_input".to_string(),
+            exists: false,
+            is_directory: false,
+            is_empty: true,
+            has_mserve_json: false,
+            has_server_properties: false,
+            has_eula_txt: false,
+            first_jar_file: None,
+            message: "Please choose a server directory.".to_string(),
+        });
+    }
+
+    let directory_path = PathBuf::from(directory_str);
+
+    if !directory_path.exists() {
+        if !create_directory_if_missing {
+            return Ok(ServerDirectoryInspectionResult {
+                kind: "missing_directory".to_string(),
+                exists: false,
+                is_directory: false,
+                is_empty: true,
+                has_mserve_json: false,
+                has_server_properties: false,
+                has_eula_txt: false,
+                first_jar_file: None,
+                message:
+                    "Directory does not exist. Enable 'Create directory if it doesn't exist' or choose another path."
+                        .to_string(),
+            });
+        }
+
+        return Ok(ServerDirectoryInspectionResult {
+            kind: "new_directory".to_string(),
+            exists: false,
+            is_directory: false,
+            is_empty: true,
+            has_mserve_json: false,
+            has_server_properties: false,
+            has_eula_txt: false,
+            first_jar_file: None,
+            message: "Directory will be created during setup.".to_string(),
+        });
+    }
+
+    if !directory_path.is_dir() {
+        return Ok(ServerDirectoryInspectionResult {
+            kind: "not_directory".to_string(),
+            exists: true,
+            is_directory: false,
+            is_empty: false,
+            has_mserve_json: false,
+            has_server_properties: false,
+            has_eula_txt: false,
+            first_jar_file: None,
+            message: "Server location must be a directory.".to_string(),
+        });
+    }
+
+    let mut has_mserve_json = false;
+    let mut has_server_properties = false;
+    let mut has_eula_txt = false;
+    let mut first_jar_file: Option<String> = None;
+    let mut entry_count = 0usize;
+
+    if let Ok(entries) = fs::read_dir(&directory_path) {
+        for entry in entries.flatten() {
+            entry_count += 1;
+            let path = entry.path();
+            let Some(name) = path.file_name().and_then(|value| value.to_str()) else {
+                continue;
+            };
+            let lower_name = name.to_lowercase();
+
+            if lower_name == "mserve.json" {
+                has_mserve_json = true;
+                continue;
+            }
+
+            if lower_name == "server.properties" {
+                has_server_properties = true;
+                continue;
+            }
+
+            if lower_name == "eula.txt" {
+                has_eula_txt = true;
+                continue;
+            }
+
+            if first_jar_file.is_none() && path.is_file() && lower_name.ends_with(".jar") {
+                first_jar_file = Some(name.to_string());
+            }
+        }
+    }
+
+    let is_empty = entry_count == 0;
+
+    if has_mserve_json {
+        return Ok(ServerDirectoryInspectionResult {
+            kind: "import_mserve".to_string(),
+            exists: true,
+            is_directory: true,
+            is_empty,
+            has_mserve_json,
+            has_server_properties,
+            has_eula_txt,
+            first_jar_file,
+            message:
+                "This folder already has mserve.json. Import Server will use and repair it if needed."
+                    .to_string(),
+        });
+    }
+
+    if has_server_properties && has_eula_txt && first_jar_file.is_some() {
+        return Ok(ServerDirectoryInspectionResult {
+            kind: "import_existing_server".to_string(),
+            exists: true,
+            is_directory: true,
+            is_empty,
+            has_mserve_json,
+            has_server_properties,
+            has_eula_txt,
+            first_jar_file,
+            message:
+                "Existing server files detected."
+                    .to_string(),
+        });
+    }
+
+    if is_empty {
+        return Ok(ServerDirectoryInspectionResult {
+            kind: "empty_directory".to_string(),
+            exists: true,
+            is_directory: true,
+            is_empty,
+            has_mserve_json,
+            has_server_properties,
+            has_eula_txt,
+            first_jar_file,
+            message: "Directory is empty and ready for setup.".to_string(),
+        });
+    }
+
+    Ok(ServerDirectoryInspectionResult {
+        kind: "unsupported_existing".to_string(),
+        exists: true,
+        is_directory: true,
+        is_empty,
+        has_mserve_json,
+        has_server_properties,
+        has_eula_txt,
+        first_jar_file,
+        message:
+            "This directory already contains files. Use an empty/new folder or an existing server."
+                .to_string(),
+    })
+}
+
+#[tauri::command]
 pub(in crate::app) fn import_server(directory: String) -> Result<InitServerResult, String> {
     let directory_str = directory.trim();
     if directory_str.is_empty() {

@@ -84,9 +84,10 @@ const RamSliderField: React.FC<RamSliderFieldProps> = ({ id, value, onChange, cl
 						</TooltipTrigger>
 					</Label>
 
-					<TooltipContent>
-						The more RAM the better up to a point. Too much can also cause system instability. (detected
-						system memory: {systemMemoryLimitGb} GB).
+					<TooltipContent className='text-center'>
+						The more RAM the better up to a point.
+						<br /> Too much can also cause system instability.
+						<br /> (detected system memory: {systemMemoryLimitGb} GB).
 					</TooltipContent>
 				</Tooltip>
 				<p className='text-sm font-medium text-muted-foreground'>{clampedRam} GB</p>

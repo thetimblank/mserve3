@@ -197,7 +197,7 @@ const ServerCard: React.FC<Props> = ({ server, delay }) => {
 						{server.status === 'offline' && (
 							<Button variant='secondary' onClick={handleStart} disabled={isBusy}>
 								<CircleCheck />
-								<p>Start</p>
+								<p>Serve</p>
 							</Button>
 						)}
 						<OpenFolderButton directory={server.directory} disabled={isBusy} />

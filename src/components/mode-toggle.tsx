@@ -23,13 +23,13 @@ export function ModeToggle() {
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align='end'>
 				<DropdownMenuItem onClick={() => setTheme('light')}>
-					{theme === 'light' && <Check />}Light
+					{theme === 'light' && <Check className='group-hover:text-accent-foreground' />}Light
 				</DropdownMenuItem>
 				<DropdownMenuItem onClick={() => setTheme('dark')}>
-					{theme === 'dark' && <Check />}Dark
+					{theme === 'dark' && <Check className='group-hover:text-accent-foreground' />}Dark
 				</DropdownMenuItem>
 				<DropdownMenuItem onClick={() => setTheme('system')}>
-					{theme === 'system' && <Check />}System
+					{theme === 'system' && <Check className='group-hover:text-accent-foreground' />}System
 				</DropdownMenuItem>
 			</DropdownMenuContent>
 		</DropdownMenu>

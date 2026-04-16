@@ -2,8 +2,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 const ServerPageSkeleton: React.FC = () => {
 	return (
-		<main className='w-full min-h-[calc(100vh-40px)] relative overflow-y-auto'>
-			<div className='min-h-full flex flex-col p-12 pt-20 w-full overflow-y-auto'>
+		<main className='w-full h-full relative overflow-y-auto app-scroll-area app-scroll-stable'>
+			<div className='min-h-full flex flex-col p-12 pt-20 w-full'>
 				<div className='mb-8 space-y-3'>
 					<Skeleton className='h-10 w-72' />
 					<Skeleton className='h-4 w-96 max-w-full' />
