@@ -19,6 +19,7 @@ import { formatUptime } from './server-utils';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import ServerContentTabs from './server-content-tabs';
 import type { ServerContentTab } from './server-types';
+import clsx from 'clsx';
 
 type Props = {
 	server: Server;
@@ -40,7 +41,7 @@ const ServerOverviewPanel: React.FC<Props> = ({
 	onTabChange,
 }) => {
 	return (
-		<Card className='mb-6'>
+		<Card className={clsx('mb-6', server.status !== 'offline' && 'rounded-t-none')}>
 			<CardHeader className='border-b border-b-border'>
 				<div className='flex gap-10'>
 					<ServerStatus server={server} size='xl' />
@@ -79,14 +80,6 @@ const ServerOverviewPanel: React.FC<Props> = ({
 										.
 									</p>
 								</div>
-							)}
-							{server.createdAt && server.status !== 'offline' && (
-								<p className='text-sm text-muted-foreground'>•</p>
-							)}
-							{server.status !== 'offline' && (
-								<p className='text-sm text-muted-foreground'>
-									Note: Some features may be unavailable when the server is online
-								</p>
 							)}
 						</div>
 						{server.status === 'online' && (
