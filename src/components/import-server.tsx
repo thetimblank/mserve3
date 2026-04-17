@@ -53,7 +53,7 @@ const buildServer = (result: InitServerResult, config: SyncedMserveConfig, stora
 	datapacks: [],
 	worlds: [],
 	plugins: [],
-	storage_limit: Math.max(1, Number(storageLimit) || 200),
+	storage_limit: Math.max(1, Number(config.storage_limit ?? storageLimit) || 200),
 	stats: {
 		players: 0,
 		capacity: 20,
@@ -65,11 +65,11 @@ const buildServer = (result: InitServerResult, config: SyncedMserveConfig, stora
 	auto_backup: config.auto_backup,
 	auto_backup_interval: config.auto_backup_interval,
 	auto_restart: config.auto_restart,
-	explicit_info_names: config.explicit_info_names,
+	java_installation: config.java_installation,
 	custom_flags: config.custom_flags,
 	provider: config.provider,
 	version: config.version,
-	createdAt: new Date(config.createdAt),
+	created_at: new Date(config.created_at),
 });
 
 export const ImportServer: React.FC<React.HTMLAttributes<HTMLButtonElement>> = ({ ...props }) => {
@@ -157,8 +157,10 @@ export const ImportServer: React.FC<React.HTMLAttributes<HTMLButtonElement>> = (
 						autoRestart: synced.config?.auto_restart ?? false,
 						createDirectoryIfMissing: true,
 						autoAgreeEula: true,
-						explicitInfoNames: synced.config?.explicit_info_names ?? false,
+						javaInstallation: synced.config?.java_installation ?? '',
 						customFlags: synced.config?.custom_flags ?? [],
+						provider: synced.config?.provider,
+						version: synced.config?.version,
 					});
 
 					if (!repairPayload) {

@@ -11,7 +11,7 @@ export const toggleBackupMode = (
 export const mapScannedBackups = (backups: ScannedBackupEntry[]) =>
 	backups.map((backup) => ({
 		directory: backup.directory,
-		createdAt: new Date(backup.createdAt ?? backup.created_at ?? Date.now()),
+		created_at: new Date(backup.created_at ?? backup.created_at ?? Date.now()),
 	}));
 
 export const buildUpdateServerSettingsPayload = (
@@ -20,12 +20,48 @@ export const buildUpdateServerSettingsPayload = (
 ): UpdateServerSettingsPayload => ({
 	directory,
 	ram: Math.max(1, Number(settingsForm.ram) || 1),
+	storageLimit: Math.max(1, Number(settingsForm.storageLimit) || 200),
 	autoBackup: settingsForm.autoBackup,
 	autoBackupInterval: Math.max(1, Number(settingsForm.autoBackupInterval) || 1),
 	autoRestart: settingsForm.autoRestart,
+	customFlags: settingsForm.customFlags,
+	javaInstallation: settingsForm.javaInstallation.trim() || undefined,
 	jarSwapPath: settingsForm.jarSwapPath.trim() || undefined,
 	newDirectory: settingsForm.newDirectory.trim() || undefined,
 });
+
+export const parseCustomFlagsInput = (input: string): string[] => {
+	const deduped = new Set<string>();
+
+	for (const rawLine of input.split(/\r?\n/)) {
+		const trimmed = rawLine.trim();
+		if (!trimmed) continue;
+		deduped.add(trimmed);
+	}
+
+	return Array.from(deduped);
+};
+
+export const formatCustomFlagsInput = (customFlags: string[] | undefined): string =>
+	(customFlags ?? []).filter(Boolean).join('\n');
+
+export const buildServerRunCommandPreview = (config: {
+	ram?: number;
+	file?: string;
+	customFlags?: string[];
+	javaInstallation?: string;
+	globalJavaInstallation?: string;
+}): string => {
+	const resolvedRam = Math.max(1, config.ram ?? 3);
+	const resolvedFile = config.file?.trim() || 'server.jar';
+	const resolvedJavaInstallation =
+		config.javaInstallation?.trim() || config.globalJavaInstallation?.trim() || 'java';
+	const resolvedCustomFlags = (config.customFlags ?? []).map((flag) => flag.trim()).filter(Boolean);
+
+	const args = [`-Xms${resolvedRam}G`, `-Xmx${resolvedRam}G`, '-jar', resolvedFile, ...resolvedCustomFlags];
+
+	return `${resolvedJavaInstallation} ${args.join(' ')}`;
+};
 
 export const resolveNewDirectory = (payload: UpdateServerSettingsPayload, currentDirectory: string) => {
 	const trimmed = payload.newDirectory?.trim();

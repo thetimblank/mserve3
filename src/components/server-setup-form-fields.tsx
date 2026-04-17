@@ -112,6 +112,16 @@ export const ServerSetupFormFields: React.FC<ServerSetupFormFieldsProps> = ({
 			/>
 
 			<Field>
+				<Label htmlFor={`${idPrefix}-java-installation`}>Java installation override (optional)</Label>
+				<Input
+					id={`${idPrefix}-java-installation`}
+					placeholder='C:\\Program Files\\Java\\jdk-25\\bin\\java.exe'
+					value={form.javaInstallation}
+					onChange={(event) => onFieldChange('javaInstallation', event.target.value)}
+				/>
+			</Field>
+
+			<Field>
 				<Label>Auto backup modes</Label>
 				<div className='space-y-2'>
 					{backupChoices.map((choice) => (

@@ -12,6 +12,9 @@ export type ServerSetupFormData = {
 	autoBackup: AutoBackupMode[];
 	autoBackupInterval: number;
 	autoAgreeEula: boolean;
+	javaInstallation: string;
+	provider: string;
+	version: string;
 };
 
 export const createDefaultServerSetupForm = (): ServerSetupFormData => ({
@@ -24,21 +27,24 @@ export const createDefaultServerSetupForm = (): ServerSetupFormData => ({
 	autoBackup: [],
 	autoBackupInterval: 120,
 	autoAgreeEula: true,
+	javaInstallation: '',
+	provider: '',
+	version: '',
 });
 
 export type SyncedMserveConfig = {
 	id: string;
-	directory: string;
 	file: string;
 	ram: number;
+	storage_limit: number;
 	auto_backup: AutoBackupMode[];
 	auto_backup_interval: number;
 	auto_restart: boolean;
-	explicit_info_names: boolean;
 	custom_flags: string[];
+	java_installation?: string;
 	provider?: string;
 	version?: string;
-	createdAt: string;
+	created_at: string;
 };
 
 export type SyncMserveJsonResult = {
@@ -50,11 +56,19 @@ export type SyncMserveJsonResult = {
 
 export type RepairMserveJsonPayload = Pick<
 	ServerSetupFormData,
-	'directory' | 'file' | 'ram' | 'storageLimit' | 'autoRestart' | 'autoBackup' | 'autoBackupInterval'
+	| 'directory'
+	| 'file'
+	| 'ram'
+	| 'storageLimit'
+	| 'autoRestart'
+	| 'autoBackup'
+	| 'autoBackupInterval'
+	| 'javaInstallation'
 > &
 	Partial<Pick<ServerSetupFormData, 'createDirectoryIfMissing' | 'autoAgreeEula'>> & {
-		explicitInfoNames: boolean;
 		customFlags: string[];
+		provider?: string;
+		version?: string;
 	};
 
 export type PromptMserveRepairOptions = RepairMserveJsonPayload;

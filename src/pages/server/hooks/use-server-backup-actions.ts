@@ -61,9 +61,27 @@ export const useServerBackupActions = ({
 	}, [isBusy, server, setIsBusy, showError, syncServerContents]);
 
 	const handleSetStorageLimit = React.useCallback(
-		(storageLimitGb: number) => {
+		async (storageLimitGb: number) => {
 			if (!server) return;
+			if (server.status === 'online') {
+				toast.error('Take the server offline before changing storage limit.');
+				return;
+			}
+
 			const nextLimit = Math.max(1, Math.round(Number(storageLimitGb) || server.storage_limit || 200));
+			await invoke('update_server_settings', {
+				payload: {
+					directory: server.directory,
+					ram: Math.max(1, Number(server.ram) || 3),
+					storageLimit: nextLimit,
+					autoBackup: server.auto_backup ?? [],
+					autoBackupInterval: Math.max(1, Number(server.auto_backup_interval) || 120),
+					autoRestart: server.auto_restart ?? false,
+					customFlags: server.custom_flags ?? [],
+					javaInstallation: server.java_installation,
+				},
+			});
+
 			updateServer(serverId, { storage_limit: nextLimit });
 			toast.success(`Backup storage limit updated to ${nextLimit} GB.`);
 		},
@@ -71,8 +89,13 @@ export const useServerBackupActions = ({
 	);
 
 	const handleSetDeleteInterval = React.useCallback(
-		(intervalMinutes: number) => {
+		async (intervalMinutes: number) => {
 			if (!server) return;
+			if (server.status === 'online') {
+				toast.error('Take the server offline before changing cleanup interval.');
+				return;
+			}
+
 			const nextInterval = Math.max(
 				1,
 				Math.round(Number(intervalMinutes) || server.auto_backup_interval || 120),
@@ -81,6 +104,19 @@ export const useServerBackupActions = ({
 			const nextAutoBackup: AutoBackupMode[] = autoBackupModes.includes('interval')
 				? [...autoBackupModes]
 				: [...autoBackupModes, 'interval'];
+
+			await invoke('update_server_settings', {
+				payload: {
+					directory: server.directory,
+					ram: Math.max(1, Number(server.ram) || 3),
+					storageLimit: Math.max(1, Number(server.storage_limit) || 200),
+					autoBackup: nextAutoBackup,
+					autoBackupInterval: nextInterval,
+					autoRestart: server.auto_restart ?? false,
+					customFlags: server.custom_flags ?? [],
+					javaInstallation: server.java_installation,
+				},
+			});
 
 			updateServer(serverId, {
 				auto_backup_interval: nextInterval,

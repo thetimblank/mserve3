@@ -8,7 +8,6 @@ export type ServerOutputEvent = {
 
 export type ScannedBackupEntry = {
 	directory: string;
-	createdAt?: string;
 	created_at?: string;
 };
 
@@ -27,9 +26,12 @@ export type RuntimeStatusResult = {
 export type UpdateServerSettingsPayload = {
 	directory: string;
 	ram: number;
+	storageLimit?: number;
 	autoBackup: AutoBackupMode[];
 	autoBackupInterval: number;
 	autoRestart: boolean;
+	customFlags: string[];
+	javaInstallation?: string;
 	jarSwapPath?: string;
 	newDirectory?: string;
 };
@@ -43,9 +45,12 @@ export type ServerContentTab = 'plugins' | 'worlds' | 'datapacks' | 'backups' | 
 
 export type ServerSettingsForm = {
 	ram: number;
+	storageLimit: number;
 	autoBackup: AutoBackupMode[];
 	autoBackupInterval: number;
 	autoRestart: boolean;
+	customFlags: string[];
+	javaInstallation: string;
 	jarSwapPath: string;
 	newDirectory: string;
 };

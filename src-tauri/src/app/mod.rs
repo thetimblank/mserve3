@@ -15,10 +15,14 @@ struct InitServerPayload {
     create_directory_if_missing: bool,
     file: String,
     ram: u32,
+    storage_limit: Option<u32>,
     auto_restart: bool,
     auto_backup: Vec<String>,
     auto_backup_interval: u32,
     auto_agree_eula: bool,
+    java_installation: Option<String>,
+    provider: Option<String>,
+    version: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -37,25 +41,28 @@ struct RepairMserveJsonPayload {
     directory: String,
     file: String,
     ram: u32,
+    storage_limit: u32,
     auto_backup: Vec<String>,
     auto_backup_interval: u32,
     auto_restart: bool,
-    explicit_info_names: bool,
     custom_flags: Vec<String>,
+    java_installation: Option<String>,
+    provider: Option<String>,
+    version: Option<String>,
 }
 
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct SyncedMserveConfig {
     id: String,
-    directory: String,
     file: String,
     ram: u32,
+    storage_limit: u32,
     auto_backup: Vec<String>,
     auto_backup_interval: u32,
     auto_restart: bool,
-    explicit_info_names: bool,
     custom_flags: Vec<String>,
+    java_installation: Option<String>,
     provider: Option<String>,
     version: Option<String>,
     created_at: String,
@@ -99,9 +106,12 @@ struct RestoreBackupPayload {
 struct UpdateServerSettingsPayload {
     directory: String,
     ram: u32,
+    storage_limit: Option<u32>,
     auto_backup: Vec<String>,
     auto_backup_interval: u32,
     auto_restart: bool,
+    custom_flags: Vec<String>,
+    java_installation: Option<String>,
     jar_swap_path: Option<String>,
     new_directory: Option<String>,
 }
@@ -132,8 +142,10 @@ struct ExportWorldResult {
 struct RuntimeServerConfig {
     file: String,
     ram: Option<u32>,
+    storage_limit: Option<u32>,
     custom_flags: Option<Vec<String>>,
-    explicit_info_names: Option<bool>,
+    java_installation: Option<String>,
+    provider: Option<String>,
 }
 
 struct RunningServerProcess {
@@ -271,7 +283,9 @@ pub fn run() {
             delete_server_backup,
             upload_server_item,
             start_server,
+            get_server_start_command,
             stop_server,
+            force_kill_server,
             send_server_command,
             get_server_runtime_status,
             scan_server_contents,

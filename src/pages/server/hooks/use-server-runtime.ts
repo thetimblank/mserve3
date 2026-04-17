@@ -11,6 +11,8 @@ import {
 	shouldHideBackgroundLine,
 	stripAnsi,
 } from '@/lib/utils';
+import { getServerProviderCapabilities } from '@/lib/server-provider-capabilities';
+import { useUser } from '@/data/user';
 import {
 	type RuntimeStatusResult,
 	type ScanServerContentsResult,
@@ -77,9 +79,14 @@ export const useServerRuntime = ({
 	appendTerminalLine,
 	clearTerminalSession,
 }: Args) => {
+	const { user } = useUser();
 	const runtimeRef = React.useRef<RuntimeState>(initialRuntimeState());
 	const serverDirectory = server?.directory;
 	const serverStatus = server?.status;
+	const providerCapabilities = React.useMemo(
+		() => getServerProviderCapabilities(server?.provider),
+		[server?.provider],
+	);
 
 	const autoBackupModes = server?.auto_backup ?? [];
 	const hasOnStartBackup = autoBackupModes.includes('on_start');
@@ -97,6 +104,21 @@ export const useServerRuntime = ({
 		},
 		[setErrorMessage],
 	);
+
+	const appendResolvedStartCommand = React.useCallback(async () => {
+		if (!serverDirectory) return;
+
+		try {
+			const command = await invoke<string>('get_server_start_command', {
+				directory: serverDirectory,
+				globalJavaInstallation: user.java_installation_default,
+			});
+			appendTerminalLine(`[system] Running: ${command}`);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : 'Failed to resolve start command.';
+			appendTerminalLine(`[system] ${message}`);
+		}
+	}, [appendTerminalLine, serverDirectory, user.java_installation_default]);
 
 	const setOfflineState = React.useCallback(() => {
 		setServerStatus(serverId, 'offline');
@@ -186,7 +208,7 @@ export const useServerRuntime = ({
 			runtimeRef.current.lastOutputKey = dedupeKey;
 			runtimeRef.current.lastOutputAt = now;
 
-			if (isServerReadyLine(cleaned)) {
+			if (isServerReadyLine(cleaned, providerCapabilities.kind)) {
 				setServerStatus(serverId, 'online');
 				if (!runtimeRef.current.startAt) {
 					runtimeRef.current.startAt = new Date();
@@ -207,7 +229,7 @@ export const useServerRuntime = ({
 				updateServerStats(serverId, { tps: tpsInfo.tps });
 			}
 
-			const versionInfo = parseVersion(cleaned);
+			const versionInfo = parseVersion(cleaned, providerCapabilities.kind);
 			if (versionInfo) {
 				updateServer(serverId, { version: versionInfo });
 			}
@@ -236,6 +258,7 @@ export const useServerRuntime = ({
 	}, [
 		appendTerminalLine,
 		hideBackgroundTelemetry,
+		providerCapabilities.kind,
 		serverDirectory,
 		serverId,
 		setServerStatus,
@@ -280,7 +303,11 @@ export const useServerRuntime = ({
 					appendTerminalLine('[system] Server closed. Auto restart is enabled, starting again...');
 
 					try {
-						await invoke('start_server', { directory: serverDirectory });
+						await appendResolvedStartCommand();
+						await invoke('start_server', {
+							directory: serverDirectory,
+							globalJavaInstallation: user.java_installation_default,
+						});
 						await syncServerContents();
 						runtimeRef.current.isAutoRestarting = false;
 						return;
@@ -297,6 +324,7 @@ export const useServerRuntime = ({
 			window.clearInterval(timer);
 		};
 	}, [
+		appendResolvedStartCommand,
 		appendTerminalLine,
 		createAutomaticBackup,
 		hasOnCloseBackup,
@@ -307,6 +335,7 @@ export const useServerRuntime = ({
 		setOfflineState,
 		setStartingState,
 		syncServerContents,
+		user.java_installation_default,
 	]);
 
 	React.useEffect(() => {
@@ -319,14 +348,18 @@ export const useServerRuntime = ({
 					directory: serverDirectory,
 					command: 'list',
 				});
-				await invoke('send_server_command', {
-					directory: serverDirectory,
-					command: 'tps',
-				});
-				await invoke('send_server_command', {
-					directory: serverDirectory,
-					command: 'version',
-				});
+				if (providerCapabilities.supportsTpsCommand) {
+					await invoke('send_server_command', {
+						directory: serverDirectory,
+						command: 'tps',
+					});
+				}
+				if (providerCapabilities.supportsVersionCommand) {
+					await invoke('send_server_command', {
+						directory: serverDirectory,
+						command: 'version',
+					});
+				}
 			} catch {}
 		})();
 
@@ -336,17 +369,24 @@ export const useServerRuntime = ({
 					directory: serverDirectory,
 					command: 'list',
 				});
-				await invoke('send_server_command', {
-					directory: serverDirectory,
-					command: 'tps',
-				});
+				if (providerCapabilities.supportsTpsCommand) {
+					await invoke('send_server_command', {
+						directory: serverDirectory,
+						command: 'tps',
+					});
+				}
 			} catch {}
 		}, 15000);
 
 		return () => {
 			window.clearInterval(timer);
 		};
-	}, [serverDirectory, serverStatus]);
+	}, [
+		providerCapabilities.supportsTpsCommand,
+		providerCapabilities.supportsVersionCommand,
+		serverDirectory,
+		serverStatus,
+	]);
 
 	React.useEffect(() => {
 		if (!serverStatus) return;
@@ -390,7 +430,11 @@ export const useServerRuntime = ({
 		appendTerminalLine('[system] Starting server...');
 
 		try {
-			await invoke('start_server', { directory: serverDirectory });
+			await appendResolvedStartCommand();
+			await invoke('start_server', {
+				directory: serverDirectory,
+				globalJavaInstallation: user.java_installation_default,
+			});
 			await syncServerContents();
 		} catch (err) {
 			setOfflineState();
@@ -400,6 +444,7 @@ export const useServerRuntime = ({
 			setIsBusy(false);
 		}
 	}, [
+		appendResolvedStartCommand,
 		appendTerminalLine,
 		clearTerminalSession,
 		isBusy,
@@ -409,6 +454,7 @@ export const useServerRuntime = ({
 		setStartingState,
 		showError,
 		syncServerContents,
+		user.java_installation_default,
 	]);
 
 	const handleStop = React.useCallback(async () => {
@@ -473,7 +519,11 @@ export const useServerRuntime = ({
 		setStartingState();
 
 		try {
-			await invoke('start_server', { directory: serverDirectory });
+			await appendResolvedStartCommand();
+			await invoke('start_server', {
+				directory: serverDirectory,
+				globalJavaInstallation: user.java_installation_default,
+			});
 			await syncServerContents();
 		} catch (err) {
 			setOfflineState();
@@ -485,6 +535,7 @@ export const useServerRuntime = ({
 			setIsBusy(false);
 		}
 	}, [
+		appendResolvedStartCommand,
 		appendTerminalLine,
 		clearTerminalSession,
 		createAutomaticBackup,
@@ -496,6 +547,43 @@ export const useServerRuntime = ({
 		setOfflineState,
 		setServerStatus,
 		setStartingState,
+		showError,
+		syncServerContents,
+		user.java_installation_default,
+	]);
+
+	const handleForceKill = React.useCallback(async () => {
+		if (!serverDirectory) return;
+		if (isBusy) return;
+
+		runtimeRef.current.manualStopRequested = true;
+		runtimeRef.current.stopRequested = true;
+		runtimeRef.current.restartRequested = false;
+		setIsBusy(true);
+		setServerStatus(serverId, 'closing');
+		appendTerminalLine('[system] Force killing server process...');
+
+		try {
+			const message = await invoke<string>('force_kill_server', { directory: serverDirectory });
+			appendTerminalLine(`[system] ${message}`);
+			setOfflineState();
+			await syncServerContents();
+		} catch (err) {
+			setOfflineState();
+			const message = showError(err, 'Failed to force kill server process.');
+			appendTerminalLine(`[system] ${message}`);
+		} finally {
+			runtimeRef.current.stopRequested = false;
+			setIsBusy(false);
+		}
+	}, [
+		appendTerminalLine,
+		isBusy,
+		serverDirectory,
+		serverId,
+		setIsBusy,
+		setOfflineState,
+		setServerStatus,
 		showError,
 		syncServerContents,
 	]);
@@ -545,6 +633,7 @@ export const useServerRuntime = ({
 		handleStart,
 		handleStop,
 		handleRestart,
+		handleForceKill,
 		handleTerminalCommandSubmit,
 	};
 };

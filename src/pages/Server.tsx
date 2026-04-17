@@ -15,6 +15,8 @@ import { useServerTerminal } from './server/hooks/use-server-terminal';
 import { useServerBackupActions } from './server/hooks/use-server-backup-actions';
 import { useServerRuntime } from './server/hooks/use-server-runtime';
 import ServerOverviewPanel from './server/server-overview-panel';
+import { getServerProviderCapabilities } from '@/lib/server-provider-capabilities';
+import type { ServerContentTab } from './server/server-types';
 
 const Server: React.FC = () => {
 	const { serverId: routeServerId } = useParams();
@@ -39,6 +41,30 @@ const Server: React.FC = () => {
 	);
 
 	const serverId = server?.id ?? '';
+	const providerCapabilities = React.useMemo(
+		() => getServerProviderCapabilities(server?.provider),
+		[server?.provider],
+	);
+	const availableTabs = React.useMemo<ServerContentTab[]>(() => {
+		const tabs: ServerContentTab[] = ['settings'];
+
+		if (providerCapabilities.kind !== 'vanilla') {
+			tabs.unshift('plugins');
+		}
+
+		if (providerCapabilities.kind !== 'proxy') {
+			tabs.splice(tabs.length - 1, 0, 'worlds', 'datapacks', 'backups');
+		}
+
+		return tabs;
+	}, [providerCapabilities.kind]);
+
+	React.useEffect(() => {
+		if (!availableTabs.includes(activeTab)) {
+			setActiveTab('settings');
+		}
+	}, [activeTab, availableTabs, setActiveTab]);
+
 	const terminalStoreKey = server?.directory ?? '';
 	const { terminalLines, terminalOutputRef, clearTerminalSession, appendTerminalLine } =
 		useServerTerminal(terminalStoreKey);
@@ -59,6 +85,7 @@ const Server: React.FC = () => {
 		handleStart,
 		handleStop,
 		handleRestart,
+		handleForceKill,
 		handleTerminalCommandSubmit,
 	} = useServerRuntime({
 		server,
@@ -155,11 +182,13 @@ const Server: React.FC = () => {
 					onStart={handleStart}
 					onStop={handleStop}
 					onRestart={handleRestart}
+					onForceKill={handleForceKill}
 					activeTab={activeTab}
+					availableTabs={availableTabs}
 					onTabChange={setActiveTab}
 				/>
 
-				{activeTab === 'plugins' && (
+				{activeTab === 'plugins' && providerCapabilities.kind !== 'vanilla' && (
 					<ServerItemList
 						icon={<Plug />}
 						type='plugin'
@@ -174,7 +203,7 @@ const Server: React.FC = () => {
 						ctaUrl='https://modrinth.com/discover/plugins'
 					/>
 				)}
-				{activeTab === 'worlds' && (
+				{activeTab === 'worlds' && providerCapabilities.kind !== 'proxy' && (
 					<ServerItemList
 						icon={<Globe />}
 						type='world'
@@ -187,7 +216,7 @@ const Server: React.FC = () => {
 						disabled={isBusy || server.status === 'online'}
 					/>
 				)}
-				{activeTab === 'datapacks' && (
+				{activeTab === 'datapacks' && providerCapabilities.kind !== 'proxy' && (
 					<ServerItemList
 						icon={<Package />}
 						type='datapack'
@@ -202,7 +231,7 @@ const Server: React.FC = () => {
 						ctaUrl='https://modrinth.com/discover/datapacks'
 					/>
 				)}
-				{activeTab === 'backups' && (
+				{activeTab === 'backups' && providerCapabilities.kind !== 'proxy' && (
 					<ServerBackupsTab
 						server={server}
 						backups={server.backups}

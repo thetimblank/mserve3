@@ -122,8 +122,7 @@ pub(in crate::app) fn scan_server_contents(directory: String) -> Result<ServerSc
         return Err("Server directory does not exist.".to_string());
     }
 
-    let config = get_runtime_config(&directory_path).unwrap_or_default();
-    let explicit = config.explicit_info_names.unwrap_or(false);
+    let explicit = false;
 
     Ok(ServerScanResult {
         plugins: list_plugins(&directory_path, explicit),

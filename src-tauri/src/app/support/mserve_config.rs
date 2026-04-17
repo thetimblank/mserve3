@@ -48,6 +48,10 @@ pub(in crate::app) fn default_auto_backup() -> Vec<String> {
     vec![]
 }
 
+pub(in crate::app) fn default_custom_flags() -> Vec<String> {
+    vec!["--nogui".to_string()]
+}
+
 pub(in crate::app) fn generate_server_id() -> String {
     let stamp = chrono::Utc::now()
         .timestamp_nanos_opt()
@@ -59,14 +63,14 @@ pub(in crate::app) fn default_synced_config(directory: &Path) -> SyncedMserveCon
     let fallback_file = find_first_jar_file_name(directory).unwrap_or_else(|| "server.jar".to_string());
     SyncedMserveConfig {
         id: generate_server_id(),
-        directory: directory.to_string_lossy().to_string(),
         file: fallback_file,
         ram: 3,
+        storage_limit: 200,
         auto_backup: default_auto_backup(),
         auto_backup_interval: 120,
         auto_restart: false,
-        explicit_info_names: false,
-        custom_flags: vec![],
+        custom_flags: default_custom_flags(),
+        java_installation: None,
         provider: None,
         version: None,
         created_at: chrono::Local::now().to_rfc3339(),
@@ -118,11 +122,11 @@ pub(in crate::app) fn normalize_auto_backup(raw: Option<&serde_json::Value>) -> 
 
 pub(in crate::app) fn sanitize_custom_flags(raw: Option<&serde_json::Value>) -> Vec<String> {
     let Some(value) = raw else {
-        return vec![];
+        return default_custom_flags();
     };
 
     let Some(items) = value.as_array() else {
-        return vec![];
+        return default_custom_flags();
     };
 
     let mut output = Vec::new();
@@ -136,6 +140,54 @@ pub(in crate::app) fn sanitize_custom_flags(raw: Option<&serde_json::Value>) -> 
     }
 
     output
+}
+
+pub(in crate::app) fn infer_provider_from_jar_file(file_name: &str) -> Option<String> {
+    let normalized = file_name.trim().to_lowercase();
+    if normalized.is_empty() {
+        return None;
+    }
+
+    if normalized.contains("paper") {
+        return Some("Paper".to_string());
+    }
+    if normalized.contains("folia") {
+        return Some("Folia".to_string());
+    }
+    if normalized.contains("spigot") {
+        return Some("Spigot".to_string());
+    }
+    if normalized.contains("velocity") {
+        return Some("Velocity".to_string());
+    }
+    if normalized.contains("bungeecord") || normalized.contains("bungee") {
+        return Some("Bungeecord".to_string());
+    }
+    if normalized.contains("vanilla") || normalized == "server.jar" {
+        return Some("Vanilla".to_string());
+    }
+
+    None
+}
+
+pub(in crate::app) fn infer_version_from_jar_file(file_name: &str) -> Option<String> {
+    let normalized = file_name.trim().to_lowercase();
+    if normalized.is_empty() {
+        return None;
+    }
+
+    for token in normalized
+        .split(|ch: char| !ch.is_ascii_alphanumeric() && ch != '.')
+        .filter(|token| !token.is_empty())
+    {
+        let has_dot = token.contains('.');
+        let starts_with_number = token.chars().next().map(|ch| ch.is_ascii_digit()).unwrap_or(false);
+        if has_dot && starts_with_number {
+            return Some(token.to_string());
+        }
+    }
+
+    None
 }
 
 pub(in crate::app) fn sanitize_mserve_value_config(
@@ -167,6 +219,12 @@ pub(in crate::app) fn sanitize_mserve_value_config(
         .map(|value| value.max(1) as u32)
         .unwrap_or(3);
 
+    let normalized_storage_limit = object
+        .get("storage_limit")
+        .and_then(|value| value.as_u64())
+        .map(|value| value.max(1) as u32)
+        .unwrap_or(200);
+
     let normalized_auto_backup = normalize_auto_backup(object.get("auto_backup"))
         .unwrap_or_else(default_auto_backup);
 
@@ -181,27 +239,31 @@ pub(in crate::app) fn sanitize_mserve_value_config(
         .and_then(|value| value.as_bool())
         .unwrap_or(false);
 
-    let normalized_explicit_info_names = object
-        .get("explicit_info_names")
-        .and_then(|value| value.as_bool())
-        .unwrap_or(false);
-
     let normalized_custom_flags = sanitize_custom_flags(object.get("custom_flags"));
+
+    let normalized_java_installation = object
+        .get("java_installation")
+        .and_then(|value| value.as_str())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
 
     let normalized_provider = object
         .get("provider")
         .and_then(|value| value.as_str())
         .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty());
+        .filter(|value| !value.is_empty())
+        .or_else(|| infer_provider_from_jar_file(&normalized_file));
 
     let normalized_version = object
         .get("version")
         .and_then(|value| value.as_str())
         .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty());
+        .filter(|value| !value.is_empty())
+        .or_else(|| infer_version_from_jar_file(&normalized_file));
 
     let normalized_created_at = object
-        .get("createdAt")
+        .get("created_at")
+        .or_else(|| object.get("created_at"))
         .and_then(|value| value.as_str())
         .map(|value| value.trim())
         .filter(|value| !value.is_empty())
@@ -211,11 +273,12 @@ pub(in crate::app) fn sanitize_mserve_value_config(
     config.file = normalized_file;
     config.id = normalized_id;
     config.ram = normalized_ram;
+    config.storage_limit = normalized_storage_limit;
     config.auto_backup = normalized_auto_backup;
     config.auto_backup_interval = normalized_interval;
     config.auto_restart = normalized_auto_restart;
-    config.explicit_info_names = normalized_explicit_info_names;
     config.custom_flags = normalized_custom_flags;
+    config.java_installation = normalized_java_installation;
     config.provider = normalized_provider;
     config.version = normalized_version;
     config.created_at = normalized_created_at;
@@ -226,17 +289,17 @@ pub(in crate::app) fn sanitize_mserve_value_config(
 pub(in crate::app) fn write_synced_mserve_json(directory: &Path, config: &SyncedMserveConfig) -> Result<(), String> {
     let content = json!({
         "id": config.id,
-        "explicit_info_names": config.explicit_info_names,
-        "auto_backup": config.auto_backup,
-        "ram": config.ram.max(1),
-        "directory": config.directory,
         "file": config.file,
+        "ram": config.ram.max(1),
+        "storage_limit": config.storage_limit.max(1),
+        "auto_backup": config.auto_backup,
         "auto_backup_interval": config.auto_backup_interval.max(1),
         "auto_restart": config.auto_restart,
         "custom_flags": config.custom_flags,
+        "java_installation": config.java_installation,
         "provider": config.provider,
         "version": config.version,
-        "createdAt": config.created_at,
+        "created_at": config.created_at,
     });
 
     fs::write(
@@ -253,15 +316,19 @@ pub(in crate::app) fn validate_mserve_json_keys(
         "id",
         "file",
         "ram",
+        "storage_limit",
         "auto_backup",
         "auto_backup_interval",
         "auto_restart",
-        "explicit_info_names",
         "custom_flags",
+        "java_installation",
         "provider",
         "version",
+        "created_at",
+        // Legacy keys still accepted for migration and rewritten to canonical schema.
+        "explicit_info_names",
         "directory",
-        "createdAt",
+        "created_at",
     ];
 
     for key in object.keys() {

@@ -7,6 +7,7 @@ import type { ServerContentTab } from './server-types';
 type ServerContentTabsProps = {
 	activeTab: ServerContentTab;
 	onTabChange: (tab: ServerContentTab) => void;
+	availableTabs?: ServerContentTab[];
 };
 
 const tabMeta: Record<ServerContentTab, { icon: React.ReactNode; label: string }> = {
@@ -17,11 +18,15 @@ const tabMeta: Record<ServerContentTab, { icon: React.ReactNode; label: string }
 	settings: { icon: <Settings />, label: 'Settings' },
 };
 
-const tabs: ServerContentTab[] = ['plugins', 'worlds', 'datapacks', 'backups', 'settings'];
+const defaultTabs: ServerContentTab[] = ['plugins', 'worlds', 'datapacks', 'backups', 'settings'];
 
-const ServerContentTabs: React.FC<ServerContentTabsProps> = ({ activeTab, onTabChange }) => (
+const ServerContentTabs: React.FC<ServerContentTabsProps> = ({
+	activeTab,
+	onTabChange,
+	availableTabs = defaultTabs,
+}) => (
 	<>
-		{tabs.map((item) => (
+		{availableTabs.map((item) => (
 			<Button
 				key={item}
 				className={clsx(

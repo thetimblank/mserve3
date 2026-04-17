@@ -63,8 +63,10 @@ export default function ServerSettingsTab({
 					autoRestart: server.auto_restart ?? false,
 					createDirectoryIfMissing: true,
 					autoAgreeEula: true,
-					explicitInfoNames: server.explicit_info_names ?? false,
+					javaInstallation: server.java_installation ?? '',
 					customFlags: server.custom_flags ?? [],
+					provider: server.provider,
+					version: server.version,
 				});
 
 				if (!repairPayload) {
@@ -84,15 +86,15 @@ export default function ServerSettingsTab({
 				id: synced.config.id,
 				file: synced.config.file,
 				ram: synced.config.ram,
-				storage_limit: resolvedStorageLimit,
+				storage_limit: synced.config.storage_limit || resolvedStorageLimit,
 				auto_backup: synced.config.auto_backup,
 				auto_backup_interval: synced.config.auto_backup_interval,
 				auto_restart: synced.config.auto_restart,
-				explicit_info_names: synced.config.explicit_info_names,
+				java_installation: synced.config.java_installation,
 				custom_flags: synced.config.custom_flags,
 				provider: synced.config.provider,
 				version: synced.config.version,
-				createdAt: new Date(synced.config.createdAt),
+				created_at: new Date(synced.config.created_at),
 			});
 
 			toast.success(synced.message);

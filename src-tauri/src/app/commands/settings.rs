@@ -86,17 +86,52 @@ pub(in crate::app) fn update_server_settings(
         .filter(|value| matches!(value.as_str(), "interval" | "on_close" | "on_start"))
         .collect();
 
+    let mut custom_flags = Vec::new();
+    for flag in payload.custom_flags {
+        let trimmed = flag.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if custom_flags.iter().any(|existing: &String| existing == trimmed) {
+            continue;
+        }
+        custom_flags.push(trimmed.to_string());
+    }
+
+    let created_at = object
+        .get("created_at")
+        .and_then(|value| value.as_str())
+        .or_else(|| object.get("created_at").and_then(|value| value.as_str()))
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| chrono::Local::now().to_rfc3339());
+
     object.insert("ram".to_string(), json!(payload.ram.max(1)));
+    if let Some(storage_limit) = payload.storage_limit {
+        object.insert("storage_limit".to_string(), json!(storage_limit.max(1)));
+    }
     object.insert(
         "auto_backup_interval".to_string(),
         json!(payload.auto_backup_interval.max(1)),
     );
     object.insert("auto_backup".to_string(), json!(auto_backup));
     object.insert("auto_restart".to_string(), json!(payload.auto_restart));
+    object.insert("custom_flags".to_string(), json!(custom_flags));
+    object.insert("created_at".to_string(), json!(created_at));
     object.insert(
-        "directory".to_string(),
-        json!(directory_path.to_string_lossy().to_string()),
+        "java_installation".to_string(),
+        json!(
+            payload
+                .java_installation
+                .as_deref()
+                .map(|value| value.trim())
+                .filter(|value| !value.is_empty())
+        ),
     );
+
+    object.remove("created_at");
+    object.remove("directory");
+    object.remove("explicit_info_names");
 
     let final_mserve_path = directory_path.join("mserve.json");
     fs::write(

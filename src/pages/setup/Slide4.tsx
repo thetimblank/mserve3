@@ -18,7 +18,7 @@ import { toast } from 'sonner';
 export default function Slide4() {
 	const { servers, setServerStatus, updateServerStats } = useServers();
 	const { data } = useSetup();
-	const { updateUserField } = useUser();
+	const { user, updateUserField } = useUser();
 	const [isBusy, setIsBusy] = useState(false);
 	const hasRecordedCompletionRef = useRef(false);
 	const onlineServersCount = servers.filter((server) => server.status === 'online').length;
@@ -40,7 +40,10 @@ export default function Slide4() {
 		setServerStatus(serverId, 'starting');
 		updateServerStats(serverId, { players: 0, tps: 0, uptime: new Date() });
 		try {
-			await invoke('start_server', { directory: server.directory });
+			await invoke('start_server', {
+				directory: server.directory,
+				globalJavaInstallation: user.java_installation_default,
+			});
 			setServerStatus(serverId, 'online');
 		} catch (err) {
 			setServerStatus(serverId, 'offline');

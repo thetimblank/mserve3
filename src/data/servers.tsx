@@ -11,11 +11,13 @@ export interface MserveJson {
 	provider?: string;
 	version?: string;
 	ram?: number;
+	storage_limit?: number;
 	auto_backup?: AutoBackupMode[];
 	auto_backup_interval?: number;
 	auto_restart?: boolean;
-	explicit_info_names?: boolean;
+	java_installation?: string;
 	custom_flags?: string[];
+	created_at?: Date;
 	createdAt?: Date;
 }
 
@@ -26,7 +28,7 @@ export interface Server extends MserveJson {
 	status: ServerStatus;
 	storage_limit: number;
 	backups: {
-		createdAt: Date;
+		created_at: Date;
 		directory: string;
 	}[];
 	datapacks: {
@@ -73,8 +75,9 @@ export interface ServerUpdate {
 	auto_backup?: AutoBackupMode[];
 	auto_backup_interval?: number;
 	auto_restart?: boolean;
-	explicit_info_names?: boolean;
+	java_installation?: string;
 	custom_flags?: string[];
+	created_at?: Date;
 	createdAt?: Date;
 }
 
@@ -154,7 +157,7 @@ const toUniqueBackups = (items?: Server['backups']) => {
 		seen.add(key);
 		normalized.push({
 			directory,
-			createdAt: toDate(item.createdAt),
+			created_at: toDate(item.created_at),
 		});
 	}
 
@@ -194,7 +197,7 @@ export const normalizeServer = (server: Server): Server => {
 	const stats = server.stats ?? { players: 0, capacity: 20, tps: 0, uptime: now };
 	return {
 		id: server.id?.trim() || generateServerId(),
-		storage_limit: server.storage_limit ?? null,
+		storage_limit: Math.max(1, Number(server.storage_limit ?? 200) || 200),
 		name: server.name,
 		directory: server.directory,
 		status: server.status ?? 'offline',
@@ -215,9 +218,9 @@ export const normalizeServer = (server: Server): Server => {
 		auto_backup: server.auto_backup ? Array.from(new Set(server.auto_backup)) : [],
 		auto_backup_interval: Math.max(1, server.auto_backup_interval ?? 120),
 		auto_restart: server.auto_restart ?? false,
-		explicit_info_names: server.explicit_info_names ?? false,
+		java_installation: server.java_installation?.trim() || undefined,
 		custom_flags: toUniqueList(server.custom_flags),
-		createdAt: toDate(server.createdAt),
+		created_at: toDate(server.created_at ?? server.createdAt),
 	};
 };
 
@@ -317,8 +320,10 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 					autoRestart: server.auto_restart ?? synced.config?.auto_restart ?? false,
 					createDirectoryIfMissing: true,
 					autoAgreeEula: true,
-					explicitInfoNames: server.explicit_info_names ?? synced.config?.explicit_info_names ?? false,
+					javaInstallation: server.java_installation ?? synced.config?.java_installation ?? '',
 					customFlags: server.custom_flags ?? synced.config?.custom_flags ?? [],
+					provider: server.provider ?? synced.config?.provider,
+					version: server.version ?? synced.config?.version,
 				});
 
 				if (!repairPayload) {
@@ -339,9 +344,10 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 				server.id !== config.id ||
 				server.file !== config.file ||
 				(server.ram ?? 3) !== config.ram ||
+				(server.storage_limit ?? 200) !== config.storage_limit ||
 				(server.auto_backup_interval ?? 120) !== config.auto_backup_interval ||
 				(server.auto_restart ?? false) !== config.auto_restart ||
-				(server.explicit_info_names ?? false) !== config.explicit_info_names ||
+				(server.java_installation ?? '') !== (config.java_installation ?? '') ||
 				server.storage_limit !== resolvedStorageLimit ||
 				!sameStringList(server.auto_backup, config.auto_backup) ||
 				!sameStringList(server.custom_flags, config.custom_flags) ||
@@ -361,15 +367,15 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 						id: config.id,
 						file: config.file,
 						ram: config.ram,
-						storage_limit: resolvedStorageLimit,
+						storage_limit: config.storage_limit || resolvedStorageLimit,
 						auto_backup: config.auto_backup,
 						auto_backup_interval: config.auto_backup_interval,
 						auto_restart: config.auto_restart,
-						explicit_info_names: config.explicit_info_names,
+						java_installation: config.java_installation,
 						custom_flags: config.custom_flags,
 						provider: config.provider,
 						version: config.version,
-						createdAt: new Date(config.createdAt),
+						created_at: new Date(config.created_at),
 					});
 				}),
 			);

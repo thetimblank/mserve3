@@ -47,11 +47,11 @@ With your updater endpoint, users will always read `latest.json` from the latest
 ✅ read from mserve.json
 ✅ remove server from app
 ✅ smoother side bar animation
-🟨 auto fetch all mc server jars [BETA]
-🟨 Repairing servers does not work correctly at the moment
+🟨 validate/fix issues with other server jars/parsing, make way to add new jars
 🟨 add clearing backups, storage limit, & interval clearing
+🟨 Repairing servers needs to be tested
+🟨 auto fetch all mc server jars [BETA]
 ⬛ read minecraft settings (properties, ops, whitelist, etc.)
-⬛ validate/fix issues with other server jars/parsing, make way to add new jars
 ⬛ update server
 ⬛ setup proxies and server groups
 ⬛ motd generator

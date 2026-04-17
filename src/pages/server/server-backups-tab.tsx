@@ -35,7 +35,7 @@ import { type Server } from '@/data/servers';
 
 type Backup = {
 	directory: string;
-	createdAt: Date;
+	created_at: Date;
 };
 
 type ServerBackupsTabProps = {
@@ -43,12 +43,12 @@ type ServerBackupsTabProps = {
 	server: Server;
 	isBusy: boolean;
 	isOnline: boolean;
-	onCreateBackup: () => void;
-	onRestoreBackup: (backupDirectory: string) => void;
-	onDeleteBackup: (backupDirectory: string) => void;
-	onSetStorageLimit: (storageLimitGb: number) => void;
-	onSetDeleteInterval: (intervalMinutes: number) => void;
-	onClearAllBackups: () => void;
+	onCreateBackup: () => Promise<void> | void;
+	onRestoreBackup: (backupDirectory: string) => Promise<void> | void;
+	onDeleteBackup: (backupDirectory: string) => Promise<void> | void;
+	onSetStorageLimit: (storageLimitGb: number) => Promise<void> | void;
+	onSetDeleteInterval: (intervalMinutes: number) => Promise<void> | void;
+	onClearAllBackups: () => Promise<void> | void;
 };
 
 const ServerBackupsTab: React.FC<ServerBackupsTabProps> = ({
@@ -79,18 +79,18 @@ const ServerBackupsTab: React.FC<ServerBackupsTabProps> = ({
 
 	const handleSaveStorageLimit = () => {
 		const value = Math.max(1, Math.round(Number(storageLimitInput) || server.storage_limit || 200));
-		onSetStorageLimit(value);
+		void onSetStorageLimit(value);
 		setIsStorageDrawerOpen(false);
 	};
 
 	const handleSaveDeleteInterval = () => {
 		const value = Math.max(1, Math.round(Number(intervalInput) || server.auto_backup_interval || 120));
-		onSetDeleteInterval(value);
+		void onSetDeleteInterval(value);
 		setIsIntervalDrawerOpen(false);
 	};
 
 	const handleClearAllBackups = () => {
-		onClearAllBackups();
+		void onClearAllBackups();
 		setIsClearAllDialogOpen(false);
 	};
 
@@ -142,7 +142,7 @@ const ServerBackupsTab: React.FC<ServerBackupsTabProps> = ({
 						<div>
 							<p className='font-semibold'>{getBackupNameFromPath(backup.directory)}</p>
 							<p className='text-sm text-muted-foreground'>
-								Created {new Date(backup.createdAt).toLocaleString()}
+								Created {new Date(backup.created_at).toLocaleString()}
 							</p>
 						</div>
 						<div className='flex gap-2'>
@@ -158,8 +158,8 @@ const ServerBackupsTab: React.FC<ServerBackupsTabProps> = ({
 									<AlertDialogHeader>
 										<AlertDialogTitle>Are you sure?</AlertDialogTitle>
 										<AlertDialogDescription>
-											This will restore the backup from {backup.createdAt.toLocaleDateString()}{' '}
-											{backup.createdAt.toLocaleTimeString()}
+											This will restore the backup from {backup.created_at.toLocaleDateString()}{' '}
+											{backup.created_at.toLocaleTimeString()}
 										</AlertDialogDescription>
 									</AlertDialogHeader>
 									<AlertDialogFooter>

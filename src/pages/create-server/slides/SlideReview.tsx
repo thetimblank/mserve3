@@ -30,6 +30,16 @@ const SlideReview: React.FC = () => {
 				</div>
 				<div className='grid grid-cols-2 gap-4'>
 					<div>
+						<p className='text-sm text-muted-foreground'>Provider</p>
+						<p>{form.provider || '(not set)'}</p>
+					</div>
+					<div>
+						<p className='text-sm text-muted-foreground'>Version</p>
+						<p>{form.version || '(not detected)'}</p>
+					</div>
+				</div>
+				<div className='grid grid-cols-2 gap-4'>
+					<div>
 						<p className='text-sm text-muted-foreground'>RAM</p>
 						<p>{form.ram} GB</p>
 					</div>

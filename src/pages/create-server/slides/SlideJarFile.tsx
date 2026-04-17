@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { inferProviderFromJarPath, inferVersionFromJarPath } from '@/lib/server-provider-capabilities';
 import { useCreateServer, type PathValidationResult } from '../CreateServerContext';
 import JarDownloadModal, { type DownloadedJarSelection } from './components/JarDownloadModal';
 import SlideShell from './SlideShell';
@@ -14,6 +15,18 @@ const SlideJarFile: React.FC = () => {
 	const { form, updateField, nextSlide, setError, clearError } = useCreateServer();
 	const [downloadModalOpen, setDownloadModalOpen] = React.useState(false);
 	const [downloadButtonLabel, setDownloadButtonLabel] = React.useState('Browse & Download');
+	const inferredProvider = React.useMemo(() => inferProviderFromJarPath(form.file), [form.file]);
+	const inferredVersion = React.useMemo(() => inferVersionFromJarPath(form.file), [form.file]);
+
+	const applyInferredMetadata = React.useCallback(
+		(filePath: string) => {
+			const provider = inferProviderFromJarPath(filePath);
+			const version = inferVersionFromJarPath(filePath);
+			updateField('provider', provider ?? '');
+			updateField('version', version ?? '');
+		},
+		[updateField],
+	);
 
 	const onPickServerFile = async () => {
 		try {
@@ -31,6 +44,7 @@ const SlideJarFile: React.FC = () => {
 
 			if (typeof selected === 'string') {
 				updateField('file', selected);
+				applyInferredMetadata(selected);
 				clearError();
 			}
 		} catch (err) {
@@ -58,6 +72,20 @@ const SlideJarFile: React.FC = () => {
 				return;
 			}
 
+			const normalizedProvider = (form.provider || inferredProvider || '').trim();
+			if (!normalizedProvider) {
+				setError('mserve could not infer the server provider. Enter a provider to continue.');
+				return;
+			}
+
+			if (normalizedProvider !== form.provider) {
+				updateField('provider', normalizedProvider);
+			}
+
+			if (!form.version && inferredVersion) {
+				updateField('version', inferredVersion);
+			}
+
 			clearError();
 			nextSlide();
 		} catch (err) {
@@ -76,6 +104,8 @@ const SlideJarFile: React.FC = () => {
 		}
 
 		updateField('file', selection.filePath);
+		updateField('provider', selection.provider);
+		updateField('version', selection.version);
 		setDownloadButtonLabel(selection.selectionLabel);
 		clearError();
 		nextSlide();
@@ -110,12 +140,30 @@ const SlideJarFile: React.FC = () => {
 							id='create-server-file'
 							placeholder='C:\\servers\\server-1.21.11.jar'
 							value={form.file}
-							onChange={(event) => updateField('file', event.target.value)}
+							onChange={(event) => {
+								const nextFile = event.target.value;
+								updateField('file', nextFile);
+								applyInferredMetadata(nextFile);
+							}}
 						/>
 						<Button type='button' variant='outline' onClick={onPickServerFile}>
 							<FolderOpen /> Browse
 						</Button>
 					</div>
+				</Field>
+				<Field>
+					<Label htmlFor='create-server-provider'>Server Provider</Label>
+					<Input
+						id='create-server-provider'
+						placeholder='paper, vanilla, fabric, velocity...'
+						value={form.provider}
+						onChange={(event) => updateField('provider', event.target.value)}
+					/>
+					<p className='text-xs text-muted-foreground'>
+						{inferredProvider
+							? `Detected from filename: ${inferredProvider}`
+							: 'Provider could not be detected automatically from this filename.'}
+					</p>
 				</Field>
 			</div>
 		</SlideShell>

@@ -18,10 +18,14 @@ type InitServerPayload = {
 	createDirectoryIfMissing: boolean;
 	file: string;
 	ram: number;
+	storageLimit: number;
 	autoRestart: boolean;
 	autoBackup: AutoBackupMode[];
 	autoBackupInterval: number;
 	autoAgreeEula: boolean;
+	javaInstallation: string;
+	provider: string;
+	version: string;
 };
 
 type InitServerResult = {
@@ -101,8 +105,10 @@ const buildServer = (form: ServerSetupFormData, result: InitServerResult): Serve
 	auto_backup: form.autoBackup,
 	auto_backup_interval: Math.max(1, Number(form.autoBackupInterval) || 120),
 	auto_restart: form.autoRestart,
-	explicit_info_names: false,
-	createdAt: new Date(),
+	java_installation: form.javaInstallation.trim() || undefined,
+	provider: form.provider.trim() || undefined,
+	version: form.version.trim() || undefined,
+	created_at: new Date(),
 });
 
 const buildImportedServer = (
@@ -118,7 +124,7 @@ const buildImportedServer = (
 	datapacks: [],
 	worlds: [],
 	plugins: [],
-	storage_limit: Math.max(1, Number(storageLimit) || 200),
+	storage_limit: Math.max(1, Number(config.storage_limit ?? storageLimit) || 200),
 	stats: {
 		players: 0,
 		capacity: 20,
@@ -130,11 +136,11 @@ const buildImportedServer = (
 	auto_backup: config.auto_backup,
 	auto_backup_interval: config.auto_backup_interval,
 	auto_restart: config.auto_restart,
-	explicit_info_names: config.explicit_info_names,
+	java_installation: config.java_installation,
 	custom_flags: config.custom_flags,
 	provider: config.provider,
 	version: config.version,
-	createdAt: new Date(config.createdAt),
+	created_at: new Date(config.created_at),
 });
 
 const getNextSlideIndex = (currentSlide: number, skipJarAndEula: boolean) => {
@@ -205,6 +211,9 @@ const isFormDirty = (form: ServerSetupFormData) => {
 	if (!sameArray(form.autoBackup, DEFAULT_FORM.autoBackup)) return true;
 	if (form.autoBackupInterval !== DEFAULT_FORM.autoBackupInterval) return true;
 	if (form.autoAgreeEula !== DEFAULT_FORM.autoAgreeEula) return true;
+	if (form.javaInstallation !== DEFAULT_FORM.javaInstallation) return true;
+	if (form.provider !== DEFAULT_FORM.provider) return true;
+	if (form.version !== DEFAULT_FORM.version) return true;
 	return false;
 };
 
@@ -380,8 +389,10 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 						autoRestart: synced.config?.auto_restart ?? false,
 						createDirectoryIfMissing: true,
 						autoAgreeEula: true,
-						explicitInfoNames: synced.config?.explicit_info_names ?? false,
+						javaInstallation: synced.config?.java_installation ?? '',
 						customFlags: synced.config?.custom_flags ?? [],
+						provider: synced.config?.provider,
+						version: synced.config?.version,
 					});
 
 					if (!repairPayload) {
@@ -505,8 +516,10 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 						autoBackupInterval: Math.max(1, Number(form.autoBackupInterval) || 120),
 						autoRestart: form.autoRestart,
 						autoAgreeEula: true,
-						explicitInfoNames: false,
+						javaInstallation: form.javaInstallation,
 						customFlags: [],
+						provider: form.provider || undefined,
+						version: form.version || undefined,
 					};
 
 					const synced = await repairServerMserveJson(repairPayload);
@@ -547,10 +560,14 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 				createDirectoryIfMissing: form.createDirectoryIfMissing,
 				file: file || 'server.jar',
 				ram: Math.max(1, Number(form.ram) || 3),
+				storageLimit: Math.max(1, Number(form.storageLimit) || 200),
 				autoRestart: form.autoRestart,
 				autoBackup: form.autoBackup,
 				autoBackupInterval: Math.max(1, Number(form.autoBackupInterval) || 120),
 				autoAgreeEula: form.autoAgreeEula,
+				javaInstallation: form.javaInstallation,
+				provider: form.provider,
+				version: form.version,
 			};
 
 			const initializePromise = (async () => {

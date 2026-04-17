@@ -52,17 +52,36 @@ pub(in crate::app) fn initialize_server(payload: InitServerPayload) -> Result<In
     // Copy the jar file to the server directory
     let (resolved_file, copy_message) = copy_jar_to_server_directory(&directory, payload.file.trim())?;
     let server_id = generate_server_id();
+    let inferred_provider = infer_provider_from_jar_file(&resolved_file);
+    let inferred_version = infer_version_from_jar_file(&resolved_file);
 
     let content = json!({
         "id": server_id,
-        "explicit_info_names": false,
-        "auto_backup": auto_backup,
-        "ram": payload.ram.max(1),
-        "directory": directory_str,
         "file": resolved_file.clone(),
+        "ram": payload.ram.max(1),
+        "storage_limit": payload.storage_limit.unwrap_or(200).max(1),
+        "auto_backup": auto_backup,
         "auto_backup_interval": payload.auto_backup_interval.max(1),
         "auto_restart": payload.auto_restart,
-        "createdAt": chrono::Local::now().to_rfc3339(),
+        "custom_flags": default_custom_flags(),
+        "java_installation": payload
+            .java_installation
+            .as_deref()
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty()),
+        "provider": payload
+            .provider
+            .as_deref()
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+            .or(inferred_provider.as_deref()),
+        "version": payload
+            .version
+            .as_deref()
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+            .or(inferred_version.as_deref()),
+        "created_at": chrono::Local::now().to_rfc3339(),
     });
 
     let mserve_file = directory.join("mserve.json");
@@ -328,14 +347,16 @@ pub(in crate::app) fn import_server(directory: String) -> Result<InitServerResul
 
         let content = json!({
             "id": server_id,
-            "explicit_info_names": false,
-            "auto_backup": [],
-            "ram": 3,
-            "directory": directory_str,
             "file": found_jar.clone(),
+            "ram": 3,
+            "storage_limit": 200,
+            "auto_backup": [],
             "auto_backup_interval": 120,
             "auto_restart": false,
-            "createdAt": chrono::Local::now().to_rfc3339(),
+            "custom_flags": default_custom_flags(),
+            "provider": infer_provider_from_jar_file(&found_jar),
+            "version": infer_version_from_jar_file(&found_jar),
+            "created_at": chrono::Local::now().to_rfc3339(),
         });
 
         fs::write(&mserve_json_path, serde_json::to_vec_pretty(&content).map_err(|err| err.to_string())?)
@@ -404,17 +425,17 @@ pub(in crate::app) fn sync_server_mserve_json(directory: String) -> Result<SyncM
     let normalized = sanitize_mserve_value_config(&directory_path, &object);
     let normalized_json = serde_json::to_string_pretty(&json!({
         "id": normalized.id,
-        "explicit_info_names": normalized.explicit_info_names,
-        "auto_backup": normalized.auto_backup,
-        "ram": normalized.ram,
-        "directory": normalized.directory,
         "file": normalized.file,
+        "ram": normalized.ram,
+        "storage_limit": normalized.storage_limit,
+        "auto_backup": normalized.auto_backup,
         "auto_backup_interval": normalized.auto_backup_interval,
         "auto_restart": normalized.auto_restart,
         "custom_flags": normalized.custom_flags,
+        "java_installation": normalized.java_installation,
         "provider": normalized.provider,
         "version": normalized.version,
-        "createdAt": normalized.created_at,
+        "created_at": normalized.created_at,
     }))
     .map_err(|err| err.to_string())?;
 
@@ -470,18 +491,51 @@ pub(in crate::app) fn repair_server_mserve_json(payload: RepairMserveJsonPayload
         })
         .unwrap_or_else(generate_server_id);
 
+    let mut custom_flags = Vec::new();
+    for flag in payload.custom_flags {
+        let trimmed = flag.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if custom_flags.iter().any(|existing: &String| existing == trimmed) {
+            continue;
+        }
+        custom_flags.push(trimmed.to_string());
+    }
+
+    if custom_flags.is_empty() {
+        custom_flags = default_custom_flags();
+    }
+
+    let inferred_provider = infer_provider_from_jar_file(&resolved_file);
+    let inferred_version = infer_version_from_jar_file(&resolved_file);
+
     let config = SyncedMserveConfig {
         id: existing_id,
-        directory: directory_path.to_string_lossy().to_string(),
         file: resolved_file,
         ram: payload.ram.max(1),
+        storage_limit: payload.storage_limit.max(1),
         auto_backup,
         auto_backup_interval: payload.auto_backup_interval.max(1),
         auto_restart: payload.auto_restart,
-        explicit_info_names: payload.explicit_info_names,
-        custom_flags: payload.custom_flags,
-        provider: None,
-        version: None,
+        custom_flags,
+        java_installation: payload
+            .java_installation
+            .as_deref()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty()),
+        provider: payload
+            .provider
+            .as_deref()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .or(inferred_provider),
+        version: payload
+            .version
+            .as_deref()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .or(inferred_version),
         created_at: chrono::Local::now().to_rfc3339(),
     };
 

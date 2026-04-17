@@ -5,14 +5,20 @@ import { Check, FolderOpen, Loader } from 'lucide-react';
 import { toast } from 'sonner';
 import clsx from 'clsx';
 import { type Server, useServers } from '@/data/servers';
+import { useUser } from '@/data/user';
 import RamSliderField from '@/components/ram-slider-field';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { getServerProviderCapabilities } from '@/lib/server-provider-capabilities';
 import { backupChoices } from '@/pages/server/server-constants';
 import {
+	buildServerRunCommandPreview,
 	buildUpdateServerSettingsPayload,
+	formatCustomFlagsInput,
+	parseCustomFlagsInput,
 	resolveNewDirectory,
 	toggleBackupMode,
 } from '@/pages/server/server-utils';
@@ -38,30 +44,50 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 	className,
 }) => {
 	const { updateServer } = useServers();
+	const { user } = useUser();
 	const [isSaving, setIsSaving] = React.useState(false);
 	const [settingsError, setSettingsError] = React.useState<string | null>(null);
 	const [settingsForm, setSettingsForm] = React.useState<ServerSettingsForm>({
 		ram: 3,
+		storageLimit: 200,
 		autoBackup: [],
 		autoBackupInterval: 120,
 		autoRestart: false,
+		customFlags: [],
+		javaInstallation: '',
 		jarSwapPath: '',
 		newDirectory: '',
 	});
 
 	const serverId = server.id;
+	const providerCapabilities = React.useMemo(
+		() => getServerProviderCapabilities(server.provider),
+		[server.provider],
+	);
 
 	React.useEffect(() => {
 		setSettingsForm({
 			ram: Math.max(1, server.ram ?? 3),
+			storageLimit: Math.max(1, Number(server.storage_limit) || 200),
 			autoBackup: server.auto_backup ?? [],
 			autoBackupInterval: Math.max(1, server.auto_backup_interval ?? 120),
 			autoRestart: server.auto_restart ?? false,
+			customFlags: server.custom_flags ?? [],
+			javaInstallation: server.java_installation ?? '',
 			jarSwapPath: '',
 			newDirectory: server.directory,
 		});
 		setSettingsError(null);
-	}, [server.auto_backup, server.auto_backup_interval, server.auto_restart, server.directory, server.ram]);
+	}, [
+		server.auto_backup,
+		server.auto_backup_interval,
+		server.auto_restart,
+		server.custom_flags,
+		server.directory,
+		server.java_installation,
+		server.ram,
+		server.storage_limit,
+	]);
 
 	const updateSettingsField = React.useCallback(
 		<K extends keyof ServerSettingsForm>(key: K, value: ServerSettingsForm[K]) => {
@@ -138,9 +164,12 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 				directory: result.directory,
 				file: result.file,
 				ram: payload.ram,
+				storage_limit: payload.storageLimit,
 				auto_backup: payload.autoBackup,
 				auto_backup_interval: payload.autoBackupInterval,
 				auto_restart: payload.autoRestart,
+				java_installation: payload.javaInstallation,
+				custom_flags: payload.customFlags,
 			});
 
 			setSettingsForm((prev) => ({
@@ -157,6 +186,24 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 		}
 	}, [disabled, isSaving, onSaved, server.directory, server.status, serverId, settingsForm, updateServer]);
 
+	const runCommandPreview = React.useMemo(
+		() =>
+			buildServerRunCommandPreview({
+				ram: settingsForm.ram,
+				file: server.file,
+				customFlags: settingsForm.customFlags,
+				javaInstallation: settingsForm.javaInstallation,
+				globalJavaInstallation: user.java_installation_default,
+			}),
+		[
+			server.file,
+			settingsForm.customFlags,
+			settingsForm.javaInstallation,
+			settingsForm.ram,
+			user.java_installation_default,
+		],
+	);
+
 	return (
 		<div className={clsx('space-y-4', className)}>
 			<RamSliderField
@@ -164,6 +211,40 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 				value={settingsForm.ram}
 				onChange={(value) => updateSettingsField('ram', value)}
 			/>
+
+			<div className='space-y-2'>
+				<Label htmlFor='edit-storage-limit'>Backup storage limit (GB)</Label>
+				<Input
+					className='border-secondary-foreground/50'
+					id='edit-storage-limit'
+					type='number'
+					min={1}
+					value={settingsForm.storageLimit}
+					onChange={(event) => updateSettingsField('storageLimit', Number(event.target.value))}
+					disabled={disabled || isSaving || server.status !== 'offline'}
+				/>
+			</div>
+
+			<div className='space-y-2'>
+				<Label htmlFor='edit-java-installation'>Java installation override (optional)</Label>
+				<Input
+					className='border-secondary-foreground/50 font-mono'
+					id='edit-java-installation'
+					placeholder='C:\\Program Files\\Java\\jdk-25\\bin\\java.exe'
+					value={settingsForm.javaInstallation}
+					onChange={(event) => updateSettingsField('javaInstallation', event.target.value)}
+					disabled={disabled || isSaving || server.status !== 'offline'}
+				/>
+				<p className='text-sm text-muted-foreground'>
+					Leave blank to use global Java default:{' '}
+					<span className='font-mono'>{user.java_installation_default}</span>
+				</p>
+				<p className='text-sm text-muted-foreground'>
+					Provider detection: <span className='font-medium'>{server.provider || 'unknown'}</span>. TPS
+					polling {providerCapabilities.supportsTpsCommand ? 'enabled' : 'silently disabled'}; version
+					polling {providerCapabilities.supportsVersionCommand ? 'enabled' : 'silently disabled'}.
+				</p>
+			</div>
 
 			<div className='space-y-2 mt-6'>
 				<Label htmlFor='edit-jar-swap'>Swap server jar with selected jar file</Label>
@@ -237,6 +318,37 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 				/>
 				Auto restart server when it closes
 			</Label>
+
+			<div className='space-y-2'>
+				<Label htmlFor='edit-custom-flags'>Extra Java flags (one per line)</Label>
+				<Textarea
+					id='edit-custom-flags'
+					className='border-secondary-foreground/50 min-h-32 font-mono'
+					placeholder={`-Dcom.mojang.eula.agree=true\n--add-opens=java.base/java.lang=ALL-UNNAMED`}
+					value={formatCustomFlagsInput(settingsForm.customFlags)}
+					onChange={(event) =>
+						updateSettingsField('customFlags', parseCustomFlagsInput(event.target.value))
+					}
+					disabled={disabled || isSaving || server.status !== 'offline'}
+				/>
+				<p className='text-sm text-muted-foreground'>
+					These flags are injected after the jar file exactly as configured.
+				</p>
+			</div>
+
+			<div className='space-y-2'>
+				<Label htmlFor='edit-run-command-preview'>Resolved start command preview</Label>
+				<Textarea
+					id='edit-run-command-preview'
+					className='border-secondary-foreground/50 min-h-28 font-mono text-xs'
+					value={runCommandPreview}
+					readOnly
+					disabled
+				/>
+				<p className='text-sm text-muted-foreground'>
+					This is the full command used when starting the server.
+				</p>
+			</div>
 
 			<div className='space-y-2'>
 				<Label htmlFor='edit-new-location'>Move server location</Label>

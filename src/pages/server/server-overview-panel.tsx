@@ -6,6 +6,7 @@ import {
 	Clock,
 	MemoryStick,
 	OctagonX,
+	Package,
 	RefreshCcw,
 	Users,
 } from 'lucide-react';
@@ -27,7 +28,9 @@ type Props = {
 	onStart: () => void;
 	onStop: () => void;
 	onRestart: () => void;
+	onForceKill: () => void;
 	activeTab: ServerContentTab;
+	availableTabs: ServerContentTab[];
 	onTabChange: (tab: ServerContentTab) => void;
 };
 
@@ -37,9 +40,18 @@ const ServerOverviewPanel: React.FC<Props> = ({
 	onStart,
 	onStop,
 	onRestart,
+	onForceKill,
 	activeTab,
+	availableTabs,
 	onTabChange,
 }) => {
+	const createdDateText = React.useMemo(() => {
+		if (!server.created_at) return null;
+		const value = server.created_at instanceof Date ? server.created_at : new Date(server.created_at);
+		if (Number.isNaN(value.getTime())) return null;
+		return value.toLocaleDateString();
+	}, [server.created_at]);
+
 	return (
 		<Card className={clsx('mb-6', server.status !== 'offline' && 'rounded-t-none')}>
 			<CardHeader className='border-b border-b-border'>
@@ -65,19 +77,21 @@ const ServerOverviewPanel: React.FC<Props> = ({
 									<p>Serve</p>
 								</Button>
 							)}
+							{server.status !== 'offline' && (
+								<Button variant='destructive-secondary' onClick={onForceKill} disabled={isBusy}>
+									<OctagonX />
+									<p>Force Kill</p>
+								</Button>
+							)}
 							<OpenFolderButton directory={server.directory} disabled={isBusy} />
 						</div>
 						<div className='flex items-center gap-2'>
-							{server.createdAt && (
+							{createdDateText && (
 								<div className='flex items-center gap-2'>
 									<Clock className='size-4' />
 									<p>
 										Server was created
-										<span className='font-bold'>
-											{' '}
-											{new Date(server.createdAt).toLocaleDateString()}
-										</span>
-										.
+										<span className='font-bold'> {createdDateText}</span>.
 									</p>
 								</div>
 							)}
@@ -131,6 +145,12 @@ const ServerOverviewPanel: React.FC<Props> = ({
 								Server jar file is <span className='font-bold'>{server.file}</span>.
 							</p>
 						</div>
+						<div className='flex items-center gap-2'>
+							<Package className='size-4' />
+							<p>
+								Server provider is <span className='font-bold'>{server.provider}</span>.
+							</p>
+						</div>
 						{server.status === 'online' && server.stats.uptime && (
 							<div className='flex items-center gap-2'>
 								<Clock className='size-4' />
@@ -141,7 +161,11 @@ const ServerOverviewPanel: React.FC<Props> = ({
 				</div>
 			</CardHeader>
 			<CardContent className='flex gap-2'>
-				<ServerContentTabs activeTab={activeTab} onTabChange={onTabChange} />
+				<ServerContentTabs
+					activeTab={activeTab}
+					onTabChange={onTabChange}
+					availableTabs={availableTabs}
+				/>
 			</CardContent>
 		</Card>
 	);

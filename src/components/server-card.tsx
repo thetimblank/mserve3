@@ -3,11 +3,11 @@ import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle }
 import { Server, useServers } from '@/data/servers';
 import {
 	ArrowDownToLine,
-	Boxes,
 	CircleCheck,
 	Clock,
 	MemoryStick,
 	OctagonX,
+	Package,
 	RefreshCcw,
 	Users,
 } from 'lucide-react';
@@ -20,6 +20,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import OpenFolderButton from '@/components/open-folder-button';
 import { getPrimaryMinecraftVersion } from '@/lib/utils';
 import { toast } from 'sonner';
+import { useUser } from '@/data/user';
 
 interface Props {
 	server: Server;
@@ -28,6 +29,7 @@ interface Props {
 
 const ServerCard: React.FC<Props> = ({ server, delay }) => {
 	const { setServerStatus, updateServerStats } = useServers();
+	const { user } = useUser();
 	const [isBusy, setIsBusy] = React.useState(false);
 	const serverId = server.id;
 
@@ -37,7 +39,10 @@ const ServerCard: React.FC<Props> = ({ server, delay }) => {
 		setServerStatus(serverId, 'starting');
 		updateServerStats(serverId, { players: 0, tps: 0, uptime: new Date() });
 		try {
-			await invoke('start_server', { directory: server.directory });
+			await invoke('start_server', {
+				directory: server.directory,
+				globalJavaInstallation: user.java_installation_default,
+			});
 			setServerStatus(serverId, 'online');
 		} catch (err) {
 			setServerStatus(serverId, 'offline');
@@ -77,12 +82,33 @@ const ServerCard: React.FC<Props> = ({ server, delay }) => {
 		setServerStatus(serverId, 'starting');
 		updateServerStats(serverId, { players: 0, tps: 0, uptime: new Date() });
 		try {
-			await invoke('start_server', { directory: server.directory });
+			await invoke('start_server', {
+				directory: server.directory,
+				globalJavaInstallation: user.java_installation_default,
+			});
 			setServerStatus(serverId, 'online');
 		} catch (err) {
 			setServerStatus(serverId, 'offline');
 			updateServerStats(serverId, { players: 0, tps: 0, uptime: null });
 			const message = err instanceof Error ? err.message : 'Failed to restart server.';
+			toast.error(message);
+		} finally {
+			setIsBusy(false);
+		}
+	};
+
+	const handleForceKill = async () => {
+		if (isBusy) return;
+		setIsBusy(true);
+		setServerStatus(serverId, 'closing');
+		try {
+			await invoke('force_kill_server', { directory: server.directory });
+			setServerStatus(serverId, 'offline');
+			updateServerStats(serverId, { players: 0, tps: 0, uptime: null });
+		} catch (err) {
+			setServerStatus(serverId, 'offline');
+			updateServerStats(serverId, { players: 0, tps: 0, uptime: null });
+			const message = err instanceof Error ? err.message : 'Failed to force kill server process.';
 			toast.error(message);
 		} finally {
 			setIsBusy(false);
@@ -140,12 +166,12 @@ const ServerCard: React.FC<Props> = ({ server, delay }) => {
 						<Tooltip>
 							<TooltipTrigger>
 								<div className='flex items-center lg:text-lg gap-2'>
-									<Boxes className='size-5' />
-									{server.file}
+									<Package className='size-5' />
+									{server.provider}
 								</div>
 							</TooltipTrigger>
 							<TooltipContent>
-								<p className='font-bold'>Server Jar File</p>
+								<p className='font-bold'>Server Provider</p>
 							</TooltipContent>
 						</Tooltip>
 						{server.status === 'online' && server.stats.uptime && (
@@ -182,6 +208,12 @@ const ServerCard: React.FC<Props> = ({ server, delay }) => {
 						<Link to={`/servers/${encodeURIComponent(server.id)}`}>
 							<Button>View More Details</Button>
 						</Link>
+						{server.status !== 'offline' && (
+							<Button variant='destructive-secondary' onClick={handleForceKill} disabled={isBusy}>
+								<OctagonX />
+								<p>Force Kill</p>
+							</Button>
+						)}
 						{server.status === 'online' && (
 							<Button variant='secondary' onClick={handleStop} disabled={isBusy}>
 								<OctagonX />

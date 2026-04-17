@@ -5,9 +5,10 @@ export interface UserData {
 		logo_animation: boolean;
 		reduced_motion: boolean;
 	};
+	java_installation_default: string;
 	completed_setup_hosting_ports: number[];
 	initial_setup_hosting_tutorial_completed: boolean;
-	createdAt: Date;
+	created_at: Date;
 	updatedAt: Date;
 }
 
@@ -49,9 +50,10 @@ export const createDefaultUserData = (): UserData => {
 			logo_animation: true,
 			reduced_motion: false,
 		},
+		java_installation_default: 'java',
 		completed_setup_hosting_ports: [],
 		initial_setup_hosting_tutorial_completed: false,
-		createdAt: now,
+		created_at: now,
 		updatedAt: now,
 	};
 };
@@ -63,9 +65,13 @@ export const normalizeUserData = (user: Partial<UserData> | null | undefined): U
 			logo_animation: user?.accessibility?.logo_animation ?? false,
 			reduced_motion: user?.accessibility?.reduced_motion ?? false,
 		},
+		java_installation_default:
+			typeof user?.java_installation_default === 'string' && user.java_installation_default.trim()
+				? user.java_installation_default.trim()
+				: 'java',
 		completed_setup_hosting_ports: normalizePortList(user?.completed_setup_hosting_ports),
 		initial_setup_hosting_tutorial_completed: user?.initial_setup_hosting_tutorial_completed ?? false,
-		createdAt: toDate(user?.createdAt ?? fallback.createdAt),
+		created_at: toDate(user?.created_at ?? fallback.created_at),
 		updatedAt: toDate(user?.updatedAt ?? fallback.updatedAt),
 	};
 };
@@ -144,7 +150,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
 			const resolved = typeof next === 'function' ? next(previous) : next;
 			return normalizeUserData({
 				...resolved,
-				createdAt: previous.createdAt,
+				created_at: previous.created_at,
 				updatedAt: new Date(),
 			});
 		});
@@ -155,7 +161,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
 			normalizeUserData({
 				...previous,
 				...update,
-				createdAt: previous.createdAt,
+				created_at: previous.created_at,
 				updatedAt: new Date(),
 			}),
 		);
@@ -172,7 +178,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
 				return normalizeUserData({
 					...previous,
 					[key]: resolvedValue,
-					createdAt: previous.createdAt,
+					created_at: previous.created_at,
 					updatedAt: new Date(),
 				});
 			});

@@ -36,6 +36,9 @@ const toInitialForm = (options: PromptMserveRepairOptions): ServerSetupFormData 
 	autoBackup: options.autoBackup,
 	autoBackupInterval: options.autoBackupInterval,
 	autoAgreeEula: options.autoAgreeEula ?? true,
+	javaInstallation: options.javaInstallation ?? '',
+	provider: options.provider ?? '',
+	version: options.version ?? '',
 });
 
 const MserveRepairDialog: React.FC = () => {
@@ -138,8 +141,10 @@ const MserveRepairDialog: React.FC = () => {
 			autoBackupInterval: Math.max(1, Number(form.autoBackupInterval) || 120),
 			autoRestart: form.autoRestart,
 			autoAgreeEula: form.autoAgreeEula,
-			explicitInfoNames: activeRequest.options.explicitInfoNames,
+			javaInstallation: form.javaInstallation,
 			customFlags: activeRequest.options.customFlags,
+			provider: activeRequest.options.provider,
+			version: activeRequest.options.version,
 		});
 	};
 
