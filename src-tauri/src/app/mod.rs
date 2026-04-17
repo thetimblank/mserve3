@@ -169,6 +169,21 @@ struct PathValidationResult {
     is_file: bool,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DownloadServerJarPayload {
+    url: String,
+    preferred_file_name: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DownloadServerJarResult {
+    path: String,
+    file_name: String,
+    size_bytes: u64,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ServerDirectoryInspectionResult {
@@ -239,6 +254,7 @@ pub fn run() {
             validate_path,
             get_local_ip,
             get_system_memory_gb,
+            download_server_jar,
             initialize_server,
             inspect_server_directory,
             import_server,

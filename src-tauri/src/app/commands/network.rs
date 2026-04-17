@@ -1,6 +1,67 @@
 use super::super::support::*;
 use super::super::*;
-use std::path::PathBuf;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+fn sanitize_file_name(input: &str) -> String {
+    let mut sanitized: String = input
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | '_'))
+        .collect();
+
+    if sanitized.is_empty() {
+        sanitized = "server.jar".to_string();
+    }
+
+    if !sanitized.to_lowercase().ends_with(".jar") {
+        sanitized.push_str(".jar");
+    }
+
+    sanitized
+}
+
+fn infer_file_name_from_url(url: &str) -> Option<String> {
+    url.split('/')
+        .next_back()
+        .and_then(|segment| segment.split('?').next())
+        .map(str::trim)
+        .filter(|segment| !segment.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn unique_destination_path(base_directory: &Path, file_name: &str) -> PathBuf {
+    let mut candidate = base_directory.join(file_name);
+    if !candidate.exists() {
+        return candidate;
+    }
+
+    let file_path = Path::new(file_name);
+    let stem = file_path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("server");
+    let extension = file_path
+        .extension()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("jar");
+
+    for index in 1..=9999 {
+        let next_name = format!("{stem}-{index}.{extension}");
+        candidate = base_directory.join(next_name);
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|value| value.as_millis())
+        .unwrap_or(0);
+    base_directory.join(format!("{stem}-{timestamp}.{extension}"))
+}
 
 fn system_memory_bytes() -> Result<u64, String> {
     #[cfg(target_os = "windows")]
@@ -142,5 +203,69 @@ pub(in crate::app) fn validate_path(path: String) -> Result<PathValidationResult
 #[tauri::command]
 pub(in crate::app) fn get_local_ip() -> Result<String, String> {
     resolve_local_ip().ok_or_else(|| "Unable to determine local IP address.".to_string())
+}
+
+#[tauri::command]
+pub(in crate::app) fn download_server_jar(
+    payload: DownloadServerJarPayload,
+) -> Result<DownloadServerJarResult, String> {
+    let url = payload.url.trim();
+    if url.is_empty() {
+        return Err("Download URL is required.".to_string());
+    }
+
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return Err("Only HTTP(S) URLs are supported for jar downloads.".to_string());
+    }
+
+    let provided_name = payload.preferred_file_name.unwrap_or_default();
+    let suggested_name = if provided_name.trim().is_empty() {
+        infer_file_name_from_url(url).unwrap_or_else(|| "server.jar".to_string())
+    } else {
+        provided_name
+    };
+    let file_name = sanitize_file_name(&suggested_name);
+
+    let destination_dir = std::env::temp_dir().join("mserve").join("jar-downloads");
+    fs::create_dir_all(&destination_dir).map_err(|err| err.to_string())?;
+
+    let destination_path = unique_destination_path(&destination_dir, &file_name);
+    let temp_path = destination_path.with_extension("jar.part");
+
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(180))
+        .build()
+        .map_err(|err| err.to_string())?;
+
+    let response = client.get(url).send().map_err(|err| err.to_string())?;
+    if !response.status().is_success() {
+        return Err(format!(
+            "Download failed with HTTP status {}.",
+            response.status().as_u16()
+        ));
+    }
+
+    let bytes = response.bytes().map_err(|err| err.to_string())?;
+    if bytes.is_empty() {
+        return Err("Downloaded file was empty.".to_string());
+    }
+
+    fs::write(&temp_path, &bytes).map_err(|err| err.to_string())?;
+    move_file_with_fallback(&temp_path, &destination_path)?;
+
+    let final_path = destination_path
+        .canonicalize()
+        .unwrap_or_else(|_| destination_path.clone());
+    let resolved_file_name = final_path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("server.jar")
+        .to_string();
+
+    Ok(DownloadServerJarResult {
+        path: final_path.to_string_lossy().to_string(),
+        file_name: resolved_file_name,
+        size_bytes: bytes.len() as u64,
+    })
 }
 
