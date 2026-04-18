@@ -2,31 +2,17 @@ import React from 'react';
 import { toast } from 'sonner';
 import { repairServerMserveJson, syncServerMserveJson } from '@/lib/mserve-sync';
 import { requestMserveRepair } from '@/lib/mserve-repair-controller';
+import { normalizeProviderChecks, type MserveJsonProps, type MserveStats } from '@/lib/mserve-schema';
 
-export type AutoBackupMode = 'interval' | 'on_close' | 'on_start';
+export type { AutoBackupMode } from '@/lib/mserve-schema';
+
 export type ServerStatus = 'online' | 'offline' | 'starting' | 'closing';
 
-export interface MserveJson {
-	file: string;
-	provider?: string;
-	version?: string;
-	ram?: number;
-	storage_limit?: number;
-	auto_backup?: AutoBackupMode[];
-	auto_backup_interval?: number;
-	auto_restart?: boolean;
-	java_installation?: string;
-	custom_flags?: string[];
-	created_at?: Date;
-	createdAt?: Date;
-}
-
-export interface Server extends MserveJson {
+export interface Server extends MserveJsonProps {
 	id: string;
 	name: string;
 	directory: string;
 	status: ServerStatus;
-	storage_limit: number;
 	backups: {
 		created_at: Date;
 		directory: string;
@@ -49,37 +35,10 @@ export interface Server extends MserveJson {
 		size?: number;
 		activated: boolean;
 	}[];
-	stats: {
-		players: number;
-		capacity: number;
-		tps: number;
-		uptime: Date | null;
-	};
+	stats: MserveStats;
 }
 
-export interface ServerUpdate {
-	id?: string;
-	name?: string;
-	directory?: string;
-	status?: ServerStatus;
-	storage_limit?: number;
-	backups?: Server['backups'];
-	datapacks?: Server['datapacks'];
-	worlds?: Server['worlds'];
-	plugins?: Server['plugins'];
-	stats?: Partial<Server['stats']>;
-	file?: string;
-	provider?: string;
-	version?: string;
-	ram?: number;
-	auto_backup?: AutoBackupMode[];
-	auto_backup_interval?: number;
-	auto_restart?: boolean;
-	java_installation?: string;
-	custom_flags?: string[];
-	created_at?: Date;
-	createdAt?: Date;
-}
+export type ServerUpdate = Partial<Omit<Server, 'stats'>> & { stats?: Partial<Server['stats']> };
 
 interface ServersContextValue {
 	servers: Server[];
@@ -94,7 +53,7 @@ interface ServersContextValue {
 	getServerById: (id: string) => Server | undefined;
 }
 
-const STORAGE_KEY = 'mserve.servers.v3';
+const STORAGE_KEY = 'mserve.servers.v4';
 let memoryStore: Server[] | null = null;
 
 const generateServerId = () => {
@@ -112,6 +71,8 @@ const toDate = (value?: string | Date): Date => {
 	return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
 };
 
+const toIsoDateString = (value?: string | Date): string => toDate(value).toISOString();
+
 const toUniqueList = (items?: string[]) =>
 	Array.from(new Set((items ?? []).map((item) => item.trim()).filter(Boolean)));
 
@@ -120,6 +81,19 @@ const sameStringList = (left?: string[], right?: string[]) => {
 	const b = right ?? [];
 	if (a.length !== b.length) return false;
 	return a.every((value, index) => value === b[index]);
+};
+
+const sameProviderChecks = (
+	left?: MserveJsonProps['provider_checks'],
+	right?: MserveJsonProps['provider_checks'],
+) => {
+	const a = normalizeProviderChecks(left);
+	const b = normalizeProviderChecks(right);
+	return (
+		a.list_polling === b.list_polling &&
+		a.tps_polling === b.tps_polling &&
+		a.version_polling === b.version_polling
+	);
 };
 
 const toUniqueToggleFileList = <T extends { name?: string; file: string; activated: boolean }>(
@@ -197,7 +171,7 @@ export const normalizeServer = (server: Server): Server => {
 	const stats = server.stats ?? { players: 0, capacity: 20, tps: 0, uptime: now };
 	return {
 		id: server.id?.trim() || generateServerId(),
-		storage_limit: Math.max(1, Number(server.storage_limit ?? 200) || 200),
+		storage_limit: Math.max(1, Number(server.storage_limit) || 200),
 		name: server.name,
 		directory: server.directory,
 		status: server.status ?? 'offline',
@@ -214,13 +188,14 @@ export const normalizeServer = (server: Server): Server => {
 		file: server.file || 'server.jar',
 		provider: server.provider,
 		version: server.version,
-		ram: Math.max(1, server.ram ?? 3),
-		auto_backup: server.auto_backup ? Array.from(new Set(server.auto_backup)) : [],
-		auto_backup_interval: Math.max(1, server.auto_backup_interval ?? 120),
-		auto_restart: server.auto_restart ?? false,
+		provider_checks: normalizeProviderChecks(server.provider_checks),
+		ram: Math.max(1, Number(server.ram) || 3),
+		auto_backup: Array.from(new Set(server.auto_backup)),
+		auto_backup_interval: Math.max(1, Number(server.auto_backup_interval) || 120),
+		auto_restart: Boolean(server.auto_restart),
 		java_installation: server.java_installation?.trim() || undefined,
 		custom_flags: toUniqueList(server.custom_flags),
-		created_at: toDate(server.created_at ?? server.createdAt),
+		created_at: toIsoDateString(server.created_at),
 	};
 };
 
@@ -307,23 +282,28 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
 		const syncServerFromDisk = async (server: Server) => {
 			let synced = await syncServerMserveJson(server.directory);
-			let resolvedStorageLimit = server.storage_limit ?? 200;
 
 			if (synced.status === 'needs_setup') {
+				const config = synced.config;
+				if (!config) {
+					throw new Error('Could not load fallback mserve configuration for repair.');
+				}
+
 				const repairPayload = await requestMserveRepair({
 					directory: server.directory,
-					file: server.file || synced.config?.file || 'server.jar',
-					ram: server.ram ?? synced.config?.ram ?? 3,
-					storageLimit: resolvedStorageLimit,
-					autoBackup: server.auto_backup ?? synced.config?.auto_backup ?? [],
-					autoBackupInterval: server.auto_backup_interval ?? synced.config?.auto_backup_interval ?? 120,
-					autoRestart: server.auto_restart ?? synced.config?.auto_restart ?? false,
-					createDirectoryIfMissing: true,
-					autoAgreeEula: true,
-					javaInstallation: server.java_installation ?? synced.config?.java_installation ?? '',
-					customFlags: server.custom_flags ?? synced.config?.custom_flags ?? [],
-					provider: server.provider ?? synced.config?.provider,
-					version: server.version ?? synced.config?.version,
+					file: server.file || config.file,
+					ram: server.ram,
+					storage_limit: server.storage_limit,
+					auto_backup: server.auto_backup,
+					auto_backup_interval: server.auto_backup_interval,
+					auto_restart: server.auto_restart,
+					create_directory_if_missing: true,
+					auto_agree_eula: true,
+					java_installation: server.java_installation ?? '',
+					custom_flags: server.custom_flags,
+					provider: server.provider ?? config.provider,
+					version: server.version ?? config.version,
+					provider_checks: normalizeProviderChecks(server.provider_checks ?? config.provider_checks),
 				});
 
 				if (!repairPayload) {
@@ -331,7 +311,6 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 					return;
 				}
 
-				resolvedStorageLimit = repairPayload.storageLimit;
 				synced = await repairServerMserveJson(repairPayload);
 			}
 
@@ -343,14 +322,14 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 			const changed =
 				server.id !== config.id ||
 				server.file !== config.file ||
-				(server.ram ?? 3) !== config.ram ||
-				(server.storage_limit ?? 200) !== config.storage_limit ||
-				(server.auto_backup_interval ?? 120) !== config.auto_backup_interval ||
-				(server.auto_restart ?? false) !== config.auto_restart ||
+				server.ram !== config.ram ||
+				server.storage_limit !== config.storage_limit ||
+				server.auto_backup_interval !== config.auto_backup_interval ||
+				server.auto_restart !== config.auto_restart ||
 				(server.java_installation ?? '') !== (config.java_installation ?? '') ||
-				server.storage_limit !== resolvedStorageLimit ||
 				!sameStringList(server.auto_backup, config.auto_backup) ||
 				!sameStringList(server.custom_flags, config.custom_flags) ||
+				!sameProviderChecks(server.provider_checks, config.provider_checks) ||
 				server.provider !== config.provider ||
 				server.version !== config.version;
 
@@ -367,7 +346,7 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 						id: config.id,
 						file: config.file,
 						ram: config.ram,
-						storage_limit: config.storage_limit || resolvedStorageLimit,
+						storage_limit: config.storage_limit,
 						auto_backup: config.auto_backup,
 						auto_backup_interval: config.auto_backup_interval,
 						auto_restart: config.auto_restart,
@@ -375,7 +354,8 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 						custom_flags: config.custom_flags,
 						provider: config.provider,
 						version: config.version,
-						created_at: new Date(config.created_at),
+						provider_checks: config.provider_checks,
+						created_at: config.created_at,
 					});
 				}),
 			);

@@ -22,9 +22,9 @@ const SlideAutoRestart: React.FC = () => {
 					<Label className='flex items-center gap-3'>
 						<Checkbox
 							className='border-secondary-foreground/50'
-							checked={form.autoRestart}
+							checked={form.auto_restart}
 							onCheckedChange={(checked) =>
-								updateField('autoRestart', typeof checked === 'boolean' ? checked : false)
+								updateField('auto_restart', typeof checked === 'boolean' ? checked : false)
 							}
 						/>
 						Auto restart server when it closes

@@ -1,7 +1,7 @@
 import React from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
-import { Check, FolderOpen, Loader } from 'lucide-react';
+import { Check, FolderOpen, Info, Loader } from 'lucide-react';
 import { toast } from 'sonner';
 import clsx from 'clsx';
 import { type Server, useServers } from '@/data/servers';
@@ -11,8 +11,10 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { getServerProviderCapabilities } from '@/lib/server-provider-capabilities';
+import { normalizeProviderChecks } from '@/lib/mserve-schema';
+import { getDefaultProviderCommandSupport } from '@/lib/server-provider-capabilities';
 import { backupChoices } from '@/pages/server/server-constants';
 import {
 	buildServerRunCommandPreview,
@@ -23,6 +25,8 @@ import {
 	toggleBackupMode,
 } from '@/pages/server/server-utils';
 import type { ServerSettingsForm, UpdateServerSettingsResult } from '@/pages/server/server-types';
+import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
+import { InputGroup, InputGroupAddon, InputGroupInput } from './ui/input-group';
 
 type EditServerPropertiesFormProps = {
 	server: Server;
@@ -33,6 +37,54 @@ type EditServerPropertiesFormProps = {
 	saveLabel?: string;
 	className?: string;
 };
+
+const providerOptions = [
+	{ value: 'paper', label: 'Paper' },
+	{ value: 'folia', label: 'Folia' },
+	{ value: 'spigot', label: 'Spigot' },
+	{ value: 'purpur', label: 'Purpur' },
+	{ value: 'fabric', label: 'Fabric' },
+	{ value: 'forge', label: 'Forge / NeoForge' },
+	{ value: 'vanilla', label: 'Vanilla' },
+	{ value: 'velocity', label: 'Velocity' },
+	{ value: 'bungeecord', label: 'BungeeCord' },
+	{ value: 'sponge', label: 'Sponge' },
+	{ value: 'quilt', label: 'Quilt' },
+] as const;
+
+const normalizeProvider = (provider?: string): string => {
+	const normalized = provider?.trim().toLowerCase() ?? '';
+	if (!normalized) return 'vanilla';
+
+	if (normalized.includes('paper')) return 'paper';
+	if (normalized.includes('folia')) return 'folia';
+	if (normalized.includes('spigot')) return 'spigot';
+	if (normalized.includes('purpur')) return 'purpur';
+	if (normalized.includes('fabric')) return 'fabric';
+	if (normalized.includes('forge') || normalized.includes('neoforge')) return 'forge';
+	if (normalized.includes('velocity')) return 'velocity';
+	if (normalized.includes('bungeecord') || normalized.includes('waterfall')) return 'bungeecord';
+	if (normalized.includes('sponge')) return 'sponge';
+	if (normalized.includes('quilt')) return 'quilt';
+
+	return 'vanilla';
+};
+
+const getProviderLabel = (provider: string) =>
+	providerOptions.find((option) => option.value === provider)?.label ?? 'Vanilla';
+
+const sameStringList = (left: string[], right: string[]) => {
+	if (left.length !== right.length) return false;
+	return left.every((value, index) => value === right[index]);
+};
+
+const sameProviderChecks = (
+	left: ReturnType<typeof normalizeProviderChecks>,
+	right: ReturnType<typeof normalizeProviderChecks>,
+) =>
+	left.list_polling === right.list_polling &&
+	left.tps_polling === right.tps_polling &&
+	left.version_polling === right.version_polling;
 
 const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 	server,
@@ -47,38 +99,52 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 	const { user } = useUser();
 	const [isSaving, setIsSaving] = React.useState(false);
 	const [settingsError, setSettingsError] = React.useState<string | null>(null);
+	const [customFlagsDraft, setCustomFlagsDraft] = React.useState('');
 	const [settingsForm, setSettingsForm] = React.useState<ServerSettingsForm>({
-		ram: 3,
-		storageLimit: 200,
-		autoBackup: [],
-		autoBackupInterval: 120,
-		autoRestart: false,
-		customFlags: [],
-		javaInstallation: '',
-		jarSwapPath: '',
-		newDirectory: '',
+		ram: 4,
+		storage_limit: 200,
+		auto_backup: [],
+		auto_backup_interval: 120,
+		auto_restart: false,
+		custom_flags: [],
+		java_installation: '',
+		provider: 'vanilla',
+		version: '',
+		provider_checks: normalizeProviderChecks(server.provider_checks),
+		jar_swap_path: '',
+		new_directory: '',
 	});
 
 	const serverId = server.id;
-	const providerCapabilities = React.useMemo(
-		() => getServerProviderCapabilities(server.provider),
+	const unsavedToastId = React.useMemo(() => `server-settings-unsaved-${serverId}`, [serverId]);
+	const resolvedProvider = settingsForm.provider;
+	const normalizedServerProvider = React.useMemo(
+		() => normalizeProvider(server.provider),
 		[server.provider],
 	);
+	const hasUnsavedChanges = React.useMemo(() => {
+		if (settingsForm.ram !== Math.max(1, server.ram ?? 4)) return true;
+		if (settingsForm.storage_limit !== Math.max(1, Number(server.storage_limit) || 200)) return true;
+		if (settingsForm.auto_backup_interval !== Math.max(1, server.auto_backup_interval)) return true;
+		if (settingsForm.auto_restart !== server.auto_restart) return true;
+		if (!sameStringList(settingsForm.auto_backup, server.auto_backup)) return true;
+		if (!sameStringList(settingsForm.custom_flags, server.custom_flags)) return true;
+		if ((settingsForm.java_installation || '').trim() !== (server.java_installation || '').trim()) {
+			return true;
+		}
+		if (settingsForm.provider !== normalizedServerProvider) return true;
+		if ((settingsForm.version || '').trim() !== (server.version || '').trim()) return true;
+		if (
+			!sameProviderChecks(settingsForm.provider_checks, normalizeProviderChecks(server.provider_checks))
+		) {
+			return true;
+		}
+		if (settingsForm.jar_swap_path.trim().length > 0) return true;
+		if (settingsForm.new_directory.trim() !== server.directory.trim()) return true;
 
-	React.useEffect(() => {
-		setSettingsForm({
-			ram: Math.max(1, server.ram ?? 3),
-			storageLimit: Math.max(1, Number(server.storage_limit) || 200),
-			autoBackup: server.auto_backup ?? [],
-			autoBackupInterval: Math.max(1, server.auto_backup_interval ?? 120),
-			autoRestart: server.auto_restart ?? false,
-			customFlags: server.custom_flags ?? [],
-			javaInstallation: server.java_installation ?? '',
-			jarSwapPath: '',
-			newDirectory: server.directory,
-		});
-		setSettingsError(null);
+		return false;
 	}, [
+		normalizedServerProvider,
 		server.auto_backup,
 		server.auto_backup_interval,
 		server.auto_restart,
@@ -87,7 +153,51 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 		server.java_installation,
 		server.ram,
 		server.storage_limit,
+		server.version,
+		server.provider_checks,
+		settingsForm,
 	]);
+	const providerCommandSupport = React.useMemo(
+		() => getDefaultProviderCommandSupport(resolvedProvider),
+		[resolvedProvider],
+	);
+
+	React.useEffect(() => {
+		setSettingsForm({
+			ram: Math.max(1, server.ram ?? 4),
+			storage_limit: Math.max(1, Number(server.storage_limit) || 200),
+			auto_backup: server.auto_backup,
+			auto_backup_interval: Math.max(1, server.auto_backup_interval),
+			auto_restart: server.auto_restart,
+			custom_flags: server.custom_flags,
+			java_installation: server.java_installation ?? '',
+			provider: normalizeProvider(server.provider),
+			version: server.version ?? '',
+			provider_checks: normalizeProviderChecks(server.provider_checks),
+			jar_swap_path: '',
+			new_directory: server.directory,
+		});
+		setCustomFlagsDraft(formatCustomFlagsInput(server.custom_flags));
+		setSettingsError(null);
+	}, [
+		server.auto_backup,
+		server.auto_backup_interval,
+		server.auto_restart,
+		server.custom_flags,
+		server.directory,
+		server.java_installation,
+		server.provider,
+		server.provider_checks,
+		server.ram,
+		server.storage_limit,
+		server.version,
+	]);
+
+	React.useEffect(() => {
+		return () => {
+			toast.dismiss(unsavedToastId);
+		};
+	}, [unsavedToastId]);
 
 	const updateSettingsField = React.useCallback(
 		<K extends keyof ServerSettingsForm>(key: K, value: ServerSettingsForm[K]) => {
@@ -100,7 +210,20 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 		(mode: (typeof backupChoices)[number]['value'], enabled: boolean) => {
 			setSettingsForm((prev) => ({
 				...prev,
-				autoBackup: toggleBackupMode(prev.autoBackup, mode, enabled),
+				auto_backup: toggleBackupMode(prev.auto_backup, mode, enabled),
+			}));
+		},
+		[],
+	);
+
+	const toggleProviderCheck = React.useCallback(
+		(key: keyof ServerSettingsForm['provider_checks'], enabled: boolean) => {
+			setSettingsForm((prev) => ({
+				...prev,
+				provider_checks: {
+					...prev.provider_checks,
+					[key]: enabled,
+				},
 			}));
 		},
 		[],
@@ -116,7 +239,7 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 			});
 
 			if (typeof selected === 'string') {
-				updateSettingsField('jarSwapPath', selected);
+				updateSettingsField('jar_swap_path', selected);
 				setSettingsError(null);
 			}
 		} catch (err) {
@@ -134,7 +257,7 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 			});
 
 			if (typeof selected === 'string') {
-				updateSettingsField('newDirectory', selected);
+				updateSettingsField('new_directory', selected);
 				setSettingsError(null);
 			}
 		} catch (err) {
@@ -147,7 +270,7 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 		if (isSaving || server.status !== 'offline' || disabled) return;
 
 		const payload = buildUpdateServerSettingsPayload(server.directory, settingsForm);
-		payload.newDirectory = resolveNewDirectory(payload, server.directory);
+		payload.new_directory = resolveNewDirectory(payload, server.directory);
 
 		setSettingsError(null);
 		setIsSaving(true);
@@ -164,19 +287,23 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 				directory: result.directory,
 				file: result.file,
 				ram: payload.ram,
-				storage_limit: payload.storageLimit,
-				auto_backup: payload.autoBackup,
-				auto_backup_interval: payload.autoBackupInterval,
-				auto_restart: payload.autoRestart,
-				java_installation: payload.javaInstallation,
-				custom_flags: payload.customFlags,
+				storage_limit: payload.storage_limit,
+				auto_backup: payload.auto_backup,
+				auto_backup_interval: payload.auto_backup_interval,
+				auto_restart: payload.auto_restart,
+				java_installation: payload.java_installation,
+				custom_flags: payload.custom_flags,
+				provider: result.provider,
+				version: result.version,
+				provider_checks: result.provider_checks,
 			});
 
 			setSettingsForm((prev) => ({
 				...prev,
-				jarSwapPath: '',
-				newDirectory: result.directory,
+				jar_swap_path: '',
+				new_directory: result.directory,
 			}));
+			toast.dismiss(unsavedToastId);
 			await onSaved?.();
 		} catch (err) {
 			const message = err instanceof Error ? err.message : 'Failed to update server settings.';
@@ -184,188 +311,336 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 		} finally {
 			setIsSaving(false);
 		}
-	}, [disabled, isSaving, onSaved, server.directory, server.status, serverId, settingsForm, updateServer]);
+	}, [
+		disabled,
+		isSaving,
+		onSaved,
+		server.directory,
+		server.status,
+		serverId,
+		settingsForm,
+		unsavedToastId,
+		updateServer,
+	]);
+
+	React.useEffect(() => {
+		if (isSaving || !hasUnsavedChanges) {
+			toast.dismiss(unsavedToastId);
+			return;
+		}
+
+		toast('You have unsaved changes', {
+			id: unsavedToastId,
+			duration: Number.POSITIVE_INFINITY,
+			action: {
+				label: 'Save',
+				onClick: () => {
+					void handleSaveSettings();
+				},
+			},
+		});
+	}, [handleSaveSettings, hasUnsavedChanges, isSaving, unsavedToastId]);
 
 	const runCommandPreview = React.useMemo(
 		() =>
 			buildServerRunCommandPreview({
 				ram: settingsForm.ram,
 				file: server.file,
-				customFlags: settingsForm.customFlags,
-				javaInstallation: settingsForm.javaInstallation,
-				globalJavaInstallation: user.java_installation_default,
+				custom_flags: settingsForm.custom_flags,
+				java_installation: settingsForm.java_installation,
+				global_java_installation: user.java_installation_default,
 			}),
 		[
 			server.file,
-			settingsForm.customFlags,
-			settingsForm.javaInstallation,
+			settingsForm.custom_flags,
+			settingsForm.java_installation,
 			settingsForm.ram,
 			user.java_installation_default,
 		],
 	);
 
 	return (
-		<div className={clsx('space-y-4', className)}>
+		<div className={clsx('space-y-20', className)}>
 			<RamSliderField
+				className='max-w-2xl'
 				id='edit-server-ram'
 				value={settingsForm.ram}
 				onChange={(value) => updateSettingsField('ram', value)}
 			/>
 
-			<div className='space-y-2'>
-				<Label htmlFor='edit-storage-limit'>Backup storage limit (GB)</Label>
-				<Input
-					className='border-secondary-foreground/50'
-					id='edit-storage-limit'
-					type='number'
-					min={1}
-					value={settingsForm.storageLimit}
-					onChange={(event) => updateSettingsField('storageLimit', Number(event.target.value))}
-					disabled={disabled || isSaving || server.status !== 'offline'}
-				/>
+			<div className='space-y-2 max-w-md'>
+				<Label htmlFor='edit-storage-limit' className='text-xl'>
+					Backup storage limit<span className='text-red-500'>*</span>
+				</Label>
+				<InputGroup>
+					<InputGroupInput
+						id='edit-storage-limit'
+						type='number'
+						min={1}
+						value={settingsForm.storage_limit}
+						onChange={(event) => updateSettingsField('storage_limit', Number(event.target.value))}
+						disabled={disabled || isSaving || server.status !== 'offline'}
+					/>
+					<InputGroupAddon className='font-mono font-bold uppercase text-xs' align='inline-end'>
+						Gigabytes
+					</InputGroupAddon>
+				</InputGroup>
 			</div>
 
-			<div className='space-y-2'>
-				<Label htmlFor='edit-java-installation'>Java installation override (optional)</Label>
-				<Input
-					className='border-secondary-foreground/50 font-mono'
-					id='edit-java-installation'
-					placeholder='C:\\Program Files\\Java\\jdk-25\\bin\\java.exe'
-					value={settingsForm.javaInstallation}
-					onChange={(event) => updateSettingsField('javaInstallation', event.target.value)}
-					disabled={disabled || isSaving || server.status !== 'offline'}
-				/>
-				<p className='text-sm text-muted-foreground'>
+			<div className='space-y-2 max-w-md'>
+				<Label htmlFor='edit-java-installation' className='text-xl'>
+					Java installation override
+				</Label>
+				<p className='text-sm text-muted-foreground -mt-2 mb-4'>
 					Leave blank to use global Java default:{' '}
 					<span className='font-mono'>{user.java_installation_default}</span>
 				</p>
-				<p className='text-sm text-muted-foreground'>
-					Provider detection: <span className='font-medium'>{server.provider || 'unknown'}</span>. TPS
-					polling {providerCapabilities.supportsTpsCommand ? 'enabled' : 'silently disabled'}; version
-					polling {providerCapabilities.supportsVersionCommand ? 'enabled' : 'silently disabled'}; list
-					polling {providerCapabilities.supportsListCommand ? 'enabled' : 'silently disabled'}.
-				</p>
+				<Input
+					className='font-mono'
+					id='edit-java-installation'
+					placeholder='C:\Program Files\Java\jdk-25\bin\java.exe'
+					value={settingsForm.java_installation}
+					onChange={(event) => updateSettingsField('java_installation', event.target.value)}
+					disabled={disabled || isSaving || server.status !== 'offline'}
+				/>
 			</div>
 
-			<div className='space-y-2 mt-6'>
-				<Label htmlFor='edit-jar-swap'>Swap server jar with selected jar file</Label>
-				<div className='flex gap-2'>
+			<div className='space-y-4 max-w-md'>
+				<p className='text-xl flex items-center gap-2'>
+					Version and Provider
+					<Tooltip>
+						<TooltipTrigger>
+							<Info className='size-5' />
+						</TooltipTrigger>
+						<TooltipContent>
+							Provider and version are used for provider-specific behavior and telemetry parsing.
+						</TooltipContent>
+					</Tooltip>
+				</p>
+				<p className='text-sm text-muted-foreground -mt-4 mb-4'>
+					Provider detection: <span className='font-medium'>{getProviderLabel(resolvedProvider)}</span>.
+				</p>
+				<div className='flex gap-4 items-center w-full'>
+					<div className='space-y-2 flex-1'>
+						<Label htmlFor='edit-provider'>Server provider</Label>
+						<Select
+							value={settingsForm.provider}
+							onValueChange={(value) => updateSettingsField('provider', value)}
+							disabled={disabled || isSaving || server.status !== 'offline'}>
+							<SelectTrigger id='edit-provider' className='w-full'>
+								<SelectValue placeholder='Select provider' />
+							</SelectTrigger>
+							<SelectContent>
+								{providerOptions.map((option) => (
+									<SelectItem key={option.value} value={option.value}>
+										{option.label}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
+					</div>
+				</div>
+
+				<div className='space-y-2 flex-1'>
+					<Label htmlFor='edit-version'>Server version</Label>
 					<Input
-						className='border-secondary-foreground/50'
-						id='edit-jar-swap'
-						placeholder='C:\path\to\another-server.jar'
-						value={settingsForm.jarSwapPath}
-						onChange={(event) => updateSettingsField('jarSwapPath', event.target.value)}
+						id='edit-version'
+						placeholder='1.21.5'
+						value={settingsForm.version}
+						onChange={(event) => updateSettingsField('version', event.target.value)}
 						disabled={disabled || isSaving || server.status !== 'offline'}
 					/>
-					<Button
-						type='button'
-						variant='outline'
-						onClick={pickSwapJarFile}
-						disabled={disabled || isSaving || server.status !== 'offline'}>
-						<FolderOpen /> Browse
-					</Button>
 				</div>
-				<p className='text-sm text-muted-foreground'>
-					Selected jar and current server jar will be swapped between their locations.
-				</p>
 			</div>
 
-			<div className='space-y-2'>
-				<Label>Auto backup modes</Label>
+			<div className='space-y-2 max-w-md'>
+				<Label className='text-xl'>Provider telemetry checks</Label>
+				<p className='text-sm text-muted-foreground -mt-2 mb-4'>
+					Choose what telemetry checks you want. Note, some wont work on certain servers.
+				</p>
 				<div className='space-y-2'>
-					{backupChoices.map((choice) => (
-						<Label key={choice.value} className='flex items-center gap-3'>
-							<Checkbox
-								className='border-secondary-foreground/50'
-								checked={settingsForm.autoBackup.includes(choice.value)}
-								onCheckedChange={(checked) =>
-									toggleSettingsBackupMode(
-										choice.value,
-										typeof checked === 'boolean' ? checked : false,
-									)
+					<Label className='flex items-center gap-3'>
+						<Checkbox
+							checked={
+								providerCommandSupport.supportsListCommand &&
+								settingsForm.provider_checks.list_polling
+							}
+							onCheckedChange={(checked) =>
+								toggleProviderCheck('list_polling', typeof checked === 'boolean' ? checked : false)
+							}
+							disabled={
+								disabled ||
+								isSaving ||
+								server.status !== 'offline' ||
+								!providerCommandSupport.supportsListCommand
+							}
+						/>
+						List command polling
+					</Label>
+					<Label className='flex items-center gap-3'>
+						<Checkbox
+							checked={
+								providerCommandSupport.supportsTpsCommand && settingsForm.provider_checks.tps_polling
+							}
+							onCheckedChange={(checked) =>
+								toggleProviderCheck('tps_polling', typeof checked === 'boolean' ? checked : false)
+							}
+							disabled={
+								disabled ||
+								isSaving ||
+								server.status !== 'offline' ||
+								!providerCommandSupport.supportsTpsCommand
+							}
+						/>
+						TPS command polling
+					</Label>
+					<Label className='flex items-center gap-3'>
+						<Checkbox
+							checked={
+								providerCommandSupport.supportsVersionCommand &&
+								settingsForm.provider_checks.version_polling
+							}
+							onCheckedChange={(checked) =>
+								toggleProviderCheck('version_polling', typeof checked === 'boolean' ? checked : false)
+							}
+							disabled={
+								disabled ||
+								isSaving ||
+								server.status !== 'offline' ||
+								!providerCommandSupport.supportsVersionCommand
+							}
+						/>
+						Version command polling
+					</Label>
+				</div>
+			</div>
+
+			<div className='space-y-4 max-w-md'>
+				<div className='space-y-2'>
+					<p className='text-xl'>Auto backup modes</p>
+					<div className='space-y-2'>
+						{backupChoices.map((choice) => (
+							<Label key={choice.value} className='flex items-center gap-3'>
+								<Checkbox
+									checked={settingsForm.auto_backup.includes(choice.value)}
+									onCheckedChange={(checked) =>
+										toggleSettingsBackupMode(
+											choice.value,
+											typeof checked === 'boolean' ? checked : false,
+										)
+									}
+									disabled={disabled || isSaving || server.status !== 'offline'}
+								/>
+								{choice.label}
+							</Label>
+						))}
+					</div>
+				</div>
+
+				{settingsForm.auto_backup.includes('interval') && (
+					<div className='space-y-2 max-w-md'>
+						<Label htmlFor='edit-backup-interval'>Backup interval</Label>
+						<InputGroup>
+							<InputGroupInput
+								id='edit-backup-interval'
+								type='number'
+								min={1}
+								value={settingsForm.auto_backup_interval}
+								onChange={(event) =>
+									updateSettingsField('auto_backup_interval', Number(event.target.value))
 								}
 								disabled={disabled || isSaving || server.status !== 'offline'}
 							/>
-							{choice.label}
-						</Label>
-					))}
-				</div>
+							<InputGroupAddon className='font-mono font-bold uppercase text-xs' align='inline-end'>
+								Minutes
+							</InputGroupAddon>
+						</InputGroup>
+					</div>
+				)}
 			</div>
 
-			{settingsForm.autoBackup.includes('interval') && (
-				<div className='space-y-2'>
-					<Label htmlFor='edit-backup-interval'>Backup interval (minutes)</Label>
-					<Input
-						className='border-secondary-foreground/50'
-						id='edit-backup-interval'
-						type='number'
-						min={1}
-						value={settingsForm.autoBackupInterval}
-						onChange={(event) => updateSettingsField('autoBackupInterval', Number(event.target.value))}
+			<div className='space-y-2 max-w-md'>
+				<p className='text-xl'>Auto Restart</p>
+				<Label className='flex items-center gap-3'>
+					<Checkbox
+						checked={settingsForm.auto_restart}
+						onCheckedChange={(checked) =>
+							updateSettingsField('auto_restart', typeof checked === 'boolean' ? checked : false)
+						}
 						disabled={disabled || isSaving || server.status !== 'offline'}
 					/>
-				</div>
-			)}
+					Auto restart server when it closes
+				</Label>
+			</div>
 
-			<Label className='flex items-center gap-3'>
-				<Checkbox
-					className='border-secondary-foreground/50'
-					checked={settingsForm.autoRestart}
-					onCheckedChange={(checked) =>
-						updateSettingsField('autoRestart', typeof checked === 'boolean' ? checked : false)
-					}
-					disabled={disabled || isSaving || server.status !== 'offline'}
-				/>
-				Auto restart server when it closes
-			</Label>
-
-			<div className='space-y-2'>
-				<Label htmlFor='edit-custom-flags'>Extra Java flags (one per line)</Label>
+			<div className='space-y-2 max-w-md'>
+				<Label htmlFor='edit-custom-flags' className='text-xl'>
+					Extra Java flags
+				</Label>
+				<p className='text-sm text-muted-foreground -mt-2 mb-4'>
+					(one per line) These flags are injected after the jar file exactly as configured.
+				</p>
 				<Textarea
 					id='edit-custom-flags'
-					className='border-secondary-foreground/50 min-h-32 font-mono'
-					placeholder={`-Dcom.mojang.eula.agree=true\n--add-opens=java.base/java.lang=ALL-UNNAMED`}
-					value={formatCustomFlagsInput(settingsForm.customFlags)}
-					onChange={(event) =>
-						updateSettingsField('customFlags', parseCustomFlagsInput(event.target.value))
-					}
+					className='min-h-32 font-mono'
+					placeholder='--nogui'
+					value={customFlagsDraft}
+					onChange={(event) => {
+						const nextValue = event.target.value;
+						setCustomFlagsDraft(nextValue);
+						updateSettingsField('custom_flags', parseCustomFlagsInput(nextValue));
+					}}
 					disabled={disabled || isSaving || server.status !== 'offline'}
 				/>
-				<p className='text-sm text-muted-foreground'>
-					These flags are injected after the jar file exactly as configured.
-				</p>
+				<div className='space-y-2'>
+					<Label className='text-xl mt-4'>Resolved start command preview</Label>
+					<p className='font-mono text-xs px-3 py-1 border border-border rounded-md'>
+						{runCommandPreview}
+					</p>
+				</div>
 			</div>
 
-			<div className='space-y-2'>
-				<Label htmlFor='edit-run-command-preview'>Resolved start command preview</Label>
-				<Textarea
-					id='edit-run-command-preview'
-					className='border-secondary-foreground/50 min-h-28 font-mono text-xs'
-					value={runCommandPreview}
-					readOnly
-					disabled
-				/>
-				<p className='text-sm text-muted-foreground'>
-					This is the full command used when starting the server.
-				</p>
-			</div>
-
-			<div className='space-y-2'>
-				<Label htmlFor='edit-new-location'>Move server location</Label>
+			<div className='space-y-2 max-w-md'>
+				<Label htmlFor='edit-new-location' className='text-xl'>
+					Move server location
+				</Label>
 				<div className='flex gap-2'>
 					<Input
-						className='border-secondary-foreground/50'
 						id='edit-new-location'
 						placeholder='C:\servers\MyServer'
-						value={settingsForm.newDirectory}
-						onChange={(event) => updateSettingsField('newDirectory', event.target.value)}
+						value={settingsForm.new_directory}
+						onChange={(event) => updateSettingsField('new_directory', event.target.value)}
 						disabled={disabled || isSaving || server.status !== 'offline'}
 					/>
 					<Button
 						type='button'
 						variant='outline'
 						onClick={pickNewDirectory}
+						disabled={disabled || isSaving || server.status !== 'offline'}>
+						<FolderOpen /> Browse
+					</Button>
+				</div>
+			</div>
+
+			<div className='space-y-2 mt-6 max-w-md'>
+				<Label htmlFor='edit-jar-swap' className='text-xl'>
+					Swap server jar with selected jar file
+				</Label>
+				<p className='text-sm text-muted-foreground -mt-2 mb-4'>
+					Selected jar and current server jar will be swapped between their locations.
+				</p>
+				<div className='flex gap-2'>
+					<Input
+						id='edit-jar-swap'
+						placeholder='C:\path\to\another-server.jar'
+						value={settingsForm.jar_swap_path}
+						onChange={(event) => updateSettingsField('jar_swap_path', event.target.value)}
+						disabled={disabled || isSaving || server.status !== 'offline'}
+					/>
+					<Button
+						type='button'
+						variant='outline'
+						onClick={pickSwapJarFile}
 						disabled={disabled || isSaving || server.status !== 'offline'}>
 						<FolderOpen /> Browse
 					</Button>
@@ -385,13 +660,15 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 				</Button>
 			)}
 			<Button
+				size='lg'
 				type='button'
+				className='text-md'
 				onClick={handleSaveSettings}
 				disabled={disabled || isSaving || server.status !== 'offline'}>
 				{isSaving ? (
-					<Loader className='animate-spin size-4' />
+					<Loader className='animate-spin size-5' />
 				) : (
-					(saveLabel ?? <Check className='size-4' />)
+					(saveLabel ?? <Check className='size-5' />)
 				)}
 				{isSaving ? 'Saving...' : (saveLabel ?? 'Save properties')}
 			</Button>

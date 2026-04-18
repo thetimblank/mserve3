@@ -59,7 +59,7 @@ const SlideDirectory: React.FC = () => {
 		return () => {
 			window.clearTimeout(timeout);
 		};
-	}, [form.createDirectoryIfMissing, form.directory, inspectServerDirectory]);
+	}, [form.create_directory_if_missing, form.directory, inspectServerDirectory]);
 
 	const onContinue = async () => {
 		const inspection = await inspectServerDirectory();
@@ -142,10 +142,10 @@ const SlideDirectory: React.FC = () => {
 					<Field>
 						<Label className='flex items-center gap-3'>
 							<Checkbox
-								checked={form.createDirectoryIfMissing}
+								checked={form.create_directory_if_missing}
 								onCheckedChange={(checked) =>
 									updateField(
-										'createDirectoryIfMissing',
+										'create_directory_if_missing',
 										typeof checked === 'boolean' ? checked : false,
 									)
 								}

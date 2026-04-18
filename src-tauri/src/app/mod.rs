@@ -8,14 +8,20 @@ use std::sync::Mutex;
 
 use commands::*;
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct ProviderChecksConfig {
+    list_polling: bool,
+    tps_polling: bool,
+    version_polling: bool,
+}
+
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct InitServerPayload {
     directory: String,
     create_directory_if_missing: bool,
     file: String,
     ram: u32,
-    storage_limit: Option<u32>,
+    storage_limit: u32,
     auto_restart: bool,
     auto_backup: Vec<String>,
     auto_backup_interval: u32,
@@ -36,7 +42,6 @@ struct InitServerResult {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct RepairMserveJsonPayload {
     directory: String,
     file: String,
@@ -49,10 +54,10 @@ struct RepairMserveJsonPayload {
     java_installation: Option<String>,
     provider: Option<String>,
     version: Option<String>,
+    provider_checks: Option<ProviderChecksConfig>,
 }
 
 #[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
 struct SyncedMserveConfig {
     id: String,
     file: String,
@@ -65,11 +70,11 @@ struct SyncedMserveConfig {
     java_installation: Option<String>,
     provider: Option<String>,
     version: Option<String>,
+    provider_checks: ProviderChecksConfig,
     created_at: String,
 }
 
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
 struct SyncMserveJsonResult {
     status: String,
     message: String,
@@ -102,16 +107,18 @@ struct RestoreBackupPayload {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct UpdateServerSettingsPayload {
     directory: String,
     ram: u32,
-    storage_limit: Option<u32>,
+    storage_limit: u32,
     auto_backup: Vec<String>,
     auto_backup_interval: u32,
     auto_restart: bool,
     custom_flags: Vec<String>,
     java_installation: Option<String>,
+    provider: Option<String>,
+    version: Option<String>,
+    provider_checks: ProviderChecksConfig,
     jar_swap_path: Option<String>,
     new_directory: Option<String>,
 }
@@ -121,6 +128,9 @@ struct UpdateServerSettingsPayload {
 struct UpdateServerSettingsResult {
     directory: String,
     file: String,
+    provider: Option<String>,
+    version: Option<String>,
+    provider_checks: ProviderChecksConfig,
 }
 
 #[derive(Debug, Deserialize)]

@@ -34,13 +34,13 @@ const CreateServerContent: React.FC = () => {
 	return (
 		<main className='w-full h-full relative overflow-hidden'>
 			{showBackButton && (
-				<Button variant='ghost' className='absolute mt-12 ml-2 size-12' onClick={prevSlide}>
+				<Button variant='ghost' className='absolute m-12 size-12' onClick={prevSlide}>
 					<ArrowLeft className='size-10' />
 				</Button>
 			)}
-			<div className='pt-15 h-full min-h-0 flex items-center justify-center p-12 w-full overflow-y-auto app-scroll-area'>
+			<div className='h-full min-h-0 flex items-center justify-center p-12 w-full overflow-y-auto app-scroll-area'>
 				{showStepIndicator && (
-					<div className='absolute top-15 right-10 text-sm text-muted-foreground'>
+					<div className='absolute top-0 right-0 m-12 text-sm text-muted-foreground'>
 						Step {currentStep} / {totalSteps}
 					</div>
 				)}

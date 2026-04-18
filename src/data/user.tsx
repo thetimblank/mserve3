@@ -6,10 +6,11 @@ export interface UserData {
 		reduced_motion: boolean;
 	};
 	java_installation_default: string;
+	advanced_mode: boolean;
 	completed_setup_hosting_ports: number[];
 	initial_setup_hosting_tutorial_completed: boolean;
 	created_at: Date;
-	updatedAt: Date;
+	updated_at: Date;
 }
 
 interface UserContextValue {
@@ -51,10 +52,11 @@ export const createDefaultUserData = (): UserData => {
 			reduced_motion: false,
 		},
 		java_installation_default: 'java',
+		advanced_mode: false,
 		completed_setup_hosting_ports: [],
 		initial_setup_hosting_tutorial_completed: false,
 		created_at: now,
-		updatedAt: now,
+		updated_at: now,
 	};
 };
 
@@ -69,10 +71,11 @@ export const normalizeUserData = (user: Partial<UserData> | null | undefined): U
 			typeof user?.java_installation_default === 'string' && user.java_installation_default.trim()
 				? user.java_installation_default.trim()
 				: 'java',
+		advanced_mode: user?.advanced_mode ?? false,
 		completed_setup_hosting_ports: normalizePortList(user?.completed_setup_hosting_ports),
 		initial_setup_hosting_tutorial_completed: user?.initial_setup_hosting_tutorial_completed ?? false,
 		created_at: toDate(user?.created_at ?? fallback.created_at),
-		updatedAt: toDate(user?.updatedAt ?? fallback.updatedAt),
+		updated_at: toDate(user?.updated_at ?? fallback.updated_at),
 	};
 };
 
@@ -151,7 +154,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
 			return normalizeUserData({
 				...resolved,
 				created_at: previous.created_at,
-				updatedAt: new Date(),
+				updated_at: new Date(),
 			});
 		});
 	}, []);
@@ -162,7 +165,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
 				...previous,
 				...update,
 				created_at: previous.created_at,
-				updatedAt: new Date(),
+				updated_at: new Date(),
 			}),
 		);
 	}, []);
@@ -179,7 +182,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
 					...previous,
 					[key]: resolvedValue,
 					created_at: previous.created_at,
-					updatedAt: new Date(),
+					updated_at: new Date(),
 				});
 			});
 		},

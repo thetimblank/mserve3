@@ -240,18 +240,11 @@ export const fetchJarRows = async (tab: JarTab): Promise<JarVersionRow[]> => {
 };
 
 export const formatStabilityLabel = (stability: JarStability | null): string => {
-	switch (stability) {
-		case 'stable':
-			return 'Stable';
-		case 'unstable':
-			return 'Unstable';
-		case 'release':
-			return 'Release';
-		case 'snapshot':
-			return 'Snapshot';
-		default:
-			return 'N/A';
+	if (!stability) {
+		return 'N/A';
 	}
+
+	return `${stability[0].toUpperCase()}${stability.slice(1)}`;
 };
 
 export const isJarRowDownloadable = (row: JarVersionRow): boolean => Boolean(row.downloadUrl);

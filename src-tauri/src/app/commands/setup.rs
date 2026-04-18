@@ -1,6 +1,5 @@
 use super::super::support::*;
 use super::super::*;
-use serde_json::json;
 use std::fs;
 use std::path::PathBuf;
 
@@ -55,38 +54,37 @@ pub(in crate::app) fn initialize_server(payload: InitServerPayload) -> Result<In
     let inferred_provider = infer_provider_from_jar_file(&resolved_file);
     let inferred_version = infer_version_from_jar_file(&resolved_file);
 
-    let content = json!({
-        "id": server_id,
-        "file": resolved_file.clone(),
-        "ram": payload.ram.max(1),
-        "storage_limit": payload.storage_limit.unwrap_or(200).max(1),
-        "auto_backup": auto_backup,
-        "auto_backup_interval": payload.auto_backup_interval.max(1),
-        "auto_restart": payload.auto_restart,
-        "custom_flags": default_custom_flags(),
-        "java_installation": payload
+    let config = SyncedMserveConfig {
+        id: server_id.clone(),
+        file: resolved_file.clone(),
+        ram: payload.ram.max(1),
+        storage_limit: payload.storage_limit.max(1),
+        auto_backup,
+        auto_backup_interval: payload.auto_backup_interval.max(1),
+        auto_restart: payload.auto_restart,
+        custom_flags: default_custom_flags(),
+        java_installation: payload
             .java_installation
             .as_deref()
-            .map(|value| value.trim())
+            .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty()),
-        "provider": payload
+        provider: payload
             .provider
             .as_deref()
-            .map(|value| value.trim())
+            .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty())
-            .or(inferred_provider.as_deref()),
-        "version": payload
+            .or(inferred_provider),
+        version: payload
             .version
             .as_deref()
-            .map(|value| value.trim())
+            .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty())
-            .or(inferred_version.as_deref()),
-        "created_at": chrono::Local::now().to_rfc3339(),
-    });
+            .or(inferred_version),
+        provider_checks: default_provider_checks(),
+        created_at: chrono::Local::now().to_rfc3339(),
+    };
 
-    let mserve_file = directory.join("mserve.json");
-    fs::write(mserve_file, serde_json::to_vec_pretty(&content).map_err(|err| err.to_string())?)
-        .map_err(|err| err.to_string())?;
+    write_synced_mserve_json(&directory, &config)?;
 
     if payload.auto_agree_eula {
         write_eula(&directory)?;
@@ -345,22 +343,23 @@ pub(in crate::app) fn import_server(directory: String) -> Result<InitServerResul
 
         let server_id = generate_server_id();
 
-        let content = json!({
-            "id": server_id,
-            "file": found_jar.clone(),
-            "ram": 3,
-            "storage_limit": 200,
-            "auto_backup": [],
-            "auto_backup_interval": 120,
-            "auto_restart": false,
-            "custom_flags": default_custom_flags(),
-            "provider": infer_provider_from_jar_file(&found_jar),
-            "version": infer_version_from_jar_file(&found_jar),
-            "created_at": chrono::Local::now().to_rfc3339(),
-        });
+        let config = SyncedMserveConfig {
+            id: server_id.clone(),
+            file: found_jar.clone(),
+            ram: 4,
+            storage_limit: 200,
+            auto_backup: default_auto_backup(),
+            auto_backup_interval: 120,
+            auto_restart: false,
+            custom_flags: default_custom_flags(),
+            java_installation: None,
+            provider: infer_provider_from_jar_file(&found_jar),
+            version: infer_version_from_jar_file(&found_jar),
+            provider_checks: default_provider_checks(),
+            created_at: chrono::Local::now().to_rfc3339(),
+        };
 
-        fs::write(&mserve_json_path, serde_json::to_vec_pretty(&content).map_err(|err| err.to_string())?)
-            .map_err(|err| err.to_string())?;
+        write_synced_mserve_json(&directory_path, &config)?;
 
         (
             server_id,
@@ -422,22 +421,17 @@ pub(in crate::app) fn sync_server_mserve_json(directory: String) -> Result<SyncM
         });
     }
 
+    if !has_required_mserve_json_fields(&object) {
+        return Ok(SyncMserveJsonResult {
+            status: "needs_setup".to_string(),
+            message: "Required mserve.json fields are missing. Please rebuild mserve.json.".to_string(),
+            config: Some(default_synced_config(&directory_path)),
+            updated: false,
+        });
+    }
+
     let normalized = sanitize_mserve_value_config(&directory_path, &object);
-    let normalized_json = serde_json::to_string_pretty(&json!({
-        "id": normalized.id,
-        "file": normalized.file,
-        "ram": normalized.ram,
-        "storage_limit": normalized.storage_limit,
-        "auto_backup": normalized.auto_backup,
-        "auto_backup_interval": normalized.auto_backup_interval,
-        "auto_restart": normalized.auto_restart,
-        "custom_flags": normalized.custom_flags,
-        "java_installation": normalized.java_installation,
-        "provider": normalized.provider,
-        "version": normalized.version,
-        "created_at": normalized.created_at,
-    }))
-    .map_err(|err| err.to_string())?;
+    let normalized_json = synced_mserve_json_string(&normalized)?;
 
     let existing_trimmed = raw.trim();
     let normalized_trimmed = normalized_json.trim();
@@ -536,6 +530,7 @@ pub(in crate::app) fn repair_server_mserve_json(payload: RepairMserveJsonPayload
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty())
             .or(inferred_version),
+        provider_checks: payload.provider_checks.unwrap_or_else(default_provider_checks),
         created_at: chrono::Local::now().to_rfc3339(),
     };
 

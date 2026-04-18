@@ -2,7 +2,6 @@ use super::super::*;
 use super::*;
 use serde::de::{self, MapAccess, Visitor};
 use serde::Deserialize;
-use serde_json::json;
 use serde_json::{Map, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -52,6 +51,14 @@ pub(in crate::app) fn default_custom_flags() -> Vec<String> {
     vec!["--nogui".to_string()]
 }
 
+pub(in crate::app) fn default_provider_checks() -> ProviderChecksConfig {
+    ProviderChecksConfig {
+        list_polling: true,
+        tps_polling: true,
+        version_polling: true,
+    }
+}
+
 pub(in crate::app) fn generate_server_id() -> String {
     let stamp = chrono::Utc::now()
         .timestamp_nanos_opt()
@@ -64,7 +71,7 @@ pub(in crate::app) fn default_synced_config(directory: &Path) -> SyncedMserveCon
     SyncedMserveConfig {
         id: generate_server_id(),
         file: fallback_file,
-        ram: 3,
+        ram: 4,
         storage_limit: 200,
         auto_backup: default_auto_backup(),
         auto_backup_interval: 120,
@@ -73,6 +80,7 @@ pub(in crate::app) fn default_synced_config(directory: &Path) -> SyncedMserveCon
         java_installation: None,
         provider: None,
         version: None,
+        provider_checks: default_provider_checks(),
         created_at: chrono::Local::now().to_rfc3339(),
     }
 }
@@ -140,6 +148,32 @@ pub(in crate::app) fn sanitize_custom_flags(raw: Option<&serde_json::Value>) -> 
     }
 
     output
+}
+
+pub(in crate::app) fn sanitize_provider_checks(raw: Option<&serde_json::Value>) -> ProviderChecksConfig {
+    let defaults = default_provider_checks();
+    let Some(value) = raw else {
+        return defaults;
+    };
+
+    let Some(object) = value.as_object() else {
+        return defaults;
+    };
+
+    ProviderChecksConfig {
+        list_polling: object
+            .get("list_polling")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(defaults.list_polling),
+        tps_polling: object
+            .get("tps_polling")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(defaults.tps_polling),
+        version_polling: object
+            .get("version_polling")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(defaults.version_polling),
+    }
 }
 
 pub(in crate::app) fn infer_provider_from_jar_file(file_name: &str) -> Option<String> {
@@ -261,9 +295,10 @@ pub(in crate::app) fn sanitize_mserve_value_config(
         .filter(|value| !value.is_empty())
         .or_else(|| infer_version_from_jar_file(&normalized_file));
 
+    let normalized_provider_checks = sanitize_provider_checks(object.get("provider_checks"));
+
     let normalized_created_at = object
         .get("created_at")
-        .or_else(|| object.get("created_at"))
         .and_then(|value| value.as_str())
         .map(|value| value.trim())
         .filter(|value| !value.is_empty())
@@ -281,13 +316,14 @@ pub(in crate::app) fn sanitize_mserve_value_config(
     config.java_installation = normalized_java_installation;
     config.provider = normalized_provider;
     config.version = normalized_version;
+    config.provider_checks = normalized_provider_checks;
     config.created_at = normalized_created_at;
 
     config
 }
 
-pub(in crate::app) fn write_synced_mserve_json(directory: &Path, config: &SyncedMserveConfig) -> Result<(), String> {
-    let content = json!({
+pub(in crate::app) fn synced_mserve_json_value(config: &SyncedMserveConfig) -> serde_json::Value {
+    serde_json::json!({
         "id": config.id,
         "file": config.file,
         "ram": config.ram.max(1),
@@ -299,12 +335,19 @@ pub(in crate::app) fn write_synced_mserve_json(directory: &Path, config: &Synced
         "java_installation": config.java_installation,
         "provider": config.provider,
         "version": config.version,
+        "provider_checks": config.provider_checks,
         "created_at": config.created_at,
-    });
+    })
+}
 
+pub(in crate::app) fn synced_mserve_json_string(config: &SyncedMserveConfig) -> Result<String, String> {
+    serde_json::to_string_pretty(&synced_mserve_json_value(config)).map_err(|err| err.to_string())
+}
+
+pub(in crate::app) fn write_synced_mserve_json(directory: &Path, config: &SyncedMserveConfig) -> Result<(), String> {
     fs::write(
         directory.join("mserve.json"),
-        serde_json::to_vec_pretty(&content).map_err(|err| err.to_string())?,
+        serde_json::to_vec_pretty(&synced_mserve_json_value(config)).map_err(|err| err.to_string())?,
     )
     .map_err(|err| err.to_string())
 }
@@ -324,10 +367,7 @@ pub(in crate::app) fn validate_mserve_json_keys(
         "java_installation",
         "provider",
         "version",
-        "created_at",
-        // Legacy keys still accepted for migration and rewritten to canonical schema.
-        "explicit_info_names",
-        "directory",
+        "provider_checks",
         "created_at",
     ];
 
@@ -338,6 +378,66 @@ pub(in crate::app) fn validate_mserve_json_keys(
     }
 
     Ok(())
+}
+
+pub(in crate::app) fn has_required_mserve_json_fields(
+    object: &serde_json::Map<String, serde_json::Value>,
+) -> bool {
+    if object
+        .get("id")
+        .and_then(|value| value.as_str())
+        .map(|value| !value.trim().is_empty())
+        != Some(true)
+    {
+        return false;
+    }
+
+    if object
+        .get("file")
+        .and_then(|value| value.as_str())
+        .map(|value| !value.trim().is_empty() && value.to_lowercase().ends_with(".jar"))
+        != Some(true)
+    {
+        return false;
+    }
+
+    if object.get("ram").and_then(|value| value.as_u64()).is_none() {
+        return false;
+    }
+
+    if object
+        .get("storage_limit")
+        .and_then(|value| value.as_u64())
+        .is_none()
+    {
+        return false;
+    }
+
+    if object.get("auto_backup").and_then(|value| value.as_array()).is_none() {
+        return false;
+    }
+
+    if object
+        .get("auto_backup_interval")
+        .and_then(|value| value.as_u64())
+        .is_none()
+    {
+        return false;
+    }
+
+    if object
+        .get("auto_restart")
+        .and_then(|value| value.as_bool())
+        .is_none()
+    {
+        return false;
+    }
+
+    object
+        .get("created_at")
+        .and_then(|value| value.as_str())
+        .map(|value| !value.trim().is_empty())
+        == Some(true)
 }
 
 pub(in crate::app) fn parse_mserve_top_level_object(raw: &str) -> Result<Map<String, Value>, String> {

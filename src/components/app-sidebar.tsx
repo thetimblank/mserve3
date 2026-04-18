@@ -37,7 +37,7 @@ export function AppSidebar() {
 
 	return (
 		<Sidebar className='pt-10'>
-			<SidebarContent>
+			<SidebarContent className='p-2'>
 				<SidebarGroup>
 					<SidebarGroupLabel>Application</SidebarGroupLabel>
 					<SidebarGroupContent>

@@ -56,31 +56,44 @@ e.g. v4.0.12pre0
 ### Checklist
 
 (May not be up-to-date)
+**v4**
+Big
 ✅ OTA updates
 ✅ read from mserve.json
+✅ rewrite & cleanup of backend code.
+🟨 validate/fix issues with other server jars/parsing, make way to add new jars
+🟨 auto fetch all mc server jars [BETA]
+⬛ read minecraft settings (properties, ops, whitelist, etc.)
+⬛ redo and set permanent storage solution for user/app settings
+⬛ update server
+⬛ motd generator
+⬛ add robust logging
+⬛ onboarding/welcome screen
+
+Small
 ✅ remove server from app
 ✅ smoother side bar animation
 ✅ add statistics of players joined, uptime, etc.
-🟨 validate/fix issues with other server jars/parsing, make way to add new jars
-🟨 add clearing backups, storage limit, & interval clearing
+✅ restyle server settings & enable users to change server provider
+✅ make unique properties editable
+🟨 add clearing backups, storage limit
 🟨 Repairing servers needs to be tested
-🟨 auto fetch all mc server jars [BETA]
-⬛ read minecraft settings (properties, ops, whitelist, etc.)
-⬛ update server
-⬛ restyle server settings & enable users to change server provider
-⬛ redo and set permanent storage solution for user/app settings
+🟨 more settings
 ⬛ fix uptime updating on tab switches and state changes, rather automatically
-⬛ setup proxies and server groups
-⬛ motd generator
-⬛ onboarding/welcome screen
 ⬛ better explaination of hosting setup
 ⬛ cleanup and better use of terminal UX and UI
-⬛ add tab completion to terminal
-⬛ more settings
-⬛ add robust logging
-⬛ add graphs & data on players, uptime %, ram usage, cpu usage
 ⬛ better the integration of tps detection and version detection.
-⬛ make unique properties editable
+⬛ remove stray ::marker in app sideabar
+⬛ add testing
+
+**v5**
+⬛ setup networks and server groups
+⬛ linux support
+⬛ add tab completion to terminal
+⬛ add graphs & data on players, uptime %, ram usage, cpu usage
+⬛ rehaul UI
+
+**Future**
 ⬛ modded servers?
 ⬛ change plugin settings?
 ⬛ accounts and remote start on website?

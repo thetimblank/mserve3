@@ -22,9 +22,9 @@ const SlideEula: React.FC = () => {
 					<Label className='flex items-center gap-3'>
 						<Checkbox
 							className='border-secondary-foreground/50'
-							checked={form.autoAgreeEula}
+							checked={form.auto_agree_eula}
 							onCheckedChange={(checked) =>
-								updateField('autoAgreeEula', typeof checked === 'boolean' ? checked : false)
+								updateField('auto_agree_eula', typeof checked === 'boolean' ? checked : false)
 							}
 						/>
 						Auto agree to eula.txt

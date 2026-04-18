@@ -1,6 +1,5 @@
 use super::super::support::*;
 use super::super::*;
-use serde_json::json;
 use std::fs;
 use std::path::PathBuf;
 use tauri::State;
@@ -37,19 +36,11 @@ pub(in crate::app) fn update_server_settings(
     }
 
     let config_text = fs::read_to_string(&mserve_path).map_err(|err| err.to_string())?;
-    let mut config: serde_json::Value = serde_json::from_str(&config_text).map_err(|err| err.to_string())?;
-    let object = config
-        .as_object_mut()
-        .ok_or_else(|| "Invalid mserve.json format.".to_string())?;
+    let object = parse_mserve_top_level_object(&config_text)
+        .map_err(|_| "Invalid mserve.json format.".to_string())?;
 
-    let file_name = object
-        .get("file")
-        .and_then(|value| value.as_str())
-        .unwrap_or("server.jar")
-        .trim()
-        .to_string();
-
-    if file_name.is_empty() {
+    let mut config = sanitize_mserve_value_config(&directory_path, &object);
+    if config.file.trim().is_empty() {
         return Err("Invalid server jar file in mserve.json.".to_string());
     }
 
@@ -59,7 +50,7 @@ pub(in crate::app) fn update_server_settings(
             if !swap_path.to_lowercase().ends_with(".jar") {
                 return Err("Selected file must be a .jar file.".to_string());
             }
-            let current_jar = directory_path.join(&file_name);
+            let current_jar = directory_path.join(&config.file);
             let selected_jar = PathBuf::from(swap_path);
             swap_files(&current_jar, &selected_jar)?;
         }
@@ -80,7 +71,7 @@ pub(in crate::app) fn update_server_settings(
         }
     }
 
-    let auto_backup: Vec<String> = payload
+    config.auto_backup = payload
         .auto_backup
         .into_iter()
         .filter(|value| matches!(value.as_str(), "interval" | "on_close" | "on_start"))
@@ -98,47 +89,42 @@ pub(in crate::app) fn update_server_settings(
         custom_flags.push(trimmed.to_string());
     }
 
-    let created_at = object
-        .get("created_at")
-        .and_then(|value| value.as_str())
-        .or_else(|| object.get("created_at").and_then(|value| value.as_str()))
+    if custom_flags.is_empty() {
+        custom_flags = default_custom_flags();
+    }
+
+    config.ram = payload.ram.max(1);
+    config.storage_limit = payload.storage_limit.max(1);
+    config.auto_backup_interval = payload.auto_backup_interval.max(1);
+    config.auto_restart = payload.auto_restart;
+    config.custom_flags = custom_flags;
+    config.java_installation = payload
+        .java_installation
+        .as_deref()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    config.provider = payload
+        .provider
+        .as_deref()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| chrono::Local::now().to_rfc3339());
+        .or_else(|| infer_provider_from_jar_file(&config.file));
+    config.version = payload
+        .version
+        .as_deref()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .or_else(|| infer_version_from_jar_file(&config.file));
+    config.provider_checks = payload.provider_checks;
 
-    object.insert("ram".to_string(), json!(payload.ram.max(1)));
-    if let Some(storage_limit) = payload.storage_limit {
-        object.insert("storage_limit".to_string(), json!(storage_limit.max(1)));
-    }
-    object.insert(
-        "auto_backup_interval".to_string(),
-        json!(payload.auto_backup_interval.max(1)),
-    );
-    object.insert("auto_backup".to_string(), json!(auto_backup));
-    object.insert("auto_restart".to_string(), json!(payload.auto_restart));
-    object.insert("custom_flags".to_string(), json!(custom_flags));
-    object.insert("created_at".to_string(), json!(created_at));
-    object.insert(
-        "java_installation".to_string(),
-        json!(
-            payload
-                .java_installation
-                .as_deref()
-                .map(|value| value.trim())
-                .filter(|value| !value.is_empty())
-        ),
-    );
-
-    let final_mserve_path = directory_path.join("mserve.json");
-    fs::write(
-        &final_mserve_path,
-        serde_json::to_vec_pretty(&config).map_err(|err| err.to_string())?,
-    )
-    .map_err(|err| err.to_string())?;
+    write_synced_mserve_json(&directory_path, &config)?;
 
     Ok(UpdateServerSettingsResult {
         directory: directory_path.to_string_lossy().to_string(),
-        file: file_name,
+        file: config.file,
+        provider: config.provider,
+        version: config.version,
+        provider_checks: config.provider_checks,
     })
 }
 

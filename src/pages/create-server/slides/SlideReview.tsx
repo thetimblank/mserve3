@@ -45,27 +45,27 @@ const SlideReview: React.FC = () => {
 					</div>
 					<div>
 						<p className='text-sm text-muted-foreground'>Auto restart</p>
-						<p>{form.autoRestart ? 'Enabled' : 'Disabled'}</p>
+						<p>{form.auto_restart ? 'Enabled' : 'Disabled'}</p>
 					</div>
 					<div>
 						<p className='text-sm text-muted-foreground'>Backup modes</p>
-						<p>{form.autoBackup.length > 0 ? form.autoBackup.join(', ') : 'Disabled'}</p>
+						<p>{form.auto_backup.length > 0 ? form.auto_backup.join(', ') : 'Disabled'}</p>
 					</div>
 					<div>
 						<p className='text-sm text-muted-foreground'>Auto agree EULA</p>
-						<p>{form.autoAgreeEula ? 'Enabled' : 'Disabled'}</p>
+						<p>{form.auto_agree_eula ? 'Enabled' : 'Disabled'}</p>
 					</div>
 				</div>
-				{form.autoBackup.length > 0 && (
+				{form.auto_backup.length > 0 && (
 					<div className='grid grid-cols-2 gap-4'>
 						<div>
 							<p className='text-sm text-muted-foreground'>Storage limit</p>
-							<p>{form.storageLimit} GB</p>
+							<p>{form.storage_limit} GB</p>
 						</div>
-						{form.autoBackup.includes('interval') && (
+						{form.auto_backup.includes('interval') && (
 							<div>
 								<p className='text-sm text-muted-foreground'>Backup interval</p>
-								<p>{form.autoBackupInterval} minutes</p>
+								<p>{form.auto_backup_interval} minutes</p>
 							</div>
 						)}
 					</div>

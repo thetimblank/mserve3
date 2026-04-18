@@ -3,6 +3,7 @@ import * as React from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useUser } from '@/data/user';
@@ -43,13 +44,19 @@ const SettingsDataCard: React.FC<SettingsDataCardProps> = ({ onClearAllData }) =
 		toast.success('Default Java installation reset to java.');
 	};
 
+	const handleAdvancedModeChange = (checked: boolean | 'indeterminate') => {
+		const enabled = checked === true;
+		updateUserField('advanced_mode', enabled);
+		toast.success(`Advanced mode ${enabled ? 'enabled' : 'disabled'}.`);
+	};
+
 	return (
 		<Card>
 			<CardHeader>
 				<CardTitle>Data & Privacy</CardTitle>
 				<CardDescription>Manage your data</CardDescription>
 			</CardHeader>
-			<CardContent className='space-y-3'>
+			<CardContent className='space-y-1'>
 				<div className='space-y-2'>
 					<Label htmlFor='settings-java-default'>Default Java installation</Label>
 					<Input
@@ -63,15 +70,24 @@ const SettingsDataCard: React.FC<SettingsDataCardProps> = ({ onClearAllData }) =
 						Used when a server does not set its own Java override.
 					</p>
 					<div className='flex gap-2'>
-						<Button variant='secondary' onClick={handleSaveJavaDefault}>
-							Save Java Default
-						</Button>
-						<Button variant='outline' onClick={handleResetJavaDefault}>
+						<Button onClick={handleSaveJavaDefault}>Save</Button>
+						<Button variant='destructive-secondary' onClick={handleResetJavaDefault}>
 							Reset to java
 						</Button>
 					</div>
 				</div>
 
+				<div className='space-y-2 mt-6'>
+					<Label className='flex items-center gap-3'>
+						<Checkbox checked={user.advanced_mode} onCheckedChange={handleAdvancedModeChange} />
+						Advanced Mode
+					</Label>
+					<p className='text-sm text-muted-foreground'>
+						Lets you bypass RAM safety caps and use the full detected system range.
+					</p>
+				</div>
+
+				<p className='font-medium mt-6'>Data management</p>
 				<AlertDialog>
 					<AlertDialogTrigger asChild>
 						<Button variant='destructive-secondary'>

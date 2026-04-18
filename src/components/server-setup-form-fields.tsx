@@ -8,13 +8,9 @@ import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { type AutoBackupMode, type ServerSetupFormData } from '@/lib/mserve-sync';
+import { backupChoices } from '@/pages/server/server-constants';
+import { toggleBackupMode as toggleBackupModeValue } from '@/pages/server/server-utils';
 import RamSliderField from '@/components/ram-slider-field';
-
-const backupChoices: { value: AutoBackupMode; label: string }[] = [
-	{ value: 'interval', label: 'Interval' },
-	{ value: 'on_close', label: 'On close' },
-	{ value: 'on_start', label: 'On start' },
-];
 
 type ServerSetupFormFieldsProps = {
 	form: ServerSetupFormData;
@@ -42,13 +38,8 @@ export const ServerSetupFormFields: React.FC<ServerSetupFormFieldsProps> = ({
 	showCreateDirectoryIfMissing = true,
 	showAutoAgreeEula = true,
 }) => {
-	const toggleBackupMode = (mode: AutoBackupMode, enabled: boolean) => {
-		onFieldChange(
-			'autoBackup',
-			enabled
-				? Array.from(new Set([...form.autoBackup, mode]))
-				: form.autoBackup.filter((item) => item !== mode),
-		);
+	const handleToggleBackupMode = (mode: AutoBackupMode, enabled: boolean) => {
+		onFieldChange('auto_backup', toggleBackupModeValue(form.auto_backup, mode, enabled));
 	};
 
 	return (
@@ -74,10 +65,10 @@ export const ServerSetupFormFields: React.FC<ServerSetupFormFieldsProps> = ({
 						<Field>
 							<Label className='flex items-center gap-3'>
 								<Checkbox
-									checked={form.createDirectoryIfMissing}
+									checked={form.create_directory_if_missing}
 									onCheckedChange={(checked) =>
 										onFieldChange(
-											'createDirectoryIfMissing',
+											'create_directory_if_missing',
 											typeof checked === 'boolean' ? checked : false,
 										)
 									}
@@ -116,8 +107,8 @@ export const ServerSetupFormFields: React.FC<ServerSetupFormFieldsProps> = ({
 				<Input
 					id={`${idPrefix}-java-installation`}
 					placeholder='C:\\Program Files\\Java\\jdk-25\\bin\\java.exe'
-					value={form.javaInstallation}
-					onChange={(event) => onFieldChange('javaInstallation', event.target.value)}
+					value={form.java_installation}
+					onChange={(event) => onFieldChange('java_installation', event.target.value)}
 				/>
 			</Field>
 
@@ -127,9 +118,12 @@ export const ServerSetupFormFields: React.FC<ServerSetupFormFieldsProps> = ({
 					{backupChoices.map((choice) => (
 						<Label key={choice.value} className='flex items-center gap-3'>
 							<Checkbox
-								checked={form.autoBackup.includes(choice.value)}
+								checked={form.auto_backup.includes(choice.value)}
 								onCheckedChange={(checked) =>
-									toggleBackupMode(choice.value, typeof checked === 'boolean' ? checked : false)
+									handleToggleBackupMode(
+										choice.value,
+										typeof checked === 'boolean' ? checked : false,
+									)
 								}
 							/>
 							{choice.label}
@@ -137,15 +131,15 @@ export const ServerSetupFormFields: React.FC<ServerSetupFormFieldsProps> = ({
 					))}
 				</div>
 			</Field>
-			{form.autoBackup.length > 0 && (
+			{form.auto_backup.length > 0 && (
 				<Field>
 					<Label htmlFor={`${idPrefix}-storage-limit`}>Backup storage limit (GB)</Label>
 					<Input
 						id={`${idPrefix}-storage-limit`}
 						type='number'
-						value={form.storageLimit}
+						value={form.storage_limit}
 						onChange={(event) =>
-							onFieldChange('storageLimit', asNumber(event.target.value, form.storageLimit))
+							onFieldChange('storage_limit', asNumber(event.target.value, form.storage_limit))
 						}
 						min={1}
 						required
@@ -156,17 +150,17 @@ export const ServerSetupFormFields: React.FC<ServerSetupFormFieldsProps> = ({
 					</p>
 				</Field>
 			)}
-			{form.autoBackup.includes('interval') && (
+			{form.auto_backup.includes('interval') && (
 				<Field>
 					<Label htmlFor={`${idPrefix}-backup-interval`}>Backup interval (minutes)</Label>
 					<Input
 						id={`${idPrefix}-backup-interval`}
 						type='number'
-						value={form.autoBackupInterval}
+						value={form.auto_backup_interval}
 						onChange={(event) =>
 							onFieldChange(
-								'autoBackupInterval',
-								asNumber(event.target.value, form.autoBackupInterval),
+								'auto_backup_interval',
+								asNumber(event.target.value, form.auto_backup_interval),
 							)
 						}
 						min={1}
@@ -177,9 +171,9 @@ export const ServerSetupFormFields: React.FC<ServerSetupFormFieldsProps> = ({
 			<Field>
 				<Label className='flex items-center gap-3'>
 					<Checkbox
-						checked={form.autoRestart}
+						checked={form.auto_restart}
 						onCheckedChange={(checked) =>
-							onFieldChange('autoRestart', typeof checked === 'boolean' ? checked : false)
+							onFieldChange('auto_restart', typeof checked === 'boolean' ? checked : false)
 						}
 					/>
 					Auto restart server when it closes
@@ -189,9 +183,9 @@ export const ServerSetupFormFields: React.FC<ServerSetupFormFieldsProps> = ({
 				<Field>
 					<Label className='flex items-center gap-3'>
 						<Checkbox
-							checked={form.autoAgreeEula}
+							checked={form.auto_agree_eula}
 							onCheckedChange={(checked) =>
-								onFieldChange('autoAgreeEula', typeof checked === 'boolean' ? checked : false)
+								onFieldChange('auto_agree_eula', typeof checked === 'boolean' ? checked : false)
 							}
 						/>
 						Auto agree to eula.txt

@@ -1,51 +1,19 @@
 import { invoke } from '@tauri-apps/api/core';
+import {
+	createDefaultMserveForm,
+	type AutoBackupMode,
+	type MserveJsonFormProps,
+	type MserveJsonProps,
+	type MserveRepairPayload,
+} from '@/lib/mserve-schema';
 
-export type AutoBackupMode = 'interval' | 'on_close' | 'on_start';
+export type { AutoBackupMode };
 
-export type ServerSetupFormData = {
-	directory: string;
-	createDirectoryIfMissing: boolean;
-	file: string;
-	ram: number;
-	storageLimit: number;
-	autoRestart: boolean;
-	autoBackup: AutoBackupMode[];
-	autoBackupInterval: number;
-	autoAgreeEula: boolean;
-	javaInstallation: string;
-	provider: string;
-	version: string;
-};
+export type ServerSetupFormData = MserveJsonFormProps;
 
-export const createDefaultServerSetupForm = (): ServerSetupFormData => ({
-	directory: '',
-	createDirectoryIfMissing: true,
-	file: '',
-	ram: 3,
-	storageLimit: 200,
-	autoRestart: false,
-	autoBackup: [],
-	autoBackupInterval: 120,
-	autoAgreeEula: true,
-	javaInstallation: '',
-	provider: '',
-	version: '',
-});
+export const createDefaultServerSetupForm = (): ServerSetupFormData => createDefaultMserveForm();
 
-export type SyncedMserveConfig = {
-	id: string;
-	file: string;
-	ram: number;
-	storage_limit: number;
-	auto_backup: AutoBackupMode[];
-	auto_backup_interval: number;
-	auto_restart: boolean;
-	custom_flags: string[];
-	java_installation?: string;
-	provider?: string;
-	version?: string;
-	created_at: string;
-};
+export type SyncedMserveConfig = MserveJsonProps;
 
 export type SyncMserveJsonResult = {
 	status: 'synced' | 'needs_setup';
@@ -54,22 +22,7 @@ export type SyncMserveJsonResult = {
 	updated: boolean;
 };
 
-export type RepairMserveJsonPayload = Pick<
-	ServerSetupFormData,
-	| 'directory'
-	| 'file'
-	| 'ram'
-	| 'storageLimit'
-	| 'autoRestart'
-	| 'autoBackup'
-	| 'autoBackupInterval'
-	| 'javaInstallation'
-> &
-	Partial<Pick<ServerSetupFormData, 'createDirectoryIfMissing' | 'autoAgreeEula'>> & {
-		customFlags: string[];
-		provider?: string;
-		version?: string;
-	};
+export type RepairMserveJsonPayload = MserveRepairPayload;
 
 export type PromptMserveRepairOptions = RepairMserveJsonPayload;
 

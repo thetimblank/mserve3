@@ -2,7 +2,12 @@
 import { invoke } from '@tauri-apps/api/core';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Server, useServers } from '@/data/servers';
+import { useServers } from '@/data/servers';
+import {
+	buildCreatedServer,
+	buildImportedServer,
+	getServerNameFromDirectory,
+} from '@/lib/mserve-server-mapper';
 import { requestMserveRepair } from '@/lib/mserve-repair-controller';
 import {
 	createDefaultServerSetupForm,
@@ -10,20 +15,20 @@ import {
 	syncServerMserveJson,
 	type AutoBackupMode,
 	type ServerSetupFormData,
-	type SyncedMserveConfig,
 } from '@/lib/mserve-sync';
+import { normalizeProviderChecks } from '@/lib/mserve-schema';
 
 type InitServerPayload = {
 	directory: string;
-	createDirectoryIfMissing: boolean;
+	create_directory_if_missing: boolean;
 	file: string;
 	ram: number;
-	storageLimit: number;
-	autoRestart: boolean;
-	autoBackup: AutoBackupMode[];
-	autoBackupInterval: number;
-	autoAgreeEula: boolean;
-	javaInstallation: string;
+	storage_limit: number;
+	auto_restart: boolean;
+	auto_backup: AutoBackupMode[];
+	auto_backup_interval: number;
+	auto_agree_eula: boolean;
+	java_installation: string;
 	provider: string;
 	version: string;
 };
@@ -67,11 +72,6 @@ export type ServerDirectoryInspectionResult = {
 
 const DONE_SLIDE_INDEX = 8;
 
-const getDirectoryName = (directory: string) => {
-	const segments = directory.split(/[\\/]/).filter(Boolean);
-	return segments[segments.length - 1] || 'Server';
-};
-
 const joinDirectoryAndFile = (directory: string, fileName: string) => {
 	if (!directory) return fileName;
 	if (directory.endsWith('\\') || directory.endsWith('/')) {
@@ -83,65 +83,6 @@ const joinDirectoryAndFile = (directory: string, fileName: string) => {
 
 const normalizeDirectoryPath = (value: string) =>
 	value.trim().replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
-
-const buildServer = (form: ServerSetupFormData, result: InitServerResult): Server => ({
-	id: result.id,
-	name: getDirectoryName(result.directory),
-	directory: result.directory,
-	status: 'offline',
-	backups: [],
-	datapacks: [],
-	worlds: [],
-	plugins: [],
-	storage_limit: Math.max(1, Number(form.storageLimit) || 200),
-	stats: {
-		players: 0,
-		capacity: 20,
-		tps: 0,
-		uptime: null,
-	},
-	file: result.file,
-	ram: Math.max(1, Number(form.ram) || 1),
-	auto_backup: form.autoBackup,
-	auto_backup_interval: Math.max(1, Number(form.autoBackupInterval) || 120),
-	auto_restart: form.autoRestart,
-	java_installation: form.javaInstallation.trim() || undefined,
-	provider: form.provider.trim() || undefined,
-	version: form.version.trim() || undefined,
-	created_at: new Date(),
-});
-
-const buildImportedServer = (
-	result: InitServerResult,
-	config: SyncedMserveConfig,
-	storageLimit: number,
-): Server => ({
-	id: config.id || result.id,
-	name: getDirectoryName(result.directory),
-	directory: result.directory,
-	status: 'offline',
-	backups: [],
-	datapacks: [],
-	worlds: [],
-	plugins: [],
-	storage_limit: Math.max(1, Number(config.storage_limit ?? storageLimit) || 200),
-	stats: {
-		players: 0,
-		capacity: 20,
-		tps: 0,
-		uptime: null,
-	},
-	file: config.file,
-	ram: config.ram,
-	auto_backup: config.auto_backup,
-	auto_backup_interval: config.auto_backup_interval,
-	auto_restart: config.auto_restart,
-	java_installation: config.java_installation,
-	custom_flags: config.custom_flags,
-	provider: config.provider,
-	version: config.version,
-	created_at: new Date(config.created_at),
-});
 
 const getNextSlideIndex = (currentSlide: number, skipJarAndEula: boolean) => {
 	if (!skipJarAndEula) return currentSlide + 1;
@@ -184,7 +125,7 @@ type CreateServerContextValue = {
 	clearError: () => void;
 	inspectServerDirectory: (options?: {
 		directory?: string;
-		createDirectoryIfMissing?: boolean;
+		create_directory_if_missing?: boolean;
 		silent?: boolean;
 	}) => Promise<ServerDirectoryInspectionResult | null>;
 	importServerFromDirectory: () => Promise<void>;
@@ -203,15 +144,15 @@ const sameArray = (left: string[], right: string[]) => {
 
 const isFormDirty = (form: ServerSetupFormData) => {
 	if (form.directory !== DEFAULT_FORM.directory) return true;
-	if (form.createDirectoryIfMissing !== DEFAULT_FORM.createDirectoryIfMissing) return true;
+	if (form.create_directory_if_missing !== DEFAULT_FORM.create_directory_if_missing) return true;
 	if (form.file !== DEFAULT_FORM.file) return true;
 	if (form.ram !== DEFAULT_FORM.ram) return true;
-	if (form.storageLimit !== DEFAULT_FORM.storageLimit) return true;
-	if (form.autoRestart !== DEFAULT_FORM.autoRestart) return true;
-	if (!sameArray(form.autoBackup, DEFAULT_FORM.autoBackup)) return true;
-	if (form.autoBackupInterval !== DEFAULT_FORM.autoBackupInterval) return true;
-	if (form.autoAgreeEula !== DEFAULT_FORM.autoAgreeEula) return true;
-	if (form.javaInstallation !== DEFAULT_FORM.javaInstallation) return true;
+	if (form.storage_limit !== DEFAULT_FORM.storage_limit) return true;
+	if (form.auto_restart !== DEFAULT_FORM.auto_restart) return true;
+	if (!sameArray(form.auto_backup, DEFAULT_FORM.auto_backup)) return true;
+	if (form.auto_backup_interval !== DEFAULT_FORM.auto_backup_interval) return true;
+	if (form.auto_agree_eula !== DEFAULT_FORM.auto_agree_eula) return true;
+	if (form.java_installation !== DEFAULT_FORM.java_installation) return true;
 	if (form.provider !== DEFAULT_FORM.provider) return true;
 	if (form.version !== DEFAULT_FORM.version) return true;
 	return false;
@@ -286,7 +227,7 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 			const directory = form.directory.trim();
 			const resolvedJar = joinDirectoryAndFile(directory, jarFileName);
 			updateField('file', resolvedJar);
-			updateField('autoAgreeEula', true);
+			updateField('auto_agree_eula', true);
 		},
 		[form.directory, updateField],
 	);
@@ -301,12 +242,12 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 	);
 
 	const inspectServerDirectory = React.useCallback(
-		async (options?: { directory?: string; createDirectoryIfMissing?: boolean; silent?: boolean }) => {
+		async (options?: { directory?: string; create_directory_if_missing?: boolean; silent?: boolean }) => {
 			const directory = (options?.directory ?? form.directory).trim();
-			const createDirectoryIfMissing =
-				typeof options?.createDirectoryIfMissing === 'boolean'
-					? options.createDirectoryIfMissing
-					: form.createDirectoryIfMissing;
+			const create_directory_if_missing =
+				typeof options?.create_directory_if_missing === 'boolean'
+					? options.create_directory_if_missing
+					: form.create_directory_if_missing;
 			const silent = options?.silent ?? false;
 
 			if (!directory) {
@@ -337,19 +278,24 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 			try {
 				const result = await invoke<ServerDirectoryInspectionResult>('inspect_server_directory', {
 					directory,
-					createDirectoryIfMissing,
+					createDirectoryIfMissing: create_directory_if_missing,
 				});
 				setDirectoryInspection(result);
 				return result;
 			} catch (err) {
 				if (!silent) {
-					const reason = err instanceof Error ? err.message : 'Unknown backend error.';
+					const reason =
+						err instanceof Error
+							? err.message
+							: typeof err === 'string'
+								? err
+								: 'Unknown backend error.';
 					setError(`Failed to inspect server directory. ${reason}`);
 				}
 				return null;
 			}
 		},
-		[findExistingServerByDirectory, form.createDirectoryIfMissing, form.directory],
+		[findExistingServerByDirectory, form.create_directory_if_missing, form.directory],
 	);
 
 	const importServerFromDirectory = React.useCallback(async () => {
@@ -376,30 +322,33 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
 				let synced = await syncServerMserveJson(result.directory);
 				let usedRepairDialog = false;
-				let storageLimit = 200;
+				const fallbackConfig = synced.config;
+				if (!fallbackConfig) {
+					throw new Error('Could not load fallback mserve.json data for repair.');
+				}
 
 				if (synced.status === 'needs_setup') {
 					const repairPayload = await requestMserveRepair({
 						directory: result.directory,
 						file: result.file || 'server.jar',
-						ram: synced.config?.ram ?? 3,
-						storageLimit,
-						autoBackup: synced.config?.auto_backup ?? [],
-						autoBackupInterval: synced.config?.auto_backup_interval ?? 120,
-						autoRestart: synced.config?.auto_restart ?? false,
-						createDirectoryIfMissing: true,
-						autoAgreeEula: true,
-						javaInstallation: synced.config?.java_installation ?? '',
-						customFlags: synced.config?.custom_flags ?? [],
-						provider: synced.config?.provider,
-						version: synced.config?.version,
+						ram: fallbackConfig.ram,
+						storage_limit: fallbackConfig.storage_limit,
+						auto_backup: fallbackConfig.auto_backup,
+						auto_backup_interval: fallbackConfig.auto_backup_interval,
+						auto_restart: fallbackConfig.auto_restart,
+						create_directory_if_missing: true,
+						auto_agree_eula: true,
+						java_installation: fallbackConfig.java_installation ?? '',
+						custom_flags: fallbackConfig.custom_flags,
+						provider: fallbackConfig.provider,
+						version: fallbackConfig.version,
+						provider_checks: normalizeProviderChecks(fallbackConfig.provider_checks),
 					});
 
 					if (!repairPayload) {
 						throw new Error('Import cancelled because mserve.json rebuild was not completed.');
 					}
 
-					storageLimit = repairPayload.storageLimit;
 					synced = await repairServerMserveJson(repairPayload);
 					usedRepairDialog = true;
 				}
@@ -408,7 +357,7 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 					throw new Error('Could not resolve valid mserve.json data for this server.');
 				}
 
-				const addedServerId = addServer(buildImportedServer(result, synced.config, storageLimit));
+				const addedServerId = addServer(buildImportedServer(result, synced.config));
 				return {
 					serverId: addedServerId,
 					usedRepairDialog,
@@ -420,10 +369,10 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 				loading: 'Importing server...',
 				success: (result) =>
 					result.usedRepairDialog
-						? `Server "${getDirectoryName(directory)}" was imported and rebuilt mserve.json`
+						? `Server "${getServerNameFromDirectory(directory)}" was imported and rebuilt mserve.json`
 						: result.autoRepaired
-							? `Server "${getDirectoryName(directory)}" was imported and automatically repaired mserve.json`
-							: `Server "${getDirectoryName(directory)}" has been imported`,
+							? `Server "${getServerNameFromDirectory(directory)}" was imported and automatically repaired mserve.json`
+							: `Server "${getServerNameFromDirectory(directory)}" has been imported`,
 				error: (err) => (err instanceof Error ? err.message : 'Failed to import server.'),
 			});
 
@@ -464,7 +413,7 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 			return;
 		}
 
-		if (!form.createDirectoryIfMissing && !directoryValidation.exists) {
+		if (!form.create_directory_if_missing && !directoryValidation.exists) {
 			setError(
 				"Directory does not exist. Enable 'Create directory if it doesn't exist' or choose another path.",
 			);
@@ -508,18 +457,19 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
 					const repairPayload = {
 						directory: result.directory,
-						createDirectoryIfMissing: true,
+						create_directory_if_missing: true,
 						file,
 						ram: Math.max(1, Number(form.ram) || 3),
-						storageLimit: Math.max(1, Number(form.storageLimit) || 200),
-						autoBackup: form.autoBackup,
-						autoBackupInterval: Math.max(1, Number(form.autoBackupInterval) || 120),
-						autoRestart: form.autoRestart,
-						autoAgreeEula: true,
-						javaInstallation: form.javaInstallation,
-						customFlags: [],
+						storage_limit: Math.max(1, Number(form.storage_limit) || 200),
+						auto_backup: form.auto_backup,
+						auto_backup_interval: Math.max(1, Number(form.auto_backup_interval) || 120),
+						auto_restart: form.auto_restart,
+						auto_agree_eula: true,
+						java_installation: form.java_installation,
+						custom_flags: [],
 						provider: form.provider || undefined,
 						version: form.version || undefined,
+						provider_checks: normalizeProviderChecks(),
 					};
 
 					const synced = await repairServerMserveJson(repairPayload);
@@ -527,16 +477,15 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 						throw new Error('Could not finalize mserve.json for this server.');
 					}
 
-					const addedServerId = addServer(
-						buildImportedServer(result, synced.config, repairPayload.storageLimit),
-					);
+					const addedServerId = addServer(buildImportedServer(result, synced.config));
 
 					return { serverId: addedServerId };
 				})();
 
 				await toast.promise(importAndRepairPromise, {
 					loading: 'Importing existing server...',
-					success: () => `Server "${getDirectoryName(directory)}" has been imported and configured`,
+					success: () =>
+						`Server "${getServerNameFromDirectory(directory)}" has been imported and configured`,
 					error: (err) => (err instanceof Error ? err.message : 'Failed to import server.'),
 				});
 
@@ -557,15 +506,15 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 		try {
 			const payload: InitServerPayload = {
 				directory,
-				createDirectoryIfMissing: form.createDirectoryIfMissing,
+				create_directory_if_missing: form.create_directory_if_missing,
 				file: file || 'server.jar',
 				ram: Math.max(1, Number(form.ram) || 3),
-				storageLimit: Math.max(1, Number(form.storageLimit) || 200),
-				autoRestart: form.autoRestart,
-				autoBackup: form.autoBackup,
-				autoBackupInterval: Math.max(1, Number(form.autoBackupInterval) || 120),
-				autoAgreeEula: form.autoAgreeEula,
-				javaInstallation: form.javaInstallation,
+				storage_limit: Math.max(1, Number(form.storage_limit) || 200),
+				auto_restart: form.auto_restart,
+				auto_backup: form.auto_backup,
+				auto_backup_interval: Math.max(1, Number(form.auto_backup_interval) || 120),
+				auto_agree_eula: form.auto_agree_eula,
+				java_installation: form.java_installation,
 				provider: form.provider,
 				version: form.version,
 			};
@@ -580,12 +529,12 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
 			await toast.promise(initializePromise, {
 				loading: 'Creating server...',
-				success: () => `Server "${getDirectoryName(directory)}" has been created`,
+				success: () => `Server "${getServerNameFromDirectory(directory)}" has been created`,
 				error: (err) => (err instanceof Error ? err.message : 'Failed to create server.'),
 			});
 
 			const result = await initializePromise;
-			const serverId = addServer(buildServer(form, result));
+			const serverId = addServer(buildCreatedServer(form, result));
 			setCreatedServerId(serverId);
 			setSlide(DONE_SLIDE_INDEX);
 		} catch (err) {

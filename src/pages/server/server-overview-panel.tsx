@@ -47,7 +47,7 @@ const ServerOverviewPanel: React.FC<Props> = ({
 }) => {
 	const createdDateText = React.useMemo(() => {
 		if (!server.created_at) return null;
-		const value = server.created_at instanceof Date ? server.created_at : new Date(server.created_at);
+		const value = new Date(server.created_at);
 		if (Number.isNaN(value.getTime())) return null;
 		return value.toLocaleDateString();
 	}, [server.created_at]);

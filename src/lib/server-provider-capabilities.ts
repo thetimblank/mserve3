@@ -1,3 +1,5 @@
+import type { ProviderChecks } from '@/lib/mserve-schema';
+
 export type ProviderKind = 'plugin' | 'vanilla' | 'proxy' | 'unknown';
 
 export type ServerProviderCapabilities = {
@@ -7,6 +9,11 @@ export type ServerProviderCapabilities = {
 	supportsVersionCommand: boolean;
 	supportsAutoAgreeEula: boolean;
 };
+
+type ProviderCommandSupport = Pick<
+	ServerProviderCapabilities,
+	'supportsListCommand' | 'supportsTpsCommand' | 'supportsVersionCommand'
+>;
 
 const normalizeProvider = (provider?: string): string => provider?.trim().toLowerCase() ?? '';
 
@@ -72,13 +79,38 @@ export const resolveProviderKind = (provider?: string): ProviderKind => {
 	return 'unknown';
 };
 
-export const getServerProviderCapabilities = (provider?: string): ServerProviderCapabilities => {
+export const getDefaultProviderCommandSupport = (provider?: string): ProviderCommandSupport => {
 	const normalized = normalizeProvider(provider);
 	const kind = resolveProviderKind(provider);
 
-	const supportsListCommand = kind !== 'proxy';
-	const supportsTpsCommand = normalized.includes('paper') || normalized.includes('folia');
-	const supportsVersionCommand = kind === 'plugin';
+	return {
+		supportsListCommand: kind !== 'proxy',
+		supportsTpsCommand: normalized.includes('paper') || normalized.includes('folia'),
+		supportsVersionCommand: kind === 'plugin',
+	};
+};
+
+const applyCommandOverride = (supported: boolean, override?: boolean) => supported && override !== false;
+
+export const getServerProviderCapabilities = (
+	provider?: string,
+	providerChecks?: Partial<ProviderChecks> | null,
+): ServerProviderCapabilities => {
+	const kind = resolveProviderKind(provider);
+	const baseSupport = getDefaultProviderCommandSupport(provider);
+
+	const supportsListCommand = applyCommandOverride(
+		baseSupport.supportsListCommand,
+		providerChecks?.list_polling,
+	);
+	const supportsTpsCommand = applyCommandOverride(
+		baseSupport.supportsTpsCommand,
+		providerChecks?.tps_polling,
+	);
+	const supportsVersionCommand = applyCommandOverride(
+		baseSupport.supportsVersionCommand,
+		providerChecks?.version_polling,
+	);
 	const supportsAutoAgreeEula = kind === 'plugin' || kind === 'vanilla';
 
 	return {

@@ -11,7 +11,7 @@ import { useSetup } from './SetupContext';
 import { useUser } from '@/data/user';
 
 export default function Slide1() {
-	const { nextSlide, updateData, data } = useSetup();
+	const { nextSlide, updated_ata, data } = useSetup();
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const { user } = useUser();
@@ -81,7 +81,7 @@ export default function Slide1() {
 						id='server-port'
 						type='number'
 						value={data.port}
-						onChange={(event) => updateData('port', Number(event.currentTarget.value))}
+						onChange={(event) => updated_ata('port', Number(event.currentTarget.value))}
 						required
 					/>
 				</Field>

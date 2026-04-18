@@ -17,9 +17,11 @@ import {
 import { Field, FieldGroup } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Server, useServers } from '@/data/servers';
-import { repairServerMserveJson, syncServerMserveJson, type SyncedMserveConfig } from '@/lib/mserve-sync';
+import { useServers } from '@/data/servers';
+import { buildImportedServer, getServerNameFromDirectory } from '@/lib/mserve-server-mapper';
+import { repairServerMserveJson, syncServerMserveJson } from '@/lib/mserve-sync';
 import { requestMserveRepair } from '@/lib/mserve-repair-controller';
+import { normalizeProviderChecks } from '@/lib/mserve-schema';
 import { FolderOpen, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
@@ -36,41 +38,8 @@ type InitServerResult = {
 	directory: string;
 };
 
-const getDirectoryName = (directory: string) => {
-	const segments = directory.split(/[\\/]/).filter(Boolean);
-	return segments[segments.length - 1] || 'Server';
-};
-
 const normalizeDirectoryPath = (value: string) =>
 	value.trim().replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
-
-const buildServer = (result: InitServerResult, config: SyncedMserveConfig, storageLimit: number): Server => ({
-	id: config.id || result.id,
-	name: getDirectoryName(result.directory),
-	directory: result.directory,
-	status: 'offline',
-	backups: [],
-	datapacks: [],
-	worlds: [],
-	plugins: [],
-	storage_limit: Math.max(1, Number(config.storage_limit ?? storageLimit) || 200),
-	stats: {
-		players: 0,
-		capacity: 20,
-		tps: 0,
-		uptime: null,
-	},
-	file: config.file,
-	ram: config.ram,
-	auto_backup: config.auto_backup,
-	auto_backup_interval: config.auto_backup_interval,
-	auto_restart: config.auto_restart,
-	java_installation: config.java_installation,
-	custom_flags: config.custom_flags,
-	provider: config.provider,
-	version: config.version,
-	created_at: new Date(config.created_at),
-});
 
 export const ImportServer: React.FC<React.HTMLAttributes<HTMLButtonElement>> = ({ ...props }) => {
 	const navigate = useNavigate();
@@ -144,30 +113,33 @@ export const ImportServer: React.FC<React.HTMLAttributes<HTMLButtonElement>> = (
 
 				let synced = await syncServerMserveJson(result.directory);
 				let usedRepairDialog = false;
-				let storageLimit = 200;
+				const fallbackConfig = synced.config;
+				if (!fallbackConfig) {
+					throw new Error('Could not load fallback mserve.json data for repair.');
+				}
 
 				if (synced.status === 'needs_setup') {
 					const repairPayload = await requestMserveRepair({
 						directory: result.directory,
 						file: result.file || 'server.jar',
-						ram: synced.config?.ram ?? 3,
-						storageLimit,
-						autoBackup: synced.config?.auto_backup ?? [],
-						autoBackupInterval: synced.config?.auto_backup_interval ?? 120,
-						autoRestart: synced.config?.auto_restart ?? false,
-						createDirectoryIfMissing: true,
-						autoAgreeEula: true,
-						javaInstallation: synced.config?.java_installation ?? '',
-						customFlags: synced.config?.custom_flags ?? [],
-						provider: synced.config?.provider,
-						version: synced.config?.version,
+						ram: fallbackConfig.ram,
+						storage_limit: fallbackConfig.storage_limit,
+						auto_backup: fallbackConfig.auto_backup,
+						auto_backup_interval: fallbackConfig.auto_backup_interval,
+						auto_restart: fallbackConfig.auto_restart,
+						create_directory_if_missing: true,
+						auto_agree_eula: true,
+						java_installation: fallbackConfig.java_installation ?? '',
+						custom_flags: fallbackConfig.custom_flags,
+						provider: fallbackConfig.provider,
+						version: fallbackConfig.version,
+						provider_checks: normalizeProviderChecks(fallbackConfig.provider_checks),
 					});
 
 					if (!repairPayload) {
 						throw new Error('Import cancelled because mserve.json rebuild was not completed.');
 					}
 
-					storageLimit = repairPayload.storageLimit;
 					synced = await repairServerMserveJson(repairPayload);
 					usedRepairDialog = true;
 				}
@@ -176,7 +148,7 @@ export const ImportServer: React.FC<React.HTMLAttributes<HTMLButtonElement>> = (
 					throw new Error('Could not resolve valid mserve.json data for this server.');
 				}
 
-				addServer(buildServer(result, synced.config, storageLimit));
+				addServer(buildImportedServer(result, synced.config));
 				return {
 					usedRepairDialog,
 					autoRepaired: synced.updated,
@@ -187,10 +159,10 @@ export const ImportServer: React.FC<React.HTMLAttributes<HTMLButtonElement>> = (
 				loading: 'Importing server...',
 				success: (result) =>
 					result.usedRepairDialog
-						? `Server "${getDirectoryName(directory)}" was imported and rebuilt mserve.json`
+						? `Server "${getServerNameFromDirectory(directory)}" was imported and rebuilt mserve.json`
 						: result.autoRepaired
-							? `Server "${getDirectoryName(directory)}" was imported and automatically repaired mserve.json`
-							: `Server "${getDirectoryName(directory)}" has been imported`,
+							? `Server "${getServerNameFromDirectory(directory)}" was imported and automatically repaired mserve.json`
+							: `Server "${getServerNameFromDirectory(directory)}" has been imported`,
 				error: (err) => (err instanceof Error ? err.message : 'Failed to import server.'),
 			});
 

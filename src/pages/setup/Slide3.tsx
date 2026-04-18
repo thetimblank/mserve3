@@ -5,7 +5,7 @@ import { useSetup } from './SetupContext';
 import { Eye, EyeOff } from 'lucide-react';
 
 export default function Slide3() {
-	const { data, updateData, nextSlide } = useSetup();
+	const { data, updated_ata, nextSlide } = useSetup();
 
 	return (
 		<m.div
@@ -20,7 +20,7 @@ export default function Slide3() {
 					Your server IP is:{' '}
 					{data.ip_hidden ? <span className='blur-xs select-none'>XXX.XXX.X.X</span> : data.ip}
 					{data.port !== 25565 && ':' + data.port}
-					<Button variant='ghost' onClick={() => updateData('ip_hidden', !data.ip_hidden)}>
+					<Button variant='ghost' onClick={() => updated_ata('ip_hidden', !data.ip_hidden)}>
 						{data.ip_hidden ? <Eye /> : <EyeOff />}
 					</Button>
 				</p>

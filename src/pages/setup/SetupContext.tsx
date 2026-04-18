@@ -11,7 +11,7 @@ export interface SetupData {
 interface SetupContextType {
 	data: SetupData;
 	slide: number;
-	updateData: <K extends keyof SetupData>(key: K, value: SetupData[K]) => void;
+	updated_ata: <K extends keyof SetupData>(key: K, value: SetupData[K]) => void;
 	nextSlide: () => void;
 	prevSlide: () => void;
 }
@@ -27,7 +27,7 @@ export const SetupProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 		ip_hidden: true,
 	});
 
-	const updateData = <K extends keyof SetupData>(key: K, value: SetupData[K]) => {
+	const updated_ata = <K extends keyof SetupData>(key: K, value: SetupData[K]) => {
 		setData((prev) => ({ ...prev, [key]: value }));
 	};
 
@@ -35,7 +35,7 @@ export const SetupProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 		const fetchIp = async () => {
 			try {
 				const ip = await invoke<string>('get_local_ip');
-				updateData('ip', ip);
+				updated_ata('ip', ip);
 			} catch (err) {
 				console.error(err);
 			}
@@ -47,7 +47,7 @@ export const SetupProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 	const prevSlide = () => setSlide((prev) => (prev > 0 ? prev - 1 : prev));
 
 	return (
-		<SetupContext.Provider value={{ data, slide, updateData, nextSlide, prevSlide }}>
+		<SetupContext.Provider value={{ data, slide, updated_ata, nextSlide, prevSlide }}>
 			{children}
 		</SetupContext.Provider>
 	);

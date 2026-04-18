@@ -73,12 +73,12 @@ export const useServerBackupActions = ({
 				payload: {
 					directory: server.directory,
 					ram: Math.max(1, Number(server.ram) || 3),
-					storageLimit: nextLimit,
-					autoBackup: server.auto_backup ?? [],
-					autoBackupInterval: Math.max(1, Number(server.auto_backup_interval) || 120),
-					autoRestart: server.auto_restart ?? false,
-					customFlags: server.custom_flags ?? [],
-					javaInstallation: server.java_installation,
+					storage_limit: nextLimit,
+					auto_backup: server.auto_backup,
+					auto_backup_interval: Math.max(1, Number(server.auto_backup_interval) || 120),
+					auto_restart: server.auto_restart,
+					custom_flags: server.custom_flags,
+					java_installation: server.java_installation,
 				},
 			});
 
@@ -100,7 +100,7 @@ export const useServerBackupActions = ({
 				1,
 				Math.round(Number(intervalMinutes) || server.auto_backup_interval || 120),
 			);
-			const autoBackupModes: AutoBackupMode[] = server.auto_backup ?? [];
+			const autoBackupModes: AutoBackupMode[] = server.auto_backup;
 			const nextAutoBackup: AutoBackupMode[] = autoBackupModes.includes('interval')
 				? [...autoBackupModes]
 				: [...autoBackupModes, 'interval'];
@@ -109,12 +109,12 @@ export const useServerBackupActions = ({
 				payload: {
 					directory: server.directory,
 					ram: Math.max(1, Number(server.ram) || 3),
-					storageLimit: Math.max(1, Number(server.storage_limit) || 200),
-					autoBackup: nextAutoBackup,
-					autoBackupInterval: nextInterval,
-					autoRestart: server.auto_restart ?? false,
-					customFlags: server.custom_flags ?? [],
-					javaInstallation: server.java_installation,
+					storage_limit: Math.max(1, Number(server.storage_limit) || 200),
+					auto_backup: nextAutoBackup,
+					auto_backup_interval: nextInterval,
+					auto_restart: server.auto_restart,
+					custom_flags: server.custom_flags,
+					java_installation: server.java_installation,
 				},
 			});
 

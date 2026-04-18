@@ -84,8 +84,8 @@ export const useServerRuntime = ({
 	const serverDirectory = server?.directory;
 	const serverStatus = server?.status;
 	const providerCapabilities = React.useMemo(
-		() => getServerProviderCapabilities(server?.provider),
-		[server?.provider],
+		() => getServerProviderCapabilities(server?.provider, server?.provider_checks),
+		[server?.provider, server?.provider_checks],
 	);
 
 	const autoBackupModes = server?.auto_backup ?? [];
@@ -216,22 +216,28 @@ export const useServerRuntime = ({
 				updateServerStats(serverId, { uptime: runtimeRef.current.startAt });
 			}
 
-			const listInfo = parseListPlayers(cleaned);
-			if (listInfo) {
-				updateServerStats(serverId, {
-					players: listInfo.players,
-					capacity: listInfo.capacity,
-				});
+			if (providerCapabilities.supportsListCommand) {
+				const listInfo = parseListPlayers(cleaned);
+				if (listInfo) {
+					updateServerStats(serverId, {
+						players: listInfo.players,
+						capacity: listInfo.capacity,
+					});
+				}
 			}
 
-			const tpsInfo = parseTps(cleaned);
-			if (tpsInfo) {
-				updateServerStats(serverId, { tps: tpsInfo.tps });
+			if (providerCapabilities.supportsTpsCommand) {
+				const tpsInfo = parseTps(cleaned);
+				if (tpsInfo) {
+					updateServerStats(serverId, { tps: tpsInfo.tps });
+				}
 			}
 
-			const versionInfo = parseVersion(cleaned, providerCapabilities.kind);
-			if (versionInfo) {
-				updateServer(serverId, { version: versionInfo });
+			if (providerCapabilities.supportsVersionCommand) {
+				const versionInfo = parseVersion(cleaned, providerCapabilities.kind);
+				if (versionInfo) {
+					updateServer(serverId, { version: versionInfo });
+				}
 			}
 
 			if (hideBackgroundTelemetry && shouldHideBackgroundLine(cleaned)) {

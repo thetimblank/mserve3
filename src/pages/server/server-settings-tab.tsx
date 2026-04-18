@@ -50,23 +50,27 @@ export default function ServerSettingsTab({
 		setIsBusy(true);
 		try {
 			let synced = await syncServerMserveJson(server.directory);
-			let resolvedStorageLimit = server.storage_limit ?? 200;
 
 			if (synced.status === 'needs_setup') {
+				if (!synced.config) {
+					throw new Error('Could not load fallback mserve configuration for repair.');
+				}
+
 				const repairPayload = await requestMserveRepair({
 					directory: server.directory,
 					file: server.file,
-					ram: server.ram ?? 3,
-					storageLimit: resolvedStorageLimit,
-					autoBackup: server.auto_backup ?? [],
-					autoBackupInterval: server.auto_backup_interval ?? 120,
-					autoRestart: server.auto_restart ?? false,
-					createDirectoryIfMissing: true,
-					autoAgreeEula: true,
-					javaInstallation: server.java_installation ?? '',
-					customFlags: server.custom_flags ?? [],
+					ram: server.ram,
+					storage_limit: server.storage_limit,
+					auto_backup: server.auto_backup,
+					auto_backup_interval: server.auto_backup_interval,
+					auto_restart: server.auto_restart,
+					create_directory_if_missing: true,
+					auto_agree_eula: true,
+					java_installation: server.java_installation ?? '',
+					custom_flags: server.custom_flags,
 					provider: server.provider,
 					version: server.version,
+					provider_checks: server.provider_checks,
 				});
 
 				if (!repairPayload) {
@@ -74,7 +78,6 @@ export default function ServerSettingsTab({
 					return;
 				}
 
-				resolvedStorageLimit = repairPayload.storageLimit;
 				synced = await repairServerMserveJson(repairPayload);
 			}
 
@@ -86,7 +89,7 @@ export default function ServerSettingsTab({
 				id: synced.config.id,
 				file: synced.config.file,
 				ram: synced.config.ram,
-				storage_limit: synced.config.storage_limit || resolvedStorageLimit,
+				storage_limit: synced.config.storage_limit,
 				auto_backup: synced.config.auto_backup,
 				auto_backup_interval: synced.config.auto_backup_interval,
 				auto_restart: synced.config.auto_restart,
@@ -94,7 +97,8 @@ export default function ServerSettingsTab({
 				custom_flags: synced.config.custom_flags,
 				provider: synced.config.provider,
 				version: synced.config.version,
-				created_at: new Date(synced.config.created_at),
+				provider_checks: synced.config.provider_checks,
+				created_at: synced.config.created_at,
 			});
 
 			toast.success(synced.message);
@@ -140,7 +144,7 @@ export default function ServerSettingsTab({
 	return (
 		<div className='flex flex-col gap-6'>
 			<div className='rounded-lg'>
-				<p className='text-2xl font-bold mb-2'>Settings</p>
+				<p className='text-3xl font-bold mb-2'>Settings</p>
 				<div className='flex flex-wrap gap-2'>
 					<Button
 						variant='secondary'
@@ -162,7 +166,7 @@ export default function ServerSettingsTab({
 				</p>
 			</div>
 
-			<div className='space-y-4 bg-secondary p-6 rounded-lg'>
+			<div className='space-y-4 bg-secondary/25 p-6 rounded-lg'>
 				<p className='text-2xl font-bold'>Edit Properties</p>
 				<EditServerPropertiesForm server={server} disabled={isBusy} onSaved={syncServerContents} />
 			</div>

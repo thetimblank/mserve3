@@ -1,4 +1,5 @@
 import type { AutoBackupMode } from '@/data/servers';
+import { normalizeProviderChecks } from '@/lib/mserve-schema';
 import type { ScannedBackupEntry, ServerSettingsForm, UpdateServerSettingsPayload } from './server-types';
 
 export const toggleBackupMode = (
@@ -11,7 +12,7 @@ export const toggleBackupMode = (
 export const mapScannedBackups = (backups: ScannedBackupEntry[]) =>
 	backups.map((backup) => ({
 		directory: backup.directory,
-		created_at: new Date(backup.created_at ?? backup.created_at ?? Date.now()),
+		created_at: new Date(backup.created_at ?? Date.now()),
 	}));
 
 export const buildUpdateServerSettingsPayload = (
@@ -20,14 +21,17 @@ export const buildUpdateServerSettingsPayload = (
 ): UpdateServerSettingsPayload => ({
 	directory,
 	ram: Math.max(1, Number(settingsForm.ram) || 1),
-	storageLimit: Math.max(1, Number(settingsForm.storageLimit) || 200),
-	autoBackup: settingsForm.autoBackup,
-	autoBackupInterval: Math.max(1, Number(settingsForm.autoBackupInterval) || 1),
-	autoRestart: settingsForm.autoRestart,
-	customFlags: settingsForm.customFlags,
-	javaInstallation: settingsForm.javaInstallation.trim() || undefined,
-	jarSwapPath: settingsForm.jarSwapPath.trim() || undefined,
-	newDirectory: settingsForm.newDirectory.trim() || undefined,
+	storage_limit: Math.max(1, Number(settingsForm.storage_limit) || 200),
+	auto_backup: settingsForm.auto_backup,
+	auto_backup_interval: Math.max(1, Number(settingsForm.auto_backup_interval) || 1),
+	auto_restart: settingsForm.auto_restart,
+	custom_flags: settingsForm.custom_flags,
+	java_installation: settingsForm.java_installation.trim() || undefined,
+	provider: settingsForm.provider.trim() || undefined,
+	version: settingsForm.version.trim() || undefined,
+	provider_checks: normalizeProviderChecks(settingsForm.provider_checks),
+	jar_swap_path: settingsForm.jar_swap_path.trim() || undefined,
+	new_directory: settingsForm.new_directory.trim() || undefined,
 });
 
 export const parseCustomFlagsInput = (input: string): string[] => {
@@ -42,21 +46,21 @@ export const parseCustomFlagsInput = (input: string): string[] => {
 	return Array.from(deduped);
 };
 
-export const formatCustomFlagsInput = (customFlags: string[] | undefined): string =>
-	(customFlags ?? []).filter(Boolean).join('\n');
+export const formatCustomFlagsInput = (custom_flags: string[] | undefined): string =>
+	(custom_flags ?? []).filter(Boolean).join('\n');
 
 export const buildServerRunCommandPreview = (config: {
 	ram?: number;
 	file?: string;
-	customFlags?: string[];
-	javaInstallation?: string;
-	globalJavaInstallation?: string;
+	custom_flags?: string[];
+	java_installation?: string;
+	global_java_installation?: string;
 }): string => {
-	const resolvedRam = Math.max(1, config.ram ?? 3);
+	const resolvedRam = Math.max(1, config.ram ?? 4);
 	const resolvedFile = config.file?.trim() || 'server.jar';
 	const resolvedJavaInstallation =
-		config.javaInstallation?.trim() || config.globalJavaInstallation?.trim() || 'java';
-	const resolvedCustomFlags = (config.customFlags ?? []).map((flag) => flag.trim()).filter(Boolean);
+		config.java_installation?.trim() || config.global_java_installation?.trim() || 'java';
+	const resolvedCustomFlags = (config.custom_flags ?? []).map((flag) => flag.trim()).filter(Boolean);
 
 	const args = [`-Xms${resolvedRam}G`, `-Xmx${resolvedRam}G`, '-jar', resolvedFile, ...resolvedCustomFlags];
 
@@ -64,7 +68,7 @@ export const buildServerRunCommandPreview = (config: {
 };
 
 export const resolveNewDirectory = (payload: UpdateServerSettingsPayload, currentDirectory: string) => {
-	const trimmed = payload.newDirectory?.trim();
+	const trimmed = payload.new_directory?.trim();
 	if (!trimmed || trimmed === currentDirectory) {
 		return undefined;
 	}

@@ -5,26 +5,17 @@ import { Field, FieldGroup } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import type { AutoBackupMode } from '@/lib/mserve-sync';
+import { backupChoices } from '@/pages/server/server-constants';
+import { toggleBackupMode as toggleBackupModeValue } from '@/pages/server/server-utils';
 import { useCreateServer } from '../CreateServerContext';
 import SlideShell from './SlideShell';
 import { AnimatePresence, m } from 'motion/react';
 
-const backupChoices: { value: AutoBackupMode; label: string }[] = [
-	{ value: 'interval', label: 'Interval' },
-	{ value: 'on_close', label: 'On close' },
-	{ value: 'on_start', label: 'On start' },
-];
-
 const SlideBackups: React.FC = () => {
 	const { form, updateField, continueToNext } = useCreateServer();
 
-	const toggleBackupMode = (mode: AutoBackupMode, enabled: boolean) => {
-		updateField(
-			'autoBackup',
-			enabled
-				? Array.from(new Set([...form.autoBackup, mode]))
-				: form.autoBackup.filter((item) => item !== mode),
-		);
+	const handleToggleBackupMode = (mode: AutoBackupMode, enabled: boolean) => {
+		updateField('auto_backup', toggleBackupModeValue(form.auto_backup, mode, enabled));
 	};
 
 	const parsePositive = (value: string, fallback: number) => {
@@ -50,9 +41,12 @@ const SlideBackups: React.FC = () => {
 							<Label key={choice.value} className='flex items-center gap-3'>
 								<Checkbox
 									className='border-secondary-foreground/50'
-									checked={form.autoBackup.includes(choice.value)}
+									checked={form.auto_backup.includes(choice.value)}
 									onCheckedChange={(checked) =>
-										toggleBackupMode(choice.value, typeof checked === 'boolean' ? checked : false)
+										handleToggleBackupMode(
+											choice.value,
+											typeof checked === 'boolean' ? checked : false,
+										)
 									}
 								/>
 								{choice.label}
@@ -61,7 +55,7 @@ const SlideBackups: React.FC = () => {
 					</div>
 				</Field>
 				<AnimatePresence>
-					{form.autoBackup.length > 0 && (
+					{form.auto_backup.length > 0 && (
 						<m.div
 							initial={{ height: 0, marginTop: 0, opacity: 0 }}
 							animate={{ height: 'auto', marginTop: 24, opacity: 1 }}
@@ -73,11 +67,11 @@ const SlideBackups: React.FC = () => {
 									className='border-secondary-foreground/50'
 									id='create-server-storage-limit'
 									type='number'
-									value={form.storageLimit}
+									value={form.storage_limit}
 									onChange={(event) =>
 										updateField(
-											'storageLimit',
-											parsePositive(event.target.value, form.storageLimit),
+											'storage_limit',
+											parsePositive(event.target.value, form.storage_limit),
 										)
 									}
 									min={1}
@@ -91,7 +85,7 @@ const SlideBackups: React.FC = () => {
 					)}
 				</AnimatePresence>
 				<AnimatePresence>
-					{form.autoBackup.includes('interval') && (
+					{form.auto_backup.includes('interval') && (
 						<m.div
 							initial={{ height: 0, marginTop: 0, opacity: 0 }}
 							animate={{ height: 'auto', marginTop: 24, opacity: 1 }}
@@ -103,11 +97,11 @@ const SlideBackups: React.FC = () => {
 									className='border-secondary-foreground/50'
 									id='create-server-backup-interval'
 									type='number'
-									value={form.autoBackupInterval}
+									value={form.auto_backup_interval}
 									onChange={(event) =>
 										updateField(
-											'autoBackupInterval',
-											parsePositive(event.target.value, form.autoBackupInterval),
+											'auto_backup_interval',
+											parsePositive(event.target.value, form.auto_backup_interval),
 										)
 									}
 									min={1}

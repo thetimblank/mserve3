@@ -28,15 +28,15 @@ type RepairRequest = {
 
 const toInitialForm = (options: PromptMserveRepairOptions): ServerSetupFormData => ({
 	directory: options.directory,
-	createDirectoryIfMissing: options.createDirectoryIfMissing ?? true,
+	create_directory_if_missing: options.create_directory_if_missing ?? true,
 	file: options.file,
 	ram: options.ram,
-	storageLimit: options.storageLimit,
-	autoRestart: options.autoRestart,
-	autoBackup: options.autoBackup,
-	autoBackupInterval: options.autoBackupInterval,
-	autoAgreeEula: options.autoAgreeEula ?? true,
-	javaInstallation: options.javaInstallation ?? '',
+	storage_limit: options.storage_limit,
+	auto_restart: options.auto_restart,
+	auto_backup: options.auto_backup,
+	auto_backup_interval: options.auto_backup_interval,
+	auto_agree_eula: options.auto_agree_eula ?? true,
+	java_installation: options.java_installation ?? '',
 	provider: options.provider ?? '',
 	version: options.version ?? '',
 });
@@ -133,18 +133,19 @@ const MserveRepairDialog: React.FC = () => {
 
 		closeWith({
 			directory: activeRequest.options.directory,
-			createDirectoryIfMissing: form.createDirectoryIfMissing,
+			create_directory_if_missing: form.create_directory_if_missing,
 			file,
 			ram: Math.max(1, Number(form.ram) || 3),
-			storageLimit: Math.max(1, Number(form.storageLimit) || 200),
-			autoBackup: form.autoBackup,
-			autoBackupInterval: Math.max(1, Number(form.autoBackupInterval) || 120),
-			autoRestart: form.autoRestart,
-			autoAgreeEula: form.autoAgreeEula,
-			javaInstallation: form.javaInstallation,
-			customFlags: activeRequest.options.customFlags,
+			storage_limit: Math.max(1, Number(form.storage_limit) || 200),
+			auto_backup: form.auto_backup,
+			auto_backup_interval: Math.max(1, Number(form.auto_backup_interval) || 120),
+			auto_restart: form.auto_restart,
+			auto_agree_eula: form.auto_agree_eula,
+			java_installation: form.java_installation,
+			custom_flags: activeRequest.options.custom_flags,
 			provider: activeRequest.options.provider,
 			version: activeRequest.options.version,
+			provider_checks: activeRequest.options.provider_checks,
 		});
 	};
 
