@@ -344,10 +344,12 @@ export const useServerRuntime = ({
 
 		void (async () => {
 			try {
-				await invoke('send_server_command', {
-					directory: serverDirectory,
-					command: 'list',
-				});
+				if (providerCapabilities.supportsListCommand) {
+					await invoke('send_server_command', {
+						directory: serverDirectory,
+						command: 'list',
+					});
+				}
 				if (providerCapabilities.supportsTpsCommand) {
 					await invoke('send_server_command', {
 						directory: serverDirectory,
@@ -365,10 +367,12 @@ export const useServerRuntime = ({
 
 		const timer = window.setInterval(async () => {
 			try {
-				await invoke('send_server_command', {
-					directory: serverDirectory,
-					command: 'list',
-				});
+				if (providerCapabilities.supportsListCommand) {
+					await invoke('send_server_command', {
+						directory: serverDirectory,
+						command: 'list',
+					});
+				}
 				if (providerCapabilities.supportsTpsCommand) {
 					await invoke('send_server_command', {
 						directory: serverDirectory,
@@ -382,6 +386,7 @@ export const useServerRuntime = ({
 			window.clearInterval(timer);
 		};
 	}, [
+		providerCapabilities.supportsListCommand,
 		providerCapabilities.supportsTpsCommand,
 		providerCapabilities.supportsVersionCommand,
 		serverDirectory,
@@ -592,7 +597,7 @@ export const useServerRuntime = ({
 		async (event: React.FormEvent<HTMLFormElement>) => {
 			event.preventDefault();
 			if (!serverDirectory) return;
-			if (serverStatus !== 'online' || isBusy) return;
+			if (serverStatus === 'offline' || serverStatus === 'closing' || isBusy) return;
 
 			const command = terminalInput.trim();
 			if (!command) return;

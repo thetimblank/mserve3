@@ -242,7 +242,8 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 				<p className='text-sm text-muted-foreground'>
 					Provider detection: <span className='font-medium'>{server.provider || 'unknown'}</span>. TPS
 					polling {providerCapabilities.supportsTpsCommand ? 'enabled' : 'silently disabled'}; version
-					polling {providerCapabilities.supportsVersionCommand ? 'enabled' : 'silently disabled'}.
+					polling {providerCapabilities.supportsVersionCommand ? 'enabled' : 'silently disabled'}; list
+					polling {providerCapabilities.supportsListCommand ? 'enabled' : 'silently disabled'}.
 				</p>
 			</div>
 

@@ -2,6 +2,7 @@ export type ProviderKind = 'plugin' | 'vanilla' | 'proxy' | 'unknown';
 
 export type ServerProviderCapabilities = {
 	kind: ProviderKind;
+	supportsListCommand: boolean;
 	supportsTpsCommand: boolean;
 	supportsVersionCommand: boolean;
 	supportsAutoAgreeEula: boolean;
@@ -75,12 +76,14 @@ export const getServerProviderCapabilities = (provider?: string): ServerProvider
 	const normalized = normalizeProvider(provider);
 	const kind = resolveProviderKind(provider);
 
+	const supportsListCommand = kind !== 'proxy';
 	const supportsTpsCommand = normalized.includes('paper') || normalized.includes('folia');
-	const supportsVersionCommand = kind === 'plugin' || kind === 'vanilla';
+	const supportsVersionCommand = kind === 'plugin';
 	const supportsAutoAgreeEula = kind === 'plugin' || kind === 'vanilla';
 
 	return {
 		kind,
+		supportsListCommand,
 		supportsTpsCommand,
 		supportsVersionCommand,
 		supportsAutoAgreeEula,

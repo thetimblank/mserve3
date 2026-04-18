@@ -9,23 +9,28 @@ export const stripAnsi = (value: string) => value.replace(/\x1b\[[0-9;]*m/g, '')
 
 type RuntimeProviderKind = 'plugin' | 'vanilla' | 'proxy' | 'unknown';
 
-const DONE_LINE = /^Done \([\d.]+s\)!/i;
+const DONE_LINE = /Done \([\d.]+s\)!/i;
 
 export const isServerReadyLine = (line: string, providerKind: RuntimeProviderKind = 'unknown') => {
 	const cleaned = line.trim();
-	if (!DONE_LINE.test(cleaned)) {
+	const markerMatch = cleaned.match(DONE_LINE);
+	if (!markerMatch || markerMatch.index == null) {
 		return false;
 	}
 
+	const markerEnd = markerMatch.index + markerMatch[0].length;
+	const suffix = cleaned.slice(markerEnd).trim();
+	const hasHelpSuffix = /^For help, type "help"\.?$/i.test(suffix);
+
 	if (providerKind === 'proxy') {
-		return /^Done \([\d.]+s\)!$/i.test(cleaned);
+		return suffix.length === 0;
 	}
 
 	if (providerKind === 'plugin' || providerKind === 'vanilla') {
-		return /Done \([\d.]+s\)! For help, type "help"/i.test(cleaned);
+		return hasHelpSuffix;
 	}
 
-	return /^Done \([\d.]+s\)!(?: For help, type "help")?$/i.test(cleaned);
+	return suffix.length === 0 || hasHelpSuffix;
 };
 
 export const parseListPlayers = (line: string) => {

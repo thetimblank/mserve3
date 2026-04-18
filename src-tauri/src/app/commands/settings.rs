@@ -129,10 +129,6 @@ pub(in crate::app) fn update_server_settings(
         ),
     );
 
-    object.remove("created_at");
-    object.remove("directory");
-    object.remove("explicit_info_names");
-
     let final_mserve_path = directory_path.join("mserve.json");
     fs::write(
         &final_mserve_path,

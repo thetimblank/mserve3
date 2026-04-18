@@ -43,7 +43,7 @@ const ServerTerminalPanel: React.FC<ServerTerminalPanelProps> = ({
 					placeholder='> '
 					value={terminalInput}
 					onChange={(event) => onTerminalInputChange(event.target.value)}
-					disabled={status !== 'online' || isBusy}
+					disabled={status === 'offline' || status === 'closing' || isBusy}
 				/>
 			</form>
 		</m.div>

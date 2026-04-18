@@ -214,13 +214,13 @@ const ServerCard: React.FC<Props> = ({ server, delay }) => {
 								<p>Force Kill</p>
 							</Button>
 						)}
-						{server.status === 'online' && (
+						{(server.status === 'online' || server.status === 'starting') && (
 							<Button variant='secondary' onClick={handleStop} disabled={isBusy}>
 								<OctagonX />
 								<p>Stop</p>
 							</Button>
 						)}
-						{server.status === 'online' && (
+						{(server.status === 'online' || server.status === 'starting') && (
 							<Button variant='secondary' onClick={handleRestart} disabled={isBusy}>
 								<RefreshCcw />
 								<p>Restart</p>

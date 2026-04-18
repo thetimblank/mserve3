@@ -13,7 +13,7 @@ const Home: React.FC = () => {
 	return (
 		<main
 			className={clsx(
-				'h-full flex px-12 py-18 w-full overflow-y-auto app-scroll-area',
+				'h-full flex p-12 w-full overflow-y-auto app-scroll-area',
 				servers.length > 0 ? 'flex-col' : 'items-center justify-center',
 			)}>
 			{!isReady && (

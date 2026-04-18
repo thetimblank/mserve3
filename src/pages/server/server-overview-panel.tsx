@@ -59,13 +59,13 @@ const ServerOverviewPanel: React.FC<Props> = ({
 					<ServerStatus server={server} size='xl' />
 					<div className='flex flex-col'>
 						<div className='flex gap-2 mb-2 flex-wrap'>
-							{server.status === 'online' && (
+							{(server.status === 'online' || server.status === 'starting') && (
 								<Button onClick={onStop} disabled={isBusy}>
 									<OctagonX />
 									<p>Stop</p>
 								</Button>
 							)}
-							{server.status === 'online' && (
+							{(server.status === 'online' || server.status === 'starting') && (
 								<Button variant='secondary' onClick={onRestart} disabled={isBusy}>
 									<RefreshCcw />
 									<p>Restart</p>

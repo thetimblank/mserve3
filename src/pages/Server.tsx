@@ -141,7 +141,7 @@ const Server: React.FC = () => {
 
 	return (
 		<main className='w-full h-full relative overflow-y-auto app-scroll-area app-scroll-stable'>
-			<div className='min-h-full flex flex-col p-12 pt-20 w-full'>
+			<div className='min-h-full flex flex-col p-12 w-full'>
 				{errorMessage && (
 					<div className='mb-4 rounded-lg border border-destructive/40 bg-destructive/10 p-3'>
 						<div className='flex items-center justify-between gap-3'>
