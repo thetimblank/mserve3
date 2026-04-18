@@ -39,6 +39,8 @@ export type MserveStats = {
 	capacity: number;
 	tps: number;
 	uptime: Date | null;
+	worlds_size_bytes: number;
+	backups_size_bytes: number;
 };
 
 export type MserveJsonWithStats = MserveJsonProps & {

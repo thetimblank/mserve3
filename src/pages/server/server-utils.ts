@@ -12,7 +12,8 @@ export const toggleBackupMode = (
 export const mapScannedBackups = (backups: ScannedBackupEntry[]) =>
 	backups.map((backup) => ({
 		directory: backup.directory,
-		created_at: new Date(backup.created_at ?? Date.now()),
+		created_at: new Date(backup.createdAt ?? backup.created_at ?? Date.now()),
+		size: Math.max(0, Number(backup.size) || 0),
 	}));
 
 export const buildUpdateServerSettingsPayload = (
@@ -88,6 +89,21 @@ export const isStopCommand = (command: string) => command.replace(/^\//, '').tri
 
 export const getBackupNameFromPath = (backupDirectory: string) =>
 	backupDirectory.split(/[\\/]/).pop() || 'backup';
+
+export const formatBytes = (bytes?: number) => {
+	const value = Math.max(0, Number(bytes) || 0);
+	if (value < 1024) return `${value} B`;
+
+	const units = ['KB', 'MB', 'GB', 'TB'];
+	let scaled = value / 1024;
+	let unitIndex = 0;
+	while (scaled >= 1024 && unitIndex < units.length - 1) {
+		scaled /= 1024;
+		unitIndex += 1;
+	}
+
+	return `${scaled.toFixed(2)} ${units[unitIndex]}`;
+};
 
 export const formatUptime = (uptime: Date) => {
 	const now = new Date();

@@ -12,10 +12,21 @@
 	"app": {
 		"windows": [
 			{
+				"label": "main",
 				"title": "MSERVE",
 				"width": 1200,
 				"height": 800,
-				"decorations": false
+				"decorations": false,
+				"visible": false
+			},
+			{
+				"label": "splashscreen",
+				"title": "MSERVE",
+				"url": "/splashscreen.html",
+				"width": 1200,
+				"height": 800,
+				"decorations": false,
+				"resizable": false
 			}
 		],
 		"security": {

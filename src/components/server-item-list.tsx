@@ -392,12 +392,12 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 									<CardTitle>{item.name ?? item.file}</CardTitle>
 									<CardDescription className='flex gap-6'>
 										{item.activated ? (
-											<div className='flex items-center font-bold lg:text-lg gap-1 text-green-500'>
+											<div className='flex items-center font-bold lg:text-lg gap-2 text-green-500'>
 												<Link2 className='size-5' />
 												Active
 											</div>
 										) : (
-											<div className='flex items-center font-bold lg:text-lg gap-1 text-red-400'>
+											<div className='flex items-center font-bold lg:text-lg gap-2 text-red-400'>
 												<Link2Off className='size-5' />
 												Inactive
 											</div>
@@ -406,7 +406,7 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 										{typeof item.size === 'number' && (
 											<Tooltip>
 												<TooltipTrigger>
-													<div className='flex items-center lg:text-lg gap-1'>
+													<div className='flex items-center lg:text-lg gap-2'>
 														<HardDrive className='size-4' />
 														{formatBytes(item.size)}
 													</div>
@@ -417,7 +417,7 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 											</Tooltip>
 										)}
 										{item.url && (
-											<div className='flex items-center lg:text-lg gap-1'>
+											<div className='flex items-center lg:text-lg gap-2'>
 												<Link className='size-4' />
 												{item.url}
 											</div>

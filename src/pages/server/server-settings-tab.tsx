@@ -14,7 +14,7 @@ import {
 	AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import EditServerPropertiesForm from '@/components/edit-server-properties-form';
-import { Eye, EyeOff, Link2Off, RefreshCcw, Trash } from 'lucide-react';
+import { Link2Off, RefreshCcw, Trash } from 'lucide-react';
 import { repairServerMserveJson, syncServerMserveJson } from '@/lib/mserve-sync';
 import { requestMserveRepair } from '@/lib/mserve-repair-controller';
 import { Server, useServers } from '@/data/servers';
@@ -22,8 +22,6 @@ import { useNavigate } from 'react-router-dom';
 import { invoke } from '@tauri-apps/api/core';
 
 interface Props {
-	hideBackgroundTelemetry: boolean;
-	setHideBackgroundTelemetry: React.Dispatch<React.SetStateAction<boolean>>;
 	clearTerminalSession: () => void;
 	server: Server;
 	isBusy: boolean;
@@ -37,8 +35,6 @@ export default function ServerSettingsTab({
 	isBusy,
 	setIsBusy,
 	syncServerContents,
-	hideBackgroundTelemetry,
-	setHideBackgroundTelemetry,
 }: Props) {
 	const navigate = useNavigate();
 	const { removeServer, updateServer } = useServers();
@@ -145,22 +141,13 @@ export default function ServerSettingsTab({
 		<div className='flex flex-col gap-6'>
 			<div className='rounded-lg'>
 				<p className='text-3xl font-bold mb-2'>Settings</p>
-				<div className='flex flex-wrap gap-2'>
-					<Button
-						variant='secondary'
-						onClick={() => setHideBackgroundTelemetry((prev) => !prev)}
-						disabled={isBusy}>
-						{hideBackgroundTelemetry ? <Eye /> : <EyeOff />}
-						{hideBackgroundTelemetry ? 'Show Status Check logs' : 'Hide Status Check logs'}
-					</Button>
-					<Button
-						variant='secondary'
-						onClick={handleManualSync}
-						disabled={isBusy || server.status !== 'offline'}>
-						<RefreshCcw />
-						<p>Sync mserve.json</p>
-					</Button>
-				</div>
+				<Button
+					variant='secondary'
+					onClick={handleManualSync}
+					disabled={isBusy || server.status !== 'offline'}>
+					<RefreshCcw />
+					<p>Sync mserve.json</p>
+				</Button>
 				<p className='text-sm text-muted-foreground mt-1'>
 					Sync and save operations require the server to be offline.
 				</p>

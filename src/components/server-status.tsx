@@ -68,7 +68,7 @@ const ServerStatus: React.FC<Props> = ({ server, size = 'md' }) => {
 			)}
 			{server.status === 'online' && (
 				<div className={`text-green-500 flex items-center flex-col ${classes.container}`}>
-					<Tooltip open={server.stats.tps !== 0}>
+					<Tooltip>
 						<TooltipTrigger>
 							<div className={`${classes.visual} flex items-center justify-center`}>
 								<Circle
@@ -101,9 +101,11 @@ const ServerStatus: React.FC<Props> = ({ server, size = 'md' }) => {
 							</div>
 							<p className={`font-bold ${classes.status}`}>Online</p>
 						</TooltipTrigger>
-						<TooltipContent>
-							<p className='font-bold'>Server TPS (Ticks per second)</p>
-						</TooltipContent>
+						{server.stats.tps !== 0 && (
+							<TooltipContent>
+								<p className='font-bold'>Server TPS (Ticks per second)</p>
+							</TooltipContent>
+						)}
 					</Tooltip>
 				</div>
 			)}

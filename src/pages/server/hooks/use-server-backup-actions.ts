@@ -2,7 +2,25 @@ import React from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
 import type { AutoBackupMode, Server, ServerUpdate } from '@/data/servers';
+import { normalizeProviderChecks } from '@/lib/mserve-schema';
 import { getBackupNameFromPath } from '../server-utils';
+import type { CreateServerBackupResult, RestoreServerBackupResult } from '../server-types';
+
+const BACKUP_STORAGE_LIMIT_ERROR_PREFIX = 'Backup storage limit exceeded';
+
+const toErrorMessage = (error: unknown, fallback: string) =>
+	error instanceof Error ? error.message : fallback;
+
+const isBackupStorageLimitError = (message: string) => message.startsWith(BACKUP_STORAGE_LIMIT_ERROR_PREFIX);
+
+const notifyDeletedBackups = (count: number) => {
+	if (count < 1) return;
+	toast.info(
+		count === 1
+			? 'Deleted 1 old backup to make space for the new backup.'
+			: `Deleted ${count} old backups to make space for the new backup.`,
+	);
+};
 
 type Args = {
 	server: Server | undefined;
@@ -51,9 +69,17 @@ export const useServerBackupActions = ({
 		if (isBusy || server.status === 'online') return;
 		setIsBusy(true);
 		try {
-			await invoke('create_server_backup', { directory: server.directory });
+			const result = await invoke<CreateServerBackupResult>('create_server_backup', {
+				directory: server.directory,
+			});
+			notifyDeletedBackups(Math.max(0, Number(result.deletedBackupsCount) || 0));
 			await syncServerContents();
 		} catch (err) {
+			const message = toErrorMessage(err, 'Failed to create backup.');
+			if (isBackupStorageLimitError(message)) {
+				toast.error(message, { duration: Infinity, id: 'backup-storage-limit' });
+				return;
+			}
 			showError(err, 'Failed to create backup.');
 		} finally {
 			setIsBusy(false);
@@ -69,23 +95,31 @@ export const useServerBackupActions = ({
 			}
 
 			const nextLimit = Math.max(1, Math.round(Number(storageLimitGb) || server.storage_limit || 200));
-			await invoke('update_server_settings', {
-				payload: {
-					directory: server.directory,
-					ram: Math.max(1, Number(server.ram) || 3),
-					storage_limit: nextLimit,
-					auto_backup: server.auto_backup,
-					auto_backup_interval: Math.max(1, Number(server.auto_backup_interval) || 120),
-					auto_restart: server.auto_restart,
-					custom_flags: server.custom_flags,
-					java_installation: server.java_installation,
-				},
-			});
+			try {
+				await invoke('update_server_settings', {
+					payload: {
+						directory: server.directory,
+						ram: Math.max(1, Number(server.ram) || 3),
+						storage_limit: nextLimit,
+						auto_backup: server.auto_backup,
+						auto_backup_interval: Math.max(1, Number(server.auto_backup_interval) || 120),
+						auto_restart: server.auto_restart,
+						custom_flags: server.custom_flags,
+						java_installation: server.java_installation,
+						provider: server.provider,
+						version: server.version,
+						provider_checks: normalizeProviderChecks(server.provider_checks),
+					},
+				});
 
-			updateServer(serverId, { storage_limit: nextLimit });
-			toast.success(`Backup storage limit updated to ${nextLimit} GB.`);
+				updateServer(serverId, { storage_limit: nextLimit });
+				toast.success(`Backup storage limit updated to ${nextLimit} GB.`);
+			} catch (err) {
+				showError(err, 'Failed to update backup storage limit.');
+				throw err;
+			}
 		},
-		[server, serverId, updateServer],
+		[server, serverId, showError, updateServer],
 	);
 
 	const handleSetDeleteInterval = React.useCallback(
@@ -115,6 +149,9 @@ export const useServerBackupActions = ({
 					auto_restart: server.auto_restart,
 					custom_flags: server.custom_flags,
 					java_installation: server.java_installation,
+					provider: server.provider,
+					version: server.version,
+					provider_checks: normalizeProviderChecks(server.provider_checks),
 				},
 			});
 
@@ -170,25 +207,33 @@ export const useServerBackupActions = ({
 			if (isBusy || server.status === 'online') return;
 
 			setIsBusy(true);
+			let loadingToastId: string | number | undefined;
 			try {
 				const backupName = getBackupNameFromPath(backupDirectory);
-				await toast.promise(
-					(async () => {
-						await invoke('restore_server_backup', {
-							payload: {
-								directory: server.directory,
-								backupDirectory,
-							},
-						});
-						await syncServerContents();
-						return { backupName };
-					})(),
-					{
-						loading: 'Creating backup of current state and restoring...',
-						success: (data) => `Backup created and ${data.backupName} has been restored`,
-						error: (err) => (err instanceof Error ? err.message : 'Failed to restore backup.'),
+				loadingToastId = toast.loading('Creating backup of current state and restoring...');
+				const result = await invoke<RestoreServerBackupResult>('restore_server_backup', {
+					payload: {
+						directory: server.directory,
+						backupDirectory,
 					},
-				);
+				});
+				notifyDeletedBackups(Math.max(0, Number(result.deletedBackupsCount) || 0));
+				await syncServerContents();
+				toast.success(`Backup created and ${backupName} has been restored`, { id: loadingToastId });
+			} catch (err) {
+				const message = toErrorMessage(err, 'Failed to restore backup.');
+				if (isBackupStorageLimitError(message)) {
+					if (loadingToastId !== undefined) {
+						toast.dismiss(loadingToastId);
+					}
+					toast.error(message, { duration: Infinity, id: 'backup-storage-limit' });
+					return;
+				}
+				if (loadingToastId !== undefined) {
+					toast.error(message, { id: loadingToastId });
+					return;
+				}
+				toast.error(message);
 			} finally {
 				setIsBusy(false);
 			}

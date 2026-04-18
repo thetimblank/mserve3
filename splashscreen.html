@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+   <meta charset="UTF-8" />
+   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+   <title>MSERVE Splash</title>
+   <style>
+      :root {
+         color-scheme: dark;
+      }
+
+      html,
+      body {
+         width: 100%;
+         height: 100%;
+         margin: 0;
+         background: #000;
+         overflow: hidden;
+      }
+
+      body {
+         display: grid;
+         place-items: center;
+      }
+
+      .splash-logo {
+         width: clamp(120px, 20vw, 150px);
+         height: auto;
+         user-select: none;
+         -webkit-user-drag: none;
+         image-rendering: auto;
+      }
+   </style>
+</head>
+
+<body>
+   <img class="splash-logo" src="/mserve.png" alt="MSERVE" draggable="false" />
+</body>
+
+</html>

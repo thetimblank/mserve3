@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { invoke } from '@tauri-apps/api/core';
 import Nav from './components/nav';
 import Animations from './lib/animations/lazy';
 import { ThemeProvider } from '@/components/theme-provider';
@@ -18,9 +19,25 @@ import MserveRepairDialog from '@/components/mserve-repair-dialog';
 import CreateServerPage from './pages/CreateServer';
 import { CreateServerProvider } from './pages/create-server/CreateServerContext';
 
+let startupCompleted = false;
+
+const StartupReadySignal: React.FC = () => {
+	React.useEffect(() => {
+		if (startupCompleted) return;
+		startupCompleted = true;
+
+		void invoke('complete_startup').catch(() => {
+			// Ignore failures so startup does not block in browser-only contexts.
+		});
+	}, []);
+
+	return null;
+};
+
 const RootLayout: React.FC = () => {
 	return (
 		<BrowserRouter>
+			<StartupReadySignal />
 			<Toaster />
 			<MserveRepairDialog />
 			<Animations>

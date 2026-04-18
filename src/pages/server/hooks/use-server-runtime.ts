@@ -14,6 +14,7 @@ import {
 import { getServerProviderCapabilities } from '@/lib/server-provider-capabilities';
 import { useUser } from '@/data/user';
 import {
+	type CreateServerBackupResult,
 	type RuntimeStatusResult,
 	type ScanServerContentsResult,
 	type ServerOutputEvent,
@@ -37,6 +38,8 @@ type Args = {
 };
 
 type BackupReason = 'on_start' | 'on_close' | 'interval';
+
+const BACKUP_STORAGE_LIMIT_ERROR_PREFIX = 'Backup storage limit exceeded';
 
 type RuntimeState = {
 	startAt: Date | null;
@@ -151,6 +154,10 @@ export const useServerRuntime = ({
 				worlds: result.worlds,
 				datapacks: result.datapacks,
 				backups: mapScannedBackups(result.backups),
+				stats: {
+					worlds_size_bytes: Math.max(0, Number(result.worldsSizeBytes) || 0),
+					backups_size_bytes: Math.max(0, Number(result.backupsSizeBytes) || 0),
+				},
 			});
 		} catch {}
 	}, [serverDirectory, serverId, updateServer]);
@@ -162,13 +169,26 @@ export const useServerRuntime = ({
 
 			runtimeRef.current.isCreatingAutoBackup = true;
 			try {
-				await invoke('create_server_backup', { directory: serverDirectory });
+				const result = await invoke<CreateServerBackupResult>('create_server_backup', {
+					directory: serverDirectory,
+				});
+				const deletedBackupsCount = Math.max(0, Number(result.deletedBackupsCount) || 0);
+				if (deletedBackupsCount > 0) {
+					toast.info(
+						deletedBackupsCount === 1
+							? 'Deleted 1 old backup to make space for the new backup.'
+							: `Deleted ${deletedBackupsCount} old backups to make space for the new backup.`,
+					);
+				}
 				if (reason !== 'interval') {
 					appendTerminalLine(`[system] Auto backup created (${reason.replace('_', ' ')})`);
 				}
 				await syncServerContents();
 			} catch (err) {
 				const message = err instanceof Error ? err.message : 'Failed to create automatic backup.';
+				if (message.startsWith(BACKUP_STORAGE_LIMIT_ERROR_PREFIX)) {
+					toast.error(message, { duration: Infinity, id: 'backup-storage-limit' });
+				}
 				appendTerminalLine(`[system] Auto backup failed: ${message}`);
 			} finally {
 				runtimeRef.current.isCreatingAutoBackup = false;

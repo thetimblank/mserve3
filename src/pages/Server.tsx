@@ -26,7 +26,6 @@ const Server: React.FC = () => {
 		isBusy,
 		setIsBusy,
 		hideBackgroundTelemetry,
-		setHideBackgroundTelemetry,
 		errorMessage,
 		setErrorMessage,
 		terminalInput,
@@ -91,8 +90,8 @@ const Server: React.FC = () => {
 		server,
 		serverId,
 		isBusy,
-		setIsBusy,
 		hideBackgroundTelemetry,
+		setIsBusy,
 		terminalInput,
 		setTerminalInput,
 		setErrorMessage,
@@ -107,7 +106,6 @@ const Server: React.FC = () => {
 		handleDeleteBackup,
 		handleCreateBackup,
 		handleSetStorageLimit,
-		handleSetDeleteInterval,
 		handleClearAllBackups,
 		handleRestoreBackup,
 	} = useServerBackupActions({
@@ -241,7 +239,6 @@ const Server: React.FC = () => {
 						onRestoreBackup={handleRestoreBackup}
 						onDeleteBackup={handleDeleteBackup}
 						onSetStorageLimit={handleSetStorageLimit}
-						onSetDeleteInterval={handleSetDeleteInterval}
 						onClearAllBackups={handleClearAllBackups}
 					/>
 				)}
@@ -252,8 +249,6 @@ const Server: React.FC = () => {
 						isBusy={isBusy}
 						setIsBusy={setIsBusy}
 						syncServerContents={syncServerContents}
-						setHideBackgroundTelemetry={setHideBackgroundTelemetry}
-						hideBackgroundTelemetry={hideBackgroundTelemetry}
 					/>
 				)}
 			</div>

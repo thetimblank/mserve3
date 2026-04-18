@@ -1,7 +1,7 @@
 import React from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
-import { Check, FolderOpen, Info, Loader } from 'lucide-react';
+import { Check, Eye, EyeOff, FolderOpen, Info, Loader } from 'lucide-react';
 import { toast } from 'sonner';
 import clsx from 'clsx';
 import { type Server, useServers } from '@/data/servers';
@@ -27,6 +27,7 @@ import {
 import type { ServerSettingsForm, UpdateServerSettingsResult } from '@/pages/server/server-types';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { InputGroup, InputGroupAddon, InputGroupInput } from './ui/input-group';
+import { useServerUiState } from '@/pages/server/hooks/use-server-ui-state';
 
 type EditServerPropertiesFormProps = {
 	server: Server;
@@ -38,7 +39,7 @@ type EditServerPropertiesFormProps = {
 	className?: string;
 };
 
-const providerOptions = [
+export const providerOptions = [
 	{ value: 'paper', label: 'Paper' },
 	{ value: 'folia', label: 'Folia' },
 	{ value: 'spigot', label: 'Spigot' },
@@ -114,10 +115,12 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 		jar_swap_path: '',
 		new_directory: '',
 	});
+	const { hideBackgroundTelemetry, setHideBackgroundTelemetry } = useServerUiState();
 
 	const serverId = server.id;
 	const unsavedToastId = React.useMemo(() => `server-settings-unsaved-${serverId}`, [serverId]);
 	const resolvedProvider = settingsForm.provider;
+	const isFormLocked = Boolean(disabled || isSaving || server.status !== 'offline');
 	const normalizedServerProvider = React.useMemo(
 		() => normalizeProvider(server.provider),
 		[server.provider],
@@ -267,7 +270,7 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 	}, [updateSettingsField]);
 
 	const handleSaveSettings = React.useCallback(async () => {
-		if (isSaving || server.status !== 'offline' || disabled) return;
+		if (isFormLocked) return;
 
 		const payload = buildUpdateServerSettingsPayload(server.directory, settingsForm);
 		payload.new_directory = resolveNewDirectory(payload, server.directory);
@@ -276,7 +279,7 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 		setIsSaving(true);
 		try {
 			const savePromise = invoke<UpdateServerSettingsResult>('update_server_settings', { payload });
-			await toast.promise(savePromise, {
+			toast.promise(savePromise, {
 				loading: 'Saving server settings...',
 				success: 'Server settings updated',
 				error: (err) => (err instanceof Error ? err.message : 'Failed to update server settings.'),
@@ -311,20 +314,10 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 		} finally {
 			setIsSaving(false);
 		}
-	}, [
-		disabled,
-		isSaving,
-		onSaved,
-		server.directory,
-		server.status,
-		serverId,
-		settingsForm,
-		unsavedToastId,
-		updateServer,
-	]);
+	}, [isFormLocked, onSaved, server.directory, serverId, settingsForm, unsavedToastId, updateServer]);
 
 	React.useEffect(() => {
-		if (isSaving || !hasUnsavedChanges) {
+		if (isFormLocked || !hasUnsavedChanges) {
 			toast.dismiss(unsavedToastId);
 			return;
 		}
@@ -339,7 +332,7 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 				},
 			},
 		});
-	}, [handleSaveSettings, hasUnsavedChanges, isSaving, unsavedToastId]);
+	}, [handleSaveSettings, hasUnsavedChanges, isFormLocked, unsavedToastId]);
 
 	const runCommandPreview = React.useMemo(
 		() =>
@@ -360,7 +353,13 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 	);
 
 	return (
-		<div className={clsx('space-y-20', className)}>
+		<div
+			aria-disabled={isFormLocked}
+			className={clsx(
+				'space-y-20 transition-opacity',
+				isFormLocked && 'opacity-60 pointer-events-none',
+				className,
+			)}>
 			<RamSliderField
 				className='max-w-2xl'
 				id='edit-server-ram'
@@ -379,7 +378,6 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 						min={1}
 						value={settingsForm.storage_limit}
 						onChange={(event) => updateSettingsField('storage_limit', Number(event.target.value))}
-						disabled={disabled || isSaving || server.status !== 'offline'}
 					/>
 					<InputGroupAddon className='font-mono font-bold uppercase text-xs' align='inline-end'>
 						Gigabytes
@@ -401,7 +399,6 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 					placeholder='C:\Program Files\Java\jdk-25\bin\java.exe'
 					value={settingsForm.java_installation}
 					onChange={(event) => updateSettingsField('java_installation', event.target.value)}
-					disabled={disabled || isSaving || server.status !== 'offline'}
 				/>
 			</div>
 
@@ -425,8 +422,7 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 						<Label htmlFor='edit-provider'>Server provider</Label>
 						<Select
 							value={settingsForm.provider}
-							onValueChange={(value) => updateSettingsField('provider', value)}
-							disabled={disabled || isSaving || server.status !== 'offline'}>
+							onValueChange={(value) => updateSettingsField('provider', value)}>
 							<SelectTrigger id='edit-provider' className='w-full'>
 								<SelectValue placeholder='Select provider' />
 							</SelectTrigger>
@@ -448,7 +444,6 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 						placeholder='1.21.5'
 						value={settingsForm.version}
 						onChange={(event) => updateSettingsField('version', event.target.value)}
-						disabled={disabled || isSaving || server.status !== 'offline'}
 					/>
 				</div>
 			</div>
@@ -468,12 +463,7 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 							onCheckedChange={(checked) =>
 								toggleProviderCheck('list_polling', typeof checked === 'boolean' ? checked : false)
 							}
-							disabled={
-								disabled ||
-								isSaving ||
-								server.status !== 'offline' ||
-								!providerCommandSupport.supportsListCommand
-							}
+							disabled={!providerCommandSupport.supportsListCommand}
 						/>
 						List command polling
 					</Label>
@@ -485,12 +475,7 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 							onCheckedChange={(checked) =>
 								toggleProviderCheck('tps_polling', typeof checked === 'boolean' ? checked : false)
 							}
-							disabled={
-								disabled ||
-								isSaving ||
-								server.status !== 'offline' ||
-								!providerCommandSupport.supportsTpsCommand
-							}
+							disabled={!providerCommandSupport.supportsTpsCommand}
 						/>
 						TPS command polling
 					</Label>
@@ -503,16 +488,15 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 							onCheckedChange={(checked) =>
 								toggleProviderCheck('version_polling', typeof checked === 'boolean' ? checked : false)
 							}
-							disabled={
-								disabled ||
-								isSaving ||
-								server.status !== 'offline' ||
-								!providerCommandSupport.supportsVersionCommand
-							}
+							disabled={!providerCommandSupport.supportsVersionCommand}
 						/>
 						Version command polling
 					</Label>
 				</div>
+				<Button variant='secondary' onClick={() => setHideBackgroundTelemetry((prev) => !prev)}>
+					{hideBackgroundTelemetry ? <Eye /> : <EyeOff />}
+					{hideBackgroundTelemetry ? 'Show Status Check logs' : 'Hide Status Check logs'}
+				</Button>
 			</div>
 
 			<div className='space-y-4 max-w-md'>
@@ -529,7 +513,6 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 											typeof checked === 'boolean' ? checked : false,
 										)
 									}
-									disabled={disabled || isSaving || server.status !== 'offline'}
 								/>
 								{choice.label}
 							</Label>
@@ -549,7 +532,6 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 								onChange={(event) =>
 									updateSettingsField('auto_backup_interval', Number(event.target.value))
 								}
-								disabled={disabled || isSaving || server.status !== 'offline'}
 							/>
 							<InputGroupAddon className='font-mono font-bold uppercase text-xs' align='inline-end'>
 								Minutes
@@ -567,7 +549,6 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 						onCheckedChange={(checked) =>
 							updateSettingsField('auto_restart', typeof checked === 'boolean' ? checked : false)
 						}
-						disabled={disabled || isSaving || server.status !== 'offline'}
 					/>
 					Auto restart server when it closes
 				</Label>
@@ -590,7 +571,6 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 						setCustomFlagsDraft(nextValue);
 						updateSettingsField('custom_flags', parseCustomFlagsInput(nextValue));
 					}}
-					disabled={disabled || isSaving || server.status !== 'offline'}
 				/>
 				<div className='space-y-2'>
 					<Label className='text-xl mt-4'>Resolved start command preview</Label>
@@ -610,13 +590,8 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 						placeholder='C:\servers\MyServer'
 						value={settingsForm.new_directory}
 						onChange={(event) => updateSettingsField('new_directory', event.target.value)}
-						disabled={disabled || isSaving || server.status !== 'offline'}
 					/>
-					<Button
-						type='button'
-						variant='outline'
-						onClick={pickNewDirectory}
-						disabled={disabled || isSaving || server.status !== 'offline'}>
+					<Button type='button' variant='outline' onClick={pickNewDirectory}>
 						<FolderOpen /> Browse
 					</Button>
 				</div>
@@ -635,13 +610,8 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 						placeholder='C:\path\to\another-server.jar'
 						value={settingsForm.jar_swap_path}
 						onChange={(event) => updateSettingsField('jar_swap_path', event.target.value)}
-						disabled={disabled || isSaving || server.status !== 'offline'}
 					/>
-					<Button
-						type='button'
-						variant='outline'
-						onClick={pickSwapJarFile}
-						disabled={disabled || isSaving || server.status !== 'offline'}>
+					<Button type='button' variant='outline' onClick={pickSwapJarFile}>
 						<FolderOpen /> Browse
 					</Button>
 				</div>
@@ -655,16 +625,11 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 			{settingsError && <p className='text-sm text-destructive'>{settingsError}</p>}
 
 			{showCancel && (
-				<Button variant='outline' type='button' onClick={onCancel} disabled={isSaving}>
+				<Button variant='outline' type='button' onClick={onCancel}>
 					Cancel
 				</Button>
 			)}
-			<Button
-				size='lg'
-				type='button'
-				className='text-md'
-				onClick={handleSaveSettings}
-				disabled={disabled || isSaving || server.status !== 'offline'}>
+			<Button size='lg' type='button' className='text-md' onClick={handleSaveSettings}>
 				{isSaving ? (
 					<Loader className='animate-spin size-5' />
 				) : (

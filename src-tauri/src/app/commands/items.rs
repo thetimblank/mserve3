@@ -123,12 +123,23 @@ pub(in crate::app) fn scan_server_contents(directory: String) -> Result<ServerSc
     }
 
     let explicit = false;
+    let worlds = list_worlds(&directory_path);
+    let backups = list_backups(&directory_path);
+    let worlds_size_bytes = worlds
+        .iter()
+        .filter(|world| world.activated)
+        .fold(0_u64, |total, world| total.saturating_add(world.size.unwrap_or(0)));
+    let backups_size_bytes = backups
+        .iter()
+        .fold(0_u64, |total, backup| total.saturating_add(backup.size));
 
     Ok(ServerScanResult {
         plugins: list_plugins(&directory_path, explicit),
-        worlds: list_worlds(&directory_path),
+        worlds,
         datapacks: list_datapacks(&directory_path, explicit),
-        backups: list_backups(&directory_path),
+        backups,
+        worlds_size_bytes,
+        backups_size_bytes,
     })
 }
 

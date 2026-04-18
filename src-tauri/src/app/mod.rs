@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::process::{Child, ChildStdin};
 use std::sync::Mutex;
+use tauri::Manager;
 
 use commands::*;
 
@@ -254,6 +255,8 @@ struct ServerScanResult {
     worlds: Vec<ScannedWorld>,
     datapacks: Vec<ScannedDatapack>,
     backups: Vec<ScannedBackup>,
+    worlds_size_bytes: u64,
+    backups_size_bytes: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -261,6 +264,32 @@ struct ServerScanResult {
 struct ScannedBackup {
     directory: String,
     created_at: String,
+    size: u64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateBackupResult {
+    backup: ScannedBackup,
+    deleted_backups_count: usize,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RestoreBackupResult {
+    deleted_backups_count: usize,
+}
+
+#[tauri::command]
+fn complete_startup(app: tauri::AppHandle) {
+    if let Some(main_window) = app.get_webview_window("main") {
+        let _ = main_window.show();
+        let _ = main_window.set_focus();
+    }
+
+    if let Some(splash_window) = app.get_webview_window("splashscreen") {
+        let _ = splash_window.close();
+    }
 }
 
 
@@ -300,7 +329,8 @@ pub fn run() {
             get_server_runtime_status,
             scan_server_contents,
             set_server_item_active,
-            delete_server
+            delete_server,
+            complete_startup
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

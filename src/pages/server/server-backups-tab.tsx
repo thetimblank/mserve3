@@ -1,9 +1,9 @@
 import React from 'react';
-import { Archive, ArchiveRestore, CircleX, EllipsisVertical, Trash } from 'lucide-react';
+import { Archive, ArchiveRestore, CircleX, Clock3, EllipsisVertical, HardDrive, Trash } from 'lucide-react';
 import OpenFolderButton from '@/components/open-folder-button';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -15,7 +15,6 @@ import {
 	AlertDialogTitle,
 	AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { getBackupNameFromPath } from './server-utils';
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -31,11 +30,15 @@ import {
 	DrawerHeader,
 	DrawerTitle,
 } from '@/components/ui/drawer';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { type Server } from '@/data/servers';
+import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group';
+import { formatBytes, getBackupNameFromPath } from './server-utils';
 
 type Backup = {
 	directory: string;
 	created_at: Date;
+	size?: number;
 };
 
 type ServerBackupsTabProps = {
@@ -47,7 +50,6 @@ type ServerBackupsTabProps = {
 	onRestoreBackup: (backupDirectory: string) => Promise<void> | void;
 	onDeleteBackup: (backupDirectory: string) => Promise<void> | void;
 	onSetStorageLimit: (storageLimitGb: number) => Promise<void> | void;
-	onSetDeleteInterval: (intervalMinutes: number) => Promise<void> | void;
 	onClearAllBackups: () => Promise<void> | void;
 };
 
@@ -60,33 +62,24 @@ const ServerBackupsTab: React.FC<ServerBackupsTabProps> = ({
 	onRestoreBackup,
 	onDeleteBackup,
 	onSetStorageLimit,
-	onSetDeleteInterval,
 	onClearAllBackups,
 }) => {
 	const [isStorageDrawerOpen, setIsStorageDrawerOpen] = React.useState(false);
-	const [isIntervalDrawerOpen, setIsIntervalDrawerOpen] = React.useState(false);
 	const [isClearAllDialogOpen, setIsClearAllDialogOpen] = React.useState(false);
-	const [storageLimitInput, setStorageLimitInput] = React.useState(String(server.storage_limit ?? 200));
-	const [intervalInput, setIntervalInput] = React.useState(String(server.auto_backup_interval ?? 120));
+	const [storageLimitInput, setStorageLimitInput] = React.useState(server.storage_limit);
 
 	React.useEffect(() => {
-		setStorageLimitInput(String(server.storage_limit ?? 200));
+		setStorageLimitInput(server.storage_limit);
 	}, [server.storage_limit]);
 
-	React.useEffect(() => {
-		setIntervalInput(String(server.auto_backup_interval ?? 120));
-	}, [server.auto_backup_interval]);
-
-	const handleSaveStorageLimit = () => {
-		const value = Math.max(1, Math.round(Number(storageLimitInput) || server.storage_limit || 200));
-		void onSetStorageLimit(value);
-		setIsStorageDrawerOpen(false);
-	};
-
-	const handleSaveDeleteInterval = () => {
-		const value = Math.max(1, Math.round(Number(intervalInput) || server.auto_backup_interval || 120));
-		void onSetDeleteInterval(value);
-		setIsIntervalDrawerOpen(false);
+	const handleSaveStorageLimit = async () => {
+		const value = Math.max(1, Math.round(storageLimitInput || server.storage_limit || 200));
+		try {
+			await onSetStorageLimit(value);
+			setIsStorageDrawerOpen(false);
+		} catch {
+			// Error toasts are handled by the callback.
+		}
 	};
 
 	const handleClearAllBackups = () => {
@@ -114,13 +107,10 @@ const ServerBackupsTab: React.FC<ServerBackupsTabProps> = ({
 							<DropdownMenuItem onSelect={() => setIsStorageDrawerOpen(true)}>
 								Set storage limit
 							</DropdownMenuItem>
-							<DropdownMenuItem onSelect={() => setIsIntervalDrawerOpen(true)}>
-								Set interval to delete old backups
-							</DropdownMenuItem>
 							<DropdownMenuItem
 								onSelect={() => setIsClearAllDialogOpen(true)}
-								className='text-destructive hover:text-destructive-active'>
-								<Trash /> Clear all Backups
+								className='group text-destructive font-bold'>
+								<Trash className='text-destructive group-hover:text-foreground' /> Clear all Backups
 							</DropdownMenuItem>
 						</DropdownMenuContent>
 					</DropdownMenu>
@@ -136,16 +126,38 @@ const ServerBackupsTab: React.FC<ServerBackupsTabProps> = ({
 				</div>
 			) : (
 				backups.map((backup) => (
-					<div
-						key={backup.directory}
-						className='border border-border rounded-lg p-3 flex items-center justify-between gap-3'>
-						<div>
-							<p className='font-semibold'>{getBackupNameFromPath(backup.directory)}</p>
-							<p className='text-sm text-muted-foreground'>
-								Created {new Date(backup.created_at).toLocaleString()}
-							</p>
-						</div>
-						<div className='flex gap-2'>
+					<Card key={backup.directory}>
+						<CardHeader className='border-b border-b-border'>
+							<div className='flex items-start justify-between gap-4'>
+								<CardTitle>{getBackupNameFromPath(backup.directory)}</CardTitle>
+							</div>
+							<CardDescription className='flex items-center gap-6'>
+								<Tooltip>
+									<TooltipTrigger asChild>
+										<div className='flex items-center lg:text-lg gap-2'>
+											<HardDrive className='size-4' />
+											{formatBytes(backup.size)}
+										</div>
+									</TooltipTrigger>
+									<TooltipContent>
+										<p className='font-bold'>Backup Size</p>
+									</TooltipContent>
+								</Tooltip>
+
+								<Tooltip>
+									<TooltipTrigger asChild>
+										<div className='flex items-center lg:text-lg gap-2'>
+											<Clock3 className='size-4' />
+											{backup.created_at.toLocaleString()}
+										</div>
+									</TooltipTrigger>
+									<TooltipContent>
+										<p className='font-bold'>Exact time Created</p>
+									</TooltipContent>
+								</Tooltip>
+							</CardDescription>
+						</CardHeader>
+						<CardContent className='flex flex-wrap gap-2'>
 							<OpenFolderButton targetPath={backup.directory} disabled={isBusy} />
 							<AlertDialog>
 								<AlertDialogTrigger asChild>
@@ -194,63 +206,39 @@ const ServerBackupsTab: React.FC<ServerBackupsTabProps> = ({
 									</AlertDialogFooter>
 								</AlertDialogContent>
 							</AlertDialog>
-						</div>
-					</div>
+						</CardContent>
+					</Card>
 				))
 			)}
 
 			<Drawer open={isStorageDrawerOpen} onOpenChange={setIsStorageDrawerOpen}>
-				<DrawerContent>
+				<DrawerContent className='flex flex-col items-center'>
 					<DrawerHeader>
 						<DrawerTitle>Set backup storage limit</DrawerTitle>
 						<DrawerDescription>
 							Backups older than your storage budget can be removed first.
 						</DrawerDescription>
 					</DrawerHeader>
-					<div className='px-4 space-y-2'>
-						<Label htmlFor='backup-storage-limit'>Storage limit (GB)</Label>
-						<Input
-							id='backup-storage-limit'
-							type='number'
-							min={1}
-							value={storageLimitInput}
-							onChange={(event) => setStorageLimitInput(event.target.value)}
-						/>
+					<div className='px-4 space-y-2 w-md'>
+						<Label htmlFor='backup-storage-limit'>Storage limit</Label>
+						<InputGroup>
+							<InputGroupInput
+								id='backup-storage-limit'
+								type='number'
+								min={1}
+								value={storageLimitInput}
+								onChange={(event) => setStorageLimitInput(Number(event.target.value))}
+							/>
+							<InputGroupAddon className='font-mono font-bold uppercase text-xs' align='inline-end'>
+								Gigabytes
+							</InputGroupAddon>
+						</InputGroup>
 					</div>
-					<DrawerFooter>
+					<DrawerFooter className='w-md'>
 						<Button variant='outline' onClick={() => setIsStorageDrawerOpen(false)}>
 							Cancel
 						</Button>
 						<Button onClick={handleSaveStorageLimit} disabled={isBusy || isOnline}>
-							Save
-						</Button>
-					</DrawerFooter>
-				</DrawerContent>
-			</Drawer>
-
-			<Drawer open={isIntervalDrawerOpen} onOpenChange={setIsIntervalDrawerOpen}>
-				<DrawerContent>
-					<DrawerHeader>
-						<DrawerTitle>Set old backup cleanup interval</DrawerTitle>
-						<DrawerDescription>
-							Choose how often old backups should be considered for cleanup.
-						</DrawerDescription>
-					</DrawerHeader>
-					<div className='px-4 space-y-2'>
-						<Label htmlFor='backup-cleanup-interval'>Interval (minutes)</Label>
-						<Input
-							id='backup-cleanup-interval'
-							type='number'
-							min={1}
-							value={intervalInput}
-							onChange={(event) => setIntervalInput(event.target.value)}
-						/>
-					</div>
-					<DrawerFooter>
-						<Button variant='outline' onClick={() => setIsIntervalDrawerOpen(false)}>
-							Cancel
-						</Button>
-						<Button onClick={handleSaveDeleteInterval} disabled={isBusy || isOnline}>
 							Save
 						</Button>
 					</DrawerFooter>

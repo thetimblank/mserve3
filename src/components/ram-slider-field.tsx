@@ -41,12 +41,11 @@ const toRamGradientPercent = (marker: number, max: number) => {
 };
 
 const buildRamGradient = (maxRam: number) => {
-	const yellowStartPercent = toRamGradientPercent(1, maxRam);
-	const greenStartPercent = toRamGradientPercent(4, maxRam);
+	const greenStartPercent = toRamGradientPercent(1, maxRam);
 	const yellowReturnPercent = toRamGradientPercent(10, maxRam);
 	const redReturnPercent = toRamGradientPercent(16, maxRam);
 
-	return `linear-gradient(90deg, #ef4444 0%, #facc15 ${yellowStartPercent}%, #22c55e ${greenStartPercent}%, #22c55e ${yellowReturnPercent}%, #facc15 ${redReturnPercent}%, #ef4444 100%)`;
+	return `linear-gradient(90deg, #facc15 0%, #22c55e ${greenStartPercent}%, #22c55e ${yellowReturnPercent}%, #facc15 ${redReturnPercent}%, #ef4444 100%)`;
 };
 
 const RamSliderField: React.FC<RamSliderFieldProps> = ({ id, value, onChange, className }) => {

@@ -24,24 +24,34 @@ const ServerContentTabs: React.FC<ServerContentTabsProps> = ({
 	activeTab,
 	onTabChange,
 	availableTabs = defaultTabs,
-}) => (
-	<>
-		{availableTabs.map((item) => (
-			<Button
-				key={item}
-				className={clsx(
-					'flex-1',
-					activeTab === item && 'bg-accent text-accent-foreground hover:bg-accent cursor-default',
-				)}
-				variant='secondary'
-				onClick={() => onTabChange(item)}>
-				<span className='flex items-center justify-center gap-2'>
-					{tabMeta[item].icon}
-					{tabMeta[item].label}
-				</span>
-			</Button>
-		))}
-	</>
-);
+}) => {
+	const handleTabClick = React.useCallback(
+		(tab: ServerContentTab) => {
+			if (tab === activeTab) return;
+			onTabChange(tab);
+		},
+		[activeTab, onTabChange],
+	);
+
+	return (
+		<>
+			{availableTabs.map((item) => (
+				<Button
+					key={item}
+					className={clsx(
+						'flex-1',
+						activeTab === item && 'bg-accent text-accent-foreground hover:bg-accent cursor-default',
+					)}
+					variant='secondary'
+					onClick={() => handleTabClick(item)}>
+					<span className='flex items-center justify-center gap-2'>
+						{tabMeta[item].icon}
+						{tabMeta[item].label}
+					</span>
+				</Button>
+			))}
+		</>
+	);
+};
 
 export default React.memo(ServerContentTabs);

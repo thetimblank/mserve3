@@ -10,6 +10,8 @@ import { inferProviderFromJarPath, inferVersionFromJarPath } from '@/lib/server-
 import { useCreateServer, type PathValidationResult } from '../CreateServerContext';
 import JarDownloadModal, { type DownloadedJarSelection } from './components/JarDownloadModal';
 import SlideShell from './SlideShell';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { providerOptions } from '@/components/edit-server-properties-form';
 
 const SlideJarFile: React.FC = () => {
 	const { form, updateField, nextSlide, setError, clearError } = useCreateServer();
@@ -153,12 +155,18 @@ const SlideJarFile: React.FC = () => {
 				</Field>
 				<Field>
 					<Label htmlFor='create-server-provider'>Server Provider</Label>
-					<Input
-						id='create-server-provider'
-						placeholder='paper, vanilla, fabric, velocity...'
-						value={form.provider}
-						onChange={(event) => updateField('provider', event.target.value)}
-					/>
+					<Select value={form.provider} onValueChange={(value) => updateField('provider', value)}>
+						<SelectTrigger id='create-server-provider' className='w-full'>
+							<SelectValue placeholder='Select provider' />
+						</SelectTrigger>
+						<SelectContent>
+							{providerOptions.map((option) => (
+								<SelectItem key={option.value} value={option.value}>
+									{option.label}
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
 					<p className='text-xs text-muted-foreground'>
 						{inferredProvider
 							? `Detected from filename: ${inferredProvider}`

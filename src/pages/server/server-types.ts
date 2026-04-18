@@ -9,7 +9,18 @@ export type ServerOutputEvent = {
 
 export type ScannedBackupEntry = {
 	directory: string;
+	createdAt?: string;
 	created_at?: string;
+	size?: number;
+};
+
+export type CreateServerBackupResult = {
+	backup: ScannedBackupEntry;
+	deletedBackupsCount: number;
+};
+
+export type RestoreServerBackupResult = {
+	deletedBackupsCount: number;
 };
 
 export type ScanServerContentsResult = {
@@ -17,6 +28,8 @@ export type ScanServerContentsResult = {
 	worlds: MserveServer['worlds'];
 	datapacks: MserveServer['datapacks'];
 	backups: ScannedBackupEntry[];
+	worldsSizeBytes: number;
+	backupsSizeBytes: number;
 };
 
 export type RuntimeStatusResult = {

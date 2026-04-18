@@ -43,6 +43,8 @@ const buildServerShell = (
 		capacity: 20,
 		tps: 0,
 		uptime: null,
+		worlds_size_bytes: 0,
+		backups_size_bytes: 0,
 	},
 });
 

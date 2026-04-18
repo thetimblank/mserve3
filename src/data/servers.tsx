@@ -16,6 +16,7 @@ export interface Server extends MserveJsonProps {
 	backups: {
 		created_at: Date;
 		directory: string;
+		size?: number;
 	}[];
 	datapacks: {
 		name?: string;
@@ -132,6 +133,7 @@ const toUniqueBackups = (items?: Server['backups']) => {
 		normalized.push({
 			directory,
 			created_at: toDate(item.created_at),
+			size: Math.max(0, Number(item.size) || 0),
 		});
 	}
 
@@ -168,7 +170,14 @@ export const createDefaultServers = (): Server[] => [
 
 export const normalizeServer = (server: Server): Server => {
 	const now = new Date();
-	const stats = server.stats ?? { players: 0, capacity: 20, tps: 0, uptime: now };
+	const stats = server.stats ?? {
+		players: 0,
+		capacity: 20,
+		tps: 0,
+		uptime: now,
+		worlds_size_bytes: 0,
+		backups_size_bytes: 0,
+	};
 	return {
 		id: server.id?.trim() || generateServerId(),
 		storage_limit: Math.max(1, Number(server.storage_limit) || 200),
@@ -184,6 +193,8 @@ export const normalizeServer = (server: Server): Server => {
 			capacity: Math.max(1, stats.capacity ?? 20),
 			tps: Math.max(0, stats.tps ?? 20),
 			uptime: stats.uptime && toDate(stats.uptime),
+			worlds_size_bytes: Math.max(0, Number(stats.worlds_size_bytes) || 0),
+			backups_size_bytes: Math.max(0, Number(stats.backups_size_bytes) || 0),
 		},
 		file: server.file || 'server.jar',
 		provider: server.provider,

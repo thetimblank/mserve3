@@ -61,6 +61,7 @@ Big
 ✅ OTA updates
 ✅ read from mserve.json
 ✅ rewrite & cleanup of backend code.
+✅ splash screen
 🟨 validate/fix issues with other server jars/parsing, make way to add new jars
 🟨 auto fetch all mc server jars [BETA]
 ⬛ read minecraft settings (properties, ops, whitelist, etc.)
@@ -68,7 +69,9 @@ Big
 ⬛ update server
 ⬛ motd generator
 ⬛ add robust logging
+⬛ add docs
 ⬛ onboarding/welcome screen
+⬛ add testing
 
 Small
 ✅ remove server from app
@@ -76,22 +79,20 @@ Small
 ✅ add statistics of players joined, uptime, etc.
 ✅ restyle server settings & enable users to change server provider
 ✅ make unique properties editable
-🟨 add clearing backups, storage limit
+✅ fix uptime updating on tab switches and state changes, rather automatically
+✅ remove stray ::marker in app sideabar
+✅ add clearing backups, storage limit
 🟨 Repairing servers needs to be tested
-🟨 more settings
-⬛ fix uptime updating on tab switches and state changes, rather automatically
 ⬛ better explaination of hosting setup
 ⬛ cleanup and better use of terminal UX and UI
 ⬛ better the integration of tps detection and version detection.
-⬛ remove stray ::marker in app sideabar
-⬛ add testing
 
 **v5**
 ⬛ setup networks and server groups
 ⬛ linux support
 ⬛ add tab completion to terminal
 ⬛ add graphs & data on players, uptime %, ram usage, cpu usage
-⬛ rehaul UI
+⬛ rehaul UI (number input)
 
 **Future**
 ⬛ modded servers?

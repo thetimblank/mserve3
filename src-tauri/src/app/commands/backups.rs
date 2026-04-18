@@ -4,18 +4,24 @@ use std::fs;
 use std::path::PathBuf;
 
 #[tauri::command]
-pub(in crate::app) fn create_server_backup(directory: String) -> Result<ScannedBackup, String> {
+pub(in crate::app) fn create_server_backup(directory: String) -> Result<CreateBackupResult, String> {
     let server_directory = PathBuf::from(directory.trim());
     if !server_directory.exists() || !server_directory.is_dir() {
         return Err("Server directory does not exist.".to_string());
     }
 
-    create_backup_snapshot(&server_directory)
+    let deleted_backups_count = enforce_backup_storage_limit(&server_directory, &[])?;
+    let backup = create_backup_snapshot(&server_directory)?;
+
+    Ok(CreateBackupResult {
+        backup,
+        deleted_backups_count,
+    })
 }
 
 
 #[tauri::command]
-pub(in crate::app) fn restore_server_backup(payload: RestoreBackupPayload) -> Result<(), String> {
+pub(in crate::app) fn restore_server_backup(payload: RestoreBackupPayload) -> Result<RestoreBackupResult, String> {
     let server_directory = PathBuf::from(payload.directory.trim());
     if !server_directory.exists() || !server_directory.is_dir() {
         return Err("Server directory does not exist.".to_string());
@@ -33,6 +39,7 @@ pub(in crate::app) fn restore_server_backup(payload: RestoreBackupPayload) -> Re
         return Err("Backup path is outside the server backup directory.".to_string());
     }
 
+    let deleted_backups_count = enforce_backup_storage_limit(&server_directory, &[selected_backup_canonical.clone()])?;
     create_backup_snapshot(&server_directory)?;
 
     let backup_worlds = list_backup_worlds(&selected_backup_canonical);
@@ -53,7 +60,9 @@ pub(in crate::app) fn restore_server_backup(payload: RestoreBackupPayload) -> Re
         copy_dir_filtered(&backup_world, &destination)?;
     }
 
-    Ok(())
+    Ok(RestoreBackupResult {
+        deleted_backups_count,
+    })
 }
 
 #[tauri::command]
