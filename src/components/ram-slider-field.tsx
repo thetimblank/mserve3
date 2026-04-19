@@ -1,5 +1,3 @@
-'use client';
-
 import * as React from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { CircleAlert, Info } from 'lucide-react';

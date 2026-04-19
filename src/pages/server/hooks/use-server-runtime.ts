@@ -3,14 +3,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
 import type { Server, ServerStatus, ServerUpdate } from '@/data/servers';
-import {
-	isServerReadyLine,
-	parseListPlayers,
-	parseTps,
-	parseVersion,
-	shouldHideBackgroundLine,
-	stripAnsi,
-} from '@/lib/utils';
+import { normalizeProviderChecks } from '@/lib/mserve-schema';
+import { isServerReadyLine, parseTps, stripAnsi } from '@/lib/utils';
 import { getServerProviderCapabilities } from '@/lib/server-provider-capabilities';
 import { useUser } from '@/data/user';
 import {
@@ -18,6 +12,7 @@ import {
 	type RuntimeStatusResult,
 	type ScanServerContentsResult,
 	type ServerOutputEvent,
+	type ServerTelemetryResult,
 } from '../server-types';
 import { didRequestStop, isStopCommand, makeCloseBackupKey, mapScannedBackups } from '../server-utils';
 
@@ -26,7 +21,6 @@ type Args = {
 	serverId: string;
 	isBusy: boolean;
 	setIsBusy: React.Dispatch<React.SetStateAction<boolean>>;
-	hideBackgroundTelemetry: boolean;
 	terminalInput: string;
 	setTerminalInput: React.Dispatch<React.SetStateAction<string>>;
 	setErrorMessage: React.Dispatch<React.SetStateAction<string | null>>;
@@ -34,12 +28,12 @@ type Args = {
 	updateServer: (id: string, update: ServerUpdate) => void;
 	updateServerStats: (id: string, stats: Partial<Server['stats']>) => void;
 	appendTerminalLine: (line: string) => void;
-	clearTerminalSession: () => void;
 };
 
 type BackupReason = 'on_start' | 'on_close' | 'interval';
 
 const BACKUP_STORAGE_LIMIT_ERROR_PREFIX = 'Backup storage limit exceeded';
+const TELEMETRY_POLL_INTERVAL_MS = 5000;
 
 type RuntimeState = {
 	startAt: Date | null;
@@ -72,7 +66,6 @@ export const useServerRuntime = ({
 	serverId,
 	isBusy,
 	setIsBusy,
-	hideBackgroundTelemetry,
 	terminalInput,
 	setTerminalInput,
 	setErrorMessage,
@@ -80,15 +73,19 @@ export const useServerRuntime = ({
 	updateServer,
 	updateServerStats,
 	appendTerminalLine,
-	clearTerminalSession,
 }: Args) => {
 	const { user } = useUser();
 	const runtimeRef = React.useRef<RuntimeState>(initialRuntimeState());
+	const telemetryInFlightRef = React.useRef(false);
 	const serverDirectory = server?.directory;
 	const serverStatus = server?.status;
 	const providerCapabilities = React.useMemo(
 		() => getServerProviderCapabilities(server?.provider, server?.provider_checks),
 		[server?.provider, server?.provider_checks],
+	);
+	const providerChecks = React.useMemo(
+		() => normalizeProviderChecks(server?.provider_checks),
+		[server?.provider_checks],
 	);
 
 	const autoBackupModes = server?.auto_backup ?? [];
@@ -123,23 +120,104 @@ export const useServerRuntime = ({
 		}
 	}, [appendTerminalLine, serverDirectory, user.java_installation_default]);
 
+	const toUptimeDate = React.useCallback((value: string | null): Date | null => {
+		if (!value) return null;
+		const parsed = new Date(value);
+		return Number.isNaN(parsed.getTime()) ? null : parsed;
+	}, []);
+
 	const setOfflineState = React.useCallback(() => {
 		setServerStatus(serverId, 'offline');
-		clearTerminalSession();
 		runtimeRef.current.startAt = null;
 		runtimeRef.current.manualStopRequested = false;
-		updateServerStats(serverId, { players: 0, tps: 0, uptime: null });
-	}, [clearTerminalSession, serverId, setServerStatus, updateServerStats]);
+		updateServerStats(serverId, {
+			online: false,
+			players_online: null,
+			players_max: null,
+			server_version: null,
+			tps: null,
+			ram_used: null,
+			cpu_used: null,
+			uptime: null,
+		});
+	}, [serverId, setServerStatus, updateServerStats]);
 
 	const setStartingState = React.useCallback(() => {
 		runtimeRef.current.startAt = new Date();
 		updateServerStats(serverId, {
-			players: 0,
-			tps: 0,
+			online: false,
+			players_online: null,
+			players_max: null,
+			tps: null,
+			ram_used: null,
+			cpu_used: null,
 			uptime: runtimeRef.current.startAt,
 		});
 		setServerStatus(serverId, 'starting');
 	}, [serverId, setServerStatus, updateServerStats]);
+
+	const syncTelemetry = React.useCallback(async () => {
+		if (!serverDirectory) return;
+		if (telemetryInFlightRef.current) return;
+		telemetryInFlightRef.current = true;
+
+		try {
+			const telemetry = await invoke<ServerTelemetryResult>('get_server_telemetry', {
+				directory: serverDirectory,
+			});
+
+			const pingAvailable = providerChecks.online_polling && telemetry.online;
+			const uptime = toUptimeDate(telemetry.uptime) ?? runtimeRef.current.startAt;
+
+			const nextStats: Partial<Server['stats']> = {
+				uptime,
+				players_online: providerChecks.list_polling && pingAvailable ? telemetry.playersOnline : null,
+				players_max: providerChecks.list_polling && pingAvailable ? telemetry.playersMax : null,
+				server_version: providerChecks.version_polling && pingAvailable ? telemetry.serverVersion : null,
+				provider_version: providerChecks.provider_polling ? telemetry.providerVersion : null,
+				ram_used: providerChecks.ram_polling ? telemetry.ramUsed : null,
+				cpu_used: providerChecks.cpu_polling ? telemetry.cpuUsed : null,
+			};
+
+			if (providerChecks.online_polling) {
+				nextStats.online = telemetry.online;
+				if (!telemetry.online) {
+					nextStats.players_online = null;
+					nextStats.players_max = null;
+					nextStats.server_version = null;
+				}
+			}
+
+			if (!providerCapabilities.supportsTpsCommand || !providerChecks.tps_polling) {
+				nextStats.tps = null;
+			}
+
+			updateServerStats(serverId, nextStats);
+
+			if (providerChecks.online_polling && telemetry.online && serverStatus === 'starting') {
+				setServerStatus(serverId, 'online');
+			}
+		} catch {
+			if (!providerChecks.online_polling) return;
+			updateServerStats(serverId, {
+				online: false,
+				players_online: null,
+				players_max: null,
+				server_version: null,
+			});
+		} finally {
+			telemetryInFlightRef.current = false;
+		}
+	}, [
+		providerCapabilities.supportsTpsCommand,
+		providerChecks,
+		serverDirectory,
+		serverId,
+		serverStatus,
+		setServerStatus,
+		toUptimeDate,
+		updateServerStats,
+	]);
 
 	const syncServerContents = React.useCallback(async () => {
 		if (!serverDirectory) return;
@@ -216,10 +294,11 @@ export const useServerRuntime = ({
 		listen<ServerOutputEvent>('server-output', (event) => {
 			if (!active) return;
 			if (event.payload.directory !== serverDirectory) return;
-			if (event.payload.stream !== 'stdout') return;
+			const stream = event.payload.stream;
+			if (stream !== 'stdout' && stream !== 'stderr') return;
 
 			const cleaned = stripAnsi(event.payload.line);
-			const dedupeKey = `${event.payload.stream}:${cleaned}`;
+			const dedupeKey = `${stream}:${cleaned}`;
 			const now = Date.now();
 			if (runtimeRef.current.lastOutputKey === dedupeKey && now - runtimeRef.current.lastOutputAt < 250) {
 				return;
@@ -228,43 +307,31 @@ export const useServerRuntime = ({
 			runtimeRef.current.lastOutputKey = dedupeKey;
 			runtimeRef.current.lastOutputAt = now;
 
-			if (isServerReadyLine(cleaned, providerCapabilities.kind)) {
-				setServerStatus(serverId, 'online');
-				if (!runtimeRef.current.startAt) {
-					runtimeRef.current.startAt = new Date();
-				}
-				updateServerStats(serverId, { uptime: runtimeRef.current.startAt });
-			}
-
-			if (providerCapabilities.supportsListCommand) {
-				const listInfo = parseListPlayers(cleaned);
-				if (listInfo) {
+			if (stream === 'stdout') {
+				if (isServerReadyLine(cleaned, providerCapabilities.kind)) {
+					setServerStatus(serverId, 'online');
+					if (!runtimeRef.current.startAt) {
+						runtimeRef.current.startAt = new Date();
+					}
 					updateServerStats(serverId, {
-						players: listInfo.players,
-						capacity: listInfo.capacity,
+						online: true,
+						uptime: runtimeRef.current.startAt,
 					});
 				}
-			}
 
-			if (providerCapabilities.supportsTpsCommand) {
-				const tpsInfo = parseTps(cleaned);
-				if (tpsInfo) {
-					updateServerStats(serverId, { tps: tpsInfo.tps });
+				if (providerCapabilities.supportsTpsCommand && providerChecks.tps_polling) {
+					const tpsInfo = parseTps(cleaned);
+					if (tpsInfo) {
+						updateServerStats(serverId, { tps: tpsInfo.tps });
+					}
 				}
 			}
 
-			if (providerCapabilities.supportsVersionCommand) {
-				const versionInfo = parseVersion(cleaned, providerCapabilities.kind);
-				if (versionInfo) {
-					updateServer(serverId, { version: versionInfo });
-				}
-			}
-
-			if (hideBackgroundTelemetry && shouldHideBackgroundLine(cleaned)) {
+			if (!cleaned) {
 				return;
 			}
 
-			appendTerminalLine(`[stdout] ${cleaned}`);
+			appendTerminalLine(`[${stream}] ${cleaned}`);
 		})
 			.then((cleanup) => {
 				if (!active) {
@@ -283,14 +350,28 @@ export const useServerRuntime = ({
 		};
 	}, [
 		appendTerminalLine,
-		hideBackgroundTelemetry,
 		providerCapabilities.kind,
+		providerChecks.tps_polling,
 		serverDirectory,
 		serverId,
 		setServerStatus,
-		updateServer,
 		updateServerStats,
 	]);
+
+	React.useEffect(() => {
+		if (!serverDirectory) return;
+		if (!serverId) return;
+		if (serverStatus !== 'online') return;
+
+		void syncTelemetry();
+		const timer = window.setInterval(() => {
+			void syncTelemetry();
+		}, TELEMETRY_POLL_INTERVAL_MS);
+
+		return () => {
+			window.clearInterval(timer);
+		};
+	}, [serverDirectory, serverId, serverStatus, syncTelemetry]);
 
 	React.useEffect(() => {
 		if (!serverDirectory) return;
@@ -370,22 +451,10 @@ export const useServerRuntime = ({
 
 		void (async () => {
 			try {
-				if (providerCapabilities.supportsListCommand) {
-					await invoke('send_server_command', {
-						directory: serverDirectory,
-						command: 'list',
-					});
-				}
-				if (providerCapabilities.supportsTpsCommand) {
+				if (providerCapabilities.supportsTpsCommand && providerChecks.tps_polling) {
 					await invoke('send_server_command', {
 						directory: serverDirectory,
 						command: 'tps',
-					});
-				}
-				if (providerCapabilities.supportsVersionCommand) {
-					await invoke('send_server_command', {
-						directory: serverDirectory,
-						command: 'version',
 					});
 				}
 			} catch {}
@@ -393,13 +462,7 @@ export const useServerRuntime = ({
 
 		const timer = window.setInterval(async () => {
 			try {
-				if (providerCapabilities.supportsListCommand) {
-					await invoke('send_server_command', {
-						directory: serverDirectory,
-						command: 'list',
-					});
-				}
-				if (providerCapabilities.supportsTpsCommand) {
+				if (providerCapabilities.supportsTpsCommand && providerChecks.tps_polling) {
 					await invoke('send_server_command', {
 						directory: serverDirectory,
 						command: 'tps',
@@ -411,13 +474,7 @@ export const useServerRuntime = ({
 		return () => {
 			window.clearInterval(timer);
 		};
-	}, [
-		providerCapabilities.supportsListCommand,
-		providerCapabilities.supportsTpsCommand,
-		providerCapabilities.supportsVersionCommand,
-		serverDirectory,
-		serverStatus,
-	]);
+	}, [providerCapabilities.supportsTpsCommand, providerChecks.tps_polling, serverDirectory, serverStatus]);
 
 	React.useEffect(() => {
 		if (!serverStatus) return;
@@ -456,7 +513,6 @@ export const useServerRuntime = ({
 		runtimeRef.current.stopRequested = false;
 		runtimeRef.current.restartRequested = false;
 		setIsBusy(true);
-		clearTerminalSession();
 		setStartingState();
 		appendTerminalLine('[system] Starting server...');
 
@@ -477,7 +533,6 @@ export const useServerRuntime = ({
 	}, [
 		appendResolvedStartCommand,
 		appendTerminalLine,
-		clearTerminalSession,
 		isBusy,
 		serverDirectory,
 		setIsBusy,
@@ -536,7 +591,6 @@ export const useServerRuntime = ({
 		runtimeRef.current.stopRequested = true;
 		setIsBusy(true);
 		setServerStatus(serverId, 'closing');
-		clearTerminalSession();
 		appendTerminalLine('[system] Restarting server...');
 
 		try {
@@ -568,7 +622,6 @@ export const useServerRuntime = ({
 	}, [
 		appendResolvedStartCommand,
 		appendTerminalLine,
-		clearTerminalSession,
 		createAutomaticBackup,
 		hasOnCloseBackup,
 		isBusy,

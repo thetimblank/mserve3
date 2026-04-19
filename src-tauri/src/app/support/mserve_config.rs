@@ -56,7 +56,57 @@ pub(in crate::app) fn default_provider_checks() -> ProviderChecksConfig {
         list_polling: true,
         tps_polling: true,
         version_polling: true,
+        online_polling: true,
+        ram_polling: true,
+        cpu_polling: true,
+        provider_polling: true,
     }
+}
+
+pub(in crate::app) fn default_telemetry_host() -> String {
+    "127.0.0.1".to_string()
+}
+
+fn parse_server_properties_port(directory: &Path) -> Option<u16> {
+    let properties_path = directory.join("server.properties");
+    let raw = fs::read_to_string(properties_path).ok()?;
+
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+
+        if let Some(value) = trimmed.strip_prefix("server-port=") {
+            let parsed = value.trim().parse::<u16>().ok()?;
+            if parsed > 0 {
+                return Some(parsed);
+            }
+        }
+    }
+
+    None
+}
+
+pub(in crate::app) fn detect_default_telemetry_port(directory: &Path) -> u16 {
+    parse_server_properties_port(directory).unwrap_or(25565)
+}
+
+pub(in crate::app) fn sanitize_telemetry_host(raw: Option<&serde_json::Value>) -> String {
+    raw.and_then(|value| value.as_str())
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string())
+        .unwrap_or_else(default_telemetry_host)
+}
+
+pub(in crate::app) fn sanitize_telemetry_port(directory: &Path, raw: Option<&serde_json::Value>) -> u16 {
+    let parsed = raw
+        .and_then(|value| value.as_u64())
+        .and_then(|value| u16::try_from(value).ok())
+        .filter(|value| *value > 0);
+
+    parsed.unwrap_or_else(|| detect_default_telemetry_port(directory))
 }
 
 pub(in crate::app) fn generate_server_id() -> String {
@@ -81,6 +131,8 @@ pub(in crate::app) fn default_synced_config(directory: &Path) -> SyncedMserveCon
         provider: None,
         version: None,
         provider_checks: default_provider_checks(),
+        telemetry_host: default_telemetry_host(),
+        telemetry_port: detect_default_telemetry_port(directory),
         created_at: chrono::Local::now().to_rfc3339(),
     }
 }
@@ -128,6 +180,25 @@ pub(in crate::app) fn normalize_auto_backup(raw: Option<&serde_json::Value>) -> 
     Some(output)
 }
 
+pub(in crate::app) fn normalize_custom_flags(flags: impl IntoIterator<Item = String>) -> Vec<String> {
+    let mut output = Vec::new();
+
+    for flag in flags {
+        let trimmed = flag.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        if output.iter().any(|existing: &String| existing == trimmed) {
+            continue;
+        }
+
+        output.push(trimmed.to_string());
+    }
+
+    output
+}
+
 pub(in crate::app) fn sanitize_custom_flags(raw: Option<&serde_json::Value>) -> Vec<String> {
     let Some(value) = raw else {
         return default_custom_flags();
@@ -137,17 +208,11 @@ pub(in crate::app) fn sanitize_custom_flags(raw: Option<&serde_json::Value>) -> 
         return default_custom_flags();
     };
 
-    let mut output = Vec::new();
-    for item in items {
-        if let Some(flag) = item.as_str() {
-            let trimmed = flag.trim();
-            if !trimmed.is_empty() && !output.iter().any(|existing| existing == trimmed) {
-                output.push(trimmed.to_string());
-            }
-        }
-    }
+    let flags = items
+        .iter()
+        .filter_map(|item| item.as_str().map(|flag| flag.to_string()));
 
-    output
+    normalize_custom_flags(flags)
 }
 
 pub(in crate::app) fn sanitize_provider_checks(raw: Option<&serde_json::Value>) -> ProviderChecksConfig {
@@ -173,6 +238,22 @@ pub(in crate::app) fn sanitize_provider_checks(raw: Option<&serde_json::Value>) 
             .get("version_polling")
             .and_then(|value| value.as_bool())
             .unwrap_or(defaults.version_polling),
+        online_polling: object
+            .get("online_polling")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(defaults.online_polling),
+        ram_polling: object
+            .get("ram_polling")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(defaults.ram_polling),
+        cpu_polling: object
+            .get("cpu_polling")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(defaults.cpu_polling),
+        provider_polling: object
+            .get("provider_polling")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(defaults.provider_polling),
     }
 }
 
@@ -297,6 +378,10 @@ pub(in crate::app) fn sanitize_mserve_value_config(
 
     let normalized_provider_checks = sanitize_provider_checks(object.get("provider_checks"));
 
+    let normalized_telemetry_host = sanitize_telemetry_host(object.get("telemetry_host"));
+
+    let normalized_telemetry_port = sanitize_telemetry_port(directory, object.get("telemetry_port"));
+
     let normalized_created_at = object
         .get("created_at")
         .and_then(|value| value.as_str())
@@ -317,6 +402,8 @@ pub(in crate::app) fn sanitize_mserve_value_config(
     config.provider = normalized_provider;
     config.version = normalized_version;
     config.provider_checks = normalized_provider_checks;
+    config.telemetry_host = normalized_telemetry_host;
+    config.telemetry_port = normalized_telemetry_port;
     config.created_at = normalized_created_at;
 
     config
@@ -336,6 +423,8 @@ pub(in crate::app) fn synced_mserve_json_value(config: &SyncedMserveConfig) -> s
         "provider": config.provider,
         "version": config.version,
         "provider_checks": config.provider_checks,
+        "telemetry_host": config.telemetry_host,
+        "telemetry_port": config.telemetry_port,
         "created_at": config.created_at,
     })
 }
@@ -368,6 +457,8 @@ pub(in crate::app) fn validate_mserve_json_keys(
         "provider",
         "version",
         "provider_checks",
+        "telemetry_host",
+        "telemetry_port",
         "created_at",
     ];
 
@@ -478,5 +569,44 @@ pub(in crate::app) fn resolve_repair_file(directory: &Path, raw_file: &str) -> R
     }
 
     Ok(trimmed.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn normalize_custom_flags_trims_and_dedupes() {
+        let normalized = normalize_custom_flags(vec![
+            " --nogui ".to_string(),
+            " ".to_string(),
+            "--nogui".to_string(),
+            "--world-dir worlds/main".to_string(),
+            "  --world-dir worlds/main  ".to_string(),
+        ]);
+
+        assert_eq!(
+            normalized,
+            vec!["--nogui".to_string(), "--world-dir worlds/main".to_string()]
+        );
+    }
+
+    #[test]
+    fn sanitize_custom_flags_defaults_when_missing() {
+        assert_eq!(sanitize_custom_flags(None), default_custom_flags());
+    }
+
+    #[test]
+    fn sanitize_custom_flags_defaults_when_not_array() {
+        let value = json!("--nogui");
+        assert_eq!(sanitize_custom_flags(Some(&value)), default_custom_flags());
+    }
+
+    #[test]
+    fn sanitize_custom_flags_preserves_explicit_empty_array() {
+        let value = json!([]);
+        assert!(sanitize_custom_flags(Some(&value)).is_empty());
+    }
 }
 

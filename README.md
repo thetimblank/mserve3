@@ -56,45 +56,47 @@ e.g. v4.0.12pre0
 ### Checklist
 
 (May not be up-to-date)
-**v4**
+**v3**
 Big
 ✅ OTA updates
 ✅ read from mserve.json
 ✅ rewrite & cleanup of backend code.
 ✅ splash screen
-🟨 validate/fix issues with other server jars/parsing, make way to add new jars
-🟨 auto fetch all mc server jars [BETA]
-⬛ read minecraft settings (properties, ops, whitelist, etc.)
+🟨 test & support all providers thoroughly
+🟨 auto fetch provider server jars [BETA]
+⬛ add testing!!!
+⬛ inform user & read minecraft settings (properties, ops, whitelist, etc.)
 ⬛ redo and set permanent storage solution for user/app settings
 ⬛ update server
+⬛ inform user about proper java versions
 ⬛ motd generator
-⬛ add robust logging
 ⬛ add docs
 ⬛ onboarding/welcome screen
-⬛ add testing
 
 Small
-✅ remove server from app
-✅ smoother side bar animation
-✅ add statistics of players joined, uptime, etc.
-✅ restyle server settings & enable users to change server provider
-✅ make unique properties editable
-✅ fix uptime updating on tab switches and state changes, rather automatically
-✅ remove stray ::marker in app sideabar
-✅ add clearing backups, storage limit
-🟨 Repairing servers needs to be tested
-⬛ better explaination of hosting setup
-⬛ cleanup and better use of terminal UX and UI
-⬛ better the integration of tps detection and version detection.
+🟨 better explaination of hosting setup and integrate with server specific ports/ip
+⬛ better integration of version detection
 
-**v5**
+Supported Providers
+⬛ Velocity
+⬛ Paper
+⬛ Folia
+⬛ Vanilla
+
+**v4**
+⬛ linux support!!!
 ⬛ setup networks and server groups
-⬛ linux support
+⬛ cleanup of backend code/performance optimizations
 ⬛ add tab completion to terminal
 ⬛ add graphs & data on players, uptime %, ram usage, cpu usage
 ⬛ rehaul UI (number input)
+⬛ advanced statistics systems (plugins, etc to track stats instead of v3 system)
+
+Supported Providers
+⬛ Modded servers
+⬛ Spigot
+⬛ Bungee
 
 **Future**
-⬛ modded servers?
 ⬛ change plugin settings?
 ⬛ accounts and remote start on website?

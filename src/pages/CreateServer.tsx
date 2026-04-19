@@ -1,5 +1,3 @@
-'use client';
-
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCreateServer } from './create-server/CreateServerContext';

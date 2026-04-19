@@ -1,5 +1,3 @@
-'use client';
-
 import * as React from 'react';
 import { FolderOpen, TriangleAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';

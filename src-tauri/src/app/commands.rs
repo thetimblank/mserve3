@@ -5,6 +5,7 @@ mod network;
 mod runtime;
 mod settings;
 mod setup;
+mod telemetry;
 
 pub(super) use backups::*;
 pub(super) use items::*;
@@ -13,3 +14,4 @@ pub(super) use network::*;
 pub(super) use runtime::*;
 pub(super) use settings::*;
 pub(super) use setup::*;
+pub(super) use telemetry::*;

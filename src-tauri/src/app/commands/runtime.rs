@@ -102,11 +102,22 @@ pub(in crate::app) fn start_server(
         emit_output_reader(stdout, directory.clone(), "stdout", app.clone());
     }
     if let Some(stderr) = child.stderr.take() {
-        drain_reader(stderr);
+        emit_output_reader(stderr, directory.clone(), "stderr", app.clone());
     }
 
+    let pid = child.id();
+    let started_at = chrono::Utc::now();
+
     let mut processes = state.processes.lock().map_err(|_| "Runtime lock failed.")?;
-    processes.insert(key, RunningServerProcess { child, stdin });
+    processes.insert(
+        key,
+        RunningServerProcess {
+            child,
+            stdin,
+            pid,
+            started_at,
+        },
+    );
 
     Ok("Server started.".to_string())
 }

@@ -14,6 +14,10 @@ struct ProviderChecksConfig {
     list_polling: bool,
     tps_polling: bool,
     version_polling: bool,
+    online_polling: bool,
+    ram_polling: bool,
+    cpu_polling: bool,
+    provider_polling: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -56,6 +60,8 @@ struct RepairMserveJsonPayload {
     provider: Option<String>,
     version: Option<String>,
     provider_checks: Option<ProviderChecksConfig>,
+    telemetry_host: Option<String>,
+    telemetry_port: Option<u16>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -72,6 +78,8 @@ struct SyncedMserveConfig {
     provider: Option<String>,
     version: Option<String>,
     provider_checks: ProviderChecksConfig,
+    telemetry_host: String,
+    telemetry_port: u16,
     created_at: String,
 }
 
@@ -120,6 +128,8 @@ struct UpdateServerSettingsPayload {
     provider: Option<String>,
     version: Option<String>,
     provider_checks: ProviderChecksConfig,
+    telemetry_host: Option<String>,
+    telemetry_port: Option<u16>,
     jar_swap_path: Option<String>,
     new_directory: Option<String>,
 }
@@ -132,6 +142,8 @@ struct UpdateServerSettingsResult {
     provider: Option<String>,
     version: Option<String>,
     provider_checks: ProviderChecksConfig,
+    telemetry_host: String,
+    telemetry_port: u16,
 }
 
 #[derive(Debug, Deserialize)]
@@ -157,11 +169,17 @@ struct RuntimeServerConfig {
     custom_flags: Option<Vec<String>>,
     java_installation: Option<String>,
     provider: Option<String>,
+    version: Option<String>,
+    provider_checks: Option<ProviderChecksConfig>,
+    telemetry_host: Option<String>,
+    telemetry_port: Option<u16>,
 }
 
 struct RunningServerProcess {
     child: Child,
     stdin: ChildStdin,
+    pid: u32,
+    started_at: chrono::DateTime<chrono::Utc>,
 }
 
 #[derive(Default)]
@@ -182,6 +200,20 @@ struct ServerOutputEvent {
 struct RuntimeStatusResult {
     running: bool,
     exit_code: Option<i32>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ServerTelemetryResult {
+    online: bool,
+    players_online: Option<u32>,
+    players_max: Option<u32>,
+    server_version: Option<String>,
+    provider_version: Option<String>,
+    tps: Option<f64>,
+    ram_used: Option<f64>,
+    cpu_used: Option<f64>,
+    uptime: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -327,6 +359,7 @@ pub fn run() {
             force_kill_server,
             send_server_command,
             get_server_runtime_status,
+            get_server_telemetry,
             scan_server_contents,
             set_server_item_active,
             delete_server,

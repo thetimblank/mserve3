@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import type { ServerProvider } from '@/lib/server-provider';
 
 export type JarTab = 'plugin' | 'vanilla' | 'proxies';
 
@@ -31,6 +32,7 @@ export type JarFilterDefinition = {
 export type JarVersionRow = {
 	id: string;
 	tab: JarTab;
+	providerId: ServerProvider;
 	provider: string;
 	providerDescription: string;
 	version: string;
@@ -135,6 +137,7 @@ const STATIC_ROWS: JarVersionRow[] = [
 	{
 		id: 'vanilla-release-1-21-11',
 		tab: 'vanilla',
+		providerId: 'vanilla',
 		provider: 'Vanilla',
 		providerDescription: 'Official Mojang server jar.',
 		version: '1.21.11',
@@ -147,6 +150,7 @@ const STATIC_ROWS: JarVersionRow[] = [
 	{
 		id: 'paper-stable-1-21-11-130',
 		tab: 'plugin',
+		providerId: 'paper',
 		provider: 'Paper',
 		providerDescription: 'High-performance Paper server with plugin support.',
 		version: '1.21.11',
@@ -159,6 +163,7 @@ const STATIC_ROWS: JarVersionRow[] = [
 	{
 		id: 'paper-unstable-placeholder',
 		tab: 'plugin',
+		providerId: 'paper',
 		provider: 'Paper',
 		providerDescription: 'Unstable Paper channel placeholder until API source is available.',
 		version: 'latest-dev',
@@ -168,6 +173,7 @@ const STATIC_ROWS: JarVersionRow[] = [
 	{
 		id: 'folia-stable-1-21-11-14',
 		tab: 'plugin',
+		providerId: 'folia',
 		provider: 'Folia',
 		providerDescription: 'Regionized-threading server software from the PaperMC ecosystem.',
 		version: '1.21.11',
@@ -180,6 +186,7 @@ const STATIC_ROWS: JarVersionRow[] = [
 	{
 		id: 'folia-unstable-placeholder',
 		tab: 'plugin',
+		providerId: 'folia',
 		provider: 'Folia',
 		providerDescription: 'Unstable Folia channel placeholder until API source is available.',
 		version: 'latest-dev',
@@ -189,6 +196,7 @@ const STATIC_ROWS: JarVersionRow[] = [
 	{
 		id: 'spigot-placeholder',
 		tab: 'plugin',
+		providerId: 'spigot',
 		provider: 'Spigot',
 		providerDescription: 'Spigot provider placeholder until URL source is available.',
 		version: 'latest',
@@ -198,6 +206,7 @@ const STATIC_ROWS: JarVersionRow[] = [
 	{
 		id: 'velocity-stable-3-5-0-snapshot-592',
 		tab: 'proxies',
+		providerId: 'velocity',
 		provider: 'Velocity',
 		providerDescription: 'Fast modern proxy for multi-server networks.',
 		version: '3.5.0-SNAPSHOT-592',
@@ -210,6 +219,7 @@ const STATIC_ROWS: JarVersionRow[] = [
 	{
 		id: 'velocity-unstable-placeholder',
 		tab: 'proxies',
+		providerId: 'velocity',
 		provider: 'Velocity',
 		providerDescription: 'Unstable Velocity channel placeholder until API source is available.',
 		version: 'latest-dev',
@@ -219,6 +229,7 @@ const STATIC_ROWS: JarVersionRow[] = [
 	{
 		id: 'bungeecord-placeholder',
 		tab: 'proxies',
+		providerId: 'bungeecord',
 		provider: 'Bungeecord',
 		providerDescription: 'Bungeecord provider placeholder until URL source is available.',
 		version: 'latest',
@@ -288,7 +299,7 @@ const buildDefaultFileName = (row: JarVersionRow): string => {
 		return row.preferredFileName.trim();
 	}
 
-	const providerPart = row.provider.toLowerCase().replace(/[^a-z0-9-]+/g, '-');
+	const providerPart = row.providerId.toLowerCase().replace(/[^a-z0-9-]+/g, '-');
 	const versionPart = row.version.toLowerCase().replace(/[^a-z0-9.-]+/g, '-');
 	return `${providerPart}-${versionPart}.jar`;
 };

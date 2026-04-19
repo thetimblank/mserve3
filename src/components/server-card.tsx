@@ -32,12 +32,21 @@ const ServerCard: React.FC<Props> = ({ server, delay }) => {
 	const { user } = useUser();
 	const [isBusy, setIsBusy] = React.useState(false);
 	const serverId = server.id;
+	const displayVersion = server.stats.server_version ?? server.version ?? null;
 
 	const handleStart = async () => {
 		if (isBusy) return;
 		setIsBusy(true);
 		setServerStatus(serverId, 'starting');
-		updateServerStats(serverId, { players: 0, tps: 0, uptime: new Date() });
+		updateServerStats(serverId, {
+			online: false,
+			players_online: null,
+			players_max: null,
+			tps: null,
+			ram_used: null,
+			cpu_used: null,
+			uptime: new Date(),
+		});
 		try {
 			await invoke('start_server', {
 				directory: server.directory,
@@ -60,10 +69,26 @@ const ServerCard: React.FC<Props> = ({ server, delay }) => {
 		try {
 			await invoke('stop_server', { directory: server.directory });
 			setServerStatus(serverId, 'offline');
-			updateServerStats(serverId, { players: 0, tps: 0, uptime: null });
+			updateServerStats(serverId, {
+				online: false,
+				players_online: null,
+				players_max: null,
+				tps: null,
+				ram_used: null,
+				cpu_used: null,
+				uptime: null,
+			});
 		} catch (err) {
 			setServerStatus(serverId, 'offline');
-			updateServerStats(serverId, { players: 0, tps: 0, uptime: null });
+			updateServerStats(serverId, {
+				online: false,
+				players_online: null,
+				players_max: null,
+				tps: null,
+				ram_used: null,
+				cpu_used: null,
+				uptime: null,
+			});
 			const message = err instanceof Error ? err.message : 'Failed to stop server.';
 			toast.error(message);
 		} finally {
@@ -80,7 +105,15 @@ const ServerCard: React.FC<Props> = ({ server, delay }) => {
 		} catch {}
 
 		setServerStatus(serverId, 'starting');
-		updateServerStats(serverId, { players: 0, tps: 0, uptime: new Date() });
+		updateServerStats(serverId, {
+			online: false,
+			players_online: null,
+			players_max: null,
+			tps: null,
+			ram_used: null,
+			cpu_used: null,
+			uptime: new Date(),
+		});
 		try {
 			await invoke('start_server', {
 				directory: server.directory,
@@ -89,7 +122,15 @@ const ServerCard: React.FC<Props> = ({ server, delay }) => {
 			setServerStatus(serverId, 'online');
 		} catch (err) {
 			setServerStatus(serverId, 'offline');
-			updateServerStats(serverId, { players: 0, tps: 0, uptime: null });
+			updateServerStats(serverId, {
+				online: false,
+				players_online: null,
+				players_max: null,
+				tps: null,
+				ram_used: null,
+				cpu_used: null,
+				uptime: null,
+			});
 			const message = err instanceof Error ? err.message : 'Failed to restart server.';
 			toast.error(message);
 		} finally {
@@ -104,10 +145,26 @@ const ServerCard: React.FC<Props> = ({ server, delay }) => {
 		try {
 			await invoke('force_kill_server', { directory: server.directory });
 			setServerStatus(serverId, 'offline');
-			updateServerStats(serverId, { players: 0, tps: 0, uptime: null });
+			updateServerStats(serverId, {
+				online: false,
+				players_online: null,
+				players_max: null,
+				tps: null,
+				ram_used: null,
+				cpu_used: null,
+				uptime: null,
+			});
 		} catch (err) {
 			setServerStatus(serverId, 'offline');
-			updateServerStats(serverId, { players: 0, tps: 0, uptime: null });
+			updateServerStats(serverId, {
+				online: false,
+				players_online: null,
+				players_max: null,
+				tps: null,
+				ram_used: null,
+				cpu_used: null,
+				uptime: null,
+			});
 			const message = err instanceof Error ? err.message : 'Failed to force kill server process.';
 			toast.error(message);
 		} finally {
@@ -129,7 +186,7 @@ const ServerCard: React.FC<Props> = ({ server, delay }) => {
 								<TooltipTrigger>
 									<div className='flex items-center lg:text-lg gap-2'>
 										<Users className='size-5' />
-										{server.stats.players}/{server.stats.capacity}
+										{server.stats.players_online ?? 0}/{server.stats.players_max ?? 0}
 									</div>
 								</TooltipTrigger>
 								<TooltipContent>
@@ -137,12 +194,12 @@ const ServerCard: React.FC<Props> = ({ server, delay }) => {
 								</TooltipContent>
 							</Tooltip>
 						)}
-						{server.version && (
+						{displayVersion && (
 							<Tooltip>
 								<TooltipTrigger>
 									<div className='flex items-center lg:text-lg gap-2'>
 										<ArrowDownToLine className='size-5' />
-										{getPrimaryMinecraftVersion(server.version) ?? server.version}
+										{getPrimaryMinecraftVersion(displayVersion) ?? displayVersion}
 									</div>
 								</TooltipTrigger>
 								<TooltipContent>

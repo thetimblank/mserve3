@@ -11,6 +11,7 @@ import {
 	type JarTab,
 	type JarVersionRow,
 } from '@/lib/jar-download-service';
+import type { ServerProvider } from '@/lib/server-provider';
 import { Button } from '@/components/ui/button';
 import {
 	Dialog,
@@ -28,7 +29,7 @@ export type DownloadedJarSelection = {
 	filePath: string;
 	selectionLabel: string;
 	tab: JarTab;
-	provider: string;
+	provider: ServerProvider;
 	version: string;
 };
 
@@ -90,7 +91,7 @@ const JarDownloadModal: React.FC<JarDownloadModalProps> = ({ open, onOpenChange,
 				filePath: result.path,
 				selectionLabel: getJarSelectionLabel(activeTab, selectedRow.version),
 				tab: activeTab,
-				provider: selectedRow.provider,
+				provider: selectedRow.providerId,
 				version: selectedRow.version,
 			});
 			onOpenChange(false);

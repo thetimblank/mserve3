@@ -38,7 +38,15 @@ export default function Slide4() {
 		if (isBusy) return;
 		setIsBusy(true);
 		setServerStatus(serverId, 'starting');
-		updateServerStats(serverId, { players: 0, tps: 0, uptime: new Date() });
+		updateServerStats(serverId, {
+			online: false,
+			players_online: null,
+			players_max: null,
+			tps: null,
+			ram_used: null,
+			cpu_used: null,
+			uptime: new Date(),
+		});
 		try {
 			await invoke('start_server', {
 				directory: server.directory,

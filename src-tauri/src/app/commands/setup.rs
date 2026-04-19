@@ -81,6 +81,8 @@ pub(in crate::app) fn initialize_server(payload: InitServerPayload) -> Result<In
             .filter(|value| !value.is_empty())
             .or(inferred_version),
         provider_checks: default_provider_checks(),
+        telemetry_host: default_telemetry_host(),
+        telemetry_port: detect_default_telemetry_port(&directory),
         created_at: chrono::Local::now().to_rfc3339(),
     };
 
@@ -356,6 +358,8 @@ pub(in crate::app) fn import_server(directory: String) -> Result<InitServerResul
             provider: infer_provider_from_jar_file(&found_jar),
             version: infer_version_from_jar_file(&found_jar),
             provider_checks: default_provider_checks(),
+            telemetry_host: default_telemetry_host(),
+            telemetry_port: detect_default_telemetry_port(&directory_path),
             created_at: chrono::Local::now().to_rfc3339(),
         };
 
@@ -485,21 +489,7 @@ pub(in crate::app) fn repair_server_mserve_json(payload: RepairMserveJsonPayload
         })
         .unwrap_or_else(generate_server_id);
 
-    let mut custom_flags = Vec::new();
-    for flag in payload.custom_flags {
-        let trimmed = flag.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        if custom_flags.iter().any(|existing: &String| existing == trimmed) {
-            continue;
-        }
-        custom_flags.push(trimmed.to_string());
-    }
-
-    if custom_flags.is_empty() {
-        custom_flags = default_custom_flags();
-    }
+    let custom_flags = normalize_custom_flags(payload.custom_flags);
 
     let inferred_provider = infer_provider_from_jar_file(&resolved_file);
     let inferred_version = infer_version_from_jar_file(&resolved_file);
@@ -531,6 +521,16 @@ pub(in crate::app) fn repair_server_mserve_json(payload: RepairMserveJsonPayload
             .filter(|value| !value.is_empty())
             .or(inferred_version),
         provider_checks: payload.provider_checks.unwrap_or_else(default_provider_checks),
+        telemetry_host: payload
+            .telemetry_host
+            .as_deref()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(default_telemetry_host),
+        telemetry_port: payload
+            .telemetry_port
+            .filter(|value| *value > 0)
+            .unwrap_or_else(|| detect_default_telemetry_port(&directory_path)),
         created_at: chrono::Local::now().to_rfc3339(),
     };
 

@@ -1,4 +1,10 @@
 import type { ProviderChecks } from '@/lib/mserve-schema';
+import {
+	DEFAULT_SERVER_PROVIDER,
+	type ServerProvider,
+	isProxyProvider,
+	normalizeServerProvider,
+} from '@/lib/server-provider';
 
 export type ProviderKind = 'plugin' | 'vanilla' | 'proxy' | 'unknown';
 
@@ -15,18 +21,12 @@ type ProviderCommandSupport = Pick<
 	'supportsListCommand' | 'supportsTpsCommand' | 'supportsVersionCommand'
 >;
 
-const normalizeProvider = (provider?: string): string => provider?.trim().toLowerCase() ?? '';
-
-const JAR_PROVIDER_HINTS: Array<{ tokens: string[]; provider: string }> = [
-	{ tokens: ['paper', 'folia'], provider: 'paper' },
+const JAR_PROVIDER_HINTS: Array<{ tokens: string[]; provider: ServerProvider }> = [
+	{ tokens: ['paper'], provider: 'paper' },
+	{ tokens: ['folia'], provider: 'folia' },
 	{ tokens: ['spigot'], provider: 'spigot' },
-	{ tokens: ['purpur'], provider: 'purpur' },
-	{ tokens: ['fabric'], provider: 'fabric' },
-	{ tokens: ['forge', 'neoforge'], provider: 'forge' },
 	{ tokens: ['velocity'], provider: 'velocity' },
 	{ tokens: ['bungeecord', 'waterfall'], provider: 'bungeecord' },
-	{ tokens: ['sponge'], provider: 'sponge' },
-	{ tokens: ['quilt'], provider: 'quilt' },
 	{ tokens: ['mojang', 'vanilla', 'minecraft_server'], provider: 'vanilla' },
 ];
 
@@ -39,7 +39,7 @@ const basenameWithoutExtension = (pathOrFile: string): string => {
 		.toLowerCase();
 };
 
-export const inferProviderFromJarPath = (pathOrFile: string): string | null => {
+export const inferProviderFromJarPath = (pathOrFile: string): ServerProvider | null => {
 	const base = basenameWithoutExtension(pathOrFile);
 	if (!base) return null;
 
@@ -60,33 +60,31 @@ export const inferVersionFromJarPath = (pathOrFile: string): string | null => {
 	return match?.[1] ?? null;
 };
 
-export const resolveProviderKind = (provider?: string): ProviderKind => {
-	const normalized = normalizeProvider(provider);
-	if (!normalized) return 'unknown';
+export const resolveProviderKind = (provider?: ServerProvider | null): ProviderKind => {
+	if (!provider) return 'unknown';
 
-	if (normalized.includes('paper') || normalized.includes('folia') || normalized.includes('spigot')) {
+	if (provider === 'paper' || provider === 'folia' || provider === 'spigot') {
 		return 'plugin';
 	}
 
-	if (normalized.includes('vanilla') || normalized.includes('mojang')) {
+	if (provider === 'vanilla') {
 		return 'vanilla';
 	}
 
-	if (normalized.includes('velocity') || normalized.includes('bungeecord') || normalized.includes('proxy')) {
+	if (isProxyProvider(provider)) {
 		return 'proxy';
 	}
 
 	return 'unknown';
 };
 
-export const getDefaultProviderCommandSupport = (provider?: string): ProviderCommandSupport => {
-	const normalized = normalizeProvider(provider);
-	const kind = resolveProviderKind(provider);
-
+export const getDefaultProviderCommandSupport = (
+	provider: ServerProvider = DEFAULT_SERVER_PROVIDER,
+): ProviderCommandSupport => {
 	return {
-		supportsListCommand: kind !== 'proxy',
-		supportsTpsCommand: normalized.includes('paper') || normalized.includes('folia'),
-		supportsVersionCommand: kind === 'plugin',
+		supportsListCommand: true,
+		supportsTpsCommand: provider === 'paper' || provider === 'folia',
+		supportsVersionCommand: true,
 	};
 };
 
@@ -96,8 +94,9 @@ export const getServerProviderCapabilities = (
 	provider?: string,
 	providerChecks?: Partial<ProviderChecks> | null,
 ): ServerProviderCapabilities => {
-	const kind = resolveProviderKind(provider);
-	const baseSupport = getDefaultProviderCommandSupport(provider);
+	const normalizedProvider = provider ? normalizeServerProvider(provider) : undefined;
+	const kind = resolveProviderKind(normalizedProvider);
+	const baseSupport = getDefaultProviderCommandSupport(normalizedProvider ?? DEFAULT_SERVER_PROVIDER);
 
 	const supportsListCommand = applyCommandOverride(
 		baseSupport.supportsListCommand,

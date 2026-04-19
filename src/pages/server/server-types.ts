@@ -1,5 +1,6 @@
 import type { AutoBackupMode, Server as MserveServer } from '@/data/servers';
 import type { ProviderChecks } from '@/lib/mserve-schema';
+import type { ServerProvider } from '@/lib/server-provider';
 
 export type ServerOutputEvent = {
 	directory: string;
@@ -37,6 +38,18 @@ export type RuntimeStatusResult = {
 	exitCode: number | null;
 };
 
+export type ServerTelemetryResult = {
+	online: boolean;
+	playersOnline: number | null;
+	playersMax: number | null;
+	serverVersion: string | null;
+	providerVersion: string | null;
+	tps: number | null;
+	ramUsed: number | null;
+	cpuUsed: number | null;
+	uptime: string | null;
+};
+
 export type UpdateServerSettingsPayload = {
 	directory: string;
 	ram: number;
@@ -46,9 +59,11 @@ export type UpdateServerSettingsPayload = {
 	auto_restart: boolean;
 	custom_flags: string[];
 	java_installation?: string;
-	provider?: string;
+	provider: ServerProvider;
 	version?: string;
 	provider_checks: ProviderChecks;
+	telemetry_host?: string;
+	telemetry_port?: number;
 	jar_swap_path?: string;
 	new_directory?: string;
 };
@@ -56,9 +71,11 @@ export type UpdateServerSettingsPayload = {
 export type UpdateServerSettingsResult = {
 	directory: string;
 	file: string;
-	provider?: string;
+	provider: ServerProvider;
 	version?: string;
 	provider_checks: ProviderChecks;
+	telemetry_host: string;
+	telemetry_port: number;
 };
 
 export type ServerContentTab = 'plugins' | 'worlds' | 'datapacks' | 'backups' | 'settings';
@@ -71,9 +88,11 @@ export type ServerSettingsForm = {
 	auto_restart: boolean;
 	custom_flags: string[];
 	java_installation: string;
-	provider: string;
+	provider: ServerProvider;
 	version: string;
 	provider_checks: ProviderChecks;
+	telemetry_host: string;
+	telemetry_port: number;
 	jar_swap_path: string;
 	new_directory: string;
 };

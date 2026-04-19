@@ -77,21 +77,7 @@ pub(in crate::app) fn update_server_settings(
         .filter(|value| matches!(value.as_str(), "interval" | "on_close" | "on_start"))
         .collect();
 
-    let mut custom_flags = Vec::new();
-    for flag in payload.custom_flags {
-        let trimmed = flag.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        if custom_flags.iter().any(|existing: &String| existing == trimmed) {
-            continue;
-        }
-        custom_flags.push(trimmed.to_string());
-    }
-
-    if custom_flags.is_empty() {
-        custom_flags = default_custom_flags();
-    }
+    let custom_flags = normalize_custom_flags(payload.custom_flags);
 
     config.ram = payload.ram.max(1);
     config.storage_limit = payload.storage_limit.max(1);
@@ -116,6 +102,16 @@ pub(in crate::app) fn update_server_settings(
         .filter(|value| !value.is_empty())
         .or_else(|| infer_version_from_jar_file(&config.file));
     config.provider_checks = payload.provider_checks;
+    config.telemetry_host = payload
+        .telemetry_host
+        .as_deref()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| config.telemetry_host.clone());
+    config.telemetry_port = payload
+        .telemetry_port
+        .filter(|value| *value > 0)
+        .unwrap_or(config.telemetry_port);
 
     write_synced_mserve_json(&directory_path, &config)?;
 
@@ -125,6 +121,8 @@ pub(in crate::app) fn update_server_settings(
         provider: config.provider,
         version: config.version,
         provider_checks: config.provider_checks,
+        telemetry_host: config.telemetry_host,
+        telemetry_port: config.telemetry_port,
     })
 }
 

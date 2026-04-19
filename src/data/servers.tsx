@@ -3,12 +3,14 @@ import { toast } from 'sonner';
 import { repairServerMserveJson, syncServerMserveJson } from '@/lib/mserve-sync';
 import { requestMserveRepair } from '@/lib/mserve-repair-controller';
 import { normalizeProviderChecks, type MserveJsonProps, type MserveStats } from '@/lib/mserve-schema';
+import { normalizeServerProvider, type ServerProvider } from '@/lib/server-provider';
 
 export type { AutoBackupMode } from '@/lib/mserve-schema';
 
 export type ServerStatus = 'online' | 'offline' | 'starting' | 'closing';
 
 export interface Server extends MserveJsonProps {
+	provider: ServerProvider;
 	id: string;
 	name: string;
 	directory: string;
@@ -93,9 +95,83 @@ const sameProviderChecks = (
 	return (
 		a.list_polling === b.list_polling &&
 		a.tps_polling === b.tps_polling &&
-		a.version_polling === b.version_polling
+		a.version_polling === b.version_polling &&
+		a.online_polling === b.online_polling &&
+		a.ram_polling === b.ram_polling &&
+		a.cpu_polling === b.cpu_polling &&
+		a.provider_polling === b.provider_polling
 	);
 };
+
+const toNullableNumber = (value: unknown): number | null => {
+	if (value == null) return null;
+	const parsed = Number(value);
+	if (!Number.isFinite(parsed)) return null;
+	return Math.max(0, parsed);
+};
+
+const toNullableString = (value: unknown): string | null => {
+	if (typeof value !== 'string') return null;
+	const trimmed = value.trim();
+	return trimmed.length > 0 ? trimmed : null;
+};
+
+const normalizeTelemetryHost = (value?: string): string => {
+	const trimmed = value?.trim();
+	return trimmed && trimmed.length > 0 ? trimmed : '127.0.0.1';
+};
+
+const normalizeTelemetryPort = (value?: number): number => {
+	const parsed = Number(value);
+	if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) {
+		return 25565;
+	}
+	return parsed;
+};
+
+const sameDateValue = (left: Date | null, right: Date | null): boolean => {
+	if (left === right) return true;
+	if (!left || !right) return false;
+	return left.getTime() === right.getTime();
+};
+
+const sameStats = (left: MserveStats, right: MserveStats): boolean =>
+	left.online === right.online &&
+	left.players_online === right.players_online &&
+	left.players_max === right.players_max &&
+	left.server_version === right.server_version &&
+	left.provider_version === right.provider_version &&
+	left.tps === right.tps &&
+	left.ram_used === right.ram_used &&
+	left.cpu_used === right.cpu_used &&
+	sameDateValue(left.uptime, right.uptime) &&
+	left.worlds_size_bytes === right.worlds_size_bytes &&
+	left.backups_size_bytes === right.backups_size_bytes;
+
+const mergeStatsPatch = (current: MserveStats, patch: Partial<MserveStats>): MserveStats => ({
+	online: typeof patch.online === 'boolean' ? patch.online : current.online,
+	players_online:
+		patch.players_online === undefined ? current.players_online : toNullableNumber(patch.players_online),
+	players_max: patch.players_max === undefined ? current.players_max : toNullableNumber(patch.players_max),
+	server_version:
+		patch.server_version === undefined ? current.server_version : toNullableString(patch.server_version),
+	provider_version:
+		patch.provider_version === undefined
+			? current.provider_version
+			: toNullableString(patch.provider_version),
+	tps: patch.tps === undefined ? current.tps : toNullableNumber(patch.tps),
+	ram_used: patch.ram_used === undefined ? current.ram_used : toNullableNumber(patch.ram_used),
+	cpu_used: patch.cpu_used === undefined ? current.cpu_used : toNullableNumber(patch.cpu_used),
+	uptime: patch.uptime === undefined ? current.uptime : patch.uptime ? toDate(patch.uptime) : null,
+	worlds_size_bytes:
+		patch.worlds_size_bytes === undefined
+			? current.worlds_size_bytes
+			: Math.max(0, Number(patch.worlds_size_bytes) || 0),
+	backups_size_bytes:
+		patch.backups_size_bytes === undefined
+			? current.backups_size_bytes
+			: Math.max(0, Number(patch.backups_size_bytes) || 0),
+});
 
 const toUniqueToggleFileList = <T extends { name?: string; file: string; activated: boolean }>(
 	items?: T[],
@@ -169,15 +245,18 @@ export const createDefaultServers = (): Server[] => [
 ];
 
 export const normalizeServer = (server: Server): Server => {
-	const now = new Date();
-	const stats = server.stats ?? {
-		players: 0,
-		capacity: 20,
-		tps: 0,
-		uptime: now,
-		worlds_size_bytes: 0,
-		backups_size_bytes: 0,
+	const rawStats = (server.stats ?? {}) as Partial<MserveStats> & {
+		players?: number;
+		capacity?: number;
 	};
+	const normalizedProvider = normalizeServerProvider(server.provider);
+	const playersOnline = toNullableNumber(rawStats.players_online ?? rawStats.players);
+	const playersMax = toNullableNumber(rawStats.players_max ?? rawStats.capacity);
+	const tps = toNullableNumber(rawStats.tps);
+	const online =
+		typeof rawStats.online === 'boolean'
+			? rawStats.online
+			: server.status === 'online' || server.status === 'starting';
 	return {
 		id: server.id?.trim() || generateServerId(),
 		storage_limit: Math.max(1, Number(server.storage_limit) || 200),
@@ -189,17 +268,25 @@ export const normalizeServer = (server: Server): Server => {
 		worlds: toUniqueToggleFileList(server.worlds),
 		plugins: toUniqueToggleFileList(server.plugins),
 		stats: {
-			players: Math.max(0, stats.players ?? 0),
-			capacity: Math.max(1, stats.capacity ?? 20),
-			tps: Math.max(0, stats.tps ?? 20),
-			uptime: stats.uptime && toDate(stats.uptime),
-			worlds_size_bytes: Math.max(0, Number(stats.worlds_size_bytes) || 0),
-			backups_size_bytes: Math.max(0, Number(stats.backups_size_bytes) || 0),
+			online,
+			players_online: playersOnline,
+			players_max: playersMax,
+			server_version: toNullableString(rawStats.server_version ?? server.version),
+			provider_version:
+				toNullableString(rawStats.provider_version) ?? toNullableString(normalizedProvider),
+			tps,
+			ram_used: toNullableNumber(rawStats.ram_used),
+			cpu_used: toNullableNumber(rawStats.cpu_used),
+			uptime: rawStats.uptime ? toDate(rawStats.uptime) : null,
+			worlds_size_bytes: Math.max(0, Number(rawStats.worlds_size_bytes) || 0),
+			backups_size_bytes: Math.max(0, Number(rawStats.backups_size_bytes) || 0),
 		},
 		file: server.file || 'server.jar',
-		provider: server.provider,
+		provider: normalizedProvider,
 		version: server.version,
 		provider_checks: normalizeProviderChecks(server.provider_checks),
+		telemetry_host: normalizeTelemetryHost(server.telemetry_host),
+		telemetry_port: normalizeTelemetryPort(server.telemetry_port),
 		ram: Math.max(1, Number(server.ram) || 3),
 		auto_backup: Array.from(new Set(server.auto_backup)),
 		auto_backup_interval: Math.max(1, Number(server.auto_backup_interval) || 120),
@@ -312,9 +399,11 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 					auto_agree_eula: true,
 					java_installation: server.java_installation ?? '',
 					custom_flags: server.custom_flags,
-					provider: server.provider ?? config.provider,
+					provider: server.provider,
 					version: server.version ?? config.version,
 					provider_checks: normalizeProviderChecks(server.provider_checks ?? config.provider_checks),
+					telemetry_host: server.telemetry_host ?? config.telemetry_host,
+					telemetry_port: server.telemetry_port ?? config.telemetry_port,
 				});
 
 				if (!repairPayload) {
@@ -341,8 +430,10 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 				!sameStringList(server.auto_backup, config.auto_backup) ||
 				!sameStringList(server.custom_flags, config.custom_flags) ||
 				!sameProviderChecks(server.provider_checks, config.provider_checks) ||
-				server.provider !== config.provider ||
-				server.version !== config.version;
+				server.provider !== normalizeServerProvider(config.provider) ||
+				server.version !== config.version ||
+				normalizeTelemetryHost(server.telemetry_host) !== normalizeTelemetryHost(config.telemetry_host) ||
+				normalizeTelemetryPort(server.telemetry_port) !== normalizeTelemetryPort(config.telemetry_port);
 
 			if (!changed) return;
 
@@ -363,9 +454,11 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 						auto_restart: config.auto_restart,
 						java_installation: config.java_installation,
 						custom_flags: config.custom_flags,
-						provider: config.provider,
+						provider: normalizeServerProvider(config.provider),
 						version: config.version,
 						provider_checks: config.provider_checks,
+						telemetry_host: config.telemetry_host,
+						telemetry_port: config.telemetry_port,
 						created_at: config.created_at,
 					});
 				}),
@@ -436,21 +529,41 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 	}, []);
 
 	const setServerStatus = React.useCallback((id: string, status: ServerStatus) => {
-		setServers((prev) => updateServerInList(prev, id, (server) => normalizeServer({ ...server, status })));
+		setServers((prev) => {
+			let changed = false;
+			const next = updateServerInList(prev, id, (server) => {
+				if (server.status === status) {
+					return server;
+				}
+				changed = true;
+				return {
+					...server,
+					status,
+				};
+			});
+
+			return changed ? next : prev;
+		});
 	}, []);
 
 	const updateServerStats = React.useCallback((id: string, stats: Partial<Server['stats']>) => {
-		setServers((prev) =>
-			updateServerInList(prev, id, (server) =>
-				normalizeServer({
+		setServers((prev) => {
+			let changed = false;
+			const next = updateServerInList(prev, id, (server) => {
+				const mergedStats = mergeStatsPatch(server.stats, stats);
+				if (sameStats(server.stats, mergedStats)) {
+					return server;
+				}
+
+				changed = true;
+				return {
 					...server,
-					stats: {
-						...server.stats,
-						...stats,
-					},
-				}),
-			),
-		);
+					stats: mergedStats,
+				};
+			});
+
+			return changed ? next : prev;
+		});
 	}, []);
 
 	const getServerById = React.useCallback(

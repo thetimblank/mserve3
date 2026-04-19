@@ -25,7 +25,6 @@ const Server: React.FC = () => {
 	const {
 		isBusy,
 		setIsBusy,
-		hideBackgroundTelemetry,
 		errorMessage,
 		setErrorMessage,
 		terminalInput,
@@ -65,8 +64,14 @@ const Server: React.FC = () => {
 	}, [activeTab, availableTabs, setActiveTab]);
 
 	const terminalStoreKey = server?.directory ?? '';
-	const { terminalLines, terminalOutputRef, clearTerminalSession, appendTerminalLine } =
-		useServerTerminal(terminalStoreKey);
+	const {
+		terminalLines,
+		terminalOutputRef,
+		clearTerminalSession,
+		clearTerminalConsole,
+		jumpTerminalToBottom,
+		appendTerminalLine,
+	} = useServerTerminal(terminalStoreKey);
 
 	const showError = React.useCallback(
 		(error: unknown, fallback: string) => {
@@ -90,7 +95,6 @@ const Server: React.FC = () => {
 		server,
 		serverId,
 		isBusy,
-		hideBackgroundTelemetry,
 		setIsBusy,
 		terminalInput,
 		setTerminalInput,
@@ -99,7 +103,6 @@ const Server: React.FC = () => {
 		updateServer,
 		updateServerStats,
 		appendTerminalLine,
-		clearTerminalSession,
 	});
 
 	const {
@@ -162,29 +165,32 @@ const Server: React.FC = () => {
 					</div>
 				</div>
 
-				<div>
+				<div className='mb-4'>
 					<ServerTerminalPanel
-						isVisible={server.status !== 'offline'}
+						isVisible
 						isBusy={isBusy}
 						status={server.status}
 						terminalLines={terminalLines}
 						terminalInput={terminalInput}
 						onTerminalInputChange={setTerminalInput}
 						onSubmit={handleTerminalCommandSubmit}
+						onClearConsole={clearTerminalConsole}
+						onJumpToBottom={jumpTerminalToBottom}
 						terminalOutputRef={terminalOutputRef}
 					/>
+
+					<ServerOverviewPanel
+						server={server}
+						isBusy={isBusy}
+						onStart={handleStart}
+						onStop={handleStop}
+						onRestart={handleRestart}
+						onForceKill={handleForceKill}
+						activeTab={activeTab}
+						availableTabs={availableTabs}
+						onTabChange={setActiveTab}
+					/>
 				</div>
-				<ServerOverviewPanel
-					server={server}
-					isBusy={isBusy}
-					onStart={handleStart}
-					onStop={handleStop}
-					onRestart={handleRestart}
-					onForceKill={handleForceKill}
-					activeTab={activeTab}
-					availableTabs={availableTabs}
-					onTabChange={setActiveTab}
-				/>
 
 				{activeTab === 'plugins' && providerCapabilities.kind !== 'vanilla' && (
 					<ServerItemList

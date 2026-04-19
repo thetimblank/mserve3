@@ -28,9 +28,11 @@ export const buildUpdateServerSettingsPayload = (
 	auto_restart: settingsForm.auto_restart,
 	custom_flags: settingsForm.custom_flags,
 	java_installation: settingsForm.java_installation.trim() || undefined,
-	provider: settingsForm.provider.trim() || undefined,
+	provider: settingsForm.provider,
 	version: settingsForm.version.trim() || undefined,
 	provider_checks: normalizeProviderChecks(settingsForm.provider_checks),
+	telemetry_host: settingsForm.telemetry_host.trim() || undefined,
+	telemetry_port: Math.max(1, Number(settingsForm.telemetry_port) || 25565),
 	jar_swap_path: settingsForm.jar_swap_path.trim() || undefined,
 	new_directory: settingsForm.new_directory.trim() || undefined,
 });

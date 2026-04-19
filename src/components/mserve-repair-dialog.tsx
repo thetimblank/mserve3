@@ -1,5 +1,3 @@
-'use client';
-
 import * as React from 'react';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { ServerSetupFormFields } from '@/components/server-setup-form-fields';
@@ -37,7 +35,7 @@ const toInitialForm = (options: PromptMserveRepairOptions): ServerSetupFormData 
 	auto_backup_interval: options.auto_backup_interval,
 	auto_agree_eula: options.auto_agree_eula ?? true,
 	java_installation: options.java_installation ?? '',
-	provider: options.provider ?? '',
+	provider: options.provider,
 	version: options.version ?? '',
 });
 

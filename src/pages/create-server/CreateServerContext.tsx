@@ -17,6 +17,7 @@ import {
 	type ServerSetupFormData,
 } from '@/lib/mserve-sync';
 import { normalizeProviderChecks } from '@/lib/mserve-schema';
+import { normalizeServerProvider, type ServerProvider } from '@/lib/server-provider';
 
 type InitServerPayload = {
 	directory: string;
@@ -29,7 +30,7 @@ type InitServerPayload = {
 	auto_backup_interval: number;
 	auto_agree_eula: boolean;
 	java_installation: string;
-	provider: string;
+	provider: ServerProvider;
 	version: string;
 };
 
@@ -340,9 +341,11 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 						auto_agree_eula: true,
 						java_installation: fallbackConfig.java_installation ?? '',
 						custom_flags: fallbackConfig.custom_flags,
-						provider: fallbackConfig.provider,
+						provider: normalizeServerProvider(fallbackConfig.provider),
 						version: fallbackConfig.version,
 						provider_checks: normalizeProviderChecks(fallbackConfig.provider_checks),
+						telemetry_host: fallbackConfig.telemetry_host,
+						telemetry_port: fallbackConfig.telemetry_port,
 					});
 
 					if (!repairPayload) {
@@ -467,7 +470,7 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 						auto_agree_eula: true,
 						java_installation: form.java_installation,
 						custom_flags: [],
-						provider: form.provider || undefined,
+						provider: form.provider,
 						version: form.version || undefined,
 						provider_checks: normalizeProviderChecks(),
 					};

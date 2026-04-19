@@ -7,11 +7,11 @@ import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { inferProviderFromJarPath, inferVersionFromJarPath } from '@/lib/server-provider-capabilities';
+import { isServerProvider, providerOptions } from '@/lib/server-provider';
 import { useCreateServer, type PathValidationResult } from '../CreateServerContext';
 import JarDownloadModal, { type DownloadedJarSelection } from './components/JarDownloadModal';
 import SlideShell from './SlideShell';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { providerOptions } from '@/components/edit-server-properties-form';
 
 const SlideJarFile: React.FC = () => {
 	const { form, updateField, nextSlide, setError, clearError } = useCreateServer();
@@ -24,7 +24,9 @@ const SlideJarFile: React.FC = () => {
 		(filePath: string) => {
 			const provider = inferProviderFromJarPath(filePath);
 			const version = inferVersionFromJarPath(filePath);
-			updateField('provider', provider ?? '');
+			if (provider) {
+				updateField('provider', provider);
+			}
 			updateField('version', version ?? '');
 		},
 		[updateField],
@@ -74,14 +76,8 @@ const SlideJarFile: React.FC = () => {
 				return;
 			}
 
-			const normalizedProvider = (form.provider || inferredProvider || '').trim();
-			if (!normalizedProvider) {
-				setError('mserve could not infer the server provider. Enter a provider to continue.');
-				return;
-			}
-
-			if (normalizedProvider !== form.provider) {
-				updateField('provider', normalizedProvider);
+			if (inferredProvider && inferredProvider !== form.provider) {
+				updateField('provider', inferredProvider);
 			}
 
 			if (!form.version && inferredVersion) {
@@ -155,7 +151,12 @@ const SlideJarFile: React.FC = () => {
 				</Field>
 				<Field>
 					<Label htmlFor='create-server-provider'>Server Provider</Label>
-					<Select value={form.provider} onValueChange={(value) => updateField('provider', value)}>
+					<Select
+						value={form.provider}
+						onValueChange={(value) => {
+							if (!isServerProvider(value)) return;
+							updateField('provider', value);
+						}}>
 						<SelectTrigger id='create-server-provider' className='w-full'>
 							<SelectValue placeholder='Select provider' />
 						</SelectTrigger>

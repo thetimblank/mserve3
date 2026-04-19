@@ -1,7 +1,7 @@
 import React from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
-import { Check, Eye, EyeOff, FolderOpen, Info, Loader } from 'lucide-react';
+import { Check, FolderOpen, Info, Loader } from 'lucide-react';
 import { toast } from 'sonner';
 import clsx from 'clsx';
 import { type Server, useServers } from '@/data/servers';
@@ -15,6 +15,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { normalizeProviderChecks } from '@/lib/mserve-schema';
 import { getDefaultProviderCommandSupport } from '@/lib/server-provider-capabilities';
+import {
+	getProviderLabel,
+	isServerProvider,
+	normalizeServerProvider,
+	providerOptions,
+} from '@/lib/server-provider';
 import { backupChoices } from '@/pages/server/server-constants';
 import {
 	buildServerRunCommandPreview,
@@ -27,7 +33,6 @@ import {
 import type { ServerSettingsForm, UpdateServerSettingsResult } from '@/pages/server/server-types';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { InputGroup, InputGroupAddon, InputGroupInput } from './ui/input-group';
-import { useServerUiState } from '@/pages/server/hooks/use-server-ui-state';
 
 type EditServerPropertiesFormProps = {
 	server: Server;
@@ -39,40 +44,7 @@ type EditServerPropertiesFormProps = {
 	className?: string;
 };
 
-export const providerOptions = [
-	{ value: 'paper', label: 'Paper' },
-	{ value: 'folia', label: 'Folia' },
-	{ value: 'spigot', label: 'Spigot' },
-	{ value: 'purpur', label: 'Purpur' },
-	{ value: 'fabric', label: 'Fabric' },
-	{ value: 'forge', label: 'Forge / NeoForge' },
-	{ value: 'vanilla', label: 'Vanilla' },
-	{ value: 'velocity', label: 'Velocity' },
-	{ value: 'bungeecord', label: 'BungeeCord' },
-	{ value: 'sponge', label: 'Sponge' },
-	{ value: 'quilt', label: 'Quilt' },
-] as const;
-
-const normalizeProvider = (provider?: string): string => {
-	const normalized = provider?.trim().toLowerCase() ?? '';
-	if (!normalized) return 'vanilla';
-
-	if (normalized.includes('paper')) return 'paper';
-	if (normalized.includes('folia')) return 'folia';
-	if (normalized.includes('spigot')) return 'spigot';
-	if (normalized.includes('purpur')) return 'purpur';
-	if (normalized.includes('fabric')) return 'fabric';
-	if (normalized.includes('forge') || normalized.includes('neoforge')) return 'forge';
-	if (normalized.includes('velocity')) return 'velocity';
-	if (normalized.includes('bungeecord') || normalized.includes('waterfall')) return 'bungeecord';
-	if (normalized.includes('sponge')) return 'sponge';
-	if (normalized.includes('quilt')) return 'quilt';
-
-	return 'vanilla';
-};
-
-const getProviderLabel = (provider: string) =>
-	providerOptions.find((option) => option.value === provider)?.label ?? 'Vanilla';
+export { providerOptions };
 
 const sameStringList = (left: string[], right: string[]) => {
 	if (left.length !== right.length) return false;
@@ -85,7 +57,11 @@ const sameProviderChecks = (
 ) =>
 	left.list_polling === right.list_polling &&
 	left.tps_polling === right.tps_polling &&
-	left.version_polling === right.version_polling;
+	left.version_polling === right.version_polling &&
+	left.online_polling === right.online_polling &&
+	left.ram_polling === right.ram_polling &&
+	left.cpu_polling === right.cpu_polling &&
+	left.provider_polling === right.provider_polling;
 
 const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 	server,
@@ -112,19 +88,16 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 		provider: 'vanilla',
 		version: '',
 		provider_checks: normalizeProviderChecks(server.provider_checks),
+		telemetry_host: '127.0.0.1',
+		telemetry_port: 25565,
 		jar_swap_path: '',
 		new_directory: '',
 	});
-	const { hideBackgroundTelemetry, setHideBackgroundTelemetry } = useServerUiState();
 
 	const serverId = server.id;
 	const unsavedToastId = React.useMemo(() => `server-settings-unsaved-${serverId}`, [serverId]);
 	const resolvedProvider = settingsForm.provider;
 	const isFormLocked = Boolean(disabled || isSaving || server.status !== 'offline');
-	const normalizedServerProvider = React.useMemo(
-		() => normalizeProvider(server.provider),
-		[server.provider],
-	);
 	const hasUnsavedChanges = React.useMemo(() => {
 		if (settingsForm.ram !== Math.max(1, server.ram ?? 4)) return true;
 		if (settingsForm.storage_limit !== Math.max(1, Number(server.storage_limit) || 200)) return true;
@@ -135,11 +108,17 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 		if ((settingsForm.java_installation || '').trim() !== (server.java_installation || '').trim()) {
 			return true;
 		}
-		if (settingsForm.provider !== normalizedServerProvider) return true;
+		if (settingsForm.provider !== server.provider) return true;
 		if ((settingsForm.version || '').trim() !== (server.version || '').trim()) return true;
 		if (
 			!sameProviderChecks(settingsForm.provider_checks, normalizeProviderChecks(server.provider_checks))
 		) {
+			return true;
+		}
+		if ((settingsForm.telemetry_host || '').trim() !== (server.telemetry_host || '').trim()) {
+			return true;
+		}
+		if (Number(settingsForm.telemetry_port) !== Number(server.telemetry_port || 25565)) {
 			return true;
 		}
 		if (settingsForm.jar_swap_path.trim().length > 0) return true;
@@ -147,18 +126,20 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 
 		return false;
 	}, [
-		normalizedServerProvider,
 		server.auto_backup,
 		server.auto_backup_interval,
 		server.auto_restart,
 		server.custom_flags,
 		server.directory,
 		server.java_installation,
+		server.provider,
 		server.ram,
 		server.storage_limit,
 		server.version,
 		server.provider_checks,
 		settingsForm,
+		server.telemetry_host,
+		server.telemetry_port,
 	]);
 	const providerCommandSupport = React.useMemo(
 		() => getDefaultProviderCommandSupport(resolvedProvider),
@@ -174,9 +155,11 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 			auto_restart: server.auto_restart,
 			custom_flags: server.custom_flags,
 			java_installation: server.java_installation ?? '',
-			provider: normalizeProvider(server.provider),
+			provider: server.provider,
 			version: server.version ?? '',
 			provider_checks: normalizeProviderChecks(server.provider_checks),
+			telemetry_host: server.telemetry_host ?? '127.0.0.1',
+			telemetry_port: Math.max(1, Number(server.telemetry_port) || 25565),
 			jar_swap_path: '',
 			new_directory: server.directory,
 		});
@@ -193,6 +176,8 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 		server.provider_checks,
 		server.ram,
 		server.storage_limit,
+		server.telemetry_host,
+		server.telemetry_port,
 		server.version,
 	]);
 
@@ -296,9 +281,11 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 				auto_restart: payload.auto_restart,
 				java_installation: payload.java_installation,
 				custom_flags: payload.custom_flags,
-				provider: result.provider,
+				provider: normalizeServerProvider(result.provider),
 				version: result.version,
 				provider_checks: result.provider_checks,
+				telemetry_host: result.telemetry_host,
+				telemetry_port: result.telemetry_port,
 			});
 
 			setSettingsForm((prev) => ({
@@ -422,7 +409,10 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 						<Label htmlFor='edit-provider'>Server provider</Label>
 						<Select
 							value={settingsForm.provider}
-							onValueChange={(value) => updateSettingsField('provider', value)}>
+							onValueChange={(value) => {
+								if (!isServerProvider(value)) return;
+								updateSettingsField('provider', value);
+							}}>
 							<SelectTrigger id='edit-provider' className='w-full'>
 								<SelectValue placeholder='Select provider' />
 							</SelectTrigger>
@@ -451,21 +441,17 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 			<div className='space-y-2 max-w-md'>
 				<Label className='text-xl'>Provider telemetry checks</Label>
 				<p className='text-sm text-muted-foreground -mt-2 mb-4'>
-					Choose what telemetry checks you want. Note, some wont work on certain servers.
+					List and version checks use status ping telemetry. TPS remains provider command based.
 				</p>
 				<div className='space-y-2'>
 					<Label className='flex items-center gap-3'>
 						<Checkbox
-							checked={
-								providerCommandSupport.supportsListCommand &&
-								settingsForm.provider_checks.list_polling
-							}
+							checked={settingsForm.provider_checks.list_polling}
 							onCheckedChange={(checked) =>
 								toggleProviderCheck('list_polling', typeof checked === 'boolean' ? checked : false)
 							}
-							disabled={!providerCommandSupport.supportsListCommand}
 						/>
-						List command polling
+						List command polling (players via status ping)
 					</Label>
 					<Label className='flex items-center gap-3'>
 						<Checkbox
@@ -490,13 +476,76 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 							}
 							disabled={!providerCommandSupport.supportsVersionCommand}
 						/>
-						Version command polling
+						Version command polling (status ping version)
+					</Label>
+					<Label className='flex items-center gap-3'>
+						<Checkbox
+							checked={settingsForm.provider_checks.online_polling}
+							onCheckedChange={(checked) =>
+								toggleProviderCheck('online_polling', typeof checked === 'boolean' ? checked : false)
+							}
+						/>
+						Online status ping
+					</Label>
+					<Label className='flex items-center gap-3'>
+						<Checkbox
+							checked={settingsForm.provider_checks.ram_polling}
+							onCheckedChange={(checked) =>
+								toggleProviderCheck('ram_polling', typeof checked === 'boolean' ? checked : false)
+							}
+						/>
+						RAM process metrics
+					</Label>
+					<Label className='flex items-center gap-3'>
+						<Checkbox
+							checked={settingsForm.provider_checks.cpu_polling}
+							onCheckedChange={(checked) =>
+								toggleProviderCheck('cpu_polling', typeof checked === 'boolean' ? checked : false)
+							}
+						/>
+						CPU process metrics
+					</Label>
+					<Label className='flex items-center gap-3'>
+						<Checkbox
+							checked={settingsForm.provider_checks.provider_polling}
+							onCheckedChange={(checked) =>
+								toggleProviderCheck(
+									'provider_polling',
+									typeof checked === 'boolean' ? checked : false,
+								)
+							}
+						/>
+						Provider version inference
 					</Label>
 				</div>
-				<Button variant='secondary' onClick={() => setHideBackgroundTelemetry((prev) => !prev)}>
-					{hideBackgroundTelemetry ? <Eye /> : <EyeOff />}
-					{hideBackgroundTelemetry ? 'Show Status Check logs' : 'Hide Status Check logs'}
-				</Button>
+			</div>
+
+			<div className='space-y-4 max-w-md'>
+				<p className='text-xl'>Telemetry target</p>
+				<p className='text-sm text-muted-foreground -mt-2 mb-4'>
+					Status ping host and port used for online/player/version telemetry.
+				</p>
+				<div className='space-y-2'>
+					<Label htmlFor='edit-telemetry-host'>Telemetry host</Label>
+					<Input
+						id='edit-telemetry-host'
+						placeholder='127.0.0.1'
+						value={settingsForm.telemetry_host}
+						onChange={(event) => updateSettingsField('telemetry_host', event.target.value)}
+					/>
+				</div>
+				<div className='space-y-2'>
+					<Label htmlFor='edit-telemetry-port'>Telemetry port</Label>
+					<Input
+						id='edit-telemetry-port'
+						type='number'
+						min={1}
+						max={65535}
+						placeholder='25565'
+						value={settingsForm.telemetry_port}
+						onChange={(event) => updateSettingsField('telemetry_port', Number(event.target.value))}
+					/>
+				</div>
 			</div>
 
 			<div className='space-y-4 max-w-md'>

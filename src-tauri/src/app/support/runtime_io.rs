@@ -25,13 +25,6 @@ pub(in crate::app) fn emit_output_reader<R: std::io::Read + Send + 'static>(
     });
 }
 
-pub(in crate::app) fn drain_reader<R: std::io::Read + Send + 'static>(reader: R) {
-    thread::spawn(move || {
-        let buffered = BufReader::new(reader);
-        for _ in buffered.lines() {}
-    });
-}
-
 pub(in crate::app) fn stop_child_process(process: &mut RunningServerProcess) -> Result<(), String> {
     let _ = writeln!(process.stdin, "stop");
     let _ = process.stdin.flush();

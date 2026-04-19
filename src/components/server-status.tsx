@@ -55,6 +55,9 @@ const ServerStatus: React.FC<Props> = ({ server, size = 'md' }) => {
 	} as const;
 
 	const classes = sizeClasses[size];
+	const tps = typeof server.stats.tps === 'number' ? server.stats.tps : null;
+	const hasTps = tps !== null && Number.isFinite(tps) && tps > 0;
+	const numericTps = tps ?? 0;
 
 	return (
 		<>
@@ -75,33 +78,33 @@ const ServerStatus: React.FC<Props> = ({ server, size = 'md' }) => {
 									className={clsx(
 										'absolute',
 										classes.ring,
-										server.stats.tps > 0 && server.stats.tps <= 10 && 'text-red-800',
-										server.stats.tps > 10 && server.stats.tps <= 15 && 'text-red-400',
-										server.stats.tps > 15 && server.stats.tps <= 17 && 'text-orange-500',
-										server.stats.tps > 17 && server.stats.tps <= 18 && 'text-yellow-500',
-										server.stats.tps > 18 && server.stats.tps <= 19 && 'text-green-600',
-										((server.stats.tps > 19 && server.stats.tps <= 20) || server.stats.tps) === 0 &&
-											'text-green-500',
+										hasTps && numericTps <= 10 && 'text-red-800',
+										hasTps && numericTps > 10 && numericTps <= 15 && 'text-red-400',
+										hasTps && numericTps > 15 && numericTps <= 17 && 'text-orange-500',
+										hasTps && numericTps > 17 && numericTps <= 18 && 'text-yellow-500',
+										hasTps && numericTps > 18 && numericTps <= 19 && 'text-green-600',
+										(!hasTps || (numericTps > 19 && numericTps <= 20)) && 'text-green-500',
 									)}
 								/>
-								<p
-									className={clsx(
-										'overflow-hidden font-bold',
-										classes.tps,
-										server.stats.tps <= 10 && 'text-red-800',
-										server.stats.tps > 10 && server.stats.tps <= 15 && 'text-red-400',
-										server.stats.tps > 15 && server.stats.tps <= 17 && 'text-orange-500',
-										server.stats.tps > 17 && server.stats.tps <= 18 && 'text-yellow-500',
-										server.stats.tps > 18 && server.stats.tps <= 19 && 'text-green-600',
-										server.stats.tps > 19 && server.stats.tps <= 20 && 'text-green-500',
-										server.stats.tps === 0 && 'hidden',
-									)}>
-									{server.stats.tps.toPrecision(3)}
-								</p>
+								{hasTps && (
+									<p
+										className={clsx(
+											'overflow-hidden font-bold',
+											classes.tps,
+											numericTps <= 10 && 'text-red-800',
+											numericTps > 10 && numericTps <= 15 && 'text-red-400',
+											numericTps > 15 && numericTps <= 17 && 'text-orange-500',
+											numericTps > 17 && numericTps <= 18 && 'text-yellow-500',
+											numericTps > 18 && numericTps <= 19 && 'text-green-600',
+											numericTps > 19 && numericTps <= 20 && 'text-green-500',
+										)}>
+										{numericTps.toPrecision(3)}
+									</p>
+								)}
 							</div>
 							<p className={`font-bold ${classes.status}`}>Online</p>
 						</TooltipTrigger>
-						{server.stats.tps !== 0 && (
+						{hasTps && (
 							<TooltipContent>
 								<p className='font-bold'>Server TPS (Ticks per second)</p>
 							</TooltipContent>

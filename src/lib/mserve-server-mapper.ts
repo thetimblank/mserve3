@@ -1,6 +1,7 @@
 import type { Server } from '@/data/servers';
 import type { ServerSetupFormData, SyncedMserveConfig } from '@/lib/mserve-sync';
 import { createDefaultProviderChecks, normalizeProviderChecks } from '@/lib/mserve-schema';
+import { normalizeServerProvider } from '@/lib/server-provider';
 
 type InitServerResult = {
 	id: string;
@@ -29,6 +30,8 @@ const buildServerShell = (
 	| 'provider'
 	| 'version'
 	| 'provider_checks'
+	| 'telemetry_host'
+	| 'telemetry_port'
 	| 'created_at'
 > => ({
 	name: getServerNameFromDirectory(directory),
@@ -39,9 +42,14 @@ const buildServerShell = (
 	worlds: [],
 	plugins: [],
 	stats: {
-		players: 0,
-		capacity: 20,
-		tps: 0,
+		online: false,
+		players_online: null,
+		players_max: null,
+		server_version: null,
+		provider_version: null,
+		tps: null,
+		ram_used: null,
+		cpu_used: null,
 		uptime: null,
 		worlds_size_bytes: 0,
 		backups_size_bytes: 0,
@@ -59,9 +67,11 @@ export const buildCreatedServer = (form: ServerSetupFormData, result: InitServer
 	auto_restart: form.auto_restart,
 	java_installation: form.java_installation.trim() || undefined,
 	custom_flags: [],
-	provider: form.provider.trim() || undefined,
+	provider: form.provider,
 	version: form.version.trim() || undefined,
 	provider_checks: createDefaultProviderChecks(),
+	telemetry_host: '127.0.0.1',
+	telemetry_port: 25565,
 	created_at: new Date().toISOString(),
 });
 
@@ -76,8 +86,10 @@ export const buildImportedServer = (result: InitServerResult, config: SyncedMser
 	auto_restart: config.auto_restart,
 	java_installation: config.java_installation,
 	custom_flags: config.custom_flags,
-	provider: config.provider,
+	provider: normalizeServerProvider(config.provider),
 	version: config.version,
 	provider_checks: normalizeProviderChecks(config.provider_checks),
+	telemetry_host: config.telemetry_host,
+	telemetry_port: config.telemetry_port,
 	created_at: config.created_at,
 });

@@ -1,21 +1,35 @@
+import { DEFAULT_SERVER_PROVIDER, type ServerProvider } from '@/lib/server-provider';
+
 export type AutoBackupMode = 'interval' | 'on_close' | 'on_start';
 
 export type ProviderChecks = {
 	list_polling: boolean;
 	tps_polling: boolean;
 	version_polling: boolean;
+	online_polling: boolean;
+	ram_polling: boolean;
+	cpu_polling: boolean;
+	provider_polling: boolean;
 };
 
 export const createDefaultProviderChecks = (): ProviderChecks => ({
 	list_polling: true,
 	tps_polling: true,
 	version_polling: true,
+	online_polling: true,
+	ram_polling: true,
+	cpu_polling: true,
+	provider_polling: true,
 });
 
 export const normalizeProviderChecks = (checks?: Partial<ProviderChecks> | null): ProviderChecks => ({
 	list_polling: checks?.list_polling ?? true,
 	tps_polling: checks?.tps_polling ?? true,
 	version_polling: checks?.version_polling ?? true,
+	online_polling: checks?.online_polling ?? true,
+	ram_polling: checks?.ram_polling ?? true,
+	cpu_polling: checks?.cpu_polling ?? true,
+	provider_polling: checks?.provider_polling ?? true,
 });
 
 export type MserveJsonProps = {
@@ -32,12 +46,19 @@ export type MserveJsonProps = {
 	provider?: string;
 	version?: string;
 	provider_checks: ProviderChecks;
+	telemetry_host?: string;
+	telemetry_port?: number;
 };
 
 export type MserveStats = {
-	players: number;
-	capacity: number;
-	tps: number;
+	online: boolean;
+	players_online: number | null;
+	players_max: number | null;
+	server_version: string | null;
+	provider_version: string | null;
+	tps: number | null;
+	ram_used: number | null;
+	cpu_used: number | null;
 	uptime: Date | null;
 	worlds_size_bytes: number;
 	backups_size_bytes: number;
@@ -58,7 +79,7 @@ export type MserveJsonFormProps = {
 	auto_backup_interval: number;
 	auto_agree_eula: boolean;
 	java_installation: string;
-	provider: string;
+	provider: ServerProvider;
 	version: string;
 };
 
@@ -76,9 +97,11 @@ export type MserveRepairPayload = Pick<
 	create_directory_if_missing?: boolean;
 	auto_agree_eula?: boolean;
 	custom_flags: string[];
-	provider?: string;
+	provider: ServerProvider;
 	version?: string;
 	provider_checks?: ProviderChecks;
+	telemetry_host?: string;
+	telemetry_port?: number;
 };
 
 export type MserveUpdateSettingsPayload = {
@@ -90,9 +113,11 @@ export type MserveUpdateSettingsPayload = {
 	auto_restart: boolean;
 	custom_flags: string[];
 	java_installation?: string;
-	provider?: string;
+	provider: ServerProvider;
 	version?: string;
 	provider_checks: ProviderChecks;
+	telemetry_host?: string;
+	telemetry_port?: number;
 	jar_swap_path?: string;
 	new_directory?: string;
 };
@@ -108,6 +133,6 @@ export const createDefaultMserveForm = (): MserveJsonFormProps => ({
 	auto_backup_interval: 120,
 	auto_agree_eula: true,
 	java_installation: '',
-	provider: '',
+	provider: DEFAULT_SERVER_PROVIDER,
 	version: '',
 });
