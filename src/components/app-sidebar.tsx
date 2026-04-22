@@ -1,4 +1,4 @@
-import { Home, Network, Plus, Server, Settings } from 'lucide-react';
+import { Coffee, Home, Network, Plus, Server, Settings } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 import {
@@ -23,6 +23,11 @@ const items = [
 		title: 'Setup Hosting',
 		url: '/setup',
 		icon: Network,
+	},
+	{
+		title: 'Java Guide',
+		url: '/java-guide',
+		icon: Coffee,
 	},
 	{
 		title: 'Settings',

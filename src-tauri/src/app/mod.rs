@@ -241,6 +241,24 @@ struct DownloadServerJarResult {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct JavaRuntimeInfo {
+    executable_path: String,
+    major_version: u32,
+    version: String,
+    vendor: String,
+    source: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct JavaRuntimeDetectionResult {
+    runtimes: Vec<JavaRuntimeInfo>,
+    errors: Vec<String>,
+    scanned_candidates: usize,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct ServerDirectoryInspectionResult {
     kind: String,
     exists: bool,
@@ -337,6 +355,7 @@ pub fn run() {
             validate_path,
             get_local_ip,
             get_system_memory_gb,
+            detect_java_runtimes,
             download_server_jar,
             initialize_server,
             inspect_server_directory,

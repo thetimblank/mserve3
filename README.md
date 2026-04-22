@@ -66,7 +66,6 @@ Big
 🟨 auto fetch provider server jars [BETA]
 ⬛ add testing!!!
 ⬛ inform user & read minecraft settings (properties, ops, whitelist, etc.)
-⬛ redo and set permanent storage solution for user/app settings
 ⬛ update server
 ⬛ inform user about proper java versions
 ⬛ motd generator
@@ -78,10 +77,10 @@ Small
 ⬛ better integration of version detection
 
 Supported Providers
-⬛ Velocity
-⬛ Paper
-⬛ Folia
-⬛ Vanilla
+🟨 Velocity
+🟨 Paper
+🟨 Folia
+🟨 Vanilla
 
 **v4**
 ⬛ linux support!!!

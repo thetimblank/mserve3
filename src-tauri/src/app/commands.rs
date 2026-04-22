@@ -1,5 +1,6 @@
 mod backups;
 mod items;
+mod java;
 mod navigation;
 mod network;
 mod runtime;
@@ -9,6 +10,7 @@ mod telemetry;
 
 pub(super) use backups::*;
 pub(super) use items::*;
+pub(super) use java::*;
 pub(super) use navigation::*;
 pub(super) use network::*;
 pub(super) use runtime::*;

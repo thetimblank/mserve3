@@ -13,6 +13,7 @@ import { UserProvider } from './data/user';
 import Home from './pages/Home';
 import Settings from './pages/Settings';
 import Server from './pages/Server';
+import JavaGuide from './pages/JavaGuide';
 import { Toaster } from './components/ui/sonner';
 import Setup from './pages/Setup';
 import MserveRepairDialog from '@/components/mserve-repair-dialog';
@@ -52,6 +53,7 @@ const RootLayout: React.FC = () => {
 										<Routes>
 											<Route path='/' element={<Home />} />
 											<Route path='/setup' element={<Setup />} />
+											<Route path='/java-guide' element={<JavaGuide />} />
 											<Route path='/servers/new' element={<CreateServerPage />} />
 											<Route path='/servers/:serverId' element={<Server />} />
 											<Route path='/settings' element={<Settings />} />
