@@ -1,23 +1,13 @@
-﻿import * as React from 'react';
+import * as React from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useServers } from '@/data/servers';
-import {
-	buildCreatedServer,
-	buildImportedServer,
-	getServerNameFromDirectory,
-} from '@/lib/mserve-server-mapper';
-import { requestMserveRepair } from '@/lib/mserve-repair-controller';
-import {
-	createDefaultServerSetupForm,
-	repairServerMserveJson,
-	syncServerMserveJson,
-	type AutoBackupMode,
-	type ServerSetupFormData,
-} from '@/lib/mserve-sync';
-import { normalizeProviderChecks } from '@/lib/mserve-schema';
-import { normalizeServerProvider, type ServerProvider } from '@/lib/server-provider';
+import { useUser } from '@/data/user';
+import { buildCreatedServer } from '@/lib/mserve-server-mapper';
+import { createDefaultServerSetupForm, type ServerSetupFormData } from '@/lib/mserve-sync';
+import { getDefaultServersRootPath } from '@/lib/server-root-path';
+import type { ServerProvider } from '@/lib/server-provider';
 
 type InitServerPayload = {
 	directory: string;
@@ -26,7 +16,7 @@ type InitServerPayload = {
 	ram: number;
 	storage_limit: number;
 	auto_restart: boolean;
-	auto_backup: AutoBackupMode[];
+	auto_backup: string[];
 	auto_backup_interval: number;
 	auto_agree_eula: boolean;
 	java_installation: string;
@@ -48,94 +38,7 @@ export type PathValidationResult = {
 	isFile: boolean;
 };
 
-export type ServerDirectoryInspectionKind =
-	| 'empty_input'
-	| 'missing_directory'
-	| 'new_directory'
-	| 'not_directory'
-	| 'empty_directory'
-	| 'already_in_mserve'
-	| 'import_mserve'
-	| 'import_existing_server'
-	| 'unsupported_existing';
-
-export type ServerDirectoryInspectionResult = {
-	kind: ServerDirectoryInspectionKind;
-	exists: boolean;
-	isDirectory: boolean;
-	isEmpty: boolean;
-	hasMserveJson: boolean;
-	hasServerProperties: boolean;
-	hasEulaTxt: boolean;
-	firstJarFile: string | null;
-	message: string;
-};
-
 const DONE_SLIDE_INDEX = 8;
-
-const joinDirectoryAndFile = (directory: string, fileName: string) => {
-	if (!directory) return fileName;
-	if (directory.endsWith('\\') || directory.endsWith('/')) {
-		return `${directory}${fileName}`;
-	}
-	const separator = directory.includes('\\') ? '\\' : '/';
-	return `${directory}${separator}${fileName}`;
-};
-
-const normalizeDirectoryPath = (value: string) =>
-	value.trim().replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
-
-const getNextSlideIndex = (currentSlide: number, skipJarAndEula: boolean) => {
-	if (!skipJarAndEula) return currentSlide + 1;
-	if (currentSlide === 1) return 3;
-	if (currentSlide === 5) return 7;
-	return currentSlide + 1;
-};
-
-const getPrevSlideIndex = (currentSlide: number, skipJarAndEula: boolean) => {
-	if (!skipJarAndEula) return currentSlide > 0 ? currentSlide - 1 : currentSlide;
-	if (currentSlide === 3) return 1;
-	if (currentSlide === 7) return 5;
-	return currentSlide > 0 ? currentSlide - 1 : currentSlide;
-};
-
-type CreateServerContextValue = {
-	form: ServerSetupFormData;
-	slide: number;
-	doneSlideIndex: number;
-	totalSteps: number;
-	currentStep: number;
-	showBackButton: boolean;
-	showStepIndicator: boolean;
-	hasStarted: boolean;
-	isDirty: boolean;
-	skipJarAndEula: boolean;
-	directoryInspection: ServerDirectoryInspectionResult | null;
-	createdServerId: string | null;
-	error: string | null;
-	isSubmitting: boolean;
-	updateField: <K extends keyof ServerSetupFormData>(key: K, value: ServerSetupFormData[K]) => void;
-	setSlide: (slide: number) => void;
-	nextSlide: () => void;
-	prevSlide: () => void;
-	continueToNext: () => void;
-	startFlow: () => void;
-	setCreatedServerId: (serverId: string | null) => void;
-	setSkipJarAndEula: (value: boolean) => void;
-	setError: (message: string | null) => void;
-	clearError: () => void;
-	inspectServerDirectory: (options?: {
-		directory?: string;
-		create_directory_if_missing?: boolean;
-		silent?: boolean;
-	}) => Promise<ServerDirectoryInspectionResult | null>;
-	importServerFromDirectory: () => Promise<void>;
-	createServer: () => Promise<void>;
-	goToCreatedServer: () => void;
-	setDirectoryFromExistingServer: (jarFileName: string) => void;
-	resetDraft: () => void;
-};
-
 const DEFAULT_FORM = createDefaultServerSetupForm();
 
 const sameArray = (left: string[], right: string[]) => {
@@ -143,9 +46,21 @@ const sameArray = (left: string[], right: string[]) => {
 	return left.every((value, index) => value === right[index]);
 };
 
-const isFormDirty = (form: ServerSetupFormData) => {
-	if (form.directory !== DEFAULT_FORM.directory) return true;
-	if (form.create_directory_if_missing !== DEFAULT_FORM.create_directory_if_missing) return true;
+const normalizeName = (value: string) => value.trim().toLowerCase();
+
+const joinPath = (basePath: string, name: string) => {
+	const base = basePath.trim();
+	const trimmedName = name.trim();
+	if (!base || !trimmedName) return '';
+	if (base.endsWith('\\') || base.endsWith('/')) {
+		return `${base}${trimmedName}`;
+	}
+	const separator = base.includes('\\') ? '\\' : '/';
+	return `${base}${separator}${trimmedName}`;
+};
+
+const isFormDirty = (form: ServerSetupFormData, serverName: string) => {
+	if (serverName.trim().length > 0) return true;
 	if (form.file !== DEFAULT_FORM.file) return true;
 	if (form.ram !== DEFAULT_FORM.ram) return true;
 	if (form.storage_limit !== DEFAULT_FORM.storage_limit) return true;
@@ -159,20 +74,96 @@ const isFormDirty = (form: ServerSetupFormData) => {
 	return false;
 };
 
+type CreateServerContextValue = {
+	form: ServerSetupFormData;
+	serverName: string;
+	serversRootPath: string;
+	isResolvingServersRootPath: boolean;
+	resolvedDirectory: string;
+	slide: number;
+	doneSlideIndex: number;
+	totalSteps: number;
+	currentStep: number;
+	showBackButton: boolean;
+	showStepIndicator: boolean;
+	hasStarted: boolean;
+	isDirty: boolean;
+	createdServerId: string | null;
+	error: string | null;
+	isSubmitting: boolean;
+	updateField: <K extends keyof ServerSetupFormData>(key: K, value: ServerSetupFormData[K]) => void;
+	setServerName: (value: string) => void;
+	setSlide: (slide: number) => void;
+	nextSlide: () => void;
+	prevSlide: () => void;
+	continueToNext: () => void;
+	startFlow: () => void;
+	setCreatedServerId: (serverId: string | null) => void;
+	setError: (message: string | null) => void;
+	clearError: () => void;
+	createServer: () => Promise<void>;
+	goToCreatedServer: () => void;
+	resetDraft: () => void;
+};
+
 const CreateServerContext = React.createContext<CreateServerContextValue | undefined>(undefined);
 
 export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 	const navigate = useNavigate();
 	const { servers, addServer } = useServers();
+	const { user, updateUserField } = useUser();
 	const [form, setForm] = React.useState<ServerSetupFormData>(DEFAULT_FORM);
+	const [serverName, setServerNameState] = React.useState('');
+	const [serversRootPath, setServersRootPath] = React.useState('');
+	const [isResolvingServersRootPath, setIsResolvingServersRootPath] = React.useState(true);
 	const [slide, setSlide] = React.useState(0);
 	const [hasStarted, setHasStarted] = React.useState(false);
-	const [skipJarAndEula, setSkipJarAndEula] = React.useState(false);
-	const [directoryInspection, setDirectoryInspection] =
-		React.useState<ServerDirectoryInspectionResult | null>(null);
 	const [createdServerId, setCreatedServerId] = React.useState<string | null>(null);
 	const [error, setError] = React.useState<string | null>(null);
 	const [isSubmitting, setIsSubmitting] = React.useState(false);
+
+	React.useEffect(() => {
+		const configuredRootPath = user.servers_root_path.trim();
+		if (configuredRootPath) {
+			setServersRootPath(configuredRootPath);
+			setIsResolvingServersRootPath(false);
+			return;
+		}
+
+		let active = true;
+		setIsResolvingServersRootPath(true);
+		void getDefaultServersRootPath()
+			.then((path) => {
+				if (!active) return;
+				setServersRootPath(path);
+				updateUserField('servers_root_path', path);
+			})
+			.catch(() => {
+				if (!active) return;
+				setServersRootPath('');
+			})
+			.finally(() => {
+				if (!active) return;
+				setIsResolvingServersRootPath(false);
+			});
+
+		return () => {
+			active = false;
+		};
+	}, [updateUserField, user.servers_root_path]);
+
+	const resolvedDirectory = React.useMemo(
+		() => joinPath(serversRootPath, serverName),
+		[serverName, serversRootPath],
+	);
+
+	React.useEffect(() => {
+		setForm((previous) => ({
+			...previous,
+			directory: resolvedDirectory,
+			create_directory_if_missing: true,
+		}));
+	}, [resolvedDirectory]);
 
 	const updateField = React.useCallback(
 		<K extends keyof ServerSetupFormData>(key: K, value: ServerSetupFormData[K]) => {
@@ -182,14 +173,19 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 		[],
 	);
 
+	const setServerName = React.useCallback((value: string) => {
+		setServerNameState(value);
+		setHasStarted(true);
+	}, []);
+
 	const nextSlide = React.useCallback(() => {
 		setHasStarted(true);
-		setSlide((prev) => getNextSlideIndex(prev, skipJarAndEula));
-	}, [skipJarAndEula]);
+		setSlide((prev) => prev + 1);
+	}, []);
 
 	const prevSlide = React.useCallback(() => {
-		setSlide((prev) => getPrevSlideIndex(prev, skipJarAndEula));
-	}, [skipJarAndEula]);
+		setSlide((prev) => (prev > 0 ? prev - 1 : prev));
+	}, []);
 
 	const clearError = React.useCallback(() => {
 		setError(null);
@@ -207,10 +203,9 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
 	const resetDraft = React.useCallback(() => {
 		setForm(createDefaultServerSetupForm());
+		setServerNameState('');
 		setSlide(0);
 		setHasStarted(false);
-		setSkipJarAndEula(false);
-		setDirectoryInspection(null);
 		setCreatedServerId(null);
 		setError(null);
 		setIsSubmitting(false);
@@ -223,186 +218,53 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 		navigate(`/servers/${encodeURIComponent(targetId)}`);
 	}, [createdServerId, navigate, resetDraft]);
 
-	const setDirectoryFromExistingServer = React.useCallback(
-		(jarFileName: string) => {
-			const directory = form.directory.trim();
-			const resolvedJar = joinDirectoryAndFile(directory, jarFileName);
-			updateField('file', resolvedJar);
-			updateField('auto_agree_eula', true);
-		},
-		[form.directory, updateField],
-	);
-
-	const findExistingServerByDirectory = React.useCallback(
-		(directory: string) => {
-			const normalized = normalizeDirectoryPath(directory);
+	const findExistingServerByName = React.useCallback(
+		(name: string) => {
+			const normalized = normalizeName(name);
 			if (!normalized) return null;
-			return servers.find((server) => normalizeDirectoryPath(server.directory) === normalized) ?? null;
+			return servers.find((server) => normalizeName(server.name) === normalized) ?? null;
 		},
 		[servers],
 	);
 
-	const inspectServerDirectory = React.useCallback(
-		async (options?: { directory?: string; create_directory_if_missing?: boolean; silent?: boolean }) => {
-			const directory = (options?.directory ?? form.directory).trim();
-			const create_directory_if_missing =
-				typeof options?.create_directory_if_missing === 'boolean'
-					? options.create_directory_if_missing
-					: form.create_directory_if_missing;
-			const silent = options?.silent ?? false;
-
-			if (!directory) {
-				setDirectoryInspection(null);
-				return null;
-			}
-
-			const existingServer = findExistingServerByDirectory(directory);
-			if (existingServer) {
-				const result: ServerDirectoryInspectionResult = {
-					kind: 'already_in_mserve',
-					exists: true,
-					isDirectory: true,
-					isEmpty: false,
-					hasMserveJson: false,
-					hasServerProperties: false,
-					hasEulaTxt: false,
-					firstJarFile: null,
-					message: `This server is already in MSERVE as "${existingServer.name}".`,
-				};
-				setDirectoryInspection(result);
-				if (!silent) {
-					setError(result.message);
-				}
-				return result;
-			}
-
-			try {
-				const result = await invoke<ServerDirectoryInspectionResult>('inspect_server_directory', {
-					directory,
-					createDirectoryIfMissing: create_directory_if_missing,
-				});
-				setDirectoryInspection(result);
-				return result;
-			} catch (err) {
-				if (!silent) {
-					const reason =
-						err instanceof Error
-							? err.message
-							: typeof err === 'string'
-								? err
-								: 'Unknown backend error.';
-					setError(`Failed to inspect server directory. ${reason}`);
-				}
-				return null;
-			}
-		},
-		[findExistingServerByDirectory, form.create_directory_if_missing, form.directory],
-	);
-
-	const importServerFromDirectory = React.useCallback(async () => {
-		const directory = form.directory.trim();
-		if (!directory) {
-			setError('Please choose a server directory.');
-			setSlide(1);
-			return;
-		}
-
-		setError(null);
-		setIsSubmitting(true);
-		try {
-			const importPromise = (async () => {
-				const res = await invoke<InitServerResult>('import_server', { directory });
-				if (!res.ok) {
-					throw new Error(res.message || 'Failed to import server.');
-				}
-				return res;
-			})();
-
-			const importAndSyncPromise = (async () => {
-				const result = await importPromise;
-
-				let synced = await syncServerMserveJson(result.directory);
-				let usedRepairDialog = false;
-				const fallbackConfig = synced.config;
-				if (!fallbackConfig) {
-					throw new Error('Could not load fallback mserve.json data for repair.');
-				}
-
-				if (synced.status === 'needs_setup') {
-					const repairPayload = await requestMserveRepair({
-						directory: result.directory,
-						file: result.file || 'server.jar',
-						ram: fallbackConfig.ram,
-						storage_limit: fallbackConfig.storage_limit,
-						auto_backup: fallbackConfig.auto_backup,
-						auto_backup_interval: fallbackConfig.auto_backup_interval,
-						auto_restart: fallbackConfig.auto_restart,
-						create_directory_if_missing: true,
-						auto_agree_eula: true,
-						java_installation: fallbackConfig.java_installation ?? '',
-						custom_flags: fallbackConfig.custom_flags,
-						provider: normalizeServerProvider(fallbackConfig.provider),
-						version: fallbackConfig.version,
-						provider_checks: normalizeProviderChecks(fallbackConfig.provider_checks),
-						telemetry_host: fallbackConfig.telemetry_host,
-						telemetry_port: fallbackConfig.telemetry_port,
-					});
-
-					if (!repairPayload) {
-						throw new Error('Import cancelled because mserve.json rebuild was not completed.');
-					}
-
-					synced = await repairServerMserveJson(repairPayload);
-					usedRepairDialog = true;
-				}
-
-				if (!synced.config) {
-					throw new Error('Could not resolve valid mserve.json data for this server.');
-				}
-
-				const addedServerId = addServer(buildImportedServer(result, synced.config));
-				return {
-					serverId: addedServerId,
-					usedRepairDialog,
-					autoRepaired: synced.updated,
-				};
-			})();
-
-			await toast.promise(importAndSyncPromise, {
-				loading: 'Importing server...',
-				success: (result) =>
-					result.usedRepairDialog
-						? `Server "${getServerNameFromDirectory(directory)}" was imported and rebuilt mserve.json`
-						: result.autoRepaired
-							? `Server "${getServerNameFromDirectory(directory)}" was imported and automatically repaired mserve.json`
-							: `Server "${getServerNameFromDirectory(directory)}" has been imported`,
-				error: (err) => (err instanceof Error ? err.message : 'Failed to import server.'),
-			});
-
-			const result = await importAndSyncPromise;
-			setCreatedServerId(result.serverId);
-			setSlide(DONE_SLIDE_INDEX);
-		} catch (err) {
-			const message = err instanceof Error ? err.message : 'Failed to import server.';
-			setError(message);
-		} finally {
-			setIsSubmitting(false);
-		}
-	}, [addServer, form.directory]);
-
 	const createServer = React.useCallback(async () => {
 		setError(null);
 
-		const directory = form.directory.trim();
-		if (!directory) {
-			setError('Please choose a server directory.');
+		if (isResolvingServersRootPath) {
+			setError('Still resolving server root path. Please wait a moment and try again.');
 			setSlide(1);
 			return;
 		}
 
-		const existingServer = findExistingServerByDirectory(directory);
-		if (existingServer) {
-			setError(`This server is already in MSERVE as "${existingServer.name}".`);
+		if (!serversRootPath.trim()) {
+			setError('Set your servers root path in Settings before creating a server.');
+			setSlide(1);
+			return;
+		}
+
+		const trimmedName = serverName.trim();
+		if (!trimmedName) {
+			setError('Please enter a server name.');
+			setSlide(1);
+			return;
+		}
+
+		if (/[/\\]/.test(trimmedName)) {
+			setError('Server name cannot include path separators. Please choose another name.');
+			setSlide(1);
+			return;
+		}
+
+		const existingByName = findExistingServerByName(trimmedName);
+		if (existingByName) {
+			setError(`Server name already exists as "${existingByName.name}". Please choose another name.`);
+			setSlide(1);
+			return;
+		}
+
+		const directory = joinPath(serversRootPath, trimmedName);
+		if (!directory) {
+			setError('Could not resolve the target server path. Please review your settings.');
 			setSlide(1);
 			return;
 		}
@@ -411,15 +273,13 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 			path: directory,
 		});
 		if (directoryValidation.exists && !directoryValidation.isDirectory) {
-			setError('Server location must be a directory.');
+			setError('Target path is not a directory. Please change the server name.');
 			setSlide(1);
 			return;
 		}
 
-		if (!form.create_directory_if_missing && !directoryValidation.exists) {
-			setError(
-				"Directory does not exist. Enable 'Create directory if it doesn't exist' or choose another path.",
-			);
+		if (directoryValidation.exists) {
+			setError('A folder with this name already exists. Please change the server name.');
 			setSlide(1);
 			return;
 		}
@@ -427,81 +287,20 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 		const file = form.file.trim();
 		if (!file) {
 			setError('Please choose a server jar file.');
-			setSlide(skipJarAndEula ? 1 : 2);
+			setSlide(2);
 			return;
 		}
 
 		if (!file.toLowerCase().endsWith('.jar')) {
 			setError('Server file must be a .jar file.');
-			setSlide(skipJarAndEula ? 1 : 2);
+			setSlide(2);
 			return;
 		}
 
 		const fileValidation = await invoke<PathValidationResult>('validate_path', { path: file });
 		if (!fileValidation.exists || !fileValidation.isFile) {
 			setError('Please choose a valid server jar file.');
-			setSlide(skipJarAndEula ? 1 : 2);
-			return;
-		}
-
-		if (skipJarAndEula) {
-			setIsSubmitting(true);
-			try {
-				const importPromise = (async () => {
-					const res = await invoke<InitServerResult>('import_server', { directory });
-					if (!res.ok) {
-						throw new Error(res.message || 'Failed to import server.');
-					}
-					return res;
-				})();
-
-				const importAndRepairPromise = (async () => {
-					const result = await importPromise;
-
-					const repairPayload = {
-						directory: result.directory,
-						create_directory_if_missing: true,
-						file,
-						ram: Math.max(1, Number(form.ram) || 3),
-						storage_limit: Math.max(1, Number(form.storage_limit) || 200),
-						auto_backup: form.auto_backup,
-						auto_backup_interval: Math.max(1, Number(form.auto_backup_interval) || 120),
-						auto_restart: form.auto_restart,
-						auto_agree_eula: true,
-						java_installation: form.java_installation,
-						custom_flags: [],
-						provider: form.provider,
-						version: form.version || undefined,
-						provider_checks: normalizeProviderChecks(),
-					};
-
-					const synced = await repairServerMserveJson(repairPayload);
-					if (!synced.config) {
-						throw new Error('Could not finalize mserve.json for this server.');
-					}
-
-					const addedServerId = addServer(buildImportedServer(result, synced.config));
-
-					return { serverId: addedServerId };
-				})();
-
-				await toast.promise(importAndRepairPromise, {
-					loading: 'Importing existing server...',
-					success: () =>
-						`Server "${getServerNameFromDirectory(directory)}" has been imported and configured`,
-					error: (err) => (err instanceof Error ? err.message : 'Failed to import server.'),
-				});
-
-				const result = await importAndRepairPromise;
-				setCreatedServerId(result.serverId);
-				setSlide(DONE_SLIDE_INDEX);
-			} catch (err) {
-				const message = err instanceof Error ? err.message : 'Failed to import server.';
-				setError(message);
-			} finally {
-				setIsSubmitting(false);
-			}
-
+			setSlide(2);
 			return;
 		}
 
@@ -509,8 +308,8 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 		try {
 			const payload: InitServerPayload = {
 				directory,
-				create_directory_if_missing: form.create_directory_if_missing,
-				file: file || 'server.jar',
+				create_directory_if_missing: true,
+				file,
 				ram: Math.max(1, Number(form.ram) || 3),
 				storage_limit: Math.max(1, Number(form.storage_limit) || 200),
 				auto_restart: form.auto_restart,
@@ -532,12 +331,21 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
 			await toast.promise(initializePromise, {
 				loading: 'Creating server...',
-				success: () => `Server "${getServerNameFromDirectory(directory)}" has been created`,
+				success: () => `Server "${trimmedName}" has been created`,
 				error: (err) => (err instanceof Error ? err.message : 'Failed to create server.'),
 			});
 
 			const result = await initializePromise;
-			const serverId = addServer(buildCreatedServer(form, result));
+			const serverId = addServer(
+				buildCreatedServer(
+					{
+						...form,
+						directory,
+						create_directory_if_missing: true,
+					},
+					result,
+				),
+			);
 			setCreatedServerId(serverId);
 			setSlide(DONE_SLIDE_INDEX);
 		} catch (err) {
@@ -546,7 +354,7 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 		} finally {
 			setIsSubmitting(false);
 		}
-	}, [addServer, findExistingServerByDirectory, form, skipJarAndEula]);
+	}, [addServer, findExistingServerByName, form, isResolvingServersRootPath, serverName, serversRootPath]);
 
 	React.useEffect(() => {
 		if (slide !== DONE_SLIDE_INDEX || !createdServerId) return;
@@ -560,7 +368,7 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 		};
 	}, [createdServerId, goToCreatedServer, slide]);
 
-	const visibleStepSlides = skipJarAndEula ? [1, 3, 4, 5, 7] : [1, 2, 3, 4, 5, 6, 7];
+	const visibleStepSlides = [1, 2, 3, 4, 5, 6, 7];
 	const totalSteps = visibleStepSlides.length;
 	const currentStepIndex = visibleStepSlides.indexOf(slide);
 	const currentStep = currentStepIndex >= 0 ? currentStepIndex + 1 : 1;
@@ -570,6 +378,10 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 	const value = React.useMemo<CreateServerContextValue>(
 		() => ({
 			form,
+			serverName,
+			serversRootPath,
+			isResolvingServersRootPath,
+			resolvedDirectory,
 			slide,
 			doneSlideIndex: DONE_SLIDE_INDEX,
 			totalSteps,
@@ -577,27 +389,22 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 			showBackButton,
 			showStepIndicator,
 			hasStarted,
-			isDirty: isFormDirty(form),
-			skipJarAndEula,
-			directoryInspection,
+			isDirty: isFormDirty(form, serverName),
 			createdServerId,
 			error,
 			isSubmitting,
 			updateField,
+			setServerName,
 			setSlide,
 			nextSlide,
 			prevSlide,
 			continueToNext,
 			startFlow,
 			setCreatedServerId,
-			setSkipJarAndEula,
 			setError,
 			clearError,
-			inspectServerDirectory,
-			importServerFromDirectory,
 			createServer,
 			goToCreatedServer,
-			setDirectoryFromExistingServer,
 			resetDraft,
 		}),
 		[
@@ -606,25 +413,25 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 			createServer,
 			createdServerId,
 			currentStep,
-			directoryInspection,
 			error,
 			form,
 			goToCreatedServer,
 			hasStarted,
-			importServerFromDirectory,
-			inspectServerDirectory,
+			isResolvingServersRootPath,
 			isSubmitting,
 			nextSlide,
 			prevSlide,
 			resetDraft,
-			setDirectoryFromExistingServer,
+			resolvedDirectory,
+			serverName,
+			serversRootPath,
 			showBackButton,
 			showStepIndicator,
-			skipJarAndEula,
 			slide,
 			startFlow,
 			totalSteps,
 			updateField,
+			setServerName,
 		],
 	);
 

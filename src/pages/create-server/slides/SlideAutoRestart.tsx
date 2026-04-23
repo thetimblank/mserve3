@@ -18,10 +18,9 @@ const SlideAutoRestart: React.FC = () => {
 				</Button>
 			}>
 			<div className='flex items-center justify-center'>
-				<Field className='w-auto bg-secondary p-6 rounded-lg'>
+				<Field className='w-auto bg-secondary/20 p-6 rounded-lg'>
 					<Label className='flex items-center gap-3'>
 						<Checkbox
-							className='border-secondary-foreground/50'
 							checked={form.auto_restart}
 							onCheckedChange={(checked) =>
 								updateField('auto_restart', typeof checked === 'boolean' ? checked : false)

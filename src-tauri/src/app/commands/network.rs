@@ -1,8 +1,22 @@
 use super::super::support::*;
 use super::super::*;
 use std::fs;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+use tauri::Emitter;
+
+const JAR_DOWNLOAD_PROGRESS_EVENT: &str = "server-jar-download-progress";
+
+#[derive(Debug, serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct DownloadServerJarProgressEvent {
+    download_id: String,
+    downloaded_bytes: u64,
+    total_bytes: Option<u64>,
+    progress: f64,
+    done: bool,
+}
 
 fn sanitize_file_name(input: &str) -> String {
     let mut sanitized: String = input
@@ -207,6 +221,7 @@ pub(in crate::app) fn get_local_ip() -> Result<String, String> {
 
 #[tauri::command]
 pub(in crate::app) fn download_server_jar(
+    app: tauri::AppHandle,
     payload: DownloadServerJarPayload,
 ) -> Result<DownloadServerJarResult, String> {
     let url = payload.url.trim();
@@ -226,6 +241,18 @@ pub(in crate::app) fn download_server_jar(
     };
     let file_name = sanitize_file_name(&suggested_name);
 
+    let download_id = payload
+        .download_id
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| {
+            let millis = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|value| value.as_millis())
+                .unwrap_or(0);
+            format!("jar-download-{millis}")
+        });
+
     let destination_dir = std::env::temp_dir().join("mserve").join("jar-downloads");
     fs::create_dir_all(&destination_dir).map_err(|err| err.to_string())?;
 
@@ -237,7 +264,7 @@ pub(in crate::app) fn download_server_jar(
         .build()
         .map_err(|err| err.to_string())?;
 
-    let response = client.get(url).send().map_err(|err| err.to_string())?;
+    let mut response = client.get(url).send().map_err(|err| err.to_string())?;
     if !response.status().is_success() {
         return Err(format!(
             "Download failed with HTTP status {}.",
@@ -245,13 +272,60 @@ pub(in crate::app) fn download_server_jar(
         ));
     }
 
-    let bytes = response.bytes().map_err(|err| err.to_string())?;
-    if bytes.is_empty() {
+    let total_bytes = response.content_length();
+    let mut downloaded_bytes: u64 = 0;
+    let mut temp_file = fs::File::create(&temp_path).map_err(|err| err.to_string())?;
+
+    let emit_progress = |downloaded: u64, done: bool| {
+        let progress = if let Some(total) = total_bytes {
+            if total == 0 {
+                if done { 1.0 } else { 0.0 }
+            } else {
+                (downloaded as f64 / total as f64).clamp(0.0, 1.0)
+            }
+        } else if done {
+            1.0
+        } else {
+            0.0
+        };
+
+        let payload = DownloadServerJarProgressEvent {
+            download_id: download_id.clone(),
+            downloaded_bytes: downloaded,
+            total_bytes,
+            progress,
+            done,
+        };
+
+        let _ = app.emit(JAR_DOWNLOAD_PROGRESS_EVENT, payload);
+    };
+
+    emit_progress(0, false);
+
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let read = response.read(&mut buffer).map_err(|err| err.to_string())?;
+        if read == 0 {
+            break;
+        }
+
+        temp_file
+            .write_all(&buffer[..read])
+            .map_err(|err| err.to_string())?;
+
+        downloaded_bytes = downloaded_bytes.saturating_add(read as u64);
+        emit_progress(downloaded_bytes, false);
+    }
+
+    temp_file.flush().map_err(|err| err.to_string())?;
+
+    if downloaded_bytes == 0 {
         return Err("Downloaded file was empty.".to_string());
     }
 
-    fs::write(&temp_path, &bytes).map_err(|err| err.to_string())?;
     move_file_with_fallback(&temp_path, &destination_path)?;
+
+    emit_progress(downloaded_bytes, true);
 
     let final_path = destination_path
         .canonicalize()
@@ -265,7 +339,7 @@ pub(in crate::app) fn download_server_jar(
     Ok(DownloadServerJarResult {
         path: final_path.to_string_lossy().to_string(),
         file_name: resolved_file_name,
-        size_bytes: bytes.len() as u64,
+        size_bytes: downloaded_bytes,
     })
 }
 

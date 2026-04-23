@@ -129,7 +129,7 @@ export const createDefaultMserveForm = (): MserveJsonFormProps => ({
 	ram: 4,
 	storage_limit: 200,
 	auto_restart: false,
-	auto_backup: [],
+	auto_backup: ['on_close'],
 	auto_backup_interval: 120,
 	auto_agree_eula: true,
 	java_installation: '',

@@ -16,6 +16,7 @@ import { m } from 'motion/react';
 const CreateServerContent: React.FC = () => {
 	const { slide, prevSlide, showBackButton, showStepIndicator, currentStep, totalSteps, error } =
 		useCreateServer();
+	const shouldTopAlignContent = slide === 2 || slide === 3;
 
 	const slides = [
 		<SlideIntro key='intro' />,
@@ -36,7 +37,10 @@ const CreateServerContent: React.FC = () => {
 					<ArrowLeft className='size-10' />
 				</Button>
 			)}
-			<div className='h-full min-h-0 flex items-center justify-center p-12 w-full overflow-y-auto app-scroll-area'>
+			<div
+				className={`h-full min-h-0 flex justify-center p-12 w-full overflow-y-auto app-scroll-area ${
+					shouldTopAlignContent ? 'items-start' : 'items-center'
+				}`}>
 				{showStepIndicator && (
 					<div className='absolute top-0 right-0 m-12 text-sm text-muted-foreground'>
 						Step {currentStep} / {totalSteps}

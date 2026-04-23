@@ -229,6 +229,7 @@ struct PathValidationResult {
 struct DownloadServerJarPayload {
     url: String,
     preferred_file_name: Option<String>,
+    download_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -362,6 +363,7 @@ pub fn run() {
             import_server,
             sync_server_mserve_json,
             repair_server_mserve_json,
+            get_default_servers_root_path,
             open_server_folder,
             open_server_path,
             delete_server_item,

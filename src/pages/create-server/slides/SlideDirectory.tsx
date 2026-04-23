@@ -1,162 +1,101 @@
-import * as React from 'react';
-import { open as openDialog } from '@tauri-apps/plugin-dialog';
-import { FolderOpen } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Field, FieldGroup } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useCreateServer } from '../CreateServerContext';
+import { useServers } from '@/data/servers';
+import { useCreateServer, type PathValidationResult } from '../CreateServerContext';
 import SlideShell from './SlideShell';
 
-const importKinds = new Set(['import_mserve', 'import_existing_server']);
+const normalizeName = (value: string) => value.trim().toLowerCase();
 
 const SlideDirectory: React.FC = () => {
+	const { servers } = useServers();
 	const {
-		form,
-		isSubmitting,
-		directoryInspection,
-		updateField,
-		nextSlide,
-		setSlide,
-		setSkipJarAndEula,
+		serverName,
+		setServerName,
+		serversRootPath,
+		resolvedDirectory,
+		isResolvingServersRootPath,
 		setError,
 		clearError,
-		inspectServerDirectory,
-		importServerFromDirectory,
-		setDirectoryFromExistingServer,
+		nextSlide,
 	} = useCreateServer();
 
-	const onPickDirectory = async () => {
-		try {
-			const selected = await openDialog({
-				directory: true,
-				multiple: false,
-				title: 'Choose server directory',
-			});
+	const duplicateServer =
+		servers.find((server) => normalizeName(server.name) === normalizeName(serverName)) ?? null;
 
-			if (typeof selected === 'string') {
-				updateField('directory', selected);
-				clearError();
-			}
-		} catch (err) {
-			const message = err instanceof Error ? err.message : 'Could not open directory picker.';
-			setError(message);
-		}
-	};
-
-	React.useEffect(() => {
-		const directory = form.directory.trim();
-		if (!directory) {
-			void inspectServerDirectory({ directory: '', silent: true });
+	const onContinue = async () => {
+		const trimmedName = serverName.trim();
+		if (!trimmedName) {
+			setError('Please enter a server name.');
 			return;
 		}
 
-		const timeout = window.setTimeout(() => {
-			void inspectServerDirectory({ silent: true });
-		}, 220);
-
-		return () => {
-			window.clearTimeout(timeout);
-		};
-	}, [form.create_directory_if_missing, form.directory, inspectServerDirectory]);
-
-	const onContinue = async () => {
-		const inspection = await inspectServerDirectory();
-		if (!inspection) return;
-
-		switch (inspection.kind) {
-			case 'new_directory':
-			case 'empty_directory': {
-				setSkipJarAndEula(false);
-				clearError();
-				nextSlide();
-				return;
-			}
-			case 'import_mserve': {
-				setSkipJarAndEula(false);
-				await importServerFromDirectory();
-				return;
-			}
-			case 'import_existing_server': {
-				if (!inspection.firstJarFile) {
-					setError('Could not detect a jar file for import.');
-					return;
-				}
-				setSkipJarAndEula(true);
-				setDirectoryFromExistingServer(inspection.firstJarFile);
-				clearError();
-				setSlide(3);
-				return;
-			}
-			case 'empty_input':
-			case 'missing_directory':
-				setError(inspection.message);
-				return;
-			case 'already_in_mserve':
-				setError(inspection.message);
-				return;
-			case 'not_directory':
-			case 'unsupported_existing':
-			default:
-				setError(inspection.message);
+		if (/[/\\]/.test(trimmedName)) {
+			setError('Server name cannot include path separators. Please choose another name.');
+			return;
 		}
-	};
 
-	const buttonLabel = importKinds.has(directoryInspection?.kind ?? '') ? 'Import Server' : 'Continue';
-	const showCreateDirectoryCheckbox =
-		directoryInspection?.kind === 'missing_directory' || directoryInspection?.kind === 'new_directory';
-	const showDirectoryNote =
-		directoryInspection?.kind === 'import_mserve' ||
-		directoryInspection?.kind === 'import_existing_server' ||
-		directoryInspection?.kind === 'unsupported_existing' ||
-		directoryInspection?.kind === 'not_directory';
-	const noteTone =
-		directoryInspection?.kind === 'unsupported_existing' ? 'text-destructive' : 'text-muted-foreground';
+		if (duplicateServer) {
+			setError(`Server name already exists as "${duplicateServer.name}". Please choose another name.`);
+			return;
+		}
+
+		if (isResolvingServersRootPath) {
+			setError('Still resolving server root path. Please wait a moment and try again.');
+			return;
+		}
+
+		if (!serversRootPath.trim()) {
+			setError('Set your servers root path in Settings before creating a server.');
+			return;
+		}
+
+		if (resolvedDirectory) {
+			const pathResult = await invoke<PathValidationResult>('validate_path', {
+				path: resolvedDirectory,
+			});
+			if (pathResult.exists) {
+				setError('A folder with this name already exists. Please choose another name.');
+				return;
+			}
+		}
+
+		clearError();
+		nextSlide();
+	};
 
 	return (
 		<SlideShell
-			title='Where should this server live?'
-			description='Choose the folder for this server installation.'
+			title='What should this server be called?'
+			description='Your server folder will be created automatically under your configured servers root path.'
 			actions={
-				<Button type='button' onClick={onContinue} disabled={isSubmitting}>
-					{isSubmitting ? 'Working...' : buttonLabel}
+				<Button type='button' onClick={onContinue}>
+					Continue
 				</Button>
 			}>
-			<FieldGroup className='gap-2'>
+			<FieldGroup className='gap-3'>
 				<Field>
-					<Label htmlFor='create-server-directory'>Server Location</Label>
-					<div className='flex gap-2'>
-						<Input
-							id='create-server-directory'
-							placeholder='C:\\servers\\MyServer'
-							value={form.directory}
-							onChange={(event) => updateField('directory', event.target.value)}
-						/>
-						<Button type='button' variant='outline' onClick={onPickDirectory} disabled={isSubmitting}>
-							<FolderOpen /> Browse
-						</Button>
-					</div>
+					<Label htmlFor='create-server-name'>Server name</Label>
+					<Input
+						id='create-server-name'
+						placeholder='My Server'
+						value={serverName}
+						onChange={(event) => {
+							setServerName(event.target.value);
+							clearError();
+						}}
+					/>
 				</Field>
-				{showCreateDirectoryCheckbox && (
-					<Field>
-						<Label className='flex items-center gap-3'>
-							<Checkbox
-								checked={form.create_directory_if_missing}
-								onCheckedChange={(checked) =>
-									updateField(
-										'create_directory_if_missing',
-										typeof checked === 'boolean' ? checked : false,
-									)
-								}
-							/>
-							Create directory since it does not exist
-						</Label>
-					</Field>
+				{duplicateServer && (
+					<p className='text-sm text-destructive'>
+						Name already exists. Please choose a different server name.
+					</p>
 				)}
-				{showDirectoryNote && directoryInspection && form.directory.trim() && (
-					<p className={`text-sm ${noteTone}`}>{directoryInspection.message}</p>
-				)}
+				<p className='text-sm text-muted-foreground break-all'>
+					Server folder: {resolvedDirectory || '(enter a name to preview)'}
+				</p>
 			</FieldGroup>
 		</SlideShell>
 	);

@@ -3,7 +3,7 @@ import { useCreateServer } from '../CreateServerContext';
 import SlideShell from './SlideShell';
 
 const SlideReview: React.FC = () => {
-	const { form, isSubmitting, prevSlide, createServer } = useCreateServer();
+	const { form, serverName, resolvedDirectory, isSubmitting, prevSlide, createServer } = useCreateServer();
 
 	return (
 		<SlideShell
@@ -11,7 +11,7 @@ const SlideReview: React.FC = () => {
 			description='Confirm your settings, then create the server.'
 			actions={
 				<>
-					<Button variant='outline' type='button' onClick={prevSlide} disabled={isSubmitting}>
+					<Button variant='secondary' type='button' onClick={prevSlide} disabled={isSubmitting}>
 						Back
 					</Button>
 					<Button type='button' onClick={createServer} disabled={isSubmitting}>
@@ -19,10 +19,14 @@ const SlideReview: React.FC = () => {
 					</Button>
 				</>
 			}>
-			<div className='rounded-lg bg-secondary p-6 space-y-3'>
+			<div className='rounded-lg bg-secondary/20 p-6 space-y-3'>
+				<div>
+					<p className='text-sm text-muted-foreground'>Name</p>
+					<p>{serverName || '(not set)'}</p>
+				</div>
 				<div>
 					<p className='text-sm text-muted-foreground'>Directory</p>
-					<p className='break-all'>{form.directory || '(not set)'}</p>
+					<p className='break-all'>{resolvedDirectory || '(not set)'}</p>
 				</div>
 				<div>
 					<p className='text-sm text-muted-foreground'>Jar file</p>

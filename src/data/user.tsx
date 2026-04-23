@@ -6,6 +6,7 @@ export interface UserData {
 		reduced_motion: boolean;
 	};
 	java_installation_default: string;
+	servers_root_path: string;
 	advanced_mode: boolean;
 	completed_setup_hosting_ports: number[];
 	initial_setup_hosting_tutorial_completed: boolean;
@@ -44,6 +45,8 @@ const normalizePortList = (ports?: number[]) =>
 		),
 	).sort((a, b) => a - b);
 
+const toTrimmedString = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : '');
+
 export const createDefaultUserData = (): UserData => {
 	const now = new Date();
 	return {
@@ -52,6 +55,7 @@ export const createDefaultUserData = (): UserData => {
 			reduced_motion: false,
 		},
 		java_installation_default: 'java',
+		servers_root_path: '',
 		advanced_mode: false,
 		completed_setup_hosting_ports: [],
 		initial_setup_hosting_tutorial_completed: false,
@@ -71,6 +75,7 @@ export const normalizeUserData = (user: Partial<UserData> | null | undefined): U
 			typeof user?.java_installation_default === 'string' && user.java_installation_default.trim()
 				? user.java_installation_default.trim()
 				: 'java',
+		servers_root_path: toTrimmedString(user?.servers_root_path),
 		advanced_mode: user?.advanced_mode ?? false,
 		completed_setup_hosting_ports: normalizePortList(user?.completed_setup_hosting_ports),
 		initial_setup_hosting_tutorial_completed: user?.initial_setup_hosting_tutorial_completed ?? false,

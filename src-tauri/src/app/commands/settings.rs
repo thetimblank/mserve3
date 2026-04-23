@@ -5,6 +5,15 @@ use std::path::PathBuf;
 use tauri::State;
 
 #[tauri::command]
+pub(in crate::app) fn get_default_servers_root_path() -> Result<String, String> {
+    Ok(home_dir()
+        .join("mserve")
+        .join("servers")
+        .to_string_lossy()
+        .to_string())
+}
+
+#[tauri::command]
 pub(in crate::app) fn update_server_settings(
     payload: UpdateServerSettingsPayload,
     state: State<'_, RuntimeState>,

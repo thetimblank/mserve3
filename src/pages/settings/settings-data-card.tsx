@@ -7,6 +7,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useUser } from '@/data/user';
+import { getDefaultServersRootPath } from '@/lib/server-root-path';
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -26,10 +27,34 @@ type SettingsDataCardProps = {
 const SettingsDataCard: React.FC<SettingsDataCardProps> = ({ onClearAllData }) => {
 	const { user, updateUserField } = useUser();
 	const [javaDefault, setJavaDefault] = React.useState(user.java_installation_default);
+	const [serversRootPath, setServersRootPath] = React.useState(user.servers_root_path);
+	const [defaultServersRootPath, setDefaultServersRootPath] = React.useState('');
 
 	React.useEffect(() => {
 		setJavaDefault(user.java_installation_default);
 	}, [user.java_installation_default]);
+
+	React.useEffect(() => {
+		setServersRootPath(user.servers_root_path || defaultServersRootPath);
+	}, [defaultServersRootPath, user.servers_root_path]);
+
+	React.useEffect(() => {
+		let active = true;
+
+		void getDefaultServersRootPath()
+			.then((path) => {
+				if (!active) return;
+				setDefaultServersRootPath(path);
+			})
+			.catch(() => {
+				if (!active) return;
+				setDefaultServersRootPath('');
+			});
+
+		return () => {
+			active = false;
+		};
+	}, []);
 
 	const handleSaveJavaDefault = () => {
 		const normalized = javaDefault.trim() || 'java';
@@ -50,6 +75,30 @@ const SettingsDataCard: React.FC<SettingsDataCardProps> = ({ onClearAllData }) =
 		toast.success(`Advanced mode ${enabled ? 'enabled' : 'disabled'}.`);
 	};
 
+	const handleSaveServersRootPath = () => {
+		const normalized = serversRootPath.trim();
+		if (!normalized) {
+			toast.error('Server root path cannot be empty.');
+			return;
+		}
+
+		updateUserField('servers_root_path', normalized);
+		setServersRootPath(normalized);
+		toast.success('Server root path updated.');
+	};
+
+	const handleResetServersRootPath = () => {
+		const resetPath = defaultServersRootPath.trim();
+		if (!resetPath) {
+			toast.error('Could not resolve default server root path.');
+			return;
+		}
+
+		updateUserField('servers_root_path', resetPath);
+		setServersRootPath(resetPath);
+		toast.success('Server root path reset to default.');
+	};
+
 	return (
 		<Card>
 			<CardHeader>
@@ -58,6 +107,26 @@ const SettingsDataCard: React.FC<SettingsDataCardProps> = ({ onClearAllData }) =
 			</CardHeader>
 			<CardContent className='space-y-1'>
 				<div className='space-y-2'>
+					<Label htmlFor='settings-servers-root-path'>Servers root path</Label>
+					<Input
+						id='settings-servers-root-path'
+						className='font-mono'
+						placeholder='C:\\Users\\you\\mserve\\servers'
+						value={serversRootPath}
+						onChange={(event) => setServersRootPath(event.target.value)}
+					/>
+					<p className='text-sm text-muted-foreground'>
+						New servers are created as child folders in this directory.
+					</p>
+					<div className='flex gap-2'>
+						<Button onClick={handleSaveServersRootPath}>Save</Button>
+						<Button variant='destructive-secondary' onClick={handleResetServersRootPath}>
+							Reset to default
+						</Button>
+					</div>
+				</div>
+
+				<div className='space-y-2 mt-4'>
 					<Label htmlFor='settings-java-default'>Default Java installation</Label>
 					<Input
 						id='settings-java-default'
