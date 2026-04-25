@@ -2,7 +2,6 @@ import React from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
 import type { AutoBackupMode, Server, ServerUpdate } from '@/data/servers';
-import { normalizeProviderChecks } from '@/lib/mserve-schema';
 import { getBackupNameFromPath } from '../server-utils';
 import type { CreateServerBackupResult, RestoreServerBackupResult } from '../server-types';
 
@@ -107,8 +106,6 @@ export const useServerBackupActions = ({
 						custom_flags: server.custom_flags,
 						java_installation: server.java_installation,
 						provider: server.provider,
-						version: server.version,
-						provider_checks: normalizeProviderChecks(server.provider_checks),
 					},
 				});
 
@@ -150,8 +147,6 @@ export const useServerBackupActions = ({
 					custom_flags: server.custom_flags,
 					java_installation: server.java_installation,
 					provider: server.provider,
-					version: server.version,
-					provider_checks: normalizeProviderChecks(server.provider_checks),
 				},
 			});
 

@@ -5,9 +5,9 @@ import { toast } from 'sonner';
 import { useServers } from '@/data/servers';
 import { useUser } from '@/data/user';
 import { buildCreatedServer } from '@/lib/mserve-server-mapper';
+import type { Provider } from '@/lib/mserve-schema';
 import { createDefaultServerSetupForm, type ServerSetupFormData } from '@/lib/mserve-sync';
 import { getDefaultServersRootPath } from '@/lib/server-root-path';
-import type { ServerProvider } from '@/lib/server-provider';
 
 type InitServerPayload = {
 	directory: string;
@@ -20,8 +20,7 @@ type InitServerPayload = {
 	auto_backup_interval: number;
 	auto_agree_eula: boolean;
 	java_installation: string;
-	provider: ServerProvider;
-	version: string;
+	provider: Provider;
 };
 
 type InitServerResult = {
@@ -69,8 +68,7 @@ const isFormDirty = (form: ServerSetupFormData, serverName: string) => {
 	if (form.auto_backup_interval !== DEFAULT_FORM.auto_backup_interval) return true;
 	if (form.auto_agree_eula !== DEFAULT_FORM.auto_agree_eula) return true;
 	if (form.java_installation !== DEFAULT_FORM.java_installation) return true;
-	if (form.provider !== DEFAULT_FORM.provider) return true;
-	if (form.version !== DEFAULT_FORM.version) return true;
+	if (JSON.stringify(form.provider) !== JSON.stringify(DEFAULT_FORM.provider)) return true;
 	return false;
 };
 
@@ -304,6 +302,23 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 			return;
 		}
 
+		if (!form.provider) {
+			setError('Provider details are required. Select provider metadata before continuing.');
+			setSlide(2);
+			return;
+		}
+
+		const provider = {
+			...form.provider,
+			file,
+		};
+
+		if (!provider.minecraft_version.trim() || !provider.provider_version.trim()) {
+			setError('Provider metadata must include minecraft and provider version details.');
+			setSlide(2);
+			return;
+		}
+
 		setIsSubmitting(true);
 		try {
 			const payload: InitServerPayload = {
@@ -317,8 +332,7 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 				auto_backup_interval: Math.max(1, Number(form.auto_backup_interval) || 120),
 				auto_agree_eula: form.auto_agree_eula,
 				java_installation: form.java_installation,
-				provider: form.provider,
-				version: form.version,
+				provider,
 			};
 
 			const initializePromise = (async () => {

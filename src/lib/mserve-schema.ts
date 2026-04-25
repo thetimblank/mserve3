@@ -1,36 +1,36 @@
-import { DEFAULT_SERVER_PROVIDER, type ServerProvider } from '@/lib/server-provider';
+import { TELEMETRY_POLLING } from './mserve-consts';
 
 export type AutoBackupMode = 'interval' | 'on_close' | 'on_start';
+export type ProviderName = 'paper' | 'folia' | 'spigot' | 'vanilla' | 'velocity' | 'bungeecord';
+export type TelemetryKey = (typeof TELEMETRY_POLLING)[number];
+export type TelemetryPolling = TelemetryKey[];
+export type ProviderKind = 'plugin' | 'vanilla' | 'proxy' | 'unknown';
+export type ProviderTab = 'plugin' | 'vanilla' | 'proxies';
 
-export type ProviderChecks = {
-	list_polling: boolean;
-	tps_polling: boolean;
-	version_polling: boolean;
-	online_polling: boolean;
-	ram_polling: boolean;
-	cpu_polling: boolean;
-	provider_polling: boolean;
-};
+export interface Provider {
+	name: ProviderName;
+	file: string;
+	download_url?: string;
+	provider_version: string;
+	minecraft_version: string;
+	/**
+	 * @example 21 = 'JDK v21'
+	 */
+	jdk_versions: number[];
+	supported_telemetry: TelemetryPolling;
+	stable: boolean;
+	aliases?: string[];
+	description?: string;
+	kind?: ProviderKind;
+	tab?: ProviderTab;
+	stable_name?: string;
+	unstable_name?: string;
+	supports_list_command?: boolean;
+	supports_tps_command?: boolean;
+	supports_version_command?: boolean;
+}
 
-export const createDefaultProviderChecks = (): ProviderChecks => ({
-	list_polling: true,
-	tps_polling: true,
-	version_polling: true,
-	online_polling: true,
-	ram_polling: true,
-	cpu_polling: true,
-	provider_polling: true,
-});
-
-export const normalizeProviderChecks = (checks?: Partial<ProviderChecks> | null): ProviderChecks => ({
-	list_polling: checks?.list_polling ?? true,
-	tps_polling: checks?.tps_polling ?? true,
-	version_polling: checks?.version_polling ?? true,
-	online_polling: checks?.online_polling ?? true,
-	ram_polling: checks?.ram_polling ?? true,
-	cpu_polling: checks?.cpu_polling ?? true,
-	provider_polling: checks?.provider_polling ?? true,
-});
+export const createDefaultProviderChecks = (): TelemetryPolling => [...TELEMETRY_POLLING];
 
 export type MserveJsonProps = {
 	id: string;
@@ -42,12 +42,10 @@ export type MserveJsonProps = {
 	auto_restart: boolean;
 	custom_flags: string[];
 	created_at: string;
-	java_installation?: string;
-	provider?: string;
-	version?: string;
-	provider_checks: ProviderChecks;
-	telemetry_host?: string;
-	telemetry_port?: number;
+	java_installation: string | undefined;
+	provider: Provider;
+	telemetry_host: string;
+	telemetry_port: number;
 };
 
 export type MserveStats = {
@@ -79,8 +77,7 @@ export type MserveJsonFormProps = {
 	auto_backup_interval: number;
 	auto_agree_eula: boolean;
 	java_installation: string;
-	provider: ServerProvider;
-	version: string;
+	provider: Provider | null;
 };
 
 export type MserveRepairPayload = Pick<
@@ -97,9 +94,7 @@ export type MserveRepairPayload = Pick<
 	create_directory_if_missing?: boolean;
 	auto_agree_eula?: boolean;
 	custom_flags: string[];
-	provider: ServerProvider;
-	version?: string;
-	provider_checks?: ProviderChecks;
+	provider: Provider;
 	telemetry_host?: string;
 	telemetry_port?: number;
 };
@@ -113,9 +108,7 @@ export type MserveUpdateSettingsPayload = {
 	auto_restart: boolean;
 	custom_flags: string[];
 	java_installation?: string;
-	provider: ServerProvider;
-	version?: string;
-	provider_checks: ProviderChecks;
+	provider: Provider;
 	telemetry_host?: string;
 	telemetry_port?: number;
 	jar_swap_path?: string;
@@ -133,6 +126,5 @@ export const createDefaultMserveForm = (): MserveJsonFormProps => ({
 	auto_backup_interval: 120,
 	auto_agree_eula: true,
 	java_installation: '',
-	provider: DEFAULT_SERVER_PROVIDER,
-	version: '',
+	provider: null,
 });

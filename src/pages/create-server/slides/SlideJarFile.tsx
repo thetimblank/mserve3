@@ -4,6 +4,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { CircleHelp, FolderOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -17,18 +18,34 @@ import {
 	fetchJarRows,
 	getJarTabs,
 	isJarRowDownloadable,
+	toProviderFromJarRow,
 	type DownloadServerJarProgressEvent,
 	type JarTab,
 	type JarVersionRow,
 } from '@/lib/jar-download-service';
 import { detectJavaRuntimes, type JavaRuntimeInfo } from '@/lib/java-runtime-service';
 import { inferProviderFromJarPath, inferVersionFromJarPath } from '@/lib/server-provider-capabilities';
-import { isServerProvider, providerOptions } from '@/lib/server-provider';
+import {
+	createProvider,
+	getProviderDisplayName,
+	isServerProvider,
+	PROVIDER_NAMES,
+} from '@/lib/server-provider';
 import { useCreateServer, type PathValidationResult } from '../CreateServerContext';
 import JarVersionSelectorPane from './components/JarVersionSelectorPane';
 import SlideShell from './SlideShell';
 
 const normalizePathLike = (value: string) => value.trim().replace(/\\/g, '/').toLowerCase();
+
+const parseJdkVersions = (value: string): number[] =>
+	Array.from(
+		new Set(
+			value
+				.split(',')
+				.map((token) => Number(token.trim()))
+				.filter((token) => Number.isInteger(token) && token > 0),
+		),
+	);
 
 const SlideJarFile: React.FC = () => {
 	const { user } = useUser();
@@ -149,17 +166,31 @@ const SlideJarFile: React.FC = () => {
 
 	const applyInferredMetadata = React.useCallback(
 		(filePath: string) => {
-			const provider = inferProviderFromJarPath(filePath);
+			const providerName = inferProviderFromJarPath(filePath);
 			const version = inferVersionFromJarPath(filePath);
-			if (provider) {
-				updateField('provider', provider);
-				if (version) {
-					maybeApplyJavaOverride(provider, version);
-				}
+
+			if (!providerName && !form.provider) {
+				return;
 			}
-			updateField('version', version ?? '');
+
+			const base = providerName
+				? createProvider(providerName)
+				: form.provider ?? createProvider('vanilla');
+
+			const nextProvider = {
+				...base,
+				file: filePath,
+				minecraft_version: version ?? base.minecraft_version,
+				provider_version: version ?? base.provider_version,
+			};
+
+			updateField('provider', nextProvider);
+
+			if (providerName && version) {
+				maybeApplyJavaOverride(providerName, version);
+			}
 		},
-		[maybeApplyJavaOverride, updateField],
+		[form.provider, maybeApplyJavaOverride, updateField],
 	);
 
 	const onPickServerFile = async () => {
@@ -188,9 +219,7 @@ const SlideJarFile: React.FC = () => {
 	};
 
 	const onContinue = async () => {
-		if (isDownloading) {
-			return;
-		}
+		if (isDownloading) return;
 
 		try {
 			if (selectedRow && isJarRowDownloadable(selectedRow)) {
@@ -207,9 +236,7 @@ const SlideJarFile: React.FC = () => {
 					unlisten = await listen<DownloadServerJarProgressEvent>(
 						'server-jar-download-progress',
 						(event) => {
-							if (event.payload.downloadId !== downloadId) {
-								return;
-							}
+							if (event.payload.downloadId !== downloadId) return;
 
 							const nextProgress = Number.isFinite(event.payload.progress)
 								? Math.max(0, Math.min(1, event.payload.progress))
@@ -227,10 +254,14 @@ const SlideJarFile: React.FC = () => {
 						throw new Error('Downloaded jar could not be validated. Please try again.');
 					}
 
+					const provider = {
+						...toProviderFromJarRow(selectedRow),
+						file: result.path,
+					};
+
 					setDownloadProgress(1);
 					updateField('file', result.path);
-					updateField('provider', selectedRow.providerId);
-					updateField('version', selectedRow.version);
+					updateField('provider', provider);
 					maybeApplyJavaOverride(selectedRow.providerId, selectedRow.version);
 					clearError();
 					nextSlide();
@@ -261,14 +292,22 @@ const SlideJarFile: React.FC = () => {
 				return;
 			}
 
-			if (inferredProvider && inferredProvider !== form.provider) {
-				updateField('provider', inferredProvider);
+			if (!form.provider) {
+				setError('Provider details are required for manual jar selection.');
+				return;
 			}
 
-			if (!form.version && inferredVersion) {
-				updateField('version', inferredVersion);
+			const provider = {
+				...form.provider,
+				file,
+			};
+
+			if (!provider.minecraft_version.trim() || !provider.provider_version.trim()) {
+				setError('Fill provider minecraft version and provider version before continuing.');
+				return;
 			}
 
+			updateField('provider', provider);
 			clearError();
 			nextSlide();
 		} catch (err) {
@@ -354,7 +393,7 @@ const SlideJarFile: React.FC = () => {
 							<div className='flex gap-2'>
 								<Input
 									id='create-server-file'
-									placeholder='C:\\servers\\server-1.21.11.jar'
+									placeholder='C:\servers\server-1.21.11.jar'
 									value={form.file}
 									onChange={(event) => {
 										const nextFile = event.target.value;
@@ -367,33 +406,113 @@ const SlideJarFile: React.FC = () => {
 								</Button>
 							</div>
 						</Field>
+
 						<Field>
 							<Label htmlFor='create-server-provider'>Server provider</Label>
 							<Select
-								value={form.provider}
+								value={form.provider?.name ?? ''}
 								onValueChange={(value) => {
 									if (!isServerProvider(value)) return;
-									updateField('provider', value);
+									const base = createProvider(value);
+									const existing = form.provider;
+									updateField('provider', {
+										...base,
+										file: form.file || existing?.file || base.file,
+										minecraft_version: existing?.minecraft_version || base.minecraft_version,
+										provider_version: existing?.provider_version || base.provider_version,
+										jdk_versions:
+											existing?.jdk_versions.length ? existing.jdk_versions : base.jdk_versions,
+										supported_telemetry:
+											existing?.supported_telemetry.length
+												? existing.supported_telemetry
+												: base.supported_telemetry,
+										stable: existing?.stable ?? base.stable,
+										download_url: existing?.download_url ?? base.download_url,
+									});
 								}}>
 								<SelectTrigger id='create-server-provider' className='w-full'>
 									<SelectValue placeholder='Select provider' />
 								</SelectTrigger>
 								<SelectContent>
-									{providerOptions.map((option) => (
-										<SelectItem key={option.value} value={option.value}>
-											{option.label}
+									{PROVIDER_NAMES.map((option) => (
+										<SelectItem key={option} value={option}>
+											{getProviderDisplayName(option)}
 										</SelectItem>
 									))}
 								</SelectContent>
 							</Select>
 							<p className='text-xs text-muted-foreground'>
 								{inferredProvider
-									? `Detected from filename: ${inferredProvider}`
+									? `Detected from filename: ${getProviderDisplayName(inferredProvider)}`
 									: 'Provider could not be detected automatically from this filename.'}
 							</p>
 						</Field>
+
+						<Field>
+							<Label htmlFor='create-server-mc-version'>Minecraft version</Label>
+							<Input
+								id='create-server-mc-version'
+								placeholder='1.21.11'
+								value={form.provider?.minecraft_version ?? inferredVersion ?? ''}
+								onChange={(event) => {
+									if (!form.provider) return;
+									updateField('provider', {
+										...form.provider,
+										minecraft_version: event.target.value,
+									});
+								}}
+							/>
+						</Field>
+
+						<Field>
+							<Label htmlFor='create-server-provider-version'>Provider version</Label>
+							<Input
+								id='create-server-provider-version'
+								placeholder='130'
+								value={form.provider?.provider_version ?? inferredVersion ?? ''}
+								onChange={(event) => {
+									if (!form.provider) return;
+									updateField('provider', {
+										...form.provider,
+										provider_version: event.target.value,
+									});
+								}}
+							/>
+						</Field>
+
+						<Field>
+							<Label htmlFor='create-server-provider-jdks'>Supported JDK versions (comma separated)</Label>
+							<Input
+								id='create-server-provider-jdks'
+								placeholder='17, 21'
+								value={(form.provider?.jdk_versions ?? [21]).join(', ')}
+								onChange={(event) => {
+									if (!form.provider) return;
+									updateField('provider', {
+										...form.provider,
+										jdk_versions: parseJdkVersions(event.target.value),
+									});
+								}}
+							/>
+						</Field>
+
+						<Field>
+							<Label className='flex items-center gap-3'>
+								<Checkbox
+									checked={form.provider?.stable ?? true}
+									onCheckedChange={(checked) => {
+										if (!form.provider) return;
+										updateField('provider', {
+											...form.provider,
+											stable: typeof checked === 'boolean' ? checked : false,
+										});
+									}}
+								/>
+								Stable provider build
+							</Label>
+						</Field>
 						<p className='text-sm text-amber-600'>
-							Advanced mode is enabled. There may be issues if you select the incorrect provider.
+							Advanced mode is enabled. Manual jar flow requires complete provider metadata.
 						</p>
 					</>
 				)}

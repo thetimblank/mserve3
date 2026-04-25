@@ -51,8 +51,11 @@ pub(in crate::app) fn initialize_server(payload: InitServerPayload) -> Result<In
     // Copy the jar file to the server directory
     let (resolved_file, copy_message) = copy_jar_to_server_directory(&directory, payload.file.trim())?;
     let server_id = generate_server_id();
-    let inferred_provider = infer_provider_from_jar_file(&resolved_file);
-    let inferred_version = infer_version_from_jar_file(&resolved_file);
+    let provider = payload
+        .provider
+        .as_ref()
+        .map(|value| normalize_provider(value, &resolved_file))
+        .unwrap_or_else(|| default_provider_for_file(&resolved_file));
 
     let config = SyncedMserveConfig {
         id: server_id.clone(),
@@ -68,19 +71,7 @@ pub(in crate::app) fn initialize_server(payload: InitServerPayload) -> Result<In
             .as_deref()
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty()),
-        provider: payload
-            .provider
-            .as_deref()
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty())
-            .or(inferred_provider),
-        version: payload
-            .version
-            .as_deref()
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty())
-            .or(inferred_version),
-        provider_checks: default_provider_checks(),
+        provider,
         telemetry_host: default_telemetry_host(),
         telemetry_port: detect_default_telemetry_port(&directory),
         created_at: chrono::Local::now().to_rfc3339(),
@@ -355,9 +346,7 @@ pub(in crate::app) fn import_server(directory: String) -> Result<InitServerResul
             auto_restart: false,
             custom_flags: default_custom_flags(),
             java_installation: None,
-            provider: infer_provider_from_jar_file(&found_jar),
-            version: infer_version_from_jar_file(&found_jar),
-            provider_checks: default_provider_checks(),
+            provider: default_provider_for_file(&found_jar),
             telemetry_host: default_telemetry_host(),
             telemetry_port: detect_default_telemetry_port(&directory_path),
             created_at: chrono::Local::now().to_rfc3339(),
@@ -490,9 +479,11 @@ pub(in crate::app) fn repair_server_mserve_json(payload: RepairMserveJsonPayload
         .unwrap_or_else(generate_server_id);
 
     let custom_flags = normalize_custom_flags(payload.custom_flags);
-
-    let inferred_provider = infer_provider_from_jar_file(&resolved_file);
-    let inferred_version = infer_version_from_jar_file(&resolved_file);
+    let provider = payload
+        .provider
+        .as_ref()
+        .map(|value| normalize_provider(value, &resolved_file))
+        .unwrap_or_else(|| default_provider_for_file(&resolved_file));
 
     let config = SyncedMserveConfig {
         id: existing_id,
@@ -508,19 +499,7 @@ pub(in crate::app) fn repair_server_mserve_json(payload: RepairMserveJsonPayload
             .as_deref()
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty()),
-        provider: payload
-            .provider
-            .as_deref()
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty())
-            .or(inferred_provider),
-        version: payload
-            .version
-            .as_deref()
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty())
-            .or(inferred_version),
-        provider_checks: payload.provider_checks.unwrap_or_else(default_provider_checks),
+        provider,
         telemetry_host: payload
             .telemetry_host
             .as_deref()

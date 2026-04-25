@@ -2,15 +2,14 @@ import React from 'react';
 import { toast } from 'sonner';
 import { repairServerMserveJson, syncServerMserveJson } from '@/lib/mserve-sync';
 import { requestMserveRepair } from '@/lib/mserve-repair-controller';
-import { normalizeProviderChecks, type MserveJsonProps, type MserveStats } from '@/lib/mserve-schema';
-import { normalizeServerProvider, type ServerProvider } from '@/lib/server-provider';
+import { type MserveJsonProps, type MserveStats, type Provider } from '@/lib/mserve-schema';
+import { createProvider } from '@/lib/server-provider';
 
 export type { AutoBackupMode } from '@/lib/mserve-schema';
 
 export type ServerStatus = 'online' | 'offline' | 'starting' | 'closing';
 
 export interface Server extends MserveJsonProps {
-	provider: ServerProvider;
 	id: string;
 	name: string;
 	directory: string;
@@ -86,21 +85,22 @@ const sameStringList = (left?: string[], right?: string[]) => {
 	return a.every((value, index) => value === b[index]);
 };
 
-const sameProviderChecks = (
-	left?: MserveJsonProps['provider_checks'],
-	right?: MserveJsonProps['provider_checks'],
-) => {
-	const a = normalizeProviderChecks(left);
-	const b = normalizeProviderChecks(right);
-	return (
-		a.list_polling === b.list_polling &&
-		a.tps_polling === b.tps_polling &&
-		a.version_polling === b.version_polling &&
-		a.online_polling === b.online_polling &&
-		a.ram_polling === b.ram_polling &&
-		a.cpu_polling === b.cpu_polling &&
-		a.provider_polling === b.provider_polling
-	);
+const normalizeProvider = (provider: unknown, file: string): Provider => {
+	if (provider && typeof provider === 'object') {
+		const candidate = provider as Partial<Provider>;
+		if (typeof candidate.name === 'string') {
+			return createProvider(candidate as Provider, {
+				file: candidate.file || file,
+			});
+		}
+	}
+
+	return createProvider('vanilla', { file });
+};
+
+const sameProvider = (left?: Provider, right?: Provider) => {
+	if (!left || !right) return false;
+	return JSON.stringify(left) === JSON.stringify(right);
 };
 
 const toNullableNumber = (value: unknown): number | null => {
@@ -216,40 +216,15 @@ const toUniqueBackups = (items?: Server['backups']) => {
 	return normalized;
 };
 
-export const createDefaultServers = (): Server[] => [
-	// {
-	// 	name: 'SMP',
-	// 	status: 'offline',
-	// 	stats: {
-	// 		players: 0,
-	// 		tps: 0,
-	// 		capacity: 100,
-	// 		uptime: null,
-	// 	},
-	// 	version: '',
-	// 	backups: [],
-	// 	datapacks: [],
-	// 	worlds: [
-	// 		{ file: 'world', activated: true },
-	// 		{ file: 'world_nether', activated: true },
-	// 		{ file: 'world_the_end', activated: true },
-	// 	],
-	// 	plugins: [],
-	// 	auto_backup: [],
-	// 	ram: 5,
-	// 	directory: '',
-	// 	file: '',
-	// 	auto_backup_interval: 120,
-	// 	auto_restart: false,
-	// },
-];
+export const createDefaultServers = (): Server[] => [];
 
 export const normalizeServer = (server: Server): Server => {
 	const rawStats = (server.stats ?? {}) as Partial<MserveStats> & {
 		players?: number;
 		capacity?: number;
 	};
-	const normalizedProvider = normalizeServerProvider(server.provider);
+	const resolvedFile = server.file?.trim() || 'server.jar';
+	const normalizedProvider = normalizeProvider(server.provider, resolvedFile);
 	const playersOnline = toNullableNumber(rawStats.players_online ?? rawStats.players);
 	const playersMax = toNullableNumber(rawStats.players_max ?? rawStats.capacity);
 	const tps = toNullableNumber(rawStats.tps);
@@ -257,6 +232,7 @@ export const normalizeServer = (server: Server): Server => {
 		typeof rawStats.online === 'boolean'
 			? rawStats.online
 			: server.status === 'online' || server.status === 'starting';
+
 	return {
 		id: server.id?.trim() || generateServerId(),
 		storage_limit: Math.max(1, Number(server.storage_limit) || 200),
@@ -271,9 +247,10 @@ export const normalizeServer = (server: Server): Server => {
 			online,
 			players_online: playersOnline,
 			players_max: playersMax,
-			server_version: toNullableString(rawStats.server_version ?? server.version),
+			server_version:
+				toNullableString(rawStats.server_version) ?? toNullableString(normalizedProvider.minecraft_version),
 			provider_version:
-				toNullableString(rawStats.provider_version) ?? toNullableString(normalizedProvider),
+				toNullableString(rawStats.provider_version) ?? toNullableString(normalizedProvider.provider_version),
 			tps,
 			ram_used: toNullableNumber(rawStats.ram_used),
 			cpu_used: toNullableNumber(rawStats.cpu_used),
@@ -281,10 +258,8 @@ export const normalizeServer = (server: Server): Server => {
 			worlds_size_bytes: Math.max(0, Number(rawStats.worlds_size_bytes) || 0),
 			backups_size_bytes: Math.max(0, Number(rawStats.backups_size_bytes) || 0),
 		},
-		file: server.file || 'server.jar',
-		provider: normalizedProvider,
-		version: server.version,
-		provider_checks: normalizeProviderChecks(server.provider_checks),
+		file: resolvedFile,
+		provider: createProvider(normalizedProvider, { file: resolvedFile }),
 		telemetry_host: normalizeTelemetryHost(server.telemetry_host),
 		telemetry_port: normalizeTelemetryPort(server.telemetry_port),
 		ram: Math.max(1, Number(server.ram) || 3),
@@ -399,9 +374,7 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 					auto_agree_eula: true,
 					java_installation: server.java_installation ?? '',
 					custom_flags: server.custom_flags,
-					provider: server.provider,
-					version: server.version ?? config.version,
-					provider_checks: normalizeProviderChecks(server.provider_checks ?? config.provider_checks),
+					provider: server.provider ?? createProvider(config.provider),
 					telemetry_host: server.telemetry_host ?? config.telemetry_host,
 					telemetry_port: server.telemetry_port ?? config.telemetry_port,
 				});
@@ -419,6 +392,9 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
 			if (!active) return;
 
+			const configProvider = createProvider(config.provider, {
+				file: config.file,
+			});
 			const changed =
 				server.id !== config.id ||
 				server.file !== config.file ||
@@ -429,9 +405,7 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 				(server.java_installation ?? '') !== (config.java_installation ?? '') ||
 				!sameStringList(server.auto_backup, config.auto_backup) ||
 				!sameStringList(server.custom_flags, config.custom_flags) ||
-				!sameProviderChecks(server.provider_checks, config.provider_checks) ||
-				server.provider !== normalizeServerProvider(config.provider) ||
-				server.version !== config.version ||
+				!sameProvider(server.provider, configProvider) ||
 				normalizeTelemetryHost(server.telemetry_host) !== normalizeTelemetryHost(config.telemetry_host) ||
 				normalizeTelemetryPort(server.telemetry_port) !== normalizeTelemetryPort(config.telemetry_port);
 
@@ -454,9 +428,7 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 						auto_restart: config.auto_restart,
 						java_installation: config.java_installation,
 						custom_flags: config.custom_flags,
-						provider: normalizeServerProvider(config.provider),
-						version: config.version,
-						provider_checks: config.provider_checks,
+						provider: configProvider,
 						telemetry_host: config.telemetry_host,
 						telemetry_port: config.telemetry_port,
 						created_at: config.created_at,

@@ -43,23 +43,190 @@ impl<'de> Deserialize<'de> for TopLevelObject {
     }
 }
 
+const ALL_SUPPORTED_TELEMETRY: [&str; 7] = [
+    "list",
+    "tps",
+    "version",
+    "online",
+    "ram",
+    "cpu",
+    "provider",
+];
+
 pub(in crate::app) fn default_auto_backup() -> Vec<String> {
     vec![]
 }
 
 pub(in crate::app) fn default_custom_flags() -> Vec<String> {
-    vec!["--nogui".to_string()]
+    vec![]
 }
 
-pub(in crate::app) fn default_provider_checks() -> ProviderChecksConfig {
-    ProviderChecksConfig {
-        list_polling: true,
-        tps_polling: true,
-        version_polling: true,
-        online_polling: true,
-        ram_polling: true,
-        cpu_polling: true,
-        provider_polling: true,
+pub(in crate::app) fn default_supported_telemetry() -> Vec<String> {
+    ALL_SUPPORTED_TELEMETRY
+        .iter()
+        .map(|value| value.to_string())
+        .collect()
+}
+
+pub(in crate::app) fn provider_supports_telemetry(provider: &MserveProvider, key: &str) -> bool {
+    let normalized_key = key.trim().to_lowercase();
+    provider
+        .supported_telemetry
+        .iter()
+        .any(|entry| entry.trim().eq_ignore_ascii_case(&normalized_key))
+}
+
+fn default_jdk_versions_for_provider(provider_name: &str) -> Vec<u32> {
+    match provider_name {
+        "velocity" | "bungeecord" => vec![17, 21],
+        _ => vec![21],
+    }
+}
+
+fn normalize_provider_name(raw: &str) -> Option<String> {
+    let normalized = raw.trim().to_lowercase();
+    if normalized.is_empty() {
+        return None;
+    }
+
+    if normalized.contains("paper") {
+        return Some("paper".to_string());
+    }
+    if normalized.contains("folia") {
+        return Some("folia".to_string());
+    }
+    if normalized.contains("spigot") || normalized.contains("bukkit") {
+        return Some("spigot".to_string());
+    }
+    if normalized.contains("velocity") {
+        return Some("velocity".to_string());
+    }
+    if normalized.contains("bungeecord") || normalized.contains("bungee") || normalized.contains("waterfall") {
+        return Some("bungeecord".to_string());
+    }
+    if normalized.contains("vanilla")
+        || normalized.contains("mojang")
+        || normalized.contains("minecraft")
+    {
+        return Some("vanilla".to_string());
+    }
+
+    None
+}
+
+pub(in crate::app) fn infer_provider_from_jar_file(file_name: &str) -> Option<String> {
+    normalize_provider_name(file_name)
+}
+
+pub(in crate::app) fn infer_version_from_jar_file(file_name: &str) -> Option<String> {
+    let normalized = file_name.trim().to_lowercase();
+    if normalized.is_empty() {
+        return None;
+    }
+
+    for token in normalized
+        .split(|ch: char| !ch.is_ascii_alphanumeric() && ch != '.' && ch != '-')
+        .filter(|token| !token.is_empty())
+    {
+        let has_dot = token.contains('.');
+        let starts_with_number = token
+            .chars()
+            .next()
+            .map(|ch| ch.is_ascii_digit())
+            .unwrap_or(false);
+        if has_dot && starts_with_number {
+            return Some(token.to_string());
+        }
+    }
+
+    None
+}
+
+pub(in crate::app) fn default_provider_for_file(file_name: &str) -> MserveProvider {
+    let provider_name = infer_provider_from_jar_file(file_name).unwrap_or_else(|| "vanilla".to_string());
+    let inferred_version = infer_version_from_jar_file(file_name).unwrap_or_default();
+    let minecraft_version = if provider_name == "velocity" || provider_name == "bungeecord" {
+        if inferred_version.is_empty() {
+            "proxy".to_string()
+        } else {
+            inferred_version.clone()
+        }
+    } else {
+        inferred_version.clone()
+    };
+
+    MserveProvider {
+        name: provider_name.clone(),
+        file: file_name.trim().to_string(),
+        download_url: None,
+        provider_version: inferred_version,
+        minecraft_version,
+        jdk_versions: default_jdk_versions_for_provider(&provider_name),
+        supported_telemetry: default_supported_telemetry(),
+        stable: true,
+    }
+}
+
+pub(in crate::app) fn normalize_provider(provider: &MserveProvider, fallback_file: &str) -> MserveProvider {
+    let fallback = default_provider_for_file(fallback_file);
+    let name = normalize_provider_name(&provider.name).unwrap_or_else(|| fallback.name.clone());
+
+    let file = provider
+        .file
+        .trim()
+        .strip_prefix("./")
+        .unwrap_or(provider.file.trim())
+        .to_string();
+    let file = if file.is_empty() {
+        fallback.file.clone()
+    } else {
+        file
+    };
+
+    let provider_version = provider.provider_version.trim().to_string();
+    let minecraft_version = provider.minecraft_version.trim().to_string();
+
+    let mut jdk_versions: Vec<u32> = provider
+        .jdk_versions
+        .iter()
+        .copied()
+        .filter(|value| *value > 0)
+        .collect();
+    jdk_versions.sort_unstable();
+    jdk_versions.dedup();
+    if jdk_versions.is_empty() {
+        jdk_versions = default_jdk_versions_for_provider(&name);
+    }
+
+    let supported_telemetry = if provider.supported_telemetry.is_empty() {
+        fallback.supported_telemetry.clone()
+    } else {
+        provider.supported_telemetry.clone()
+    };
+    let download_url = provider
+        .download_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string());
+
+    MserveProvider {
+        name,
+        file,
+        download_url,
+        provider_version: if provider_version.is_empty() {
+            fallback.provider_version
+        } else {
+            provider_version
+        },
+        minecraft_version: if minecraft_version.is_empty() {
+            fallback.minecraft_version
+        } else {
+            minecraft_version
+        },
+        jdk_versions,
+        supported_telemetry,
+        stable: provider.stable,
     }
 }
 
@@ -116,11 +283,101 @@ pub(in crate::app) fn generate_server_id() -> String {
     format!("srv-{stamp}")
 }
 
+fn sanitize_provider(raw: Option<&serde_json::Value>, fallback_file: &str) -> MserveProvider {
+    let fallback = default_provider_for_file(fallback_file);
+    let Some(value) = raw else {
+        return fallback;
+    };
+    let Some(object) = value.as_object() else {
+        return fallback;
+    };
+
+    let raw_name = object
+        .get("name")
+        .and_then(|entry| entry.as_str())
+        .unwrap_or(&fallback.name);
+    let name = normalize_provider_name(raw_name).unwrap_or_else(|| fallback.name.clone());
+
+    let file = object
+        .get("file")
+        .and_then(|entry| entry.as_str())
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+        .unwrap_or(fallback_file)
+        .to_string();
+
+    let download_url = object
+        .get("download_url")
+        .and_then(|entry| entry.as_str())
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+        .map(|entry| entry.to_string());
+
+    let provider_version = object
+        .get("provider_version")
+        .and_then(|entry| entry.as_str())
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+        .map(|entry| entry.to_string())
+        .unwrap_or_else(|| fallback.provider_version.clone());
+
+    let minecraft_version = object
+        .get("minecraft_version")
+        .and_then(|entry| entry.as_str())
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+        .map(|entry| entry.to_string())
+        .unwrap_or_else(|| fallback.minecraft_version.clone());
+
+    let jdk_versions = object
+        .get("jdk_versions")
+        .and_then(|entry| entry.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_u64())
+                .filter_map(|item| u32::try_from(item).ok())
+                .collect::<Vec<u32>>()
+        })
+        .unwrap_or_else(|| fallback.jdk_versions.clone());
+
+    let supported_telemetry = object
+        .get("supported_telemetry")
+        .and_then(|entry| entry.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .map(|item| item.to_string())
+                .collect::<Vec<String>>()
+        })
+        .unwrap_or_else(default_supported_telemetry);
+
+    let stable = object
+        .get("stable")
+        .and_then(|entry| entry.as_bool())
+        .unwrap_or(true);
+
+    normalize_provider(
+        &MserveProvider {
+            name,
+            file,
+            download_url,
+            provider_version,
+            minecraft_version,
+            jdk_versions,
+            supported_telemetry,
+            stable,
+        },
+        fallback_file,
+    )
+}
+
 pub(in crate::app) fn default_synced_config(directory: &Path) -> SyncedMserveConfig {
     let fallback_file = find_first_jar_file_name(directory).unwrap_or_else(|| "server.jar".to_string());
     SyncedMserveConfig {
         id: generate_server_id(),
-        file: fallback_file,
+        file: fallback_file.clone(),
         ram: 4,
         storage_limit: 200,
         auto_backup: default_auto_backup(),
@@ -128,9 +385,7 @@ pub(in crate::app) fn default_synced_config(directory: &Path) -> SyncedMserveCon
         auto_restart: false,
         custom_flags: default_custom_flags(),
         java_installation: None,
-        provider: None,
-        version: None,
-        provider_checks: default_provider_checks(),
+        provider: default_provider_for_file(&fallback_file),
         telemetry_host: default_telemetry_host(),
         telemetry_port: detect_default_telemetry_port(directory),
         created_at: chrono::Local::now().to_rfc3339(),
@@ -215,96 +470,6 @@ pub(in crate::app) fn sanitize_custom_flags(raw: Option<&serde_json::Value>) -> 
     normalize_custom_flags(flags)
 }
 
-pub(in crate::app) fn sanitize_provider_checks(raw: Option<&serde_json::Value>) -> ProviderChecksConfig {
-    let defaults = default_provider_checks();
-    let Some(value) = raw else {
-        return defaults;
-    };
-
-    let Some(object) = value.as_object() else {
-        return defaults;
-    };
-
-    ProviderChecksConfig {
-        list_polling: object
-            .get("list_polling")
-            .and_then(|value| value.as_bool())
-            .unwrap_or(defaults.list_polling),
-        tps_polling: object
-            .get("tps_polling")
-            .and_then(|value| value.as_bool())
-            .unwrap_or(defaults.tps_polling),
-        version_polling: object
-            .get("version_polling")
-            .and_then(|value| value.as_bool())
-            .unwrap_or(defaults.version_polling),
-        online_polling: object
-            .get("online_polling")
-            .and_then(|value| value.as_bool())
-            .unwrap_or(defaults.online_polling),
-        ram_polling: object
-            .get("ram_polling")
-            .and_then(|value| value.as_bool())
-            .unwrap_or(defaults.ram_polling),
-        cpu_polling: object
-            .get("cpu_polling")
-            .and_then(|value| value.as_bool())
-            .unwrap_or(defaults.cpu_polling),
-        provider_polling: object
-            .get("provider_polling")
-            .and_then(|value| value.as_bool())
-            .unwrap_or(defaults.provider_polling),
-    }
-}
-
-pub(in crate::app) fn infer_provider_from_jar_file(file_name: &str) -> Option<String> {
-    let normalized = file_name.trim().to_lowercase();
-    if normalized.is_empty() {
-        return None;
-    }
-
-    if normalized.contains("paper") {
-        return Some("Paper".to_string());
-    }
-    if normalized.contains("folia") {
-        return Some("Folia".to_string());
-    }
-    if normalized.contains("spigot") {
-        return Some("Spigot".to_string());
-    }
-    if normalized.contains("velocity") {
-        return Some("Velocity".to_string());
-    }
-    if normalized.contains("bungeecord") || normalized.contains("bungee") {
-        return Some("Bungeecord".to_string());
-    }
-    if normalized.contains("vanilla") || normalized == "server.jar" {
-        return Some("Vanilla".to_string());
-    }
-
-    None
-}
-
-pub(in crate::app) fn infer_version_from_jar_file(file_name: &str) -> Option<String> {
-    let normalized = file_name.trim().to_lowercase();
-    if normalized.is_empty() {
-        return None;
-    }
-
-    for token in normalized
-        .split(|ch: char| !ch.is_ascii_alphanumeric() && ch != '.')
-        .filter(|token| !token.is_empty())
-    {
-        let has_dot = token.contains('.');
-        let starts_with_number = token.chars().next().map(|ch| ch.is_ascii_digit()).unwrap_or(false);
-        if has_dot && starts_with_number {
-            return Some(token.to_string());
-        }
-    }
-
-    None
-}
-
 pub(in crate::app) fn sanitize_mserve_value_config(
     directory: &Path,
     object: &serde_json::Map<String, serde_json::Value>,
@@ -340,8 +505,7 @@ pub(in crate::app) fn sanitize_mserve_value_config(
         .map(|value| value.max(1) as u32)
         .unwrap_or(200);
 
-    let normalized_auto_backup = normalize_auto_backup(object.get("auto_backup"))
-        .unwrap_or_else(default_auto_backup);
+    let normalized_auto_backup = normalize_auto_backup(object.get("auto_backup")).unwrap_or_else(default_auto_backup);
 
     let normalized_interval = object
         .get("auto_backup_interval")
@@ -362,21 +526,7 @@ pub(in crate::app) fn sanitize_mserve_value_config(
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
 
-    let normalized_provider = object
-        .get("provider")
-        .and_then(|value| value.as_str())
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .or_else(|| infer_provider_from_jar_file(&normalized_file));
-
-    let normalized_version = object
-        .get("version")
-        .and_then(|value| value.as_str())
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .or_else(|| infer_version_from_jar_file(&normalized_file));
-
-    let normalized_provider_checks = sanitize_provider_checks(object.get("provider_checks"));
+    let normalized_provider = sanitize_provider(object.get("provider"), &normalized_file);
 
     let normalized_telemetry_host = sanitize_telemetry_host(object.get("telemetry_host"));
 
@@ -400,8 +550,6 @@ pub(in crate::app) fn sanitize_mserve_value_config(
     config.custom_flags = normalized_custom_flags;
     config.java_installation = normalized_java_installation;
     config.provider = normalized_provider;
-    config.version = normalized_version;
-    config.provider_checks = normalized_provider_checks;
     config.telemetry_host = normalized_telemetry_host;
     config.telemetry_port = normalized_telemetry_port;
     config.created_at = normalized_created_at;
@@ -421,8 +569,6 @@ pub(in crate::app) fn synced_mserve_json_value(config: &SyncedMserveConfig) -> s
         "custom_flags": config.custom_flags,
         "java_installation": config.java_installation,
         "provider": config.provider,
-        "version": config.version,
-        "provider_checks": config.provider_checks,
         "telemetry_host": config.telemetry_host,
         "telemetry_port": config.telemetry_port,
         "created_at": config.created_at,
@@ -455,8 +601,6 @@ pub(in crate::app) fn validate_mserve_json_keys(
         "custom_flags",
         "java_installation",
         "provider",
-        "version",
-        "provider_checks",
         "telemetry_host",
         "telemetry_port",
         "created_at",
@@ -496,11 +640,7 @@ pub(in crate::app) fn has_required_mserve_json_fields(
         return false;
     }
 
-    if object
-        .get("storage_limit")
-        .and_then(|value| value.as_u64())
-        .is_none()
-    {
+    if object.get("storage_limit").and_then(|value| value.as_u64()).is_none() {
         return false;
     }
 
@@ -516,11 +656,11 @@ pub(in crate::app) fn has_required_mserve_json_fields(
         return false;
     }
 
-    if object
-        .get("auto_restart")
-        .and_then(|value| value.as_bool())
-        .is_none()
-    {
+    if object.get("auto_restart").and_then(|value| value.as_bool()).is_none() {
+        return false;
+    }
+
+    if object.get("provider").and_then(|value| value.as_object()).is_none() {
         return false;
     }
 
@@ -609,4 +749,3 @@ mod tests {
         assert!(sanitize_custom_flags(Some(&value)).is_empty());
     }
 }
-

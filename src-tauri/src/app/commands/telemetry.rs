@@ -16,15 +16,15 @@ pub(in crate::app) async fn get_server_telemetry(
     }
 
     let config = get_runtime_config(&directory_path)?;
-    let provider_checks = config
-        .provider_checks
+    let provider = config
+        .provider
         .clone()
-        .unwrap_or_else(default_provider_checks);
+        .unwrap_or_else(|| default_provider_for_file(&config.file));
     let (telemetry_host, telemetry_port) = resolve_telemetry_target(&config, &directory_path);
 
-    let should_ping = provider_checks.online_polling
-        || provider_checks.list_polling
-        || provider_checks.version_polling;
+    let should_ping = provider_supports_telemetry(&provider, "online")
+        || provider_supports_telemetry(&provider, "list")
+        || provider_supports_telemetry(&provider, "version");
     let ping_task = if should_ping {
         let ping_host = telemetry_host.clone();
         Some(spawn_blocking(move || {
@@ -57,7 +57,9 @@ pub(in crate::app) async fn get_server_telemetry(
     }
 
     let metrics_task = if let Some(pid) = process_pid {
-        if provider_checks.ram_polling || provider_checks.cpu_polling {
+        if provider_supports_telemetry(&provider, "ram")
+            || provider_supports_telemetry(&provider, "cpu")
+        {
             let configured_ram = config.ram;
             Some(spawn_blocking(move || {
                 collect_process_metrics_cached(pid, configured_ram, Duration::from_secs(12))
@@ -81,15 +83,21 @@ pub(in crate::app) async fn get_server_telemetry(
         ProcessMetricsResult::default()
     };
 
-    if !provider_checks.ram_polling {
+    if !provider_supports_telemetry(&provider, "ram") {
         process_metrics.ram_used = None;
     }
-    if !provider_checks.cpu_polling {
+    if !provider_supports_telemetry(&provider, "cpu") {
         process_metrics.cpu_used = None;
     }
 
-    let provider_version = if provider_checks.provider_polling {
+    let provider_version = if provider_supports_telemetry(&provider, "provider") {
         infer_provider_version(&config)
+    } else {
+        None
+    };
+
+    let server_version = if provider_supports_telemetry(&provider, "version") {
+        status_ping.server_version.clone()
     } else {
         None
     };
@@ -98,7 +106,7 @@ pub(in crate::app) async fn get_server_telemetry(
         online: status_ping.online,
         players_online: status_ping.players_online,
         players_max: status_ping.players_max,
-        server_version: status_ping.server_version,
+        server_version,
         provider_version,
         tps: None,
         ram_used: process_metrics.ram_used,

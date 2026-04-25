@@ -19,8 +19,7 @@ import { useServers } from '@/data/servers';
 import { buildImportedServer, getServerNameFromDirectory } from '@/lib/mserve-server-mapper';
 import { repairServerMserveJson, syncServerMserveJson } from '@/lib/mserve-sync';
 import { requestMserveRepair } from '@/lib/mserve-repair-controller';
-import { normalizeProviderChecks } from '@/lib/mserve-schema';
-import { normalizeServerProvider } from '@/lib/server-provider';
+import { createProvider } from '@/lib/server-provider';
 import { FolderOpen, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
@@ -130,9 +129,9 @@ export const ImportServer: React.FC<React.HTMLAttributes<HTMLButtonElement>> = (
 						auto_agree_eula: true,
 						java_installation: fallbackConfig.java_installation ?? '',
 						custom_flags: fallbackConfig.custom_flags,
-						provider: normalizeServerProvider(fallbackConfig.provider),
-						version: fallbackConfig.version,
-						provider_checks: normalizeProviderChecks(fallbackConfig.provider_checks),
+						provider: createProvider(fallbackConfig.provider, {
+							file: fallbackConfig.file,
+						}),
 						telemetry_host: fallbackConfig.telemetry_host,
 						telemetry_port: fallbackConfig.telemetry_port,
 					});

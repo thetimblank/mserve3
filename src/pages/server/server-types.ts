@@ -1,6 +1,5 @@
 import type { AutoBackupMode, Server as MserveServer } from '@/data/servers';
-import type { ProviderChecks } from '@/lib/mserve-schema';
-import type { ServerProvider } from '@/lib/server-provider';
+import type { Provider } from '@/lib/mserve-schema';
 
 export type ServerOutputEvent = {
 	directory: string;
@@ -10,7 +9,6 @@ export type ServerOutputEvent = {
 
 export type ScannedBackupEntry = {
 	directory: string;
-	createdAt?: string;
 	created_at?: string;
 	size?: number;
 };
@@ -59,9 +57,7 @@ export type UpdateServerSettingsPayload = {
 	auto_restart: boolean;
 	custom_flags: string[];
 	java_installation?: string;
-	provider: ServerProvider;
-	version?: string;
-	provider_checks: ProviderChecks;
+	provider: Provider;
 	telemetry_host?: string;
 	telemetry_port?: number;
 	jar_swap_path?: string;
@@ -71,9 +67,7 @@ export type UpdateServerSettingsPayload = {
 export type UpdateServerSettingsResult = {
 	directory: string;
 	file: string;
-	provider: ServerProvider;
-	version?: string;
-	provider_checks: ProviderChecks;
+	provider: Provider;
 	telemetry_host: string;
 	telemetry_port: number;
 };
@@ -88,11 +82,10 @@ export type ServerSettingsForm = {
 	auto_restart: boolean;
 	custom_flags: string[];
 	java_installation: string;
-	provider: ServerProvider;
-	version: string;
-	provider_checks: ProviderChecks;
+	provider: Provider;
 	telemetry_host: string;
 	telemetry_port: number;
 	jar_swap_path: string;
 	new_directory: string;
 };
+

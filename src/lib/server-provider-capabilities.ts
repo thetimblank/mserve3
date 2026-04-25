@@ -1,12 +1,6 @@
-import type { ProviderChecks } from '@/lib/mserve-schema';
-import {
-	DEFAULT_SERVER_PROVIDER,
-	type ServerProvider,
-	isProxyProvider,
-	normalizeServerProvider,
-} from '@/lib/server-provider';
-
-export type ProviderKind = 'plugin' | 'vanilla' | 'proxy' | 'unknown';
+import { DEFAULT_SERVER_PROVIDER } from './mserve-consts';
+import { type Provider, type ProviderKind, type ProviderName, type TelemetryKey } from './mserve-schema';
+import { createProvider, getProviderByName, PROVIDERS, resolveProvider } from './server-provider';
 
 export type ServerProviderCapabilities = {
 	kind: ProviderKind;
@@ -21,102 +15,93 @@ type ProviderCommandSupport = Pick<
 	'supportsListCommand' | 'supportsTpsCommand' | 'supportsVersionCommand'
 >;
 
-const JAR_PROVIDER_HINTS: Array<{ tokens: string[]; provider: ServerProvider }> = [
-	{ tokens: ['paper'], provider: 'paper' },
-	{ tokens: ['folia'], provider: 'folia' },
-	{ tokens: ['spigot'], provider: 'spigot' },
-	{ tokens: ['velocity'], provider: 'velocity' },
-	{ tokens: ['bungeecord', 'waterfall'], provider: 'bungeecord' },
-	{ tokens: ['mojang', 'vanilla', 'minecraft_server'], provider: 'vanilla' },
-];
+const resolveTelemetrySupport = (provider: Provider, key: TelemetryKey) =>
+	provider.supported_telemetry?.includes(key) ?? false;
 
-const basenameWithoutExtension = (pathOrFile: string): string => {
-	const normalized = pathOrFile.replace(/\\/g, '/');
-	const name = normalized.split('/').pop() ?? normalized;
-	return name
-		.replace(/\.jar$/i, '')
-		.trim()
-		.toLowerCase();
+export const resolveProviderKind = (
+	provider?: Provider | ProviderName | string | null,
+): ProviderKind => {
+	const resolved = resolveProvider(provider ?? null);
+	return resolved?.kind ?? 'unknown';
 };
 
-export const inferProviderFromJarPath = (pathOrFile: string): ServerProvider | null => {
-	const base = basenameWithoutExtension(pathOrFile);
-	if (!base) return null;
+export const getDefaultProviderCommandSupport = (
+	provider: ProviderName = DEFAULT_SERVER_PROVIDER,
+): ProviderCommandSupport => {
+	const resolved = getProviderByName(provider) ?? getProviderByName(DEFAULT_SERVER_PROVIDER);
+	if (!resolved) {
+		return {
+			supportsListCommand: true,
+			supportsTpsCommand: false,
+			supportsVersionCommand: true,
+		};
+	}
 
-	for (const hint of JAR_PROVIDER_HINTS) {
-		if (hint.tokens.some((token) => base.includes(token))) {
-			return hint.provider;
+	return {
+		supportsListCommand: resolved.supports_list_command,
+		supportsTpsCommand: resolved.supports_tps_command,
+		supportsVersionCommand: resolved.supports_version_command,
+	};
+};
+
+export const getServerProviderCapabilities = (
+	provider?: Provider | ProviderName | string | null,
+): ServerProviderCapabilities => {
+	const resolvedCatalog = resolveProvider(provider ?? null) ?? getProviderByName(DEFAULT_SERVER_PROVIDER);
+	if (!resolvedCatalog) {
+		return {
+			kind: 'unknown',
+			supportsListCommand: false,
+			supportsTpsCommand: false,
+			supportsVersionCommand: false,
+			supportsAutoAgreeEula: false,
+		};
+	}
+
+	const resolvedProvider =
+		typeof provider === 'object' && provider !== null
+			? provider
+			: createProvider(resolvedCatalog.name);
+
+	return {
+		kind: resolvedCatalog.kind,
+		supportsListCommand:
+			resolvedCatalog.supports_list_command && resolveTelemetrySupport(resolvedProvider, 'list'),
+		supportsTpsCommand:
+			resolvedCatalog.supports_tps_command && resolveTelemetrySupport(resolvedProvider, 'tps'),
+		supportsVersionCommand:
+			resolvedCatalog.supports_version_command && resolveTelemetrySupport(resolvedProvider, 'version'),
+		supportsAutoAgreeEula: resolvedCatalog.kind === 'plugin' || resolvedCatalog.kind === 'vanilla',
+	};
+};
+
+export const inferProviderFromJarPath = (jarPath?: string | null): ProviderName | null => {
+	const normalized = jarPath?.trim().toLowerCase();
+	if (!normalized) return null;
+
+	for (const candidate of PROVIDERS) {
+		if (
+			[candidate.name, ...candidate.aliases].some((hint) => {
+				const token = hint.trim().toLowerCase();
+				return token.length > 0 && normalized.includes(token);
+			})
+		) {
+			return candidate.name;
 		}
 	}
 
 	return null;
 };
 
-export const inferVersionFromJarPath = (pathOrFile: string): string | null => {
-	const base = basenameWithoutExtension(pathOrFile);
-	if (!base) return null;
+export const inferVersionFromJarPath = (jarPath?: string | null): string | null => {
+	const normalized = jarPath?.trim().toLowerCase();
+	if (!normalized) return null;
 
-	const match = base.match(/(?:^|[^\d])(\d{1,2}\.\d{1,2}(?:\.\d{1,2})?)(?:[^\d]|$)/);
-	return match?.[1] ?? null;
-};
-
-export const resolveProviderKind = (provider?: ServerProvider | null): ProviderKind => {
-	if (!provider) return 'unknown';
-
-	if (provider === 'paper' || provider === 'folia' || provider === 'spigot') {
-		return 'plugin';
+	const minecraftMatch = normalized.match(/\b1\.\d{1,2}(?:\.\d{1,2})?(?:-[a-z0-9.-]+)?\b/);
+	if (minecraftMatch?.[0]) {
+		return minecraftMatch[0];
 	}
 
-	if (provider === 'vanilla') {
-		return 'vanilla';
-	}
-
-	if (isProxyProvider(provider)) {
-		return 'proxy';
-	}
-
-	return 'unknown';
-};
-
-export const getDefaultProviderCommandSupport = (
-	provider: ServerProvider = DEFAULT_SERVER_PROVIDER,
-): ProviderCommandSupport => {
-	return {
-		supportsListCommand: true,
-		supportsTpsCommand: provider === 'paper' || provider === 'folia',
-		supportsVersionCommand: true,
-	};
-};
-
-const applyCommandOverride = (supported: boolean, override?: boolean) => supported && override !== false;
-
-export const getServerProviderCapabilities = (
-	provider?: string,
-	providerChecks?: Partial<ProviderChecks> | null,
-): ServerProviderCapabilities => {
-	const normalizedProvider = provider ? normalizeServerProvider(provider) : undefined;
-	const kind = resolveProviderKind(normalizedProvider);
-	const baseSupport = getDefaultProviderCommandSupport(normalizedProvider ?? DEFAULT_SERVER_PROVIDER);
-
-	const supportsListCommand = applyCommandOverride(
-		baseSupport.supportsListCommand,
-		providerChecks?.list_polling,
-	);
-	const supportsTpsCommand = applyCommandOverride(
-		baseSupport.supportsTpsCommand,
-		providerChecks?.tps_polling,
-	);
-	const supportsVersionCommand = applyCommandOverride(
-		baseSupport.supportsVersionCommand,
-		providerChecks?.version_polling,
-	);
-	const supportsAutoAgreeEula = kind === 'plugin' || kind === 'vanilla';
-
-	return {
-		kind,
-		supportsListCommand,
-		supportsTpsCommand,
-		supportsVersionCommand,
-		supportsAutoAgreeEula,
-	};
+	const genericMatch = normalized.match(/\b\d+(?:\.\d+){1,3}(?:-[a-z0-9.-]+)?\b/);
+	return genericMatch?.[0] ?? null;
 };

@@ -1,5 +1,4 @@
 import type { AutoBackupMode } from '@/data/servers';
-import { normalizeProviderChecks } from '@/lib/mserve-schema';
 import type { ScannedBackupEntry, ServerSettingsForm, UpdateServerSettingsPayload } from './server-types';
 
 export const toggleBackupMode = (
@@ -12,7 +11,7 @@ export const toggleBackupMode = (
 export const mapScannedBackups = (backups: ScannedBackupEntry[]) =>
 	backups.map((backup) => ({
 		directory: backup.directory,
-		created_at: new Date(backup.createdAt ?? backup.created_at ?? Date.now()),
+		created_at: new Date(backup.created_at ?? Date.now()),
 		size: Math.max(0, Number(backup.size) || 0),
 	}));
 
@@ -29,8 +28,6 @@ export const buildUpdateServerSettingsPayload = (
 	custom_flags: settingsForm.custom_flags,
 	java_installation: settingsForm.java_installation.trim() || undefined,
 	provider: settingsForm.provider,
-	version: settingsForm.version.trim() || undefined,
-	provider_checks: normalizeProviderChecks(settingsForm.provider_checks),
 	telemetry_host: settingsForm.telemetry_host.trim() || undefined,
 	telemetry_port: Math.max(1, Number(settingsForm.telemetry_port) || 25565),
 	jar_swap_path: settingsForm.jar_swap_path.trim() || undefined,

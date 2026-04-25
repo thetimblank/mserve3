@@ -84,9 +84,10 @@ const JavaGuide: React.FC = () => {
 	const serverChecks = React.useMemo(
 		() =>
 			servers.map((server) => {
-				const detectedVersion = server.version ?? server.stats.server_version ?? undefined;
+				const detectedVersion =
+					server.provider.minecraft_version || server.stats.server_version || undefined;
 				const explanation = explainCompatibility({
-					provider: server.provider,
+					provider: server.provider.name,
 					version: detectedVersion,
 					installedMajors,
 				});
@@ -274,7 +275,7 @@ const JavaGuide: React.FC = () => {
 							)}
 
 							{serverChecks.map(({ server, detectedVersion, explanation }) => {
-								const requirement = resolveJavaRequirement(server.provider, detectedVersion);
+								const requirement = resolveJavaRequirement(server.provider.name, detectedVersion);
 								const isCompatible = explanation.status === 'compatible';
 
 								return (
@@ -295,7 +296,7 @@ const JavaGuide: React.FC = () => {
 											<p className='font-semibold'>{server.name}</p>
 											<span className='text-xs rounded-full bg-secondary px-2 py-1 inline-flex items-center gap-1'>
 												<Server className='size-3' />
-												{server.provider}
+												{server.provider.name}
 											</span>
 											<span className='text-xs rounded-full bg-secondary px-2 py-1'>
 												{detectedVersion ? `Version ${detectedVersion}` : 'Version unknown'}

@@ -2,6 +2,8 @@
 
 a webapp tool that helps manage and setup minecraft servers easily with full customizations.
 
+mserve is a Tauri + React desktop app for end-to-end Minecraft server management: it lets users create or import servers, run a guided setup flow (directory, jar, RAM, backups, auto-restart), control server runtime with start/stop/restart plus terminal access, manage server contents (plugins, worlds, datapacks, backups, provider-aware settings), run a Java compatibility guide that detects installed runtimes and checks them against server requirements, and use a hosting setup wizard for firewall/port-forwarding and connection basics; it also includes data repair/sync for mserve.json and in-app update handling.
+
 ## Tauri + React + Typescript
 
 This template should help get you started developing with Tauri, React and Typescript in Vite.
@@ -71,10 +73,13 @@ Big
 ⬛ motd generator
 ⬛ add docs
 ⬛ onboarding/welcome screen
+🟨 rework backend to be simply and reusable, delete uneeded normalizations, etc.
 
 Small
 🟨 better explaination of hosting setup and integrate with server specific ports/ip
-⬛ better integration of version detection
+🟨 better integration of version detection
+⬛ rework server settings (advanced mode vs non-advanced)
+⬛ make create server slides based on the selected provider (e.g. no backups for proxy, no eula for proxy)
 
 Supported Providers
 🟨 Velocity

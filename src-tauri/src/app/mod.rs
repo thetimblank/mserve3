@@ -10,14 +10,16 @@ use tauri::Manager;
 use commands::*;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-struct ProviderChecksConfig {
-    list_polling: bool,
-    tps_polling: bool,
-    version_polling: bool,
-    online_polling: bool,
-    ram_polling: bool,
-    cpu_polling: bool,
-    provider_polling: bool,
+struct MserveProvider {
+    name: String,
+    file: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    download_url: Option<String>,
+    provider_version: String,
+    minecraft_version: String,
+    jdk_versions: Vec<u32>,
+    supported_telemetry: Vec<String>,
+    stable: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -32,8 +34,7 @@ struct InitServerPayload {
     auto_backup_interval: u32,
     auto_agree_eula: bool,
     java_installation: Option<String>,
-    provider: Option<String>,
-    version: Option<String>,
+    provider: Option<MserveProvider>,
 }
 
 #[derive(Debug, Serialize)]
@@ -57,9 +58,7 @@ struct RepairMserveJsonPayload {
     auto_restart: bool,
     custom_flags: Vec<String>,
     java_installation: Option<String>,
-    provider: Option<String>,
-    version: Option<String>,
-    provider_checks: Option<ProviderChecksConfig>,
+    provider: Option<MserveProvider>,
     telemetry_host: Option<String>,
     telemetry_port: Option<u16>,
 }
@@ -75,9 +74,7 @@ struct SyncedMserveConfig {
     auto_restart: bool,
     custom_flags: Vec<String>,
     java_installation: Option<String>,
-    provider: Option<String>,
-    version: Option<String>,
-    provider_checks: ProviderChecksConfig,
+    provider: MserveProvider,
     telemetry_host: String,
     telemetry_port: u16,
     created_at: String,
@@ -125,9 +122,7 @@ struct UpdateServerSettingsPayload {
     auto_restart: bool,
     custom_flags: Vec<String>,
     java_installation: Option<String>,
-    provider: Option<String>,
-    version: Option<String>,
-    provider_checks: ProviderChecksConfig,
+    provider: MserveProvider,
     telemetry_host: Option<String>,
     telemetry_port: Option<u16>,
     jar_swap_path: Option<String>,
@@ -139,9 +134,7 @@ struct UpdateServerSettingsPayload {
 struct UpdateServerSettingsResult {
     directory: String,
     file: String,
-    provider: Option<String>,
-    version: Option<String>,
-    provider_checks: ProviderChecksConfig,
+    provider: MserveProvider,
     telemetry_host: String,
     telemetry_port: u16,
 }
@@ -168,9 +161,7 @@ struct RuntimeServerConfig {
     storage_limit: Option<u32>,
     custom_flags: Option<Vec<String>>,
     java_installation: Option<String>,
-    provider: Option<String>,
-    version: Option<String>,
-    provider_checks: Option<ProviderChecksConfig>,
+    provider: Option<MserveProvider>,
     telemetry_host: Option<String>,
     telemetry_port: Option<u16>,
 }

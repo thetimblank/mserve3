@@ -98,19 +98,7 @@ pub(in crate::app) fn update_server_settings(
         .as_deref()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
-    config.provider = payload
-        .provider
-        .as_deref()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .or_else(|| infer_provider_from_jar_file(&config.file));
-    config.version = payload
-        .version
-        .as_deref()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .or_else(|| infer_version_from_jar_file(&config.file));
-    config.provider_checks = payload.provider_checks;
+    config.provider = normalize_provider(&payload.provider, &config.file);
     config.telemetry_host = payload
         .telemetry_host
         .as_deref()
@@ -128,8 +116,6 @@ pub(in crate::app) fn update_server_settings(
         directory: directory_path.to_string_lossy().to_string(),
         file: config.file,
         provider: config.provider,
-        version: config.version,
-        provider_checks: config.provider_checks,
         telemetry_host: config.telemetry_host,
         telemetry_port: config.telemetry_port,
     })

@@ -80,8 +80,8 @@ const OverviewSummary: React.FC<OverviewSummaryProps> = ({
 		() => Math.max(1, Number(server.storage_limit) || 1) * 1024 * 1024 * 1024,
 		[server.storage_limit],
 	);
-	const displayVersion = server.stats.server_version ?? server.version ?? null;
-	const displayProviderVersion = server.stats.provider_version;
+	const displayVersion = server.stats.server_version ?? server.provider.minecraft_version ?? null;
+	const displayProviderVersion = server.stats.provider_version ?? server.provider.provider_version;
 	const shouldShowWorldAndBackupSizes = !isProxyProvider(server.provider);
 	const isBackupsNearStorageLimit = server.stats.backups_size_bytes >= Math.floor(storageLimitBytes * 0.9);
 
@@ -225,7 +225,7 @@ const OverviewSummary: React.FC<OverviewSummaryProps> = ({
 					<div className='flex items-center gap-2'>
 						<Package className='size-4' />
 						<p>
-							Server provider is <span className='font-bold'>{server.provider}</span>.
+							Server provider is <span className='font-bold'>{server.provider.name}</span>.
 						</p>
 					</div>
 					{displayProviderVersion && (

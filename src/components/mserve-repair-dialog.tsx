@@ -36,7 +36,6 @@ const toInitialForm = (options: PromptMserveRepairOptions): ServerSetupFormData 
 	auto_agree_eula: options.auto_agree_eula ?? true,
 	java_installation: options.java_installation ?? '',
 	provider: options.provider,
-	version: options.version ?? '',
 });
 
 const MserveRepairDialog: React.FC = () => {
@@ -129,6 +128,12 @@ const MserveRepairDialog: React.FC = () => {
 			return;
 		}
 
+		if (!form.provider) {
+			setError('Provider metadata is required to rebuild mserve.json.');
+			setIsSubmitting(false);
+			return;
+		}
+
 		closeWith({
 			directory: activeRequest.options.directory,
 			create_directory_if_missing: form.create_directory_if_missing,
@@ -141,9 +146,10 @@ const MserveRepairDialog: React.FC = () => {
 			auto_agree_eula: form.auto_agree_eula,
 			java_installation: form.java_installation,
 			custom_flags: activeRequest.options.custom_flags,
-			provider: activeRequest.options.provider,
-			version: activeRequest.options.version,
-			provider_checks: activeRequest.options.provider_checks,
+			provider: {
+				...form.provider,
+				file,
+			},
 		});
 	};
 

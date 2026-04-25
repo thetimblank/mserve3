@@ -1,7 +1,7 @@
 import type { Server } from '@/data/servers';
 import type { ServerSetupFormData, SyncedMserveConfig } from '@/lib/mserve-sync';
-import { createDefaultProviderChecks, normalizeProviderChecks } from '@/lib/mserve-schema';
-import { normalizeServerProvider } from '@/lib/server-provider';
+import { DEFAULT_SERVER_PROVIDER } from '@/lib/mserve-consts';
+import { createProvider } from '@/lib/server-provider';
 
 type InitServerResult = {
 	id: string;
@@ -28,8 +28,6 @@ const buildServerShell = (
 	| 'java_installation'
 	| 'custom_flags'
 	| 'provider'
-	| 'version'
-	| 'provider_checks'
 	| 'telemetry_host'
 	| 'telemetry_port'
 	| 'created_at'
@@ -67,9 +65,7 @@ export const buildCreatedServer = (form: ServerSetupFormData, result: InitServer
 	auto_restart: form.auto_restart,
 	java_installation: form.java_installation.trim() || undefined,
 	custom_flags: [],
-	provider: form.provider,
-	version: form.version.trim() || undefined,
-	provider_checks: createDefaultProviderChecks(),
+	provider: createProvider(form.provider ?? DEFAULT_SERVER_PROVIDER, { file: result.file }),
 	telemetry_host: '127.0.0.1',
 	telemetry_port: 25565,
 	created_at: new Date().toISOString(),
@@ -86,9 +82,7 @@ export const buildImportedServer = (result: InitServerResult, config: SyncedMser
 	auto_restart: config.auto_restart,
 	java_installation: config.java_installation,
 	custom_flags: config.custom_flags,
-	provider: normalizeServerProvider(config.provider),
-	version: config.version,
-	provider_checks: normalizeProviderChecks(config.provider_checks),
+	provider: createProvider(config.provider, { file: config.file }),
 	telemetry_host: config.telemetry_host,
 	telemetry_port: config.telemetry_port,
 	created_at: config.created_at,
