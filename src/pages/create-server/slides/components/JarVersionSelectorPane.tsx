@@ -271,13 +271,15 @@ const JarVersionSelectorPane: React.FC<JarVersionSelectorPaneProps> = ({
 									className={[
 										'border-t transition-colors',
 										disabled ? 'opacity-55' : '',
-										selected ? 'bg-accent' : 'cursor-pointer hover:bg-secondary/50',
+										selected
+											? 'bg-accent text-accent-foreground'
+											: 'cursor-pointer hover:bg-secondary/50',
 									]
 										.filter(Boolean)
 										.join(' ')}>
 									<td className='px-3 py-2'>
 										<div className='flex items-center gap-2'>
-											{selected && <CircleCheck className='size-4 text-primary' />}
+											{selected && <CircleCheck className='size-4' />}
 											<span>{row.provider}</span>
 										</div>
 									</td>
@@ -295,7 +297,7 @@ const JarVersionSelectorPane: React.FC<JarVersionSelectorPaneProps> = ({
 													className={[
 														'mt-1 inline-flex w-fit items-center gap-1 rounded-md px-2 py-0.5 text-xs',
 														isCompatible
-															? 'bg-green-900/50 text-green-500'
+															? 'bg-green-600/10 dark:bg-green-900/50 text-green-500'
 															: 'bg-destructive/15 text-destructive',
 													].join(' ')}>
 													{isCompatible ? (

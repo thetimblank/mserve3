@@ -27,7 +27,7 @@ const SlideShell: React.FC<SlideShellProps> = ({
 			whileInView={{ scale: 1, y: 0, opacity: 1 }}
 			transition={{ type: 'spring', duration: 0.5, bounce: 0 }}
 			className={clsx('w-full', !fullWidth && 'max-w-lg', className)}>
-			<div className='mb-10 flex flex-col items-center'>
+			<div className='mb-10 flex flex-col items-center text-center'>
 				{icon && React.cloneElement(icon, { className: 'size-20 mb-6' })}
 				<h1 className='text-3xl font-bold mb-2'>{title}</h1>
 				<p>{description}</p>

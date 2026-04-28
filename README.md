@@ -62,12 +62,12 @@ Big
 ✅ read from mserve.json
 ✅ rewrite & cleanup of backend code.
 ✅ splash screen
+✅ inform user about proper java versions
 🟨 test & support all providers thoroughly
 🟨 auto fetch provider server jars [BETA]
 ⬛ add testing!!!
 ⬛ inform user & read minecraft settings (properties, ops, whitelist, etc.)
 ⬛ update server
-⬛ inform user about proper java versions
 ⬛ motd generator
 ⬛ add docs
 ⬛ onboarding/welcome screen

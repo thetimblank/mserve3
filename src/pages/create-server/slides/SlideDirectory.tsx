@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { useServers } from '@/data/servers';
 import { useCreateServer, type PathValidationResult } from '../CreateServerContext';
 import SlideShell from './SlideShell';
+import { AnimatePresence, m } from 'motion/react';
 
 const normalizeName = (value: string) => value.trim().toLowerCase();
 
@@ -88,14 +89,17 @@ const SlideDirectory: React.FC = () => {
 						}}
 					/>
 				</Field>
-				{duplicateServer && (
-					<p className='text-sm text-destructive'>
-						Name already exists. Please choose a different server name.
-					</p>
-				)}
-				<p className='text-sm text-muted-foreground break-all'>
-					Server folder: {resolvedDirectory || '(enter a name to preview)'}
-				</p>
+				<AnimatePresence>
+					{duplicateServer && (
+						<m.p
+							initial={{ opacity: 0, height: 0 }}
+							animate={{ height: 'auto', opacity: 1 }}
+							transition={{ type: 'spring', duration: 0.2, bounce: 0 }}
+							className='text-sm text-destructive'>
+							Name already exists. Please choose a different server name.
+						</m.p>
+					)}
+				</AnimatePresence>
 			</FieldGroup>
 		</SlideShell>
 	);

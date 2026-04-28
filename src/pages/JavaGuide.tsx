@@ -1,27 +1,19 @@
 import * as React from 'react';
 import { m } from 'motion/react';
 import { openUrl } from '@tauri-apps/plugin-opener';
-import { AlertTriangle, CheckCircle2, Coffee, ExternalLink, RefreshCw, Server, XCircle } from 'lucide-react';
+import { AlertTriangle, Coffee, ExternalLink, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { useServers } from '@/data/servers';
-import { cn } from '@/lib/utils';
-import {
-	JAVA_COMPATIBILITY_MATRIX,
-	describeWhatCanRunWithJava,
-	explainCompatibility,
-	resolveJavaRequirement,
-} from '@/lib/java-compatibility';
 import { detectJavaRuntimes, type JavaRuntimeDetectionResult } from '@/lib/java-runtime-service';
 
 const INSTALL_LINKS = [
-	{
-		label: 'Eclipse Temurin (Adoptium)',
-		url: 'https://adoptium.net/temurin/releases/',
-		description: 'Recommended OpenJDK distribution for most users.',
-	},
+	// {
+	// 	label: 'Eclipse Temurin (Adoptium)',
+	// 	url: 'https://adoptium.net/temurin/releases/',
+	// 	description: 'Recommended OpenJDK distribution for most users.',
+	// },
 	{
 		label: 'Microsoft Build of OpenJDK',
 		url: 'https://learn.microsoft.com/java/openjdk/download',
@@ -42,7 +34,6 @@ const sourceLabel = (source: string) => {
 };
 
 const JavaGuide: React.FC = () => {
-	const { servers } = useServers();
 	const [runtimeResult, setRuntimeResult] = React.useState<JavaRuntimeDetectionResult | null>(null);
 	const [loadError, setLoadError] = React.useState<string | null>(null);
 	const [isLoading, setIsLoading] = React.useState(true);
@@ -73,33 +64,6 @@ const JavaGuide: React.FC = () => {
 		void fetchRuntimes('initial');
 	}, [fetchRuntimes]);
 
-	const installedMajors = React.useMemo(
-		() =>
-			Array.from(new Set((runtimeResult?.runtimes ?? []).map((runtime) => runtime.majorVersion))).sort(
-				(left, right) => right - left,
-			),
-		[runtimeResult],
-	);
-
-	const serverChecks = React.useMemo(
-		() =>
-			servers.map((server) => {
-				const detectedVersion = server.version ?? server.stats.server_version ?? undefined;
-				const explanation = explainCompatibility({
-					provider: server.provider,
-					version: detectedVersion,
-					installedMajors,
-				});
-
-				return {
-					server,
-					detectedVersion,
-					explanation,
-				};
-			}),
-		[installedMajors, servers],
-	);
-
 	return (
 		<main className='h-full px-12 py-18 w-full overflow-y-auto app-scroll-area'>
 			<div className='mx-auto w-full max-w-6xl space-y-6'>
@@ -111,17 +75,12 @@ const JavaGuide: React.FC = () => {
 					<Coffee className='size-20 mb-6' />
 					<h1 className='text-3xl font-bold mb-2'>Java Version Guide</h1>
 					<p className='max-w-3xl'>
-						This page detects your installed Java versions, explains what Minecraft servers each one can
-						run, and tells you exactly what to install if something is missing.
+						This page detects your installed Java versions and tells you how to install a JDK.
 					</p>
 					<div className='mt-6 flex flex-wrap justify-center gap-2'>
 						<Button onClick={() => void fetchRuntimes('refresh')} disabled={isLoading || isRefreshing}>
 							{isRefreshing ? <Spinner /> : <RefreshCw />}
 							Rescan Java
-						</Button>
-						<Button variant='outline' onClick={() => openUrl('https://adoptium.net/temurin/releases/')}>
-							Install Java 21
-							<ExternalLink className='size-4' />
 						</Button>
 					</div>
 				</m.section>
@@ -130,258 +89,131 @@ const JavaGuide: React.FC = () => {
 					initial={{ scale: 0.75, y: 10, opacity: 0 }}
 					whileInView={{ scale: 1, y: 0, opacity: 1 }}
 					transition={{ type: 'spring', duration: 0.5, bounce: 0 }}>
-					<Card>
-						<CardHeader>
-							<CardTitle>Detected Java Runtimes</CardTitle>
-							<CardDescription>
-								Auto-detected from PATH, JAVA_HOME, and common install folders.
-							</CardDescription>
-						</CardHeader>
-						<CardContent className='space-y-4'>
-							{isLoading && (
-								<div className='rounded-lg border p-6 flex items-center gap-3'>
-									<Spinner />
-									<p>Scanning your system for Java runtimes...</p>
-								</div>
-							)}
+					<p className='text-xl font-bold'>Detected Java Runtimes</p>
+					<p>
+						Auto-detected{' '}
+						{runtimeResult && <span> {runtimeResult.scannedCandidates} Java executable(s)</span>} from
+						PATH, JAVA_HOME, and common install folders.{' '}
+					</p>
+					<div className='space-y-4 mt-3'>
+						{isLoading && (
+							<div className='rounded-lg border p-6 flex items-center gap-3'>
+								<Spinner />
+								<p>Scanning your system for Java runtimes...</p>
+							</div>
+						)}
 
-							{!isLoading && loadError && (
-								<div className='rounded-lg border border-destructive/60 p-4 text-destructive'>
-									<p className='font-semibold'>Failed to detect Java runtimes</p>
-									<p className='text-sm mt-1'>{loadError}</p>
-								</div>
-							)}
+						{!isLoading && loadError && (
+							<div className='rounded-lg border border-destructive/60 p-4 text-destructive'>
+								<p className='font-semibold'>Failed to detect Java runtimes</p>
+								<p className='text-sm mt-1'>{loadError}</p>
+							</div>
+						)}
 
-							{!isLoading && !loadError && runtimeResult && runtimeResult.runtimes.length === 0 && (
-								<div className='rounded-lg border border-yellow-500/60 p-4'>
-									<p className='font-semibold text-yellow-600 dark:text-yellow-400'>
-										No Java runtime found
-									</p>
-									<p className='text-sm mt-1'>Install Java 21 first, then click Rescan Java.</p>
-								</div>
-							)}
-
-							{!isLoading &&
-								!loadError &&
-								runtimeResult &&
-								runtimeResult.runtimes.map((runtime) => {
-									const supportedTargets = describeWhatCanRunWithJava(runtime.majorVersion);
-
-									return (
-										<div key={runtime.executablePath} className='rounded-lg border p-4'>
-											<div className='flex flex-wrap items-center gap-2'>
-												<p className='font-semibold'>Java {runtime.majorVersion}</p>
-												<span className='text-xs rounded-full bg-secondary px-2 py-1'>
-													{runtime.vendor}
-												</span>
-												<span className='text-xs rounded-full bg-secondary px-2 py-1'>
-													{sourceLabel(runtime.source)}
-												</span>
-											</div>
-											<p className='text-sm text-muted-foreground mt-1'>
-												Version: {runtime.version}
-											</p>
-											<p className='text-sm text-muted-foreground break-all'>
-												{runtime.executablePath}
-											</p>
-											<div className='mt-3'>
-												<p className='text-sm font-medium mb-2'>
-													What this runtime can usually run
-												</p>
-												<ul className='text-sm space-y-1'>
-													{supportedTargets.map((target) => (
-														<li key={target}>- {target}</li>
-													))}
-												</ul>
-											</div>
-										</div>
-									);
-								})}
-
-							{runtimeResult && runtimeResult.errors.length > 0 && (
-								<Accordion type='single' collapsible>
-									<AccordionItem value='java-errors'>
-										<AccordionTrigger>
-											Detection warnings ({runtimeResult.errors.length})
-										</AccordionTrigger>
-										<AccordionContent className='space-y-1'>
-											{runtimeResult.errors.map((error) => (
-												<p key={error} className='text-sm text-muted-foreground'>
-													- {error}
-												</p>
-											))}
-										</AccordionContent>
-									</AccordionItem>
-								</Accordion>
-							)}
-
-							{runtimeResult && (
-								<p className='text-xs text-muted-foreground'>
-									Scanned {runtimeResult.scannedCandidates} Java executable candidate(s).
+						{!isLoading && !loadError && runtimeResult && runtimeResult.runtimes.length === 0 && (
+							<div className='rounded-lg border border-yellow-500/60 p-4'>
+								<p className='font-semibold text-yellow-600 dark:text-yellow-400'>
+									No Java runtime found
 								</p>
-							)}
-						</CardContent>
-					</Card>
-				</m.section>
+								<p className='text-sm mt-1'>Install Java first, then click Rescan Java.</p>
+							</div>
+						)}
 
-				<m.section
-					initial={{ scale: 0.75, y: 10, opacity: 0 }}
-					whileInView={{ scale: 1, y: 0, opacity: 1 }}
-					transition={{ type: 'spring', duration: 0.5, bounce: 0 }}>
-					<Card>
-						<CardHeader>
-							<CardTitle>Java Compatibility Matrix</CardTitle>
-							<CardDescription>
-								Use this quick chart to decide what Java version your target server needs.
-							</CardDescription>
-						</CardHeader>
-						<CardContent className='space-y-3'>
-							{JAVA_COMPATIBILITY_MATRIX.map((row) => (
-								<div key={row.label} className='rounded-lg border p-4'>
+						{!isLoading &&
+							!loadError &&
+							runtimeResult &&
+							runtimeResult.runtimes.map((runtime) => (
+								<div key={runtime.executablePath} className='rounded-lg border p-4 space-y-1'>
 									<div className='flex flex-wrap items-center gap-2'>
-										<p className='font-semibold'>{row.label}</p>
-										<span className='text-xs rounded-full bg-secondary px-2 py-1'>
-											Minimum: Java {row.minimumMajor}
-										</span>
-										<span className='text-xs rounded-full bg-secondary px-2 py-1'>
-											Recommended: Java {row.recommendedMajor}
+										<p className='font-semibold'>
+											Java {runtime.majorVersion}
+											<span className='text-muted-foreground'>
+												{runtime.version.replace(String(runtime.majorVersion), '')}
+											</span>
+										</p>
+										{runtime.vendor !== 'Unknown' && (
+											<span className='text-xs rounded-full bg-accent text-accent-foreground px-2 py-1'>
+												{runtime.vendor}
+											</span>
+										)}
+										<span className='text-xs rounded-full bg-accent text-accent-foreground px-2 py-1'>
+											{sourceLabel(runtime.source)}
 										</span>
 									</div>
-									<p className='text-sm text-muted-foreground mt-2'>Scope: {row.serverScope}</p>
-									<p className='text-sm mt-1'>{row.notes}</p>
+									<p className='text-sm text-muted-foreground break-all'>{runtime.executablePath}</p>
 								</div>
 							))}
-						</CardContent>
-					</Card>
-				</m.section>
 
-				<m.section
-					initial={{ scale: 0.75, y: 10, opacity: 0 }}
-					whileInView={{ scale: 1, y: 0, opacity: 1 }}
-					transition={{ type: 'spring', duration: 0.5, bounce: 0 }}>
-					<Card>
-						<CardHeader>
-							<CardTitle>Your Servers Compatibility Check</CardTitle>
-							<CardDescription>
-								Direct check against your current server list and detected Java runtimes.
-							</CardDescription>
-						</CardHeader>
-						<CardContent className='space-y-3'>
-							{serverChecks.length === 0 && (
-								<div className='rounded-lg border p-4 text-sm text-muted-foreground'>
-									No servers found yet. Create or import a server to get per-server Java checks.
-								</div>
-							)}
-
-							{serverChecks.map(({ server, detectedVersion, explanation }) => {
-								const requirement = resolveJavaRequirement(server.provider, detectedVersion);
-								const isCompatible = explanation.status === 'compatible';
-
-								return (
-									<div
-										key={server.id}
-										className={cn(
-											'rounded-lg border p-4',
-											isCompatible
-												? 'border-green-500/50 bg-green-500/5'
-												: 'border-red-500/50 bg-red-500/5',
-										)}>
-										<div className='flex flex-wrap items-center gap-2'>
-											{isCompatible ? (
-												<CheckCircle2 className='size-4 text-green-600 dark:text-green-400' />
-											) : (
-												<XCircle className='size-4 text-red-600 dark:text-red-400' />
-											)}
-											<p className='font-semibold'>{server.name}</p>
-											<span className='text-xs rounded-full bg-secondary px-2 py-1 inline-flex items-center gap-1'>
-												<Server className='size-3' />
-												{server.provider}
-											</span>
-											<span className='text-xs rounded-full bg-secondary px-2 py-1'>
-												{detectedVersion ? `Version ${detectedVersion}` : 'Version unknown'}
-											</span>
-										</div>
-
-										<p className='text-sm mt-2'>{explanation.message}</p>
-										<p className='text-sm text-muted-foreground mt-1'>
-											Required: Java {requirement.minimumMajor}+ | Recommended: Java{' '}
-											{requirement.recommendedMajor}
-										</p>
-									</div>
-								);
-							})}
-						</CardContent>
-					</Card>
-				</m.section>
-
-				<m.section
-					initial={{ scale: 0.75, y: 10, opacity: 0 }}
-					whileInView={{ scale: 1, y: 0, opacity: 1 }}
-					transition={{ type: 'spring', duration: 0.5, bounce: 0 }}>
-					<Card>
-						<CardHeader>
-							<CardTitle>Install Java JDK (Guided)</CardTitle>
-							<CardDescription>
-								This app does not auto-install Java. Installation is always user-confirmed.
-							</CardDescription>
-						</CardHeader>
-						<CardContent className='space-y-4'>
-							<div className='rounded-lg border p-4'>
-								<p className='font-semibold mb-2'>Step-by-step</p>
-								<ol className='text-sm space-y-1'>
-									<li>1. Download a Java 21 JDK from one of the links below.</li>
-									<li>2. Run the installer and keep default options.</li>
-									<li>3. Restart mserve.</li>
-									<li>4. Return to this page and click Rescan Java.</li>
-									<li>
-										5. If multiple Java versions exist, set your preferred default in Settings.
-									</li>
-								</ol>
-							</div>
-
-							<div className='grid gap-3 md:grid-cols-2'>
-								{INSTALL_LINKS.map((link) => (
-									<div key={link.url} className='rounded-lg border p-4'>
-										<p className='font-semibold'>{link.label}</p>
-										<p className='text-sm text-muted-foreground mt-1'>{link.description}</p>
-										<Button className='mt-3' variant='outline' onClick={() => openUrl(link.url)}>
-											Open download page
-											<ExternalLink className='size-4' />
-										</Button>
-									</div>
-								))}
-							</div>
-
+						{runtimeResult && runtimeResult.errors.length > 0 && (
 							<Accordion type='single' collapsible>
-								<AccordionItem value='install-notes'>
-									<AccordionTrigger>Important things to know</AccordionTrigger>
-									<AccordionContent className='space-y-2 text-sm'>
-										<p>- Prefer 64-bit Java builds on modern Windows systems.</p>
-										<p>
-											- If a server needs a specific Java executable, set a per-server Java
-											override in server settings.
-										</p>
-										<p>
-											- Very old server builds may require Java 8 and can fail on newer Java
-											releases.
-										</p>
-										<p>
-											- If nothing is detected after install, restart the app so PATH/JAVA_HOME
-											changes are picked up.
-										</p>
+								<AccordionItem value='java-errors'>
+									<AccordionTrigger>
+										Detection warnings ({runtimeResult.errors.length})
+									</AccordionTrigger>
+									<AccordionContent className='space-y-1'>
+										{runtimeResult.errors.map((error) => (
+											<p key={error} className='text-sm text-muted-foreground'>
+												- {error}
+											</p>
+										))}
 									</AccordionContent>
 								</AccordionItem>
 							</Accordion>
+						)}
+					</div>
+				</m.section>
 
-							<div className='rounded-lg border border-yellow-500/60 bg-yellow-500/5 p-4 flex gap-3'>
-								<AlertTriangle className='size-5 text-yellow-600 dark:text-yellow-400 shrink-0 mt-0.5' />
-								<p className='text-sm'>
-									Oracle downloads may include different licensing terms. If you are unsure, use
-									Temurin or Microsoft OpenJDK.
-								</p>
-							</div>
-						</CardContent>
-					</Card>
+				<m.section
+					initial={{ scale: 0.75, y: 10, opacity: 0 }}
+					whileInView={{ scale: 1, y: 0, opacity: 1 }}
+					transition={{ type: 'spring', duration: 0.5, bounce: 0 }}>
+					<p className='text-xl font-bold'>Install Java JDK (Guided)</p>
+					<p>This app does not auto-install Java. Installation is always user-confirmed.</p>
+					<div className='space-y-4 mt-3'>
+						<div className='rounded-lg border p-4'>
+							<p className='font-semibold mb-2'>Step-by-step</p>
+							<ol className='text-sm space-y-1'>
+								<li>1. Download a Java JDK from one of the links below.</li>
+								<li>2. Run the installer and keep default options.</li>
+								<li>3. Restart mserve.</li>
+								<li>4. Return to this page and click Rescan Java.</li>
+								<li>5. If multiple Java versions exist, set your preferred default in Settings.</li>
+							</ol>
+						</div>
+
+						<div className='grid gap-3 md:grid-cols-2'>
+							{INSTALL_LINKS.map((link) => (
+								<div key={link.url} className='rounded-lg border p-4'>
+									<p className='font-semibold'>{link.label}</p>
+									<p className='text-sm text-muted-foreground mt-1'>{link.description}</p>
+									<Button className='mt-3' onClick={() => openUrl(link.url)}>
+										Open download page
+										<ExternalLink className='size-4' />
+									</Button>
+								</div>
+							))}
+						</div>
+
+						<Accordion type='single' collapsible>
+							<AccordionItem value='install-notes'>
+								<AccordionTrigger>Important things to know</AccordionTrigger>
+								<AccordionContent className='space-y-2 text-sm'>
+									<p>- Prefer 64-bit Java builds on modern Windows systems.</p>
+									<p>
+										- If a server needs a specific Java executable, set a per-server Java override
+										in server settings.
+									</p>
+									<p>
+										- Very old server builds may require Java 8 and can fail on newer Java releases.
+									</p>
+									<p>
+										- If nothing is detected after install, restart the app so PATH/JAVA_HOME
+										changes are picked up.
+									</p>
+								</AccordionContent>
+							</AccordionItem>
+						</Accordion>
+					</div>
 				</m.section>
 
 				{runtimeResult && runtimeResult.runtimes.length === 0 && !isLoading && !loadError && (
@@ -395,10 +227,10 @@ const JavaGuide: React.FC = () => {
 									<AlertTriangle className='size-5 text-red-500' />
 									No Java detected
 								</CardTitle>
-								<CardDescription>Install Java 21 before starting servers in mserve.</CardDescription>
+								<CardDescription>Install Java before starting servers in mserve.</CardDescription>
 							</CardHeader>
 							<CardContent className='space-y-2 text-sm'>
-								<p>- First action: install Temurin Java 21.</p>
+								<p>- First action: install Temurin Java.</p>
 								<p>- Second action: restart mserve and click Rescan Java.</p>
 								<p>- Third action: verify each server card above shows compatible.</p>
 							</CardContent>

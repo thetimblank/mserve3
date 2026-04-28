@@ -8,6 +8,14 @@ import { buildCreatedServer } from '@/lib/mserve-server-mapper';
 import { createDefaultServerSetupForm, type ServerSetupFormData } from '@/lib/mserve-sync';
 import { getDefaultServersRootPath } from '@/lib/server-root-path';
 import type { ServerProvider } from '@/lib/server-provider';
+import {
+	CREATE_SERVER_SLIDE_INDEX,
+	getCreateServerCurrentStep,
+	getCreateServerNextSlide,
+	getCreateServerPreviousSlide,
+	getCreateServerStepSlides,
+	getCreateServerVisibleSlide,
+} from './create-server-flow';
 
 type InitServerPayload = {
 	directory: string;
@@ -38,7 +46,7 @@ export type PathValidationResult = {
 	isFile: boolean;
 };
 
-const DONE_SLIDE_INDEX = 8;
+const DONE_SLIDE_INDEX = CREATE_SERVER_SLIDE_INDEX.done;
 const DEFAULT_FORM = createDefaultServerSetupForm();
 
 const sameArray = (left: string[], right: string[]) => {
@@ -81,6 +89,7 @@ type CreateServerContextValue = {
 	isResolvingServersRootPath: boolean;
 	resolvedDirectory: string;
 	slide: number;
+	activeSlide: number;
 	doneSlideIndex: number;
 	totalSteps: number;
 	currentStep: number;
@@ -113,6 +122,7 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 	const { servers, addServer } = useServers();
 	const { user, updateUserField } = useUser();
 	const [form, setForm] = React.useState<ServerSetupFormData>(DEFAULT_FORM);
+	const providerRef = React.useRef<ServerProvider>(DEFAULT_FORM.provider);
 	const [serverName, setServerNameState] = React.useState('');
 	const [serversRootPath, setServersRootPath] = React.useState('');
 	const [isResolvingServersRootPath, setIsResolvingServersRootPath] = React.useState(true);
@@ -157,6 +167,11 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 		[serverName, serversRootPath],
 	);
 
+	const activeSlide = React.useMemo(
+		() => getCreateServerVisibleSlide(slide, form.provider),
+		[form.provider, slide],
+	);
+
 	React.useEffect(() => {
 		setForm((previous) => ({
 			...previous,
@@ -167,6 +182,9 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
 	const updateField = React.useCallback(
 		<K extends keyof ServerSetupFormData>(key: K, value: ServerSetupFormData[K]) => {
+			if (key === 'provider') {
+				providerRef.current = value as ServerProvider;
+			}
 			setForm((prev) => ({ ...prev, [key]: value }));
 			setHasStarted(true);
 		},
@@ -180,11 +198,11 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
 	const nextSlide = React.useCallback(() => {
 		setHasStarted(true);
-		setSlide((prev) => prev + 1);
+		setSlide((prev) => getCreateServerNextSlide(prev, providerRef.current));
 	}, []);
 
 	const prevSlide = React.useCallback(() => {
-		setSlide((prev) => (prev > 0 ? prev - 1 : prev));
+		setSlide((prev) => getCreateServerPreviousSlide(prev, providerRef.current));
 	}, []);
 
 	const clearError = React.useCallback(() => {
@@ -198,13 +216,14 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
 	const startFlow = React.useCallback(() => {
 		setHasStarted(true);
-		setSlide(1);
+		setSlide(CREATE_SERVER_SLIDE_INDEX.directory);
 	}, []);
 
 	const resetDraft = React.useCallback(() => {
 		setForm(createDefaultServerSetupForm());
+		providerRef.current = DEFAULT_FORM.provider;
 		setServerNameState('');
-		setSlide(0);
+		setSlide(CREATE_SERVER_SLIDE_INDEX.intro);
 		setHasStarted(false);
 		setCreatedServerId(null);
 		setError(null);
@@ -232,40 +251,40 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
 		if (isResolvingServersRootPath) {
 			setError('Still resolving server root path. Please wait a moment and try again.');
-			setSlide(1);
+			setSlide(CREATE_SERVER_SLIDE_INDEX.directory);
 			return;
 		}
 
 		if (!serversRootPath.trim()) {
 			setError('Set your servers root path in Settings before creating a server.');
-			setSlide(1);
+			setSlide(CREATE_SERVER_SLIDE_INDEX.directory);
 			return;
 		}
 
 		const trimmedName = serverName.trim();
 		if (!trimmedName) {
 			setError('Please enter a server name.');
-			setSlide(1);
+			setSlide(CREATE_SERVER_SLIDE_INDEX.directory);
 			return;
 		}
 
 		if (/[/\\]/.test(trimmedName)) {
 			setError('Server name cannot include path separators. Please choose another name.');
-			setSlide(1);
+			setSlide(CREATE_SERVER_SLIDE_INDEX.directory);
 			return;
 		}
 
 		const existingByName = findExistingServerByName(trimmedName);
 		if (existingByName) {
 			setError(`Server name already exists as "${existingByName.name}". Please choose another name.`);
-			setSlide(1);
+			setSlide(CREATE_SERVER_SLIDE_INDEX.directory);
 			return;
 		}
 
 		const directory = joinPath(serversRootPath, trimmedName);
 		if (!directory) {
 			setError('Could not resolve the target server path. Please review your settings.');
-			setSlide(1);
+			setSlide(CREATE_SERVER_SLIDE_INDEX.directory);
 			return;
 		}
 
@@ -274,33 +293,33 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 		});
 		if (directoryValidation.exists && !directoryValidation.isDirectory) {
 			setError('Target path is not a directory. Please change the server name.');
-			setSlide(1);
+			setSlide(CREATE_SERVER_SLIDE_INDEX.directory);
 			return;
 		}
 
 		if (directoryValidation.exists) {
 			setError('A folder with this name already exists. Please change the server name.');
-			setSlide(1);
+			setSlide(CREATE_SERVER_SLIDE_INDEX.directory);
 			return;
 		}
 
 		const file = form.file.trim();
 		if (!file) {
 			setError('Please choose a server jar file.');
-			setSlide(2);
+			setSlide(CREATE_SERVER_SLIDE_INDEX.jarFile);
 			return;
 		}
 
 		if (!file.toLowerCase().endsWith('.jar')) {
 			setError('Server file must be a .jar file.');
-			setSlide(2);
+			setSlide(CREATE_SERVER_SLIDE_INDEX.jarFile);
 			return;
 		}
 
 		const fileValidation = await invoke<PathValidationResult>('validate_path', { path: file });
 		if (!fileValidation.exists || !fileValidation.isFile) {
 			setError('Please choose a valid server jar file.');
-			setSlide(2);
+			setSlide(CREATE_SERVER_SLIDE_INDEX.jarFile);
 			return;
 		}
 
@@ -368,11 +387,10 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 		};
 	}, [createdServerId, goToCreatedServer, slide]);
 
-	const visibleStepSlides = [1, 2, 3, 4, 5, 6, 7];
+	const visibleStepSlides = React.useMemo(() => getCreateServerStepSlides(form.provider), [form.provider]);
 	const totalSteps = visibleStepSlides.length;
-	const currentStepIndex = visibleStepSlides.indexOf(slide);
-	const currentStep = currentStepIndex >= 0 ? currentStepIndex + 1 : 1;
-	const showBackButton = slide > 0 && slide < DONE_SLIDE_INDEX;
+	const currentStep = getCreateServerCurrentStep(activeSlide, form.provider);
+	const showBackButton = activeSlide > CREATE_SERVER_SLIDE_INDEX.intro && activeSlide < DONE_SLIDE_INDEX;
 	const showStepIndicator = showBackButton;
 
 	const value = React.useMemo<CreateServerContextValue>(
@@ -383,6 +401,7 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 			isResolvingServersRootPath,
 			resolvedDirectory,
 			slide,
+			activeSlide,
 			doneSlideIndex: DONE_SLIDE_INDEX,
 			totalSteps,
 			currentStep,
@@ -408,6 +427,7 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 			resetDraft,
 		}),
 		[
+			activeSlide,
 			clearError,
 			continueToNext,
 			createServer,

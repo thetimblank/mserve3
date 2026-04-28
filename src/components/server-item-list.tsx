@@ -548,9 +548,7 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 				onClick={handleAddItem}
 				className={clsx(
 					'flex flex-col gap-2 mt-3 items-center justify-center rounded-md border-2 hover:border-accent/30 hover:bg-accent/30 transition-colors min-h-32 p-4 cursor-pointer select-none font-bold text-sm',
-					isDragging
-						? 'border-accent bg-accent/30 border-solid'
-						: 'border-border bg-secondary border-dashed',
+					isDragging ? 'border-accent bg-accent/30 border-solid' : 'border-border border-dashed',
 					(disabled || busyFile === '__upload__') && 'opacity-50 pointer-events-none',
 				)}>
 				{isDragging ? (

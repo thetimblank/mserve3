@@ -14,9 +14,9 @@ import { AnimatePresence } from 'motion/react';
 import { m } from 'motion/react';
 
 const CreateServerContent: React.FC = () => {
-	const { slide, prevSlide, showBackButton, showStepIndicator, currentStep, totalSteps, error } =
+	const { activeSlide, prevSlide, showBackButton, showStepIndicator, currentStep, totalSteps, error } =
 		useCreateServer();
-	const shouldTopAlignContent = slide === 2 || slide === 3;
+	const shouldTopAlignContent = activeSlide === 2 || activeSlide === 3;
 
 	const slides = [
 		<SlideIntro key='intro' />,
@@ -47,7 +47,7 @@ const CreateServerContent: React.FC = () => {
 					</div>
 				)}
 
-				{slides[slide]}
+				{slides[activeSlide]}
 
 				<AnimatePresence>
 					{error && showStepIndicator && (

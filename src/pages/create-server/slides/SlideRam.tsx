@@ -18,14 +18,20 @@ type RamPreset = {
 
 const PROXY_RAM_PRESETS: RamPreset[] = [
 	{
-		key: 'proxy-standard',
-		label: 'Standard',
+		key: 'proxy-low',
+		label: 'Low',
+		ram: 0.5,
+		description: 'Lean footprint for lightweight proxy routing.',
+	},
+	{
+		key: 'proxy-medium',
+		label: 'Medium',
 		ram: 1,
 		description: 'Lean footprint for lightweight proxy routing.',
 	},
 	{
-		key: 'proxy-performance',
-		label: 'Performance',
+		key: 'proxy-high',
+		label: 'High',
 		ram: 2,
 		description: 'Extra headroom for busier proxy networks.',
 	},

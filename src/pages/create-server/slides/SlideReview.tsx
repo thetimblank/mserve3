@@ -1,9 +1,13 @@
 import { Button } from '@/components/ui/button';
+import { CREATE_SERVER_SLIDE_INDEX, getCreateServerStepSlides } from '../create-server-flow';
 import { useCreateServer } from '../CreateServerContext';
 import SlideShell from './SlideShell';
 
 const SlideReview: React.FC = () => {
 	const { form, serverName, resolvedDirectory, isSubmitting, prevSlide, createServer } = useCreateServer();
+	const visibleStepSlides = getCreateServerStepSlides(form.provider);
+	const showBackups = visibleStepSlides.includes(CREATE_SERVER_SLIDE_INDEX.backups);
+	const showEula = visibleStepSlides.includes(CREATE_SERVER_SLIDE_INDEX.eula);
 
 	return (
 		<SlideShell
@@ -51,16 +55,20 @@ const SlideReview: React.FC = () => {
 						<p className='text-sm text-muted-foreground'>Auto restart</p>
 						<p>{form.auto_restart ? 'Enabled' : 'Disabled'}</p>
 					</div>
-					<div>
-						<p className='text-sm text-muted-foreground'>Backup modes</p>
-						<p>{form.auto_backup.length > 0 ? form.auto_backup.join(', ') : 'Disabled'}</p>
-					</div>
-					<div>
-						<p className='text-sm text-muted-foreground'>Auto agree EULA</p>
-						<p>{form.auto_agree_eula ? 'Enabled' : 'Disabled'}</p>
-					</div>
+					{showBackups && (
+						<div>
+							<p className='text-sm text-muted-foreground'>Backup modes</p>
+							<p>{form.auto_backup.length > 0 ? form.auto_backup.join(', ') : 'Disabled'}</p>
+						</div>
+					)}
+					{showEula && (
+						<div>
+							<p className='text-sm text-muted-foreground'>Auto agree EULA</p>
+							<p>{form.auto_agree_eula ? 'Enabled' : 'Disabled'}</p>
+						</div>
+					)}
 				</div>
-				{form.auto_backup.length > 0 && (
+				{showBackups && form.auto_backup.length > 0 && (
 					<div className='grid grid-cols-2 gap-4'>
 						<div>
 							<p className='text-sm text-muted-foreground'>Storage limit</p>

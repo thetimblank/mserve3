@@ -2,7 +2,7 @@ import * as React from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
-import { CircleHelp, FolderOpen } from 'lucide-react';
+import { ArrowRight, CircleHelp, Download, FolderOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
@@ -288,17 +288,23 @@ const SlideJarFile: React.FC = () => {
 					onClick={onContinue}
 					disabled={isDownloading || isLoadingRows}
 					className='relative overflow-hidden'>
-					{isDownloading ? (
+					{form.file.length > 0 ? (
+						<>
+							Continue <ArrowRight />
+						</>
+					) : isDownloading ? (
 						<>
 							<Spinner /> Downloading & Continuing...
 						</>
 					) : (
-						'Download & Continue'
+						<>
+							<Download /> Download & Continue
+						</>
 					)}
 					{isDownloading && (
-						<span className='pointer-events-none absolute inset-x-0 bottom-0 h-1 w-full bg-primary-foreground/20'>
+						<span className='pointer-events-none absolute inset-x-0 bottom-0 h-1 w-full bg-accent/20'>
 							<span
-								className='block h-full bg-primary-foreground transition-[width] duration-150 ease-linear'
+								className='block h-full bg-accent transition-[width] duration-150 ease-linear'
 								style={{ width: `${Math.round(downloadProgress * 100)}%` }}
 							/>
 						</span>

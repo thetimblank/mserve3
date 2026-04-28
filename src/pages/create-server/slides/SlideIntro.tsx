@@ -1,5 +1,4 @@
 import { Button } from '@/components/ui/button';
-import { Link } from 'react-router-dom';
 import { useCreateServer } from '../CreateServerContext';
 import SlideShell from './SlideShell';
 import { Server } from 'lucide-react';
@@ -33,15 +32,7 @@ const SlideIntro: React.FC = () => {
 						</Button>
 					)}
 				</>
-			}>
-			<p className='text-sm text-muted-foreground text-center'>
-				More advanced features are available in advanced mode. Turn it on in{' '}
-				<Link className='underline underline-offset-4' to='/settings'>
-					settings
-				</Link>
-				.
-			</p>
-		</SlideShell>
+			}></SlideShell>
 	);
 };
 
