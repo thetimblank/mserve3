@@ -127,7 +127,7 @@ const ServerBackupsTab: React.FC<ServerBackupsTabProps> = ({
 			) : (
 				backups.map((backup) => (
 					<Card key={backup.directory}>
-						<CardHeader className='border-b border-b-border'>
+						<CardHeader className='border-b-2 border-b-border'>
 							<div className='flex items-start justify-between gap-4'>
 								<CardTitle>{getBackupNameFromPath(backup.directory)}</CardTitle>
 							</div>

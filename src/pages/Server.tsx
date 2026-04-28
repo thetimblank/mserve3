@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useServers } from '@/data/servers';
 import { useUser } from '@/data/user';
 import { Button } from '@/components/ui/button';
@@ -19,24 +19,21 @@ import { useServerRuntime } from './server/hooks/use-server-runtime';
 import ServerOverviewPanel from './server/server-overview-panel';
 import { getServerProviderCapabilities } from '@/lib/server-provider-capabilities';
 import type { ServerContentTab } from './server/server-types';
-import ServerContentTabs from './server/server-content-tabs';
+import ServerContentTabs, {
+	getAvailableServerContentTabs,
+	getServerContentTabUrl,
+	isServerContentTab,
+} from './server/server-content-tabs';
 
 const Server: React.FC = () => {
-	const { serverId: routeServerId } = useParams();
+	const navigate = useNavigate();
+	const { serverId: routeServerId, tab: routeTab } = useParams();
 	const resolvedServerId = routeServerId ? decodeURIComponent(routeServerId) : undefined;
 	const { user } = useUser();
 	const { servers, isReady, setServerStatus, updateServer, updateServerStats } = useServers();
 	const [javaRuntimes, setJavaRuntimes] = React.useState<JavaRuntimeInfo[]>([]);
-	const {
-		isBusy,
-		setIsBusy,
-		errorMessage,
-		setErrorMessage,
-		terminalInput,
-		setTerminalInput,
-		activeTab,
-		setActiveTab,
-	} = useServerUiState();
+	const { isBusy, setIsBusy, errorMessage, setErrorMessage, terminalInput, setTerminalInput } =
+		useServerUiState();
 
 	const server = React.useMemo(
 		() => servers.find((item) => item.id === resolvedServerId),
@@ -66,25 +63,29 @@ const Server: React.FC = () => {
 		() => getServerProviderCapabilities(server?.provider),
 		[server?.provider],
 	);
-	const availableTabs = React.useMemo<ServerContentTab[]>(() => {
-		const tabs: ServerContentTab[] = ['overview', 'settings'];
-
-		if (providerCapabilities.kind !== 'vanilla') {
-			tabs.push('plugins');
+	const availableTabs = React.useMemo<ServerContentTab[]>(
+		() => getAvailableServerContentTabs(providerCapabilities.kind),
+		[providerCapabilities.kind],
+	);
+	const activeTab = React.useMemo<ServerContentTab>(() => {
+		if (isServerContentTab(routeTab) && availableTabs.includes(routeTab)) {
+			return routeTab;
 		}
 
-		if (providerCapabilities.kind !== 'proxy') {
-			tabs.splice(tabs.length, 0, 'worlds', 'datapacks', 'backups');
+		if (availableTabs.includes('overview')) {
+			return 'overview';
 		}
 
-		return tabs;
-	}, [providerCapabilities.kind]);
+		return availableTabs[0] ?? 'settings';
+	}, [availableTabs, routeTab]);
 
 	React.useEffect(() => {
-		if (!availableTabs.includes(activeTab)) {
-			setActiveTab('settings');
+		if (!server || routeTab === activeTab) {
+			return;
 		}
-	}, [activeTab, availableTabs, setActiveTab]);
+
+		navigate(getServerContentTabUrl(server.id, activeTab), { replace: true });
+	}, [activeTab, navigate, routeTab, server]);
 
 	const terminalStoreKey = server?.directory ?? '';
 	const {
@@ -167,7 +168,7 @@ const Server: React.FC = () => {
 		<main className='w-full h-full relative overflow-y-auto app-scroll-area app-scroll-stable'>
 			<div className='min-h-full flex flex-col p-12 w-full'>
 				{errorMessage && (
-					<div className='mb-4 rounded-lg border border-destructive/40 bg-destructive/10 p-3'>
+					<div className='mb-4 rounded-lg border-2 border-destructive/40 bg-destructive/10 p-3'>
 						<div className='flex items-center justify-between gap-3'>
 							<p className='text-sm text-destructive'>{errorMessage}</p>
 							<Button variant='outline' size='sm' onClick={() => setErrorMessage(null)}>
@@ -176,7 +177,7 @@ const Server: React.FC = () => {
 						</div>
 					</div>
 				)}
-				<div className='flex items-end w-full flex-row gap-8 mb-6 border-b-2'>
+				<div className='space-y-4 mb-6'>
 					<div className='flex gap-2 items-center'>
 						<Link to='/'>
 							<ArrowLeft className='size-8 transition-transform hover:-translate-x-0.5' />
@@ -184,11 +185,7 @@ const Server: React.FC = () => {
 
 						<h1 className='text-4xl font-bold leading-0'>{server.name}</h1>
 					</div>
-					<ServerContentTabs
-						activeTab={activeTab}
-						onTabChange={setActiveTab}
-						availableTabs={availableTabs}
-					/>
+					<ServerContentTabs activeTab={activeTab} serverId={server.id} availableTabs={availableTabs} />
 				</div>
 
 				{activeTab === 'overview' && ( // 200px is a rough estimate of the nav & padding above

@@ -7,9 +7,9 @@ import { cn } from '@/lib/utils';
 const containerVariants = cva('p-6 rounded-lg', {
 	variants: {
 		variant: {
-			primary: 'border dark:bg-secondary/20 dark:border-none',
-			secondary: 'dark:bg-secondary/20 dark:border-none',
-			destructive: 'border border-destructive/50 dark:border-none dark:bg-destructive/10',
+			primary: 'border-2 dark:bg-secondary/50 dark:border-none',
+			secondary: 'dark:bg-secondary/50 dark:border-none',
+			destructive: 'border-2 border-destructive/50 dark:border-none dark:bg-destructive/10',
 		},
 	},
 	defaultVariants: {

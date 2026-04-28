@@ -1,5 +1,6 @@
 import { Coffee, Home, Network, Plus, Server, Settings } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
+import clsx from 'clsx';
 
 import {
 	Sidebar,
@@ -12,6 +13,8 @@ import {
 	SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { useServers } from '@/data/servers';
+import { getAvailableServerContentTabs, getServerContentTabUrl } from '@/pages/server/server-content-tabs';
+import { getServerProviderCapabilities } from '@/lib/server-provider-capabilities';
 
 const items = [
 	{
@@ -39,6 +42,7 @@ const items = [
 
 export function AppSidebar() {
 	const { servers } = useServers();
+	const location = useLocation();
 
 	return (
 		<Sidebar className='pt-10'>
@@ -82,16 +86,50 @@ export function AppSidebar() {
 									</SidebarMenuButton>
 								</SidebarMenuItem>
 							)}
-							{servers.map((server) => (
-								<SidebarMenuItem key={server.id}>
-									<SidebarMenuButton asChild>
-										<Link to={`/servers/${encodeURIComponent(server.id)}`}>
-											<Server />
-											<span>{server.name}</span>
-										</Link>
-									</SidebarMenuButton>
-								</SidebarMenuItem>
-							))}
+							{servers.map((server) =>
+								(() => {
+									const providerCapabilities = getServerProviderCapabilities(server.provider);
+									const availableTabs = getAvailableServerContentTabs(providerCapabilities.kind);
+
+									return (
+										<SidebarMenuItem key={server.id}>
+											<SidebarMenuButton
+												className={
+													location.pathname.startsWith(
+														`/servers/${encodeURIComponent(server.id)}`,
+													)
+														? 'bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground cursor-default'
+														: ''
+												}
+												asChild>
+												<Link to={`/servers/${encodeURIComponent(server.id)}`}>
+													<Server />
+													<span>{server.name}</span>
+												</Link>
+											</SidebarMenuButton>
+
+											{location.pathname.startsWith(
+												`/servers/${encodeURIComponent(server.id)}`,
+											) && (
+												<div className='ml-4 flex flex-col'>
+													{availableTabs.map((tab) => (
+														<Link
+															className={clsx(
+																'border-l-2 py-1 capitalize pl-4 rounded-r-lg',
+																location.pathname === getServerContentTabUrl(server.id, tab)
+																	? 'text-accent-foreground border-l-accent bg-accent/75 cursor-default'
+																	: 'text-muted-foreground hover:bg-muted',
+															)}
+															to={getServerContentTabUrl(server.id, tab)}>
+															{tab}
+														</Link>
+													))}
+												</div>
+											)}
+										</SidebarMenuItem>
+									);
+								})(),
+							)}
 						</SidebarMenu>
 					</SidebarGroupContent>
 				</SidebarGroup>

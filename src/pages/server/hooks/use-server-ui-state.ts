@@ -1,27 +1,23 @@
 import React from 'react';
-import type { ServerContentTab } from '../server-types';
 
 type State = {
 	isBusy: boolean;
 	hideBackgroundTelemetry: boolean;
 	errorMessage: string | null;
 	terminalInput: string;
-	activeTab: ServerContentTab;
 };
 
 type Action =
 	| { type: 'setBusy'; value: boolean }
 	| { type: 'setHideBackgroundTelemetry'; value: boolean }
 	| { type: 'setErrorMessage'; value: string | null }
-	| { type: 'setTerminalInput'; value: string }
-	| { type: 'setActiveTab'; value: ServerContentTab };
+	| { type: 'setTerminalInput'; value: string };
 
 const initialState: State = {
 	isBusy: false,
 	hideBackgroundTelemetry: true,
 	errorMessage: null,
 	terminalInput: '',
-	activeTab: 'overview',
 };
 
 const reducer = (state: State, action: Action): State => {
@@ -34,8 +30,6 @@ const reducer = (state: State, action: Action): State => {
 			return { ...state, errorMessage: action.value };
 		case 'setTerminalInput':
 			return { ...state, terminalInput: action.value };
-		case 'setActiveTab':
-			return { ...state, activeTab: action.value };
 		default:
 			return state;
 	}
@@ -78,23 +72,14 @@ export const useServerUiState = () => {
 		[state.terminalInput],
 	);
 
-	const setActiveTab = React.useCallback(
-		(next: React.SetStateAction<ServerContentTab>) => {
-			dispatch({ type: 'setActiveTab', value: resolveNext(state.activeTab, next) });
-		},
-		[state.activeTab],
-	);
-
 	return {
 		isBusy: state.isBusy,
 		hideBackgroundTelemetry: state.hideBackgroundTelemetry,
 		errorMessage: state.errorMessage,
 		terminalInput: state.terminalInput,
-		activeTab: state.activeTab,
 		setIsBusy,
 		setHideBackgroundTelemetry,
 		setErrorMessage,
 		setTerminalInput,
-		setActiveTab,
 	};
 };

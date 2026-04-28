@@ -88,14 +88,14 @@ const JarDownloadModal: React.FC<JarDownloadModalProps> = ({ open, onOpenChange,
 		try {
 			const result = await downloadJarRow(selectedRow);
 			await onDownloaded({
-					filePath: result.path,
-					selectionLabel: getJarSelectionLabel(activeTab, selectedRow.version),
-					tab: activeTab,
-					provider: {
-						...toProviderFromJarRow(selectedRow),
-						file: result.path,
-					},
-				});
+				filePath: result.path,
+				selectionLabel: getJarSelectionLabel(activeTab, selectedRow.version),
+				tab: activeTab,
+				provider: {
+					...toProviderFromJarRow(selectedRow),
+					file: result.path,
+				},
+			});
 			onOpenChange(false);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : 'Failed to download jar file.';
@@ -149,7 +149,7 @@ const JarDownloadModal: React.FC<JarDownloadModalProps> = ({ open, onOpenChange,
 					</div>
 
 					{isDownloading ? (
-						<div className='rounded-md border p-8 flex flex-col items-center justify-center gap-3 text-sm'>
+						<div className='rounded-md border-2 p-8 flex flex-col items-center justify-center gap-3 text-sm'>
 							<Spinner className='size-5' />
 							<div className='flex items-center gap-2'>
 								<Download className='size-4' />
@@ -157,7 +157,7 @@ const JarDownloadModal: React.FC<JarDownloadModalProps> = ({ open, onOpenChange,
 							</div>
 						</div>
 					) : isLoadingRows ? (
-						<div className='rounded-md border p-8 flex items-center justify-center gap-2 text-sm'>
+						<div className='rounded-md border-2 p-8 flex items-center justify-center gap-2 text-sm'>
 							<Spinner />
 							<span>Loading versions...</span>
 						</div>

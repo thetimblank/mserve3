@@ -248,7 +248,9 @@ function Sidebar({
 					'fixed inset-y-0 z-10 hidden h-svh md:flex',
 					side === 'left' ? 'left-0' : 'right-0',
 					// Adjust the padding for floating and inset variants.
-					isFloatingVariant ? 'p-2' : 'group-data-[side=left]:border-r group-data-[side=right]:border-l',
+					isFloatingVariant
+						? 'p-2'
+						: 'group-data-[side=left]:border-r-2 group-data-[side=right]:border-l-2',
 					'will-change-[transform,width]',
 					className,
 				)}
@@ -256,7 +258,7 @@ function Sidebar({
 				<div
 					data-sidebar='sidebar'
 					data-slot='sidebar-inner'
-					className='bg-sidebar group-data-[variant=floating]:border-sidebar-border flex h-full w-full flex-col group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:shadow-sm'>
+					className='bg-sidebar group-data-[variant=floating]:border-sidebar-border flex h-full w-full flex-col group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border-2 group-data-[variant=floating]:shadow-sm'>
 					{children}
 				</div>
 			</m.div>

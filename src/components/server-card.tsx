@@ -178,7 +178,7 @@ const ServerCard: React.FC<Props> = ({ server, delay }) => {
 			whileInView={{ y: 0, opacity: 1 }}
 			transition={{ type: 'spring', duration: 0.5, bounce: 0, delay: delay }}>
 			<Card>
-				<CardHeader className='border-b border-b-border'>
+				<CardHeader className='border-b-2 border-b-border'>
 					<CardTitle className='text-3xl'>{server.name}</CardTitle>
 					<CardDescription className='flex gap-6'>
 						{server.status === 'online' && (

@@ -53,24 +53,24 @@ const ServerTerminalPanel: React.FC<ServerTerminalPanelProps> = ({
 
 	return (
 		<m.div
-			initial={{ y: 10, opacity: 0 }}
-			animate={{ y: 0, opacity: 1 }}
+			initial={{ height: 0, opacity: 0 }}
+			animate={{ height: 'auto', opacity: 1 }}
 			transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
 			className={clsx(
 				'bg-black text-white w-full flex font-mono flex-col overflow-hidden',
-				isFullscreen ? 'absolute inset-0 z-40 rounded-b-none' : 'rounded-b-2xl',
+				isFullscreen ? 'absolute inset-0 z-40 rounded-b-none' : 'rounded-b-xl',
 			)}>
 			<m.div
 				initial={{ height: 0 }}
 				animate={{ height: terminalHeight }}
 				transition={{ type: 'spring', bounce: 0, duration: 0.3 }}
 				ref={terminalOutputRef}
-				className='relative min-h-20 overflow-y-auto app-scroll-area px-4 py-2 text-sm gap-0 flex flex-col-reverse'>
+				className='relative min-h-40 overflow-y-auto app-scroll-area px-4 py-2 text-sm gap-0 flex flex-col-reverse'>
 				<div className='flex flex-col'>
 					<pre className='whitespace-pre-wrap break-all'>{terminalText}</pre>
 				</div>
 			</m.div>
-			<form onSubmit={onSubmit} className='flex border-t border-[#fff5]'>
+			<form onSubmit={onSubmit} className='flex border-t-2 border-[#fff5]'>
 				<input
 					className='text-white w-full outline-none px-4 py-2 h-10'
 					placeholder='> '
@@ -82,7 +82,7 @@ const ServerTerminalPanel: React.FC<ServerTerminalPanelProps> = ({
 					<Tooltip>
 						<TooltipTrigger asChild>
 							<div
-								className='text-[#fffa] border-l border-[#fff5] cursor-pointer hover:bg-[#fff2] size-10 flex items-center justify-center'
+								className='text-[#fffa] border-l-2 border-[#fff5] cursor-pointer hover:bg-[#fff2] size-10 flex items-center justify-center'
 								onClick={onJumpToBottom}
 								aria-label='Jump terminal to latest output'>
 								<ChevronsDown className='size-5' />
@@ -94,7 +94,7 @@ const ServerTerminalPanel: React.FC<ServerTerminalPanelProps> = ({
 					<Tooltip>
 						<TooltipTrigger asChild>
 							<div
-								className='text-[#fffa] border-l border-[#fff5] cursor-pointer hover:bg-[#fff2] size-10 flex items-center justify-center'
+								className='text-[#fffa] border-l-2 border-[#fff5] cursor-pointer hover:bg-[#fff2] size-10 flex items-center justify-center'
 								onClick={onClearConsole}
 								aria-label='Clear visible console output'>
 								<Trash2 className='size-5' />
@@ -106,7 +106,7 @@ const ServerTerminalPanel: React.FC<ServerTerminalPanelProps> = ({
 					<Tooltip>
 						<TooltipTrigger asChild>
 							<div
-								className='text-[#fffa] border-l border-[#fff5] cursor-pointer hover:bg-[#fff2] size-10 flex items-center justify-center'
+								className='text-[#fffa] border-l-2 border-[#fff5] cursor-pointer hover:bg-[#fff2] size-10 flex items-center justify-center'
 								onClick={() => setIsFullscreen((prev) => !prev)}
 								aria-label={isFullscreen ? 'Exit terminal fullscreen' : 'Enter terminal fullscreen'}>
 								{isFullscreen ? <Minimize2 className='size-5' /> : <Maximize2 className='size-5' />}

@@ -55,7 +55,7 @@ const RootLayout: React.FC = () => {
 											<Route path='/setup' element={<Setup />} />
 											<Route path='/java-guide' element={<JavaGuide />} />
 											<Route path='/servers/new' element={<CreateServerPage />} />
-											<Route path='/servers/:serverId' element={<Server />} />
+											<Route path='/servers/:serverId/:tab?' element={<Server />} />
 											<Route path='/settings' element={<Settings />} />
 										</Routes>
 									</SidebarInset>

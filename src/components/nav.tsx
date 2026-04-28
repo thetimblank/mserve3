@@ -25,7 +25,7 @@ const Nav: React.FC = () => {
 	return (
 		<>
 			{/* <div className='w-full h-10' /> */}
-			<div className='h-10 bg-sidebar border-b-sidebar-border border-b w-full flex fixed top-0 z-50'>
+			<div className='h-10 bg-sidebar border-b-sidebar-border border-b-2 w-full flex fixed top-0 z-50'>
 				<div className='h-full flex gap-2 items-center pl-2'>
 					<SidebarTrigger />
 					<p className='font-bold select-none text-mserve-accent'>MSERVE</p>

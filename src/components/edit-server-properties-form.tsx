@@ -743,7 +743,7 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 					/>
 					<div className='space-y-2'>
 						<Label className='text-xl mt-4'>Resolved start command preview</Label>
-						<p className='font-mono text-xs px-3 py-1 border border-border rounded-md'>
+						<p className='font-mono text-xs px-3 py-1 border-2 border-border rounded-md'>
 							{runCommandPreview}
 						</p>
 					</div>

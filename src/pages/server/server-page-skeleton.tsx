@@ -9,7 +9,7 @@ const ServerPageSkeleton: React.FC = () => {
 					<Skeleton className='h-4 w-96 max-w-full' />
 				</div>
 
-				<div className='mb-6 rounded-lg border border-border p-4'>
+				<div className='mb-6 rounded-lg border-2 border-border p-4'>
 					<Skeleton className='h-28 w-full' />
 				</div>
 

@@ -340,7 +340,7 @@ const SlideJarFile: React.FC = () => {
 					</div>
 
 					{isLoadingRows ? (
-						<div className='rounded-md border p-8 flex items-center justify-center gap-2 text-sm'>
+						<div className='rounded-md border-2 p-8 flex items-center justify-center gap-2 text-sm'>
 							<Spinner />
 							<span>Loading versions...</span>
 						</div>
