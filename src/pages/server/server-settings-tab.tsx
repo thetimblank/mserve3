@@ -18,7 +18,6 @@ import { requestMserveRepair } from '@/lib/mserve-repair-controller';
 import { Server, useServers } from '@/data/servers';
 import { useNavigate } from 'react-router-dom';
 import { invoke } from '@tauri-apps/api/core';
-import { normalizeServerProvider } from '@/lib/server-provider';
 
 interface Props {
 	clearTerminalSession: () => void;
@@ -64,8 +63,6 @@ export default function ServerSettingsTab({
 					java_installation: server.java_installation ?? '',
 					custom_flags: server.custom_flags,
 					provider: server.provider,
-					version: server.version,
-					provider_checks: server.provider_checks,
 					telemetry_host: server.telemetry_host,
 					telemetry_port: server.telemetry_port,
 				});
@@ -92,9 +89,7 @@ export default function ServerSettingsTab({
 				auto_restart: synced.config.auto_restart,
 				java_installation: synced.config.java_installation,
 				custom_flags: synced.config.custom_flags,
-				provider: normalizeServerProvider(synced.config.provider),
-				version: synced.config.version,
-				provider_checks: synced.config.provider_checks,
+				provider: synced.config.provider,
 				telemetry_host: synced.config.telemetry_host,
 				telemetry_port: synced.config.telemetry_port,
 				created_at: synced.config.created_at,

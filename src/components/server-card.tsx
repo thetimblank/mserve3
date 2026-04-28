@@ -32,7 +32,7 @@ const ServerCard: React.FC<Props> = ({ server, delay }) => {
 	const { user } = useUser();
 	const [isBusy, setIsBusy] = React.useState(false);
 	const serverId = server.id;
-	const displayVersion = server.stats.server_version ?? server.version ?? null;
+	const displayVersion = server.stats.server_version ?? server.provider.minecraft_version ?? null;
 
 	const handleStart = async () => {
 		if (isBusy) return;
@@ -224,7 +224,7 @@ const ServerCard: React.FC<Props> = ({ server, delay }) => {
 							<TooltipTrigger>
 								<div className='flex items-center lg:text-lg gap-2'>
 									<Package className='size-5' />
-									{server.provider}
+									{server.provider.name}
 								</div>
 							</TooltipTrigger>
 							<TooltipContent>

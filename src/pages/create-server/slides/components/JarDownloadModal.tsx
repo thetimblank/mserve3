@@ -8,10 +8,11 @@ import {
 	getJarTabInfo,
 	getJarTabs,
 	isJarRowDownloadable,
+	toProviderFromJarRow,
 	type JarTab,
 	type JarVersionRow,
 } from '@/lib/jar-download-service';
-import type { ServerProvider } from '@/lib/server-provider';
+import type { Provider } from '@/lib/mserve-schema';
 import { Button } from '@/components/ui/button';
 import {
 	Dialog,
@@ -29,8 +30,7 @@ export type DownloadedJarSelection = {
 	filePath: string;
 	selectionLabel: string;
 	tab: JarTab;
-	provider: ServerProvider;
-	version: string;
+	provider: Provider;
 };
 
 type JarDownloadModalProps = {
@@ -88,12 +88,14 @@ const JarDownloadModal: React.FC<JarDownloadModalProps> = ({ open, onOpenChange,
 		try {
 			const result = await downloadJarRow(selectedRow);
 			await onDownloaded({
-				filePath: result.path,
-				selectionLabel: getJarSelectionLabel(activeTab, selectedRow.version),
-				tab: activeTab,
-				provider: selectedRow.providerId,
-				version: selectedRow.version,
-			});
+					filePath: result.path,
+					selectionLabel: getJarSelectionLabel(activeTab, selectedRow.version),
+					tab: activeTab,
+					provider: {
+						...toProviderFromJarRow(selectedRow),
+						file: result.path,
+					},
+				});
 			onOpenChange(false);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : 'Failed to download jar file.';

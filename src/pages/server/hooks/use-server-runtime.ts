@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
 import type { Server, ServerStatus, ServerUpdate } from '@/data/servers';
-import { normalizeProviderChecks } from '@/lib/mserve-schema';
+import type { TelemetryKey } from '@/lib/mserve-schema';
 import { isServerReadyLine, parseTps, stripAnsi } from '@/lib/utils';
 import { getServerProviderCapabilities } from '@/lib/server-provider-capabilities';
 import { useUser } from '@/data/user';
@@ -80,12 +80,16 @@ export const useServerRuntime = ({
 	const serverDirectory = server?.directory;
 	const serverStatus = server?.status;
 	const providerCapabilities = React.useMemo(
-		() => getServerProviderCapabilities(server?.provider, server?.provider_checks),
-		[server?.provider, server?.provider_checks],
+		() => getServerProviderCapabilities(server?.provider),
+		[server?.provider],
 	);
-	const providerChecks = React.useMemo(
-		() => normalizeProviderChecks(server?.provider_checks),
-		[server?.provider_checks],
+	const supportedTelemetry = React.useMemo(
+		() => server?.provider?.supported_telemetry ?? [],
+		[server?.provider?.supported_telemetry],
+	);
+	const supportsTelemetry = React.useCallback(
+		(key: TelemetryKey) => supportedTelemetry.includes(key),
+		[supportedTelemetry],
 	);
 
 	const autoBackupModes = server?.auto_backup ?? [];
@@ -166,20 +170,20 @@ export const useServerRuntime = ({
 				directory: serverDirectory,
 			});
 
-			const pingAvailable = providerChecks.online_polling && telemetry.online;
+			const pingAvailable = supportsTelemetry('online') && telemetry.online;
 			const uptime = toUptimeDate(telemetry.uptime) ?? runtimeRef.current.startAt;
 
 			const nextStats: Partial<Server['stats']> = {
 				uptime,
-				players_online: providerChecks.list_polling && pingAvailable ? telemetry.playersOnline : null,
-				players_max: providerChecks.list_polling && pingAvailable ? telemetry.playersMax : null,
-				server_version: providerChecks.version_polling && pingAvailable ? telemetry.serverVersion : null,
-				provider_version: providerChecks.provider_polling ? telemetry.providerVersion : null,
-				ram_used: providerChecks.ram_polling ? telemetry.ramUsed : null,
-				cpu_used: providerChecks.cpu_polling ? telemetry.cpuUsed : null,
+				players_online: supportsTelemetry('list') && pingAvailable ? telemetry.playersOnline : null,
+				players_max: supportsTelemetry('list') && pingAvailable ? telemetry.playersMax : null,
+				server_version: supportsTelemetry('version') && pingAvailable ? telemetry.serverVersion : null,
+				provider_version: supportsTelemetry('provider') ? telemetry.providerVersion : null,
+				ram_used: supportsTelemetry('ram') ? telemetry.ramUsed : null,
+				cpu_used: supportsTelemetry('cpu') ? telemetry.cpuUsed : null,
 			};
 
-			if (providerChecks.online_polling) {
+			if (supportsTelemetry('online')) {
 				nextStats.online = telemetry.online;
 				if (!telemetry.online) {
 					nextStats.players_online = null;
@@ -188,17 +192,17 @@ export const useServerRuntime = ({
 				}
 			}
 
-			if (!providerCapabilities.supportsTpsCommand || !providerChecks.tps_polling) {
+			if (!providerCapabilities.supportsTpsCommand || !supportsTelemetry('tps')) {
 				nextStats.tps = null;
 			}
 
 			updateServerStats(serverId, nextStats);
 
-			if (providerChecks.online_polling && telemetry.online && serverStatus === 'starting') {
+			if (supportsTelemetry('online') && telemetry.online && serverStatus === 'starting') {
 				setServerStatus(serverId, 'online');
 			}
 		} catch {
-			if (!providerChecks.online_polling) return;
+			if (!supportsTelemetry('online')) return;
 			updateServerStats(serverId, {
 				online: false,
 				players_online: null,
@@ -210,7 +214,7 @@ export const useServerRuntime = ({
 		}
 	}, [
 		providerCapabilities.supportsTpsCommand,
-		providerChecks,
+		supportsTelemetry,
 		serverDirectory,
 		serverId,
 		serverStatus,
@@ -319,7 +323,7 @@ export const useServerRuntime = ({
 					});
 				}
 
-				if (providerCapabilities.supportsTpsCommand && providerChecks.tps_polling) {
+				if (providerCapabilities.supportsTpsCommand && supportsTelemetry('tps')) {
 					const tpsInfo = parseTps(cleaned);
 					if (tpsInfo) {
 						updateServerStats(serverId, { tps: tpsInfo.tps });
@@ -351,7 +355,7 @@ export const useServerRuntime = ({
 	}, [
 		appendTerminalLine,
 		providerCapabilities.kind,
-		providerChecks.tps_polling,
+		supportsTelemetry,
 		serverDirectory,
 		serverId,
 		setServerStatus,
@@ -451,7 +455,7 @@ export const useServerRuntime = ({
 
 		void (async () => {
 			try {
-				if (providerCapabilities.supportsTpsCommand && providerChecks.tps_polling) {
+				if (providerCapabilities.supportsTpsCommand && supportsTelemetry('tps')) {
 					await invoke('send_server_command', {
 						directory: serverDirectory,
 						command: 'tps',
@@ -462,7 +466,7 @@ export const useServerRuntime = ({
 
 		const timer = window.setInterval(async () => {
 			try {
-				if (providerCapabilities.supportsTpsCommand && providerChecks.tps_polling) {
+				if (providerCapabilities.supportsTpsCommand && supportsTelemetry('tps')) {
 					await invoke('send_server_command', {
 						directory: serverDirectory,
 						command: 'tps',
@@ -474,7 +478,7 @@ export const useServerRuntime = ({
 		return () => {
 			window.clearInterval(timer);
 		};
-	}, [providerCapabilities.supportsTpsCommand, providerChecks.tps_polling, serverDirectory, serverStatus]);
+	}, [providerCapabilities.supportsTpsCommand, serverDirectory, serverStatus, supportsTelemetry]);
 
 	React.useEffect(() => {
 		if (!serverStatus) return;

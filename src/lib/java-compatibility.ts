@@ -1,4 +1,4 @@
-import { normalizeServerProvider } from '@/lib/server-provider';
+import { resolveProvider } from '@/lib/server-provider';
 
 export type JavaCompatibilityConfidence = 'high' | 'medium';
 
@@ -148,7 +148,7 @@ export const resolveJavaRequirement = (
 	provider?: string | null,
 	version?: string | null,
 ): JavaRequirement => {
-	const normalizedProvider = normalizeServerProvider(provider);
+	const normalizedProvider = resolveProvider(provider)?.name;
 
 	if (normalizedProvider === 'velocity') {
 		return {

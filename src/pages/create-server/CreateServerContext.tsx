@@ -5,9 +5,9 @@ import { toast } from 'sonner';
 import { useServers } from '@/data/servers';
 import { useUser } from '@/data/user';
 import { buildCreatedServer } from '@/lib/mserve-server-mapper';
+import type { Provider } from '@/lib/mserve-schema';
 import { createDefaultServerSetupForm, type ServerSetupFormData } from '@/lib/mserve-sync';
 import { getDefaultServersRootPath } from '@/lib/server-root-path';
-import type { ServerProvider } from '@/lib/server-provider';
 import {
 	CREATE_SERVER_SLIDE_INDEX,
 	getCreateServerCurrentStep,
@@ -28,8 +28,7 @@ type InitServerPayload = {
 	auto_backup_interval: number;
 	auto_agree_eula: boolean;
 	java_installation: string;
-	provider: ServerProvider;
-	version: string;
+	provider: Provider;
 };
 
 type InitServerResult = {
@@ -77,8 +76,7 @@ const isFormDirty = (form: ServerSetupFormData, serverName: string) => {
 	if (form.auto_backup_interval !== DEFAULT_FORM.auto_backup_interval) return true;
 	if (form.auto_agree_eula !== DEFAULT_FORM.auto_agree_eula) return true;
 	if (form.java_installation !== DEFAULT_FORM.java_installation) return true;
-	if (form.provider !== DEFAULT_FORM.provider) return true;
-	if (form.version !== DEFAULT_FORM.version) return true;
+	if (JSON.stringify(form.provider) !== JSON.stringify(DEFAULT_FORM.provider)) return true;
 	return false;
 };
 
@@ -122,7 +120,7 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 	const { servers, addServer } = useServers();
 	const { user, updateUserField } = useUser();
 	const [form, setForm] = React.useState<ServerSetupFormData>(DEFAULT_FORM);
-	const providerRef = React.useRef<ServerProvider>(DEFAULT_FORM.provider);
+	const [provider, setProvider] = React.useState<Provider | null>(DEFAULT_FORM.provider);
 	const [serverName, setServerNameState] = React.useState('');
 	const [serversRootPath, setServersRootPath] = React.useState('');
 	const [isResolvingServersRootPath, setIsResolvingServersRootPath] = React.useState(true);
@@ -183,7 +181,7 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 	const updateField = React.useCallback(
 		<K extends keyof ServerSetupFormData>(key: K, value: ServerSetupFormData[K]) => {
 			if (key === 'provider') {
-				providerRef.current = value as ServerProvider;
+				setProvider(value as Provider);
 			}
 			setForm((prev) => ({ ...prev, [key]: value }));
 			setHasStarted(true);
@@ -198,12 +196,12 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
 	const nextSlide = React.useCallback(() => {
 		setHasStarted(true);
-		setSlide((prev) => getCreateServerNextSlide(prev, providerRef.current));
-	}, []);
+		setSlide((prev) => getCreateServerNextSlide(prev, provider));
+	}, [provider]);
 
 	const prevSlide = React.useCallback(() => {
-		setSlide((prev) => getCreateServerPreviousSlide(prev, providerRef.current));
-	}, []);
+		setSlide((prev) => getCreateServerPreviousSlide(prev, provider));
+	}, [provider]);
 
 	const clearError = React.useCallback(() => {
 		setError(null);
@@ -221,7 +219,7 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
 	const resetDraft = React.useCallback(() => {
 		setForm(createDefaultServerSetupForm());
-		providerRef.current = DEFAULT_FORM.provider;
+		setProvider(DEFAULT_FORM.provider);
 		setServerNameState('');
 		setSlide(CREATE_SERVER_SLIDE_INDEX.intro);
 		setHasStarted(false);
@@ -323,6 +321,23 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 			return;
 		}
 
+		if (!form.provider) {
+			setError('Provider details are required. Select provider metadata before continuing.');
+			setSlide(CREATE_SERVER_SLIDE_INDEX.jarFile);
+			return;
+		}
+
+		const provider = {
+			...form.provider,
+			file,
+		};
+
+		if (!provider.minecraft_version.trim() || !provider.provider_version.trim()) {
+			setError('Provider metadata must include minecraft and provider version details.');
+			setSlide(CREATE_SERVER_SLIDE_INDEX.jarFile);
+			return;
+		}
+
 		setIsSubmitting(true);
 		try {
 			const payload: InitServerPayload = {
@@ -336,8 +351,7 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 				auto_backup_interval: Math.max(1, Number(form.auto_backup_interval) || 120),
 				auto_agree_eula: form.auto_agree_eula,
 				java_installation: form.java_installation,
-				provider: form.provider,
-				version: form.version,
+				provider,
 			};
 
 			const initializePromise = (async () => {

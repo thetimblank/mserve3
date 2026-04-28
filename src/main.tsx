@@ -40,13 +40,13 @@ const RootLayout: React.FC = () => {
 		<BrowserRouter>
 			<StartupReadySignal />
 			<Toaster />
-			<MserveRepairDialog />
 			<Animations>
 				<ThemeProvider defaultTheme='dark' storageKey='vite-ui-theme'>
 					<SidebarProvider className='h-svh overflow-hidden pt-10'>
 						<UserProvider>
 							<ServersProvider>
 								<CreateServerProvider>
+									<MserveRepairDialog />
 									<Nav />
 									<AppSidebar />
 									<SidebarInset className='h-full min-h-0 overflow-hidden'>

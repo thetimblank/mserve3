@@ -1,6 +1,6 @@
 use super::super::*;
 use super::mserve_config::{
-    default_telemetry_host, detect_default_telemetry_port, infer_provider_from_jar_file,
+    default_telemetry_host, detect_default_telemetry_port,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -254,59 +254,15 @@ pub(in crate::app) fn collect_status_ping(host: &str, port: u16, timeout: Durati
     query().unwrap_or_default()
 }
 
-fn normalize_provider_token(value: &str) -> Option<String> {
-    let normalized = value.trim().to_lowercase();
-    if normalized.is_empty() {
-        return None;
-    }
-
-    if normalized.contains("paper") {
-        return Some("paper".to_string());
-    }
-    if normalized.contains("folia") {
-        return Some("folia".to_string());
-    }
-    if normalized.contains("spigot") {
-        return Some("spigot".to_string());
-    }
-    if normalized.contains("velocity") {
-        return Some("velocity".to_string());
-    }
-    if normalized.contains("bungeecord") || normalized.contains("bungee") || normalized.contains("waterfall") {
-        return Some("bungeecord".to_string());
-    }
-    if normalized.contains("vanilla") || normalized.contains("mojang") || normalized.contains("minecraft_server") {
-        return Some("vanilla".to_string());
-    }
-
-    None
-}
-
 pub(in crate::app) fn infer_provider_version(config: &RuntimeServerConfig) -> Option<String> {
-    if let Some(provider) = config
-        .provider
-        .as_deref()
-        .and_then(normalize_provider_token)
-    {
-        return Some(provider);
-    }
-
-    if let Some(file_based) = infer_provider_from_jar_file(&config.file)
-        .as_deref()
-        .and_then(normalize_provider_token)
-    {
-        return Some(file_based);
-    }
-
-    if let Some(flags) = config.custom_flags.as_ref() {
-        for flag in flags {
-            if let Some(flag_based) = normalize_provider_token(flag) {
-                return Some(flag_based);
-            }
+    config.provider.as_ref().and_then(|provider| {
+        let version = provider.provider_version.trim();
+        if version.is_empty() {
+            None
+        } else {
+            Some(version.to_string())
         }
-    }
-
-    None
+    })
 }
 
 #[cfg(target_os = "windows")]
