@@ -2,12 +2,13 @@ import { Button } from '@/components/ui/button';
 import { CREATE_SERVER_SLIDE_INDEX, getCreateServerStepSlides } from '../create-server-flow';
 import { useCreateServer } from '../CreateServerContext';
 import SlideShell from './SlideShell';
+import { Container } from '@/components/ui/container';
 
 const SlideReview: React.FC = () => {
 	const { form, serverName, resolvedDirectory, isSubmitting, prevSlide, createServer } = useCreateServer();
 	const visibleStepSlides = getCreateServerStepSlides(form.provider);
-	const showBackups = visibleStepSlides.includes(CREATE_SERVER_SLIDE_INDEX.backups);
-	const showEula = visibleStepSlides.includes(CREATE_SERVER_SLIDE_INDEX.eula);
+	const showBackups = visibleStepSlides.some((step) => step === CREATE_SERVER_SLIDE_INDEX.backups);
+	const showEula = visibleStepSlides.some((step) => step === CREATE_SERVER_SLIDE_INDEX.eula);
 
 	return (
 		<SlideShell
@@ -23,7 +24,7 @@ const SlideReview: React.FC = () => {
 					</Button>
 				</>
 			}>
-			<div className='rounded-lg bg-secondary/20 p-6 space-y-3'>
+			<Container className='space-y-3'>
 				<div>
 					<p className='text-sm text-muted-foreground'>Name</p>
 					<p>{serverName || '(not set)'}</p>
@@ -82,7 +83,7 @@ const SlideReview: React.FC = () => {
 						)}
 					</div>
 				)}
-			</div>
+			</Container>
 		</SlideShell>
 	);
 };

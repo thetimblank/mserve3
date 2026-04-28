@@ -72,7 +72,7 @@ export type UpdateServerSettingsResult = {
 	telemetry_port: number;
 };
 
-export type ServerContentTab = 'plugins' | 'worlds' | 'datapacks' | 'backups' | 'settings';
+export type ServerContentTab = 'overview' | 'plugins' | 'worlds' | 'datapacks' | 'backups' | 'settings';
 
 export type ServerSettingsForm = {
 	ram: number;
@@ -88,4 +88,3 @@ export type ServerSettingsForm = {
 	jar_swap_path: string;
 	new_directory: string;
 };
-

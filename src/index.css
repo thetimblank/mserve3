@@ -134,6 +134,10 @@
 	--sidebar-ring: oklch(0.556 0 0);
 }
 
+.box {
+	@apply dark:bg-secondary/20 border dark:border-none;
+}
+
 input.progress::-webkit-slider-thumb {
 	-webkit-appearance: none;
 	appearance: none;

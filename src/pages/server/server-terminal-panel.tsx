@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { m } from 'motion/react';
 import clsx from 'clsx';
-import { ChevronDown, ChevronsDown, Maximize2, Minimize2, Trash2 } from 'lucide-react';
+import { ChevronsDown, Maximize2, Minimize2, Trash2 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 type ServerTerminalPanelProps = {
@@ -29,7 +29,6 @@ const ServerTerminalPanel: React.FC<ServerTerminalPanelProps> = ({
 	onJumpToBottom,
 	terminalOutputRef,
 }) => {
-	const [expanded, setExpanded] = useState(false);
 	const [isFullscreen, setIsFullscreen] = useState(false);
 	const terminalText = React.useMemo(() => terminalLines.join('\n'), [terminalLines]);
 
@@ -50,7 +49,7 @@ const ServerTerminalPanel: React.FC<ServerTerminalPanelProps> = ({
 
 	if (!isVisible) return null;
 
-	const terminalHeight = isFullscreen ? 'calc(100% - 41px)' : expanded ? '500px' : '200px';
+	const terminalHeight = isFullscreen ? 'calc(100% - 41px)' : 'auto';
 
 	return (
 		<m.div
@@ -58,16 +57,18 @@ const ServerTerminalPanel: React.FC<ServerTerminalPanelProps> = ({
 			animate={{ y: 0, opacity: 1 }}
 			transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
 			className={clsx(
-				'bg-black text-white rounded-t-xl w-full flex font-mono flex-col overflow-hidden',
-				isFullscreen && 'absolute inset-0 z-40 rounded-none',
+				'bg-black text-white w-full flex font-mono flex-col overflow-hidden',
+				isFullscreen ? 'absolute inset-0 z-40 rounded-b-none' : 'rounded-b-2xl',
 			)}>
 			<m.div
 				initial={{ height: 0 }}
 				animate={{ height: terminalHeight }}
 				transition={{ type: 'spring', bounce: 0, duration: 0.3 }}
 				ref={terminalOutputRef}
-				className='relative overflow-y-auto app-scroll-area px-4 py-2 text-sm space-y-1'>
-				<pre className='whitespace-pre-wrap break-all'>{terminalText}</pre>
+				className='relative min-h-20 overflow-y-auto app-scroll-area px-4 py-2 text-sm gap-0 flex flex-col-reverse'>
+				<div className='flex flex-col'>
+					<pre className='whitespace-pre-wrap break-all'>{terminalText}</pre>
+				</div>
 			</m.div>
 			<form onSubmit={onSubmit} className='flex border-t border-[#fff5]'>
 				<input
@@ -100,22 +101,6 @@ const ServerTerminalPanel: React.FC<ServerTerminalPanelProps> = ({
 							</div>
 						</TooltipTrigger>
 						<TooltipContent side='left'>Clear console</TooltipContent>
-					</Tooltip>
-
-					<Tooltip>
-						<TooltipTrigger asChild>
-							<div
-								className='text-[#fffa] border-l border-[#fff5] cursor-pointer hover:bg-[#fff2] size-10 flex items-center justify-center'
-								onClick={() => setExpanded((prev) => !prev)}
-								aria-label={expanded ? 'Collapse terminal' : 'Expand terminal'}>
-								<ChevronDown
-									className={clsx('size-5 transition-transform', expanded && 'rotate-180')}
-								/>
-							</div>
-						</TooltipTrigger>
-						<TooltipContent side='left'>
-							{expanded ? 'Collapse terminal' : 'Expand terminal'}
-						</TooltipContent>
 					</Tooltip>
 
 					<Tooltip>

@@ -18,6 +18,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group';
+import { Container } from '@/components/ui/container';
 
 type JarVersionSelectorPaneProps = {
 	tab: JarTab;
@@ -144,7 +145,7 @@ const JarVersionSelectorPane: React.FC<JarVersionSelectorPaneProps> = ({
 
 	return (
 		<div className='flex gap-4'>
-			<div className='w-1/3 min-w-60 flex flex-col gap-1 bg-secondary/20 rounded-md p-4'>
+			<Container className='w-1/3 min-w-60 flex flex-col gap-1'>
 				<InputGroup>
 					<InputGroupInput
 						placeholder='Search provider, version, or channel'
@@ -239,9 +240,9 @@ const JarVersionSelectorPane: React.FC<JarVersionSelectorPaneProps> = ({
 						);
 					})}
 				</div>
-			</div>
+			</Container>
 
-			<div className='w-2/3 bg-secondary/20 rounded-md overflow-hidden'>
+			<Container className='w-2/3 p-0 overflow-hidden'>
 				<table className='w-full text-sm'>
 					<thead className='bg-secondary/50'>
 						<tr>
@@ -325,7 +326,7 @@ const JarVersionSelectorPane: React.FC<JarVersionSelectorPaneProps> = ({
 						)}
 					</tbody>
 				</table>
-			</div>
+			</Container>
 		</div>
 	);
 };

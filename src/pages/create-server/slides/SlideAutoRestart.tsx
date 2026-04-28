@@ -4,6 +4,7 @@ import { Field } from '@/components/ui/field';
 import { Label } from '@/components/ui/label';
 import { useCreateServer } from '../CreateServerContext';
 import SlideShell from './SlideShell';
+import { Container } from '@/components/ui/container';
 
 const SlideAutoRestart: React.FC = () => {
 	const { form, updateField, continueToNext } = useCreateServer();
@@ -18,16 +19,18 @@ const SlideAutoRestart: React.FC = () => {
 				</Button>
 			}>
 			<div className='flex items-center justify-center'>
-				<Field className='w-auto bg-secondary/20 p-6 rounded-lg'>
-					<Label className='flex items-center gap-3'>
-						<Checkbox
-							checked={form.auto_restart}
-							onCheckedChange={(checked) =>
-								updateField('auto_restart', typeof checked === 'boolean' ? checked : false)
-							}
-						/>
-						Auto restart server when it closes
-					</Label>
+				<Field className='w-auto '>
+					<Container>
+						<Label className='flex items-center gap-3'>
+							<Checkbox
+								checked={form.auto_restart}
+								onCheckedChange={(checked) =>
+									updateField('auto_restart', typeof checked === 'boolean' ? checked : false)
+								}
+							/>
+							Auto restart server when it closes
+						</Label>
+					</Container>
 				</Field>
 			</div>
 		</SlideShell>

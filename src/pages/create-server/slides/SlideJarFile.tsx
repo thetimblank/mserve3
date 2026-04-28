@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Spinner } from '@/components/ui/spinner';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useUser } from '@/data/user';
-import { chooseBestInstalledJava, resolveJavaRequirement } from '@/lib/java-compatibility';
+import { resolveJavaRequirement } from '@/lib/java-compatibility';
 import {
 	downloadJarRow,
 	fetchJarRows,
@@ -23,7 +23,11 @@ import {
 	type JarTab,
 	type JarVersionRow,
 } from '@/lib/jar-download-service';
-import { detectJavaRuntimes, type JavaRuntimeInfo } from '@/lib/java-runtime-service';
+import {
+	detectJavaRuntimes,
+	resolveJavaRuntimeForRequirement,
+	type JavaRuntimeInfo,
+} from '@/lib/java-runtime-service';
 import { inferProviderFromJarPath, inferVersionFromJarPath } from '@/lib/server-provider-capabilities';
 import {
 	createProvider,
@@ -34,8 +38,6 @@ import {
 import { useCreateServer, type PathValidationResult } from '../CreateServerContext';
 import JarVersionSelectorPane from './components/JarVersionSelectorPane';
 import SlideShell from './SlideShell';
-
-const normalizePathLike = (value: string) => value.trim().replace(/\\/g, '/').toLowerCase();
 
 const parseJdkVersions = (value: string): number[] =>
 	Array.from(
@@ -66,15 +68,6 @@ const SlideJarFile: React.FC = () => {
 		() => Array.from(new Set(runtimes.map((runtime) => runtime.majorVersion))).sort((a, b) => b - a),
 		[runtimes],
 	);
-	const runtimeByMajor = React.useMemo(() => {
-		const map = new Map<number, JavaRuntimeInfo>();
-		for (const runtime of runtimes) {
-			if (!map.has(runtime.majorVersion)) {
-				map.set(runtime.majorVersion, runtime);
-			}
-		}
-		return map;
-	}, [runtimes]);
 
 	const isAdvancedMode = user.advanced_mode;
 
@@ -125,43 +118,14 @@ const SlideJarFile: React.FC = () => {
 		};
 	}, [activeTab, setError]);
 
-	const resolveDefaultJavaMajor = React.useCallback(() => {
-		const defaultJava = user.java_installation_default.trim();
-		if (!defaultJava) return null;
-
-		if (defaultJava.toLowerCase() === 'java') {
-			return installedMajors[0] ?? null;
-		}
-
-		const normalizedDefault = normalizePathLike(defaultJava);
-		const matchedRuntime = runtimes.find(
-			(runtime) => normalizePathLike(runtime.executablePath) === normalizedDefault,
-		);
-		if (matchedRuntime) {
-			return matchedRuntime.majorVersion;
-		}
-
-		return installedMajors[0] ?? null;
-	}, [installedMajors, runtimes, user.java_installation_default]);
-
 	const maybeApplyJavaOverride = React.useCallback(
 		(providerId: string, version: string) => {
 			const requirement = resolveJavaRequirement(providerId, version);
-			const defaultMajor = resolveDefaultJavaMajor();
-			const defaultCompatible = defaultMajor != null && defaultMajor >= requirement.minimumMajor;
-
-			if (defaultCompatible) {
-				updateField('java_installation', '');
-				return;
-			}
-
-			const bestInstalledMajor = chooseBestInstalledJava(installedMajors, requirement);
-			if (!bestInstalledMajor) return;
-			const runtime = runtimeByMajor.get(bestInstalledMajor);
+			const runtime = resolveJavaRuntimeForRequirement(runtimes, requirement);
 			if (!runtime) return;
 			updateField('java_installation', runtime.executablePath);
 		},
-		[installedMajors, resolveDefaultJavaMajor, runtimeByMajor, updateField],
+		[runtimes, updateField],
 	);
 
 	const applyInferredMetadata = React.useCallback(
@@ -175,7 +139,7 @@ const SlideJarFile: React.FC = () => {
 
 			const base = providerName
 				? createProvider(providerName)
-				: form.provider ?? createProvider('vanilla');
+				: (form.provider ?? createProvider('vanilla'));
 
 			const nextProvider = {
 				...base,
@@ -426,12 +390,12 @@ const SlideJarFile: React.FC = () => {
 										file: form.file || existing?.file || base.file,
 										minecraft_version: existing?.minecraft_version || base.minecraft_version,
 										provider_version: existing?.provider_version || base.provider_version,
-										jdk_versions:
-											existing?.jdk_versions.length ? existing.jdk_versions : base.jdk_versions,
-										supported_telemetry:
-											existing?.supported_telemetry.length
-												? existing.supported_telemetry
-												: base.supported_telemetry,
+										jdk_versions: existing?.jdk_versions.length
+											? existing.jdk_versions
+											: base.jdk_versions,
+										supported_telemetry: existing?.supported_telemetry.length
+											? existing.supported_telemetry
+											: base.supported_telemetry,
 										stable: existing?.stable ?? base.stable,
 										download_url: existing?.download_url ?? base.download_url,
 									});
@@ -487,7 +451,9 @@ const SlideJarFile: React.FC = () => {
 						</Field>
 
 						<Field>
-							<Label htmlFor='create-server-provider-jdks'>Supported JDK versions (comma separated)</Label>
+							<Label htmlFor='create-server-provider-jdks'>
+								Supported JDK versions (comma separated)
+							</Label>
 							<Input
 								id='create-server-provider-jdks'
 								placeholder='17, 21'

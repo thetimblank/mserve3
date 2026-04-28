@@ -121,6 +121,7 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 	const { user, updateUserField } = useUser();
 	const [form, setForm] = React.useState<ServerSetupFormData>(DEFAULT_FORM);
 	const [provider, setProvider] = React.useState<Provider | null>(DEFAULT_FORM.provider);
+	const providerRef = React.useRef<Provider | null>(DEFAULT_FORM.provider);
 	const [serverName, setServerNameState] = React.useState('');
 	const [serversRootPath, setServersRootPath] = React.useState('');
 	const [isResolvingServersRootPath, setIsResolvingServersRootPath] = React.useState(true);
@@ -171,6 +172,10 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 	);
 
 	React.useEffect(() => {
+		providerRef.current = provider;
+	}, [provider]);
+
+	React.useEffect(() => {
 		setForm((previous) => ({
 			...previous,
 			directory: resolvedDirectory,
@@ -181,6 +186,7 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 	const updateField = React.useCallback(
 		<K extends keyof ServerSetupFormData>(key: K, value: ServerSetupFormData[K]) => {
 			if (key === 'provider') {
+				providerRef.current = value as Provider;
 				setProvider(value as Provider);
 			}
 			setForm((prev) => ({ ...prev, [key]: value }));
@@ -196,12 +202,12 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
 	const nextSlide = React.useCallback(() => {
 		setHasStarted(true);
-		setSlide((prev) => getCreateServerNextSlide(prev, provider));
-	}, [provider]);
+		setSlide((prev) => getCreateServerNextSlide(prev, providerRef.current));
+	}, []);
 
 	const prevSlide = React.useCallback(() => {
-		setSlide((prev) => getCreateServerPreviousSlide(prev, provider));
-	}, [provider]);
+		setSlide((prev) => getCreateServerPreviousSlide(prev, providerRef.current));
+	}, []);
 
 	const clearError = React.useCallback(() => {
 		setError(null);

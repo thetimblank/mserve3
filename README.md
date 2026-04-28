@@ -67,19 +67,19 @@ Big
 ✅ inform user about proper java versions
 🟨 test & support all providers thoroughly
 🟨 auto fetch provider server jars [BETA]
+🟨 rework backend to be simply and reusable, delete uneeded normalizations, etc.
 ⬛ add testing!!!
 ⬛ inform user & read minecraft settings (properties, ops, whitelist, etc.)
 ⬛ update server
 ⬛ motd generator
 ⬛ add docs
 ⬛ onboarding/welcome screen
-🟨 rework backend to be simply and reusable, delete uneeded normalizations, etc.
 
 Small
+✅ make create server slides based on the selected provider (e.g. no backups for proxy, no eula for proxy)
+✅ better integration of version detection (pushing using own jar selection)
+✅ rework server settings (advanced mode vs non-advanced)
 🟨 better explaination of hosting setup and integrate with server specific ports/ip
-🟨 better integration of version detection
-⬛ rework server settings (advanced mode vs non-advanced)
-⬛ make create server slides based on the selected provider (e.g. no backups for proxy, no eula for proxy)
 
 Supported Providers
 🟨 Velocity

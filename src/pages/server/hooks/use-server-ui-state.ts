@@ -21,7 +21,7 @@ const initialState: State = {
 	hideBackgroundTelemetry: true,
 	errorMessage: null,
 	terminalInput: '',
-	activeTab: 'plugins',
+	activeTab: 'overview',
 };
 
 const reducer = (state: State, action: Action): State => {

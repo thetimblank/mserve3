@@ -1,10 +1,12 @@
 import React from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useServers } from '@/data/servers';
+import { useUser } from '@/data/user';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { ArrowLeft, Globe, Package, Plug } from 'lucide-react';
 import ServerItemList from '@/components/server-item-list';
+import { detectJavaRuntimes, type JavaRuntimeInfo } from '@/lib/java-runtime-service';
 
 import ServerTerminalPanel from './server/server-terminal-panel';
 import ServerBackupsTab from './server/server-backups-tab';
@@ -17,11 +19,14 @@ import { useServerRuntime } from './server/hooks/use-server-runtime';
 import ServerOverviewPanel from './server/server-overview-panel';
 import { getServerProviderCapabilities } from '@/lib/server-provider-capabilities';
 import type { ServerContentTab } from './server/server-types';
+import ServerContentTabs from './server/server-content-tabs';
 
 const Server: React.FC = () => {
 	const { serverId: routeServerId } = useParams();
 	const resolvedServerId = routeServerId ? decodeURIComponent(routeServerId) : undefined;
+	const { user } = useUser();
 	const { servers, isReady, setServerStatus, updateServer, updateServerStats } = useServers();
+	const [javaRuntimes, setJavaRuntimes] = React.useState<JavaRuntimeInfo[]>([]);
 	const {
 		isBusy,
 		setIsBusy,
@@ -39,19 +44,37 @@ const Server: React.FC = () => {
 	);
 
 	const serverId = server?.id ?? '';
+
+	React.useEffect(() => {
+		let cancelled = false;
+
+		void detectJavaRuntimes()
+			.then((result) => {
+				if (cancelled) return;
+				setJavaRuntimes(result.runtimes);
+			})
+			.catch(() => {
+				if (cancelled) return;
+				setJavaRuntimes([]);
+			});
+
+		return () => {
+			cancelled = true;
+		};
+	}, []);
 	const providerCapabilities = React.useMemo(
 		() => getServerProviderCapabilities(server?.provider),
 		[server?.provider],
 	);
 	const availableTabs = React.useMemo<ServerContentTab[]>(() => {
-		const tabs: ServerContentTab[] = ['settings'];
+		const tabs: ServerContentTab[] = ['overview', 'settings'];
 
 		if (providerCapabilities.kind !== 'vanilla') {
-			tabs.unshift('plugins');
+			tabs.push('plugins');
 		}
 
 		if (providerCapabilities.kind !== 'proxy') {
-			tabs.splice(tabs.length - 1, 0, 'worlds', 'datapacks', 'backups');
+			tabs.splice(tabs.length, 0, 'worlds', 'datapacks', 'backups');
 		}
 
 		return tabs;
@@ -153,44 +176,47 @@ const Server: React.FC = () => {
 						</div>
 					</div>
 				)}
-				<div className='flex items-center justify-between mb-8'>
-					<div>
-						<div className='flex gap-2 items-center'>
-							<Link to='/'>
-								<ArrowLeft className='size-8' />
-							</Link>
+				<div className='flex items-end w-full flex-row gap-8 mb-6 border-b-2'>
+					<div className='flex gap-2 items-center'>
+						<Link to='/'>
+							<ArrowLeft className='size-8 transition-transform hover:-translate-x-0.5' />
+						</Link>
 
-							<h1 className='text-4xl font-bold'>{server.name}</h1>
-						</div>
+						<h1 className='text-4xl font-bold leading-0'>{server.name}</h1>
 					</div>
-				</div>
-
-				<div className='mb-4'>
-					<ServerTerminalPanel
-						isVisible
-						isBusy={isBusy}
-						status={server.status}
-						terminalLines={terminalLines}
-						terminalInput={terminalInput}
-						onTerminalInputChange={setTerminalInput}
-						onSubmit={handleTerminalCommandSubmit}
-						onClearConsole={clearTerminalConsole}
-						onJumpToBottom={jumpTerminalToBottom}
-						terminalOutputRef={terminalOutputRef}
-					/>
-
-					<ServerOverviewPanel
-						server={server}
-						isBusy={isBusy}
-						onStart={handleStart}
-						onStop={handleStop}
-						onRestart={handleRestart}
-						onForceKill={handleForceKill}
+					<ServerContentTabs
 						activeTab={activeTab}
-						availableTabs={availableTabs}
 						onTabChange={setActiveTab}
+						availableTabs={availableTabs}
 					/>
 				</div>
+
+				{activeTab === 'overview' && ( // 200px is a rough estimate of the nav & padding above
+					<div className='max-h-[calc(100vh-200px)] flex flex-col'>
+						<ServerOverviewPanel
+							server={server}
+							javaInstallationDefault={user.java_installation_default}
+							javaRuntimes={javaRuntimes}
+							isBusy={isBusy}
+							onStart={handleStart}
+							onStop={handleStop}
+							onRestart={handleRestart}
+							onForceKill={handleForceKill}
+						/>
+						<ServerTerminalPanel
+							isVisible
+							isBusy={isBusy}
+							status={server.status}
+							terminalLines={terminalLines}
+							terminalInput={terminalInput}
+							onTerminalInputChange={setTerminalInput}
+							onSubmit={handleTerminalCommandSubmit}
+							onClearConsole={clearTerminalConsole}
+							onJumpToBottom={jumpTerminalToBottom}
+							terminalOutputRef={terminalOutputRef}
+						/>
+					</div>
+				)}
 
 				{activeTab === 'plugins' && providerCapabilities.kind !== 'vanilla' && (
 					<ServerItemList
@@ -252,6 +278,7 @@ const Server: React.FC = () => {
 					<ServerSettingsTab
 						clearTerminalSession={clearTerminalSession}
 						server={server}
+						javaRuntimes={javaRuntimes}
 						isBusy={isBusy}
 						setIsBusy={setIsBusy}
 						syncServerContents={syncServerContents}

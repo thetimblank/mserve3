@@ -1,4 +1,5 @@
-import type { ServerProvider } from '@/lib/server-provider';
+import { isProxyProvider } from '@/lib/server-provider';
+import type { Provider } from '@/lib/mserve-schema';
 
 export const CREATE_SERVER_SLIDE_INDEX = {
 	intro: 0,
@@ -25,20 +26,18 @@ const DEFAULT_STEP_SLIDES = [
 	CREATE_SERVER_SLIDE_INDEX.review,
 ] as const;
 
-const STEP_SLIDES_BY_PROVIDER: Partial<Record<ServerProvider, readonly CreateServerSlideIndex[]>> = {
-	velocity: [
-		CREATE_SERVER_SLIDE_INDEX.directory,
-		CREATE_SERVER_SLIDE_INDEX.jarFile,
-		CREATE_SERVER_SLIDE_INDEX.ram,
-		CREATE_SERVER_SLIDE_INDEX.autoRestart,
-		CREATE_SERVER_SLIDE_INDEX.review,
-	],
-};
+const PROXY_STEP_SLIDES = [
+	CREATE_SERVER_SLIDE_INDEX.directory,
+	CREATE_SERVER_SLIDE_INDEX.jarFile,
+	CREATE_SERVER_SLIDE_INDEX.ram,
+	CREATE_SERVER_SLIDE_INDEX.autoRestart,
+	CREATE_SERVER_SLIDE_INDEX.review,
+] as const;
 
-export const getCreateServerStepSlides = (provider: ServerProvider) =>
-	STEP_SLIDES_BY_PROVIDER[provider] ?? DEFAULT_STEP_SLIDES;
+export const getCreateServerStepSlides = (provider?: Provider | null) =>
+	isProxyProvider(provider) ? PROXY_STEP_SLIDES : DEFAULT_STEP_SLIDES;
 
-export const getCreateServerFlowSlides = (provider: ServerProvider) =>
+export const getCreateServerFlowSlides = (provider?: Provider | null) =>
 	[
 		CREATE_SERVER_SLIDE_INDEX.intro,
 		...getCreateServerStepSlides(provider),
@@ -47,7 +46,7 @@ export const getCreateServerFlowSlides = (provider: ServerProvider) =>
 
 export const getCreateServerVisibleSlide = (
 	slide: number,
-	provider: ServerProvider,
+	provider?: Provider | null,
 ): CreateServerSlideIndex => {
 	const flowSlides = getCreateServerFlowSlides(provider);
 	if (flowSlides.includes(slide as CreateServerSlideIndex)) {
@@ -69,7 +68,10 @@ export const getCreateServerVisibleSlide = (
 	return CREATE_SERVER_SLIDE_INDEX.intro;
 };
 
-export const getCreateServerNextSlide = (slide: number, provider: ServerProvider): CreateServerSlideIndex => {
+export const getCreateServerNextSlide = (
+	slide: number,
+	provider?: Provider | null,
+): CreateServerSlideIndex => {
 	const flowSlides = getCreateServerFlowSlides(provider);
 	const visibleSlide = getCreateServerVisibleSlide(slide, provider);
 	const visibleIndex = flowSlides.indexOf(visibleSlide);
@@ -78,7 +80,7 @@ export const getCreateServerNextSlide = (slide: number, provider: ServerProvider
 
 export const getCreateServerPreviousSlide = (
 	slide: number,
-	provider: ServerProvider,
+	provider?: Provider | null,
 ): CreateServerSlideIndex => {
 	const flowSlides = getCreateServerFlowSlides(provider);
 	const visibleSlide = getCreateServerVisibleSlide(slide, provider);
@@ -86,9 +88,9 @@ export const getCreateServerPreviousSlide = (
 	return flowSlides[Math.max(visibleIndex - 1, 0)];
 };
 
-export const getCreateServerCurrentStep = (slide: number, provider: ServerProvider) => {
+export const getCreateServerCurrentStep = (slide: number, provider?: Provider | null) => {
 	const stepSlides = getCreateServerStepSlides(provider);
 	const visibleSlide = getCreateServerVisibleSlide(slide, provider);
-	const visibleIndex = stepSlides.indexOf(visibleSlide);
+	const visibleIndex = stepSlides.findIndex((candidate) => candidate === visibleSlide);
 	return visibleIndex >= 0 ? visibleIndex + 1 : 1;
 };

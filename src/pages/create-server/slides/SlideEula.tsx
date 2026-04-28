@@ -5,6 +5,7 @@ import { Label } from '@/components/ui/label';
 import { ExternalLink } from 'lucide-react';
 import { useCreateServer } from '../CreateServerContext';
 import SlideShell from './SlideShell';
+import { Container } from '@/components/ui/container';
 
 const SlideEula: React.FC = () => {
 	const { form, updateField, continueToNext } = useCreateServer();
@@ -31,16 +32,18 @@ const SlideEula: React.FC = () => {
 				</Button>
 			}>
 			<div className='flex items-center justify-center'>
-				<Field className='w-auto bg-secondary/20 p-6 rounded-lg'>
-					<Label className='flex items-center gap-3'>
-						<Checkbox
-							checked={form.auto_agree_eula}
-							onCheckedChange={(checked) =>
-								updateField('auto_agree_eula', typeof checked === 'boolean' ? checked : false)
-							}
-						/>
-						I agree and authorize mserve to allow the eula for me
-					</Label>
+				<Field className='w-auto'>
+					<Container>
+						<Label className='flex items-center gap-3'>
+							<Checkbox
+								checked={form.auto_agree_eula}
+								onCheckedChange={(checked) =>
+									updateField('auto_agree_eula', typeof checked === 'boolean' ? checked : false)
+								}
+							/>
+							I agree and authorize mserve to allow the eula for me
+						</Label>
+					</Container>
 				</Field>
 			</div>
 		</SlideShell>

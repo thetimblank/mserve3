@@ -1,6 +1,6 @@
 import React from 'react';
 import clsx from 'clsx';
-import { Archive, Globe, Package, Plug, Settings } from 'lucide-react';
+import { Archive, Globe, Home, Package, Plug, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { ServerContentTab } from './server-types';
 
@@ -11,6 +11,7 @@ type ServerContentTabsProps = {
 };
 
 const tabMeta: Record<ServerContentTab, { icon: React.ReactNode; label: string }> = {
+	overview: { icon: <Home />, label: 'Overview' },
 	plugins: { icon: <Plug />, label: 'Plugins' },
 	worlds: { icon: <Globe />, label: 'Worlds' },
 	datapacks: { icon: <Package />, label: 'Datapacks' },
@@ -18,7 +19,7 @@ const tabMeta: Record<ServerContentTab, { icon: React.ReactNode; label: string }
 	settings: { icon: <Settings />, label: 'Settings' },
 };
 
-const defaultTabs: ServerContentTab[] = ['plugins', 'worlds', 'datapacks', 'backups', 'settings'];
+const defaultTabs: ServerContentTab[] = ['overview', 'settings', 'plugins', 'worlds', 'datapacks', 'backups'];
 
 const ServerContentTabs: React.FC<ServerContentTabsProps> = ({
 	activeTab,
@@ -34,13 +35,15 @@ const ServerContentTabs: React.FC<ServerContentTabsProps> = ({
 	);
 
 	return (
-		<>
+		<div className='flex gap-4 w-full'>
 			{availableTabs.map((item) => (
 				<Button
 					key={item}
 					className={clsx(
-						'flex-1',
-						activeTab === item && 'bg-accent text-accent-foreground hover:bg-accent cursor-default',
+						'flex-1 rounded-b-none border-b-2 -mb-0.5',
+						activeTab === item
+							? 'bg-accent/75 border-b-accent text-accent-foreground hover:bg-accent/75 cursor-default'
+							: 'border-transparent hover:border-border',
 					)}
 					variant='secondary'
 					onClick={() => handleTabClick(item)}>
@@ -50,7 +53,7 @@ const ServerContentTabs: React.FC<ServerContentTabsProps> = ({
 					</span>
 				</Button>
 			))}
-		</>
+		</div>
 	);
 };
 

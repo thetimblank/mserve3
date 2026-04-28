@@ -20,26 +20,26 @@ import OpenFolderButton from '@/components/open-folder-button';
 import ServerStatus from '@/components/server-status';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { Server } from '@/data/servers';
+import {
+	findJavaRuntimeByExecutablePath,
+	getJavaRuntimeBadgeLabel,
+	type JavaRuntimeInfo,
+} from '@/lib/java-runtime-service';
 import { isProxyProvider } from '@/lib/server-provider';
 import { getPrimaryMinecraftVersion } from '@/lib/utils';
 import { formatBytes, formatUptime } from './server-utils';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import ServerContentTabs from './server-content-tabs';
-import type { ServerContentTab } from './server-types';
+import { Card, CardContent } from '@/components/ui/card';
 
 type Props = {
 	server: Server;
+	javaInstallationDefault: string;
+	javaRuntimes: JavaRuntimeInfo[];
 	isBusy: boolean;
 	onStart: () => void;
 	onStop: () => void;
 	onRestart: () => void;
 	onForceKill: () => void;
-	activeTab: ServerContentTab;
-	availableTabs: ServerContentTab[];
-	onTabChange: (tab: ServerContentTab) => void;
 };
-
-type OverviewSummaryProps = Omit<Props, 'activeTab' | 'availableTabs' | 'onTabChange'>;
 
 const UPTIME_REFRESH_MS = 1000;
 
@@ -61,8 +61,10 @@ const UptimeText: React.FC<{ uptime: Date }> = React.memo(({ uptime }) => {
 
 UptimeText.displayName = 'UptimeText';
 
-const OverviewSummary: React.FC<OverviewSummaryProps> = ({
+const OverviewSummary: React.FC<Props> = ({
 	server,
+	javaInstallationDefault,
+	javaRuntimes,
 	isBusy,
 	onStart,
 	onStop,
@@ -82,11 +84,14 @@ const OverviewSummary: React.FC<OverviewSummaryProps> = ({
 	);
 	const displayVersion = server.stats.server_version ?? server.provider.minecraft_version ?? null;
 	const displayProviderVersion = server.stats.provider_version ?? server.provider.provider_version;
+	const effectiveJavaInstallation = server.java_installation?.trim() || javaInstallationDefault.trim();
+	const effectiveJavaRuntime = findJavaRuntimeByExecutablePath(effectiveJavaInstallation, javaRuntimes);
+	const effectiveJavaRuntimeLabel = getJavaRuntimeBadgeLabel(effectiveJavaRuntime);
 	const shouldShowWorldAndBackupSizes = !isProxyProvider(server.provider);
 	const isBackupsNearStorageLimit = server.stats.backups_size_bytes >= Math.floor(storageLimitBytes * 0.9);
 
 	return (
-		<CardHeader className='border-b border-b-border'>
+		<CardContent>
 			<div className='flex gap-10'>
 				<ServerStatus server={server} size='xl' />
 				<div className='flex flex-col'>
@@ -228,6 +233,12 @@ const OverviewSummary: React.FC<OverviewSummaryProps> = ({
 							Server provider is <span className='font-bold'>{server.provider.name}</span>.
 						</p>
 					</div>
+					{effectiveJavaRuntimeLabel && (
+						<div className='flex items-center gap-2'>
+							<MemoryStick className='size-4' />
+							<p>{effectiveJavaRuntimeLabel}</p>
+						</div>
+					)}
 					{displayProviderVersion && (
 						<div className='flex items-center gap-2'>
 							<Package className='size-4' />
@@ -245,7 +256,7 @@ const OverviewSummary: React.FC<OverviewSummaryProps> = ({
 					)}
 				</div>
 			</div>
-		</CardHeader>
+		</CardContent>
 	);
 };
 
@@ -253,32 +264,26 @@ const MemoizedOverviewSummary = React.memo(OverviewSummary);
 
 const ServerOverviewPanel: React.FC<Props> = ({
 	server,
+	javaInstallationDefault,
+	javaRuntimes,
 	isBusy,
 	onStart,
 	onStop,
 	onRestart,
 	onForceKill,
-	activeTab,
-	availableTabs,
-	onTabChange,
 }) => {
 	return (
-		<Card className='rounded-t-none'>
+		<Card className='rounded-b-none'>
 			<MemoizedOverviewSummary
 				server={server}
+				javaInstallationDefault={javaInstallationDefault}
+				javaRuntimes={javaRuntimes}
 				isBusy={isBusy}
 				onStart={onStart}
 				onStop={onStop}
 				onRestart={onRestart}
 				onForceKill={onForceKill}
 			/>
-			<CardContent className='flex gap-2'>
-				<ServerContentTabs
-					activeTab={activeTab}
-					onTabChange={onTabChange}
-					availableTabs={availableTabs}
-				/>
-			</CardContent>
 		</Card>
 	);
 };
