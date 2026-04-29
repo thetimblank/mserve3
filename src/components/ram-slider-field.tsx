@@ -1,7 +1,6 @@
 import * as React from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { CircleAlert, Info } from 'lucide-react';
-import { useUser } from '@/data/user';
 import { Field } from '@/components/ui/field';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
@@ -47,7 +46,6 @@ const buildRamGradient = (maxRam: number) => {
 };
 
 const RamSliderField: React.FC<RamSliderFieldProps> = ({ id, value, onChange, className }) => {
-	const { user } = useUser();
 	const fallbackMemoryLimitGb = React.useMemo(() => getNavigatorMemoryLimitGb(), []);
 	const [systemMemoryLimitGb, setSystemMemoryLimitGb] = React.useState(fallbackMemoryLimitGb);
 
@@ -76,15 +74,11 @@ const RamSliderField: React.FC<RamSliderFieldProps> = ({ id, value, onChange, cl
 
 	const maxRam = Math.max(10, systemMemoryLimitGb);
 	const warningStartRam = Math.max(1, maxRam - warningBufferGb);
-	const isAdvancedModeEnabled = user.advanced_mode;
-	const maxSelectableRam = isAdvancedModeEnabled ? maxRam : warningStartRam;
-	const clampedRam = Math.max(1, Math.min(value, maxSelectableRam));
-	const showRiskWarning = isAdvancedModeEnabled && clampedRam >= warningStartRam;
-	const showCapNotice = !isAdvancedModeEnabled && maxSelectableRam < maxRam;
-	const proxyGradient = React.useMemo(() => buildRamGradient(maxSelectableRam), [maxSelectableRam]);
+	const clampedRam = Math.max(1, Math.min(value, maxRam));
+	const proxyGradient = React.useMemo(() => buildRamGradient(maxRam), [maxRam]);
 	const visibleRamMarkers = React.useMemo(
-		() => ramMarkers.filter((marker) => marker >= 1 && marker <= maxSelectableRam),
-		[maxSelectableRam],
+		() => ramMarkers.filter((marker) => marker >= 1 && marker <= maxRam),
+		[maxRam],
 	);
 
 	React.useEffect(() => {
@@ -116,7 +110,7 @@ const RamSliderField: React.FC<RamSliderFieldProps> = ({ id, value, onChange, cl
 				id={id}
 				value={[clampedRam]}
 				min={1}
-				max={maxSelectableRam}
+				max={maxRam}
 				step={1}
 				trackStyle={{ background: proxyGradient }}
 				rangeClassName='bg-transparent'
@@ -127,21 +121,15 @@ const RamSliderField: React.FC<RamSliderFieldProps> = ({ id, value, onChange, cl
 					<div
 						key={marker}
 						className='absolute -top-[250%] -translate-x-1/2'
-						style={{ left: `${toRamMarkerPercent(marker, maxSelectableRam)}%` }}>
+						style={{ left: `${toRamMarkerPercent(marker, maxRam)}%` }}>
 						<span className='text-[12px] h-1 text-muted-foreground'>{marker}</span>
 					</div>
 				))}
 			</div>
-			{showRiskWarning && (
+			{clampedRam >= warningStartRam && (
 				<p className='text-sm text-muted-foreground flex gap-2 items-center'>
 					<CircleAlert className='size-4 shrink-0' />
 					This much RAM may cause system instability.
-				</p>
-			)}
-			{showCapNotice && (
-				<p className='text-sm text-muted-foreground flex gap-2 items-center'>
-					<CircleAlert className='size-4 shrink-0' />
-					Advanced mode is off, so max RAM is capped at {maxSelectableRam} GB.
 				</p>
 			)}
 		</Field>
