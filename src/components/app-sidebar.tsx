@@ -98,7 +98,7 @@ export function AppSidebar() {
 													location.pathname.startsWith(
 														`/servers/${encodeURIComponent(server.id)}`,
 													)
-														? 'bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground cursor-default'
+														? 'font-semibold bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground cursor-default'
 														: ''
 												}
 												asChild>
@@ -115,10 +115,10 @@ export function AppSidebar() {
 													{availableTabs.map((tab) => (
 														<Link
 															className={clsx(
-																'border-l-2 py-1 capitalize pl-4 rounded-r-lg',
+																'border-l-2 py-1 capitalize pl-4 rounded-r-lg font-semibold',
 																location.pathname === getServerContentTabUrl(server.id, tab)
-																	? 'text-accent-foreground border-l-accent bg-accent/75 cursor-default'
-																	: 'text-muted-foreground hover:bg-muted',
+																	? 'border-l-accent bg-accent/25 cursor-default'
+																	: 'text-muted-foreground hover:bg-muted hover:text-foreground',
 															)}
 															to={getServerContentTabUrl(server.id, tab)}>
 															{tab}

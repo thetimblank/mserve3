@@ -272,14 +272,16 @@ const Server: React.FC = () => {
 					/>
 				)}
 				{activeTab === 'settings' && (
-					<ServerSettingsTab
-						clearTerminalSession={clearTerminalSession}
-						server={server}
-						javaRuntimes={javaRuntimes}
-						isBusy={isBusy}
-						setIsBusy={setIsBusy}
-						syncServerContents={syncServerContents}
-					/>
+					<div className='h-[calc(100vh-200px)] flex min-h-0 flex-col'>
+						<ServerSettingsTab
+							clearTerminalSession={clearTerminalSession}
+							server={server}
+							javaRuntimes={javaRuntimes}
+							isBusy={isBusy}
+							setIsBusy={setIsBusy}
+							syncServerContents={syncServerContents}
+						/>
+					</div>
 				)}
 			</div>
 		</main>
