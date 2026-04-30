@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 
 import EditServerPropertiesForm from '@/components/edit-server-properties-form';
 import ServerConfigFileEditor from '@/components/server-config-file-editor';
+import { useUser } from '@/data/user';
 import { Button } from '@/components/ui/button';
 import {
 	AlertDialog,
@@ -93,6 +94,7 @@ const getConfigFileSection = (definition: ManagedServerConfigFileDefinition): Se
 });
 
 const SERVER_SETTINGS_BASE_SECTIONS: SectionConfig[] = [CORE_SETTINGS_SECTION, DANGER_ZONE_SECTION];
+const managedConfigFileStatusCache = new Map<string, ManagedConfigFileStatus[]>();
 
 const normalizeQuery = (value: string) => value.trim().toLowerCase();
 
@@ -235,8 +237,10 @@ export default function ServerSettingsPanel({
 }: Props) {
 	const navigate = useNavigate();
 	const { removeServer, updateServer } = useServers();
+	const { user } = useUser();
 	const [query, setQuery] = React.useState('');
 	const [activeSectionId, setActiveSectionId] = React.useState<SectionId>('core-settings');
+	const cacheKey = React.useMemo(() => server.directory.trim().toLowerCase(), [server.directory]);
 	const [managedConfigFileStatuses, setManagedConfigFileStatuses] = React.useState<
 		ManagedConfigFileStatus[]
 	>([]);
@@ -254,15 +258,23 @@ export default function ServerSettingsPanel({
 			const files = await invoke<ManagedConfigFileStatus[]>('scan_managed_server_config_files', {
 				directory: server.directory,
 			});
+			managedConfigFileStatusCache.set(cacheKey, files);
 			setManagedConfigFileStatuses(files);
 		} catch {
+			managedConfigFileStatusCache.delete(cacheKey);
 			setManagedConfigFileStatuses([]);
 		}
-	}, [server.directory]);
+	}, [cacheKey, server.directory]);
 
 	React.useEffect(() => {
+		const cachedStatuses = managedConfigFileStatusCache.get(cacheKey);
+		if (cachedStatuses) {
+			setManagedConfigFileStatuses(cachedStatuses);
+			return;
+		}
+
 		void refreshManagedConfigFiles();
-	}, [refreshManagedConfigFiles]);
+	}, [cacheKey, refreshManagedConfigFiles]);
 
 	const handleManualSync = React.useCallback(async () => {
 		if (isBusy || server.status !== 'offline') return;
@@ -372,8 +384,18 @@ export default function ServerSettingsPanel({
 
 	const visibleManagedConfigDefinitions = React.useMemo(() => {
 		const statusMap = new Map(managedConfigFileStatuses.map((entry) => [entry.fileName, entry.exists]));
-		return managedConfigFileDefinitions.filter((definition) => statusMap.get(definition.fileName));
-	}, [managedConfigFileDefinitions, managedConfigFileStatuses]);
+		return managedConfigFileDefinitions.filter((definition) => {
+			if (!statusMap.get(definition.fileName)) {
+				return false;
+			}
+
+			if (definition.format === 'yaml' && !user.advanced_mode) {
+				return false;
+			}
+
+			return true;
+		});
+	}, [managedConfigFileDefinitions, managedConfigFileStatuses, user.advanced_mode]);
 
 	const visibleSections = React.useMemo(() => {
 		const managedSections = visibleManagedConfigDefinitions.map(getConfigFileSection);
@@ -442,7 +464,7 @@ export default function ServerSettingsPanel({
 									onClick={() => setActiveSectionId(section.id)}
 									disabled={isNavigationLocked}
 									className={clsx(
-										'flex w-[calc(100%-20px)] flex-col text-left transition-colors border-l-2 py-1 px-4 rounded-r-lg ml-5',
+										'flex w-[calc(100%-8px)] flex-col text-left transition-colors border-l-2 py-1 px-4 rounded-r-lg ml-2',
 										isActive
 											? 'border-accent bg-accent/25 text-foreground'
 											: 'cursor-pointer text-muted-foreground hover:border-border hover:bg-muted hover:text-foreground',

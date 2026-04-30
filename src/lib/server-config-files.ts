@@ -13,6 +13,7 @@ export type ManagedConfigPropertyDefinition = {
 	key: string;
 	label: string;
 	description: string;
+	network?: boolean;
 	type: ManagedConfigPropertyType;
 	options?: ManagedConfigPropertyOption[];
 	unitLabel?: string;
@@ -138,6 +139,7 @@ const SERVER_PROPERTIES_FEATURED_PROPERTIES: ManagedConfigPropertyDefinition[] =
 		type: 'number',
 		unitLabel: 'Port',
 		defaultValue: 25565,
+		network: true,
 	},
 	{
 		key: 'server-ip',
@@ -145,6 +147,7 @@ const SERVER_PROPERTIES_FEATURED_PROPERTIES: ManagedConfigPropertyDefinition[] =
 		description: 'Optional bind address for the server socket.',
 		type: 'string',
 		defaultValue: '',
+		network: true,
 	},
 	{
 		key: 'online-mode',
@@ -152,6 +155,7 @@ const SERVER_PROPERTIES_FEATURED_PROPERTIES: ManagedConfigPropertyDefinition[] =
 		description: 'Authenticate players with Mojang.',
 		type: 'boolean',
 		defaultValue: true,
+		network: true,
 	},
 ];
 
@@ -191,6 +195,7 @@ const VELOCITY_FEATURED_PROPERTIES: ManagedConfigPropertyDefinition[] = [
 		description: 'IP address and port the proxy accepts connections on.',
 		type: 'string',
 		defaultValue: '0.0.0.0:25577',
+		network: true,
 	},
 	{
 		key: 'online-mode',
@@ -198,6 +203,7 @@ const VELOCITY_FEATURED_PROPERTIES: ManagedConfigPropertyDefinition[] = [
 		description: 'Authenticate players with Mojang.',
 		type: 'boolean',
 		defaultValue: true,
+		network: true,
 	},
 	{
 		key: 'servers',
@@ -206,6 +212,7 @@ const VELOCITY_FEATURED_PROPERTIES: ManagedConfigPropertyDefinition[] = [
 		type: 'map',
 		multiline: true,
 		defaultValue: {},
+		network: true,
 	},
 	{
 		key: 'try',
@@ -214,6 +221,7 @@ const VELOCITY_FEATURED_PROPERTIES: ManagedConfigPropertyDefinition[] = [
 		type: 'list',
 		multiline: true,
 		defaultValue: [],
+		network: true,
 	},
 ];
 

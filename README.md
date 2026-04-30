@@ -65,11 +65,10 @@ Big
 ✅ rewrite & cleanup of backend code.
 ✅ splash screen
 ✅ inform user about proper java versions
-🟨 test & support all providers thoroughly
 🟨 auto fetch provider server jars [BETA]
-🟨 rework backend to be simply and reusable, delete uneeded normalizations, etc.
+✅ inform user & read minecraft settings (properties, ops, whitelist, etc.)
+🟨 better explaination of hosting setup and integrate with server specific ports/ip
 ⬛ add testing!!!
-⬛ inform user & read minecraft settings (properties, ops, whitelist, etc.)
 ⬛ update server
 ⬛ motd generator
 ⬛ add docs
@@ -79,9 +78,9 @@ Small
 ✅ make create server slides based on the selected provider (e.g. no backups for proxy, no eula for proxy)
 ✅ better integration of version detection (pushing using own jar selection)
 ✅ rework server settings (advanced mode vs non-advanced)
-🟨 better explaination of hosting setup and integrate with server specific ports/ip
 
 Supported Providers
+Test & support all providers thoroughly
 🟨 Velocity
 🟨 Paper
 🟨 Folia
@@ -90,10 +89,10 @@ Supported Providers
 **v4**
 ⬛ linux support!!!
 ⬛ setup networks and server groups
-⬛ cleanup of backend code/performance optimizations
+⬛ major cleanup of backend (rust & typescript) code/performance optimizations, simple and reusable, delete uneeded normalizations, etc.
 ⬛ add tab completion to terminal
 ⬛ add graphs & data on players, uptime %, ram usage, cpu usage
-⬛ rehaul UI (number input)
+⬛ rehaul UI
 ⬛ advanced statistics systems (plugins, etc to track stats instead of v3 system)
 
 Supported Providers

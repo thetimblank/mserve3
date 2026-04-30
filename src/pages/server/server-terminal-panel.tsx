@@ -65,12 +65,12 @@ const ServerTerminalPanel: React.FC<ServerTerminalPanelProps> = ({
 				animate={{ height: terminalHeight }}
 				transition={{ type: 'spring', bounce: 0, duration: 0.3 }}
 				ref={terminalOutputRef}
-				className='relative min-h-40 overflow-y-auto app-scroll-area px-4 py-2 text-sm gap-0 flex flex-col-reverse'>
+				className='relative overflow-y-auto app-scroll-area px-4 py-2 text-sm gap-0 flex flex-col-reverse'>
 				<div className='flex flex-col'>
 					<pre className='whitespace-pre-wrap break-all'>{terminalText}</pre>
 				</div>
 			</m.div>
-			<form onSubmit={onSubmit} className='flex border-t-2 border-[#fff5]'>
+			<form onSubmit={onSubmit} className='flex-1 flex border-t-2 border-[#fff5]'>
 				<input
 					className='text-white w-full outline-none px-4 py-2 h-10'
 					placeholder='> '
