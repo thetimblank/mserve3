@@ -342,6 +342,23 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .setup(|app| {
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                std::thread::sleep(std::time::Duration::from_secs(8));
+
+                if let Some(main_window) = app_handle.get_webview_window("main") {
+                    let _ = main_window.show();
+                    let _ = main_window.set_focus();
+                }
+
+                if let Some(splash_window) = app_handle.get_webview_window("splashscreen") {
+                    let _ = splash_window.close();
+                }
+            });
+
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             forward_port_windows_firewall,
             validate_path,
@@ -354,6 +371,9 @@ pub fn run() {
             import_server,
             sync_server_mserve_json,
             repair_server_mserve_json,
+            scan_managed_server_config_files,
+            read_managed_server_config_file,
+            write_managed_server_config_file,
             get_default_servers_root_path,
             open_server_folder,
             open_server_path,

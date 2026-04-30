@@ -6,6 +6,7 @@ import { Link2Off, Lock, RefreshCcw, Search, Trash } from 'lucide-react';
 import { toast } from 'sonner';
 
 import EditServerPropertiesForm from '@/components/edit-server-properties-form';
+import ServerConfigFileEditor from '@/components/server-config-file-editor';
 import { Button } from '@/components/ui/button';
 import {
 	AlertDialog,
@@ -24,6 +25,14 @@ import { Server, useServers } from '@/data/servers';
 import type { JavaRuntimeInfo } from '@/lib/java-runtime-service';
 import { repairServerMserveJson, syncServerMserveJson } from '@/lib/mserve-sync';
 import { requestMserveRepair } from '@/lib/mserve-repair-controller';
+import { getServerProviderCapabilities } from '@/lib/server-provider-capabilities';
+import {
+	type ManagedConfigFileStatus,
+	type ManagedServerConfigFileDefinition,
+	type ManagedServerConfigFileKind,
+	getManagedServerConfigFileDefinitions,
+	getManagedServerConfigFileKeywords,
+} from '@/lib/server-config-files';
 
 type Props = {
 	clearTerminalSession: () => void;
@@ -34,13 +43,14 @@ type Props = {
 	syncServerContents: () => Promise<void>;
 };
 
-type SectionId = 'general' | 'danger-zone';
+type SectionId = 'core-settings' | 'danger-zone' | ManagedServerConfigFileKind;
 
 type SectionProps = Props & {
 	isLocked: boolean;
 	onManualSync: () => Promise<void>;
 	onRemoveServer: () => Promise<void>;
 	onDeleteServer: () => Promise<void>;
+	onConfigFilesChanged: () => Promise<void>;
 };
 
 type SectionConfig = {
@@ -51,22 +61,38 @@ type SectionConfig = {
 	render: (props: SectionProps) => React.ReactNode;
 };
 
-const SERVER_SETTINGS_SECTIONS: SectionConfig[] = [
-	{
-		id: 'general',
-		title: 'General',
-		description: 'Sync mserve.json and edit server properties.',
-		keywords: ['sync', 'mserve.json', 'properties', 'ram', 'storage', 'java', 'provider', 'telemetry'],
-		render: (props) => <GeneralSettingsSection {...props} />,
-	},
-	{
-		id: 'danger-zone',
-		title: 'Danger Zone',
-		description: 'Remove the server from mserve or delete it entirely.',
-		keywords: ['delete', 'remove', 'trash', 'danger', 'recycle', 'wipe', 'destroy'],
-		render: (props) => <DangerZoneSection {...props} />,
-	},
-];
+const CORE_SETTINGS_SECTION: SectionConfig = {
+	id: 'core-settings',
+	title: 'Core Settings',
+	description: 'Sync mserve.json and edit the main server settings.',
+	keywords: ['sync', 'mserve.json', 'properties', 'ram', 'storage', 'java', 'provider', 'telemetry'],
+	render: (props) => <GeneralSettingsSection {...props} />,
+};
+
+const DANGER_ZONE_SECTION: SectionConfig = {
+	id: 'danger-zone',
+	title: 'Danger Zone',
+	description: 'Remove the server from mserve or delete it entirely.',
+	keywords: ['delete', 'remove', 'trash', 'danger', 'recycle', 'wipe', 'destroy'],
+	render: (props) => <DangerZoneSection {...props} />,
+};
+
+const getConfigFileSection = (definition: ManagedServerConfigFileDefinition): SectionConfig => ({
+	id: definition.kind,
+	title: definition.title,
+	description: definition.description,
+	keywords: getManagedServerConfigFileKeywords(definition),
+	render: (props) => (
+		<ServerConfigFileEditor
+			serverDirectory={props.server.directory}
+			definition={definition}
+			disabled={props.isLocked}
+			onSaved={props.onConfigFilesChanged}
+		/>
+	),
+});
+
+const SERVER_SETTINGS_BASE_SECTIONS: SectionConfig[] = [CORE_SETTINGS_SECTION, DANGER_ZONE_SECTION];
 
 const normalizeQuery = (value: string) => value.trim().toLowerCase();
 
@@ -110,7 +136,7 @@ const GeneralSettingsSection: React.FC<SectionProps> = ({
 
 			<section className='space-y-4'>
 				<div className='space-y-1'>
-					<p className='text-lg font-semibold'>Server properties</p>
+					<p className='text-lg font-semibold'>Main server settings</p>
 					<p className='text-sm text-muted-foreground'>
 						Update RAM, storage, provider, telemetry, and other editable server settings.
 					</p>
@@ -210,7 +236,33 @@ export default function ServerSettingsPanel({
 	const navigate = useNavigate();
 	const { removeServer, updateServer } = useServers();
 	const [query, setQuery] = React.useState('');
-	const [activeSectionId, setActiveSectionId] = React.useState<SectionId>('general');
+	const [activeSectionId, setActiveSectionId] = React.useState<SectionId>('core-settings');
+	const [managedConfigFileStatuses, setManagedConfigFileStatuses] = React.useState<
+		ManagedConfigFileStatus[]
+	>([]);
+	const providerKind = React.useMemo(
+		() => getServerProviderCapabilities(server.provider).kind,
+		[server.provider],
+	);
+	const managedConfigFileDefinitions = React.useMemo(
+		() => getManagedServerConfigFileDefinitions(providerKind),
+		[providerKind],
+	);
+
+	const refreshManagedConfigFiles = React.useCallback(async () => {
+		try {
+			const files = await invoke<ManagedConfigFileStatus[]>('scan_managed_server_config_files', {
+				directory: server.directory,
+			});
+			setManagedConfigFileStatuses(files);
+		} catch {
+			setManagedConfigFileStatuses([]);
+		}
+	}, [server.directory]);
+
+	React.useEffect(() => {
+		void refreshManagedConfigFiles();
+	}, [refreshManagedConfigFiles]);
 
 	const handleManualSync = React.useCallback(async () => {
 		if (isBusy || server.status !== 'offline') return;
@@ -318,24 +370,33 @@ export default function ServerSettingsPanel({
 		setIsBusy,
 	]);
 
-	const visibleSections = React.useMemo(
-		() => SERVER_SETTINGS_SECTIONS.filter((section) => matchesSection(section, query)),
-		[query],
-	);
+	const visibleManagedConfigDefinitions = React.useMemo(() => {
+		const statusMap = new Map(managedConfigFileStatuses.map((entry) => [entry.fileName, entry.exists]));
+		return managedConfigFileDefinitions.filter((definition) => statusMap.get(definition.fileName));
+	}, [managedConfigFileDefinitions, managedConfigFileStatuses]);
+
+	const visibleSections = React.useMemo(() => {
+		const managedSections = visibleManagedConfigDefinitions.map(getConfigFileSection);
+		return [...SERVER_SETTINGS_BASE_SECTIONS, ...managedSections].filter((section) =>
+			matchesSection(section, query),
+		);
+	}, [query, visibleManagedConfigDefinitions]);
 
 	React.useEffect(() => {
 		if (visibleSections.some((section) => section.id === activeSectionId)) {
 			return;
 		}
 
-		setActiveSectionId(visibleSections[0]?.id ?? SERVER_SETTINGS_SECTIONS[0].id);
+		setActiveSectionId(visibleSections[0]?.id ?? SERVER_SETTINGS_BASE_SECTIONS[0].id);
 	}, [activeSectionId, visibleSections]);
 
 	const activeSection = React.useMemo(
 		() =>
-			SERVER_SETTINGS_SECTIONS.find((section) => section.id === activeSectionId) ??
-			SERVER_SETTINGS_SECTIONS[0],
-		[activeSectionId],
+			[
+				...SERVER_SETTINGS_BASE_SECTIONS,
+				...visibleManagedConfigDefinitions.map(getConfigFileSection),
+			].find((section) => section.id === activeSectionId) ?? SERVER_SETTINGS_BASE_SECTIONS[0],
+		[activeSectionId, visibleManagedConfigDefinitions],
 	);
 	const isNavigationLocked = isBusy;
 
@@ -350,6 +411,7 @@ export default function ServerSettingsPanel({
 		onManualSync: handleManualSync,
 		onRemoveServer: handleRemoveServer,
 		onDeleteServer: handleDelete,
+		onConfigFilesChanged: refreshManagedConfigFiles,
 	};
 
 	return (
@@ -398,7 +460,7 @@ export default function ServerSettingsPanel({
 				</div>
 			</div>
 
-			<div className='mb-6'>
+			<div className='mb-6 relative'>
 				{visibleSections.length > 0 ? (
 					<div className='app-scroll-area flex h-full min-h-0 flex-1 flex-col overflow-y-auto p-4 md:p-6'>
 						{activeSection.render(sectionProps)}
@@ -410,11 +472,13 @@ export default function ServerSettingsPanel({
 				)}
 
 				{sectionProps.isLocked && (
-					<div className='absolute inset-0 z-10 flex items-center justify-center bg-background/70 p-6 text-center backdrop-blur-sm'>
-						<div className='flex max-w-sm flex-col items-center gap-4 rounded-2xl border bg-background p-6 shadow-lg'>
-							<Lock className='size-14 text-muted-foreground' />
-							<p className='text-2xl font-bold'>Server must be offline to modify settings.</p>
-							<p className='text-sm text-muted-foreground'>
+					<div className='absolute top-0 z-10 flex items-center justify-center bg-background/70 p-6 text-center w-full'>
+						<div className='flex flex-col items-center text-center max-w-lg'>
+							<Lock className='size-20 mb-6' />
+							<p className='text-2xl font-bold flex gap-5 items-center mb-2 w-fit backdrop-blur-[1px]'>
+								Server must be offline to modify settings.
+							</p>
+							<p className='text-sm text-muted-foreground backdrop-blur-[2px]'>
 								You can still inspect categories, but editing is disabled while the server is online
 								or busy.
 							</p>

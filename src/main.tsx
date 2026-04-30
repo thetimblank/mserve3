@@ -20,25 +20,67 @@ import MserveRepairDialog from '@/components/mserve-repair-dialog';
 import CreateServerPage from './pages/CreateServer';
 import { CreateServerProvider } from './pages/create-server/CreateServerContext';
 
-let startupCompleted = false;
+class AppErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
+	constructor(props: { children: React.ReactNode }) {
+		super(props);
+		this.state = { error: null };
+	}
 
-const StartupReadySignal: React.FC = () => {
-	React.useEffect(() => {
-		if (startupCompleted) return;
-		startupCompleted = true;
+	static getDerivedStateFromError(error: Error) {
+		return { error };
+	}
 
-		void invoke('complete_startup').catch(() => {
-			// Ignore failures so startup does not block in browser-only contexts.
-		});
-	}, []);
+	componentDidCatch(error: Error) {
+		console.error('Application failed to render', error);
+	}
 
-	return null;
-};
+	render() {
+		if (!this.state.error) {
+			return this.props.children;
+		}
+
+		return (
+			<div className='flex h-svh w-full items-center justify-center bg-background px-6 text-foreground'>
+				<div className='w-full max-w-xl rounded-3xl border bg-card p-8 shadow-2xl'>
+					<p className='text-sm font-medium uppercase tracking-[0.3em] text-muted-foreground'>
+						Application error
+					</p>
+					<h1 className='mt-3 text-3xl font-semibold'>MSERVE could not finish loading</h1>
+					<p className='mt-3 text-sm text-muted-foreground'>
+						A rendering error occurred before the interface could open. This is usually caused by a
+						browser-side module issue or incompatible local data.
+					</p>
+					<pre className='mt-4 max-h-56 overflow-auto rounded-2xl border bg-muted/50 p-4 text-xs text-destructive'>
+						{this.state.error.message}
+					</pre>
+					<div className='mt-6 flex flex-wrap gap-3'>
+						<button
+							type='button'
+							className='rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground'
+							onClick={() => window.location.reload()}>
+							Reload app
+						</button>
+						<button
+							type='button'
+							className='rounded-xl border px-4 py-2 text-sm font-medium'
+							onClick={() => {
+								localStorage.removeItem('mserve.user.v1');
+								localStorage.removeItem('mserve.servers.v4');
+								localStorage.removeItem('vite-ui-theme');
+								window.location.reload();
+							}}>
+							Clear app data and reload [THIS CANNOT BE UNDONE]
+						</button>
+					</div>
+				</div>
+			</div>
+		);
+	}
+}
 
 const RootLayout: React.FC = () => {
 	return (
 		<BrowserRouter>
-			<StartupReadySignal />
 			<Toaster />
 			<Animations>
 				<ThemeProvider defaultTheme='dark' storageKey='vite-ui-theme'>
@@ -69,8 +111,14 @@ const RootLayout: React.FC = () => {
 	);
 };
 
+void invoke('complete_startup').catch(() => {
+	// Ignore failures so startup does not block in browser-only contexts.
+});
+
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
 	<React.StrictMode>
-		<RootLayout />
+		<AppErrorBoundary>
+			<RootLayout />
+		</AppErrorBoundary>
 	</React.StrictMode>,
 );

@@ -3,7 +3,32 @@
 
 @custom-variant dark (&:is(.dark *));
 
+@font-face {
+	font-family: 'Satoshi';
+	src: url('./lib/fonts/Satoshi-Variable.ttf') format('truetype');
+	font-weight: 100 900;
+	font-style: normal;
+	font-display: swap;
+}
+
+@font-face {
+	font-family: 'Satoshi';
+	src: url('./lib/fonts/Satoshi-VariableItalic.ttf') format('truetype');
+	font-weight: 100 900;
+	font-style: italic;
+	font-display: swap;
+}
+
+@font-face {
+	font-family: 'Minecraft';
+	src: url('./lib/fonts/MinecraftRegular.otf') format('opentype');
+	font-weight: normal;
+	font-style: normal;
+	font-display: swap;
+}
+
 @theme inline {
+	--font-minecraft: 'Minecraft', monospace;
 	--radius-sm: calc(var(--radius) - 4px);
 	--radius-md: calc(var(--radius) - 2px);
 	--radius-lg: var(--radius);
@@ -26,6 +51,8 @@
 	--color-muted-foreground: var(--muted-foreground);
 	--color-accent: var(--accent);
 	--color-accent-foreground: var(--accent-foreground);
+	--color-warning: var(--warning);
+	--color-warning-foreground: var(--warning-foreground);
 	--color-destructive: var(--destructive);
 	--color-destructive-foreground: var(--destructive-foreground);
 	--color-destructive-active: var(--destructive-active);
@@ -71,8 +98,10 @@
 	--accent-foreground: oklch(1 0 0);
 	/* --accent: oklch(88.224% 0.0001 271.152);
 	--accent-foreground: oklch(0.205 0 0); */
-	--destructive: oklch(0.577 0.245 27.325);
-	--destructive-active: oklch(0.45 0.245 27.325);
+	--warning: oklch(76.9% 0.188 70.08);
+	--warning-foreground: oklch(0.15 0 0);
+	--destructive: oklch(54.276% 0.22206 28.286);
+	--destructive-active: oklch(45.737% 0.18769 29.223);
 	--destructive-foreground: oklch(0.985 0 0);
 	--border: oklch(0.922 0 0);
 	--input: oklch(0.922 0 0);
@@ -113,6 +142,8 @@
 	--accent-foreground: oklch(1 0 0);
 	/* --accent: oklch(0.269 0 0);
 	--accent-foreground: oklch(0.985 0 0); */
+	--warning: oklch(85.2% 0.199 91.936);
+	--warning-foreground: oklch(0.985 0 0);
 	--destructive: oklch(44.926% 0.18437 29.223);
 	--destructive-active: oklch(38.725% 0.15892 29.223);
 	--destructive-foreground: oklch(0.985 0 0);
@@ -182,23 +213,7 @@ input.progress:hover::-moz-range-thumb {
 	}
 }
 
-@font-face {
-	font-family: 'Satoshi';
-	src: url('./lib/fonts/Satoshi-Variable.ttf') format('truetype');
-	font-weight: 100 900;
-	font-style: normal;
-	font-display: swap;
-}
-
-@font-face {
-	font-family: 'Satoshi';
-	src: url('./lib/fonts/Satoshi-VariableItalic.ttf') format('truetype');
-	font-weight: 100 900;
-	font-style: italic;
-	font-display: swap;
-}
-
-@font-face {
+/* @font-face {
 	font-family: 'Sora';
 	src: url('./lib/fonts/Sora-Variable.ttf') format('truetype');
 	font-weight: 100 900;
@@ -220,7 +235,7 @@ input.progress:hover::-moz-range-thumb {
 	font-weight: 100 900;
 	font-style: normal;
 	font-display: swap;
-}
+} */
 
 body {
 	font-family: 'Satoshi', sans-serif;

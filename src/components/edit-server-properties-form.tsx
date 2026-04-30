@@ -1,7 +1,7 @@
 import React from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
-import { Check, FolderOpen, Info, Loader, Trash } from 'lucide-react';
+import { FolderOpen, Info, Loader, Save, Trash } from 'lucide-react';
 import { toast } from 'sonner';
 import clsx from 'clsx';
 import { type Server, useServers } from '@/data/servers';
@@ -375,6 +375,7 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 		toast('You have unsaved changes', {
 			id: unsavedToastId,
 			duration: Number.POSITIVE_INFINITY,
+			dismissible: false,
 			style: {
 				'--width': 'min(32rem, calc(100vw - 2rem))',
 			} as React.CSSProperties,
@@ -384,7 +385,7 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 						<Trash className='size-4' /> Reset
 					</Button>
 					<Button type='button' onClick={handleSaveSettings}>
-						{isSaving ? <Loader className='animate-spin size-4' /> : <Check className='size-4' />}
+						{isSaving ? <Loader className='animate-spin size-4' /> : <Save className='size-4' />}
 						{isSaving ? 'Saving...' : 'Save properties'}
 					</Button>
 				</div>

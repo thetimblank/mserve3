@@ -1,3 +1,4 @@
+mod config_files;
 mod backups;
 mod items;
 mod java;
@@ -8,6 +9,7 @@ mod settings;
 mod setup;
 mod telemetry;
 
+pub(super) use config_files::*;
 pub(super) use backups::*;
 pub(super) use items::*;
 pub(super) use java::*;
