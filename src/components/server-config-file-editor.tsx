@@ -13,7 +13,9 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/in
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import MotdEditor from '@/components/motd-editor';
 import { UserData, useUser } from '@/data/user';
+import { getEditableMotdValue, getStoredMotdValue } from '@/lib/motd-format';
 import {
 	type ManagedConfigFileReadPayload,
 	type ManagedConfigFileReadResult,
@@ -962,23 +964,6 @@ const JsonArrayConfigFileEditor: React.FC<ServerConfigFileEditorProps> = ({
 	);
 };
 
-const MotdPreview: React.FC<{ value: string }> = ({ value }) => {
-	const lines = value.split(/\r?\n/);
-	return (
-		<div className='rounded-md bg-neutral-900 px-4 py-3 text-sm leading-relaxed text-white shadow-inner font-minecraft'>
-			{lines.length > 0 ? (
-				lines.map((line, index) => (
-					<div key={`${index}-${line}`} className='min-h-5'>
-						{line.length > 0 ? line : '\u00a0'}
-					</div>
-				))
-			) : (
-				<div className='text-white/50'>Your MOTD preview will appear here.</div>
-			)}
-		</div>
-	);
-};
-
 const propertyLabel = (property: ManagedConfigPropertyDefinition) => (
 	<span className='flex items-center gap-2'>
 		{/* <Star className='size-4 shrink-0 fill-warning text-warning' /> */}
@@ -1119,7 +1104,6 @@ const PropertyField: React.FC<{
 						disabled={disabled}
 						spellCheck={false}
 					/>
-					{property.key === 'motd' && <MotdPreview value={value} />}
 				</>
 			) : (
 				<Input
@@ -1305,6 +1289,14 @@ const ServerPropertiesFileEditor: React.FC<ServerConfigFileEditorProps> = ({
 			});
 
 			const parsedValues = parsePropertiesMap(result.content);
+			for (const property of definition.featuredProperties) {
+				if (property.editor === 'motd') {
+					parsedValues.set(
+						property.key,
+						getEditableMotdValue(parsedValues.get(property.key) ?? '', property.motdFormat ?? 'legacy'),
+					);
+				}
+			}
 			const nextValues = Object.fromEntries(parsedValues.entries());
 			setSourceValues(parsedValues);
 			setValues(nextValues);
@@ -1342,6 +1334,14 @@ const ServerPropertiesFileEditor: React.FC<ServerConfigFileEditorProps> = ({
 			}
 
 			for (const property of definition.featuredProperties) {
+				if (property.editor === 'motd') {
+					nextValues.set(
+						property.key,
+						getStoredMotdValue(values[property.key] ?? '', property.motdFormat ?? 'legacy'),
+					);
+					continue;
+				}
+
 				const currentValue = values[property.key]?.trim() ?? '';
 
 				if (property.type === 'number') {
@@ -1382,6 +1382,14 @@ const ServerPropertiesFileEditor: React.FC<ServerConfigFileEditorProps> = ({
 			});
 
 			const parsedValues = parsePropertiesMap(result.content);
+			for (const property of definition.featuredProperties) {
+				if (property.editor === 'motd') {
+					parsedValues.set(
+						property.key,
+						getEditableMotdValue(parsedValues.get(property.key) ?? '', property.motdFormat ?? 'legacy'),
+					);
+				}
+			}
 			const nextFeaturedValues = Object.fromEntries(parsedValues.entries());
 			setSourceValues(parsedValues);
 			setValues(nextFeaturedValues);
@@ -1417,18 +1425,34 @@ const ServerPropertiesFileEditor: React.FC<ServerConfigFileEditorProps> = ({
 			{renderHeader(definition, isDirty, handleReload, isLocked)}
 			{renderNetworkingDisclaimer(user, definition)}
 			{renderAdvancedModeDisclaimer(user)}
-			{definition.featuredProperties.map((property) => (
-				<PropertyField
-					key={property.key}
-					property={property}
-					value={values[property.key] ?? ''}
-					onChange={(nextValue) => {
-						setValues((prev) => ({ ...prev, [property.key]: nextValue }));
-						setError(null);
-					}}
-					disabled={isLocked}
-				/>
-			))}
+			{definition.featuredProperties.map((property) =>
+				property.editor === 'motd' ? (
+					<MotdEditor
+						key={property.key}
+						label={property.label}
+						description={property.description}
+						value={values[property.key] ?? ''}
+						onChange={(nextValue) => {
+							setValues((prev) => ({ ...prev, [property.key]: nextValue }));
+							setError(null);
+						}}
+						format={property.motdFormat ?? 'legacy'}
+						advancedMode={user.advanced_mode}
+						disabled={isLocked}
+					/>
+				) : (
+					<PropertyField
+						key={property.key}
+						property={property}
+						value={values[property.key] ?? ''}
+						onChange={(nextValue) => {
+							setValues((prev) => ({ ...prev, [property.key]: nextValue }));
+							setError(null);
+						}}
+						disabled={isLocked}
+					/>
+				),
+			)}
 			{user.advanced_mode && advancedPropertyKeys.length > 0 && (
 				<section className='space-y-4'>
 					<hr className='w-full border-b-2 my-10' />
@@ -1610,6 +1634,14 @@ const VelocityTomlEditor: React.FC<ServerConfigFileEditorProps> = ({
 			const nextServers = isRecord(nextRoot.servers) ? { ...nextRoot.servers } : {};
 
 			for (const property of definition.featuredProperties) {
+				if (property.editor === 'motd') {
+					nextRoot[property.key] = getStoredMotdValue(
+						values[property.key] ?? '',
+						property.motdFormat ?? 'minimessage',
+					);
+					continue;
+				}
+
 				const currentValue = values[property.key]?.trim() ?? '';
 
 				if (property.type === 'number') {
@@ -1672,6 +1704,14 @@ const VelocityTomlEditor: React.FC<ServerConfigFileEditorProps> = ({
 					nextValues[property.key] = JSON.stringify(serverEntries, null, 2);
 					continue;
 				}
+				if (property.editor === 'motd') {
+					nextValues[property.key] = getEditableMotdValue(
+						String(parsedRoot[property.key] ?? ''),
+						property.motdFormat ?? 'minimessage',
+					);
+					continue;
+				}
+
 				if (property.key === 'try') {
 					nextValues[property.key] = Array.isArray(serversTable.try)
 						? serversTable.try.map((entry) => String(entry)).join('\n')
@@ -1717,18 +1757,34 @@ const VelocityTomlEditor: React.FC<ServerConfigFileEditorProps> = ({
 			{renderHeader(definition, isDirty, handleReload, isLocked)}
 			{renderNetworkingDisclaimer(user, definition)}
 			{renderAdvancedModeDisclaimer(user)}
-			{definition.featuredProperties.map((property) => (
-				<PropertyField
-					key={property.key}
-					property={property}
-					value={values[property.key] ?? ''}
-					onChange={(nextValue) => {
-						setValues((prev) => ({ ...prev, [property.key]: nextValue }));
-						setError(null);
-					}}
-					disabled={isLocked}
-				/>
-			))}
+			{definition.featuredProperties.map((property) =>
+				property.editor === 'motd' ? (
+					<MotdEditor
+						key={property.key}
+						label={property.label}
+						description={property.description}
+						value={values[property.key] ?? ''}
+						onChange={(nextValue) => {
+							setValues((prev) => ({ ...prev, [property.key]: nextValue }));
+							setError(null);
+						}}
+						format={property.motdFormat ?? 'minimessage'}
+						advancedMode={user.advanced_mode}
+						disabled={isLocked}
+					/>
+				) : (
+					<PropertyField
+						key={property.key}
+						property={property}
+						value={values[property.key] ?? ''}
+						onChange={(nextValue) => {
+							setValues((prev) => ({ ...prev, [property.key]: nextValue }));
+							setError(null);
+						}}
+						disabled={isLocked}
+					/>
+				),
+			)}
 			{user.advanced_mode && advancedTomlKeys.length > 0 && (
 				<section className='space-y-4'>
 					<hr className='w-full border-b-2 my-10' />

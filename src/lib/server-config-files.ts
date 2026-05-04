@@ -2,6 +2,10 @@ import type { ProviderKind } from '@/lib/mserve-schema';
 
 export type ManagedConfigFileFormat = 'json' | 'properties' | 'yaml' | 'toml';
 
+export type ManagedMotdFormat = 'legacy' | 'minimessage';
+
+export type ManagedConfigPropertyEditor = 'motd';
+
 export type ManagedConfigPropertyType = 'boolean' | 'number' | 'string' | 'enum' | 'list' | 'map';
 
 export type ManagedConfigPropertyOption = {
@@ -15,6 +19,8 @@ export type ManagedConfigPropertyDefinition = {
 	description: string;
 	network?: boolean;
 	type: ManagedConfigPropertyType;
+	editor?: ManagedConfigPropertyEditor;
+	motdFormat?: ManagedMotdFormat;
 	options?: ManagedConfigPropertyOption[];
 	unitLabel?: string;
 	multiline?: boolean;
@@ -72,6 +78,8 @@ const SERVER_PROPERTIES_FEATURED_PROPERTIES: ManagedConfigPropertyDefinition[] =
 		label: 'MOTD',
 		description: 'Message shown in the multiplayer server list.',
 		type: 'string',
+		editor: 'motd',
+		motdFormat: 'legacy',
 		multiline: true,
 		defaultValue: 'A Minecraft Server',
 	},
@@ -165,6 +173,8 @@ const VELOCITY_FEATURED_PROPERTIES: ManagedConfigPropertyDefinition[] = [
 		label: 'MOTD',
 		description: 'Message shown in the proxy server list.',
 		type: 'string',
+		editor: 'motd',
+		motdFormat: 'minimessage',
 		multiline: true,
 		defaultValue: 'A Velocity Server',
 	},

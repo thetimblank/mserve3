@@ -65,8 +65,8 @@ Big
 ✅ rewrite & cleanup of backend code.
 ✅ splash screen
 ✅ inform user about proper java versions
-🟨 auto fetch provider server jars [BETA]
 ✅ inform user & read minecraft settings (properties, ops, whitelist, etc.)
+🟨 auto fetch provider server jars [BETA]
 🟨 better explaination of hosting setup and integrate with server specific ports/ip
 ⬛ add testing!!!
 ⬛ update server
