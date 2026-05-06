@@ -9,11 +9,14 @@ export type MotdPreviewEffect = {
 	colors: string[];
 	phase: number;
 	reverse: boolean;
+	tag?: string;
 };
 
 export type MotdPreviewStyle = {
 	color?: string;
+	colorToken?: string;
 	shadowColor?: string;
+	shadowToken?: string;
 	bold?: boolean;
 	italic?: boolean;
 	underlined?: boolean;
@@ -130,15 +133,15 @@ const MINI_MESSAGE_COLOR_ALIASES = new Set([
 	'grey',
 ]);
 
-const MOTD_TAG_RE = /<[^>]+>|[^<]+/g;
-
 const normalizeLineBreaks = (value: string) => value.replace(/\r\n?/g, '\n');
 
 const cloneStyle = (style: MotdPreviewStyle): MotdPreviewStyle => ({ ...style });
 
 const baseStyle = (): MotdPreviewStyle => ({
 	color: undefined,
+	colorToken: undefined,
 	shadowColor: undefined,
+	shadowToken: undefined,
 	bold: false,
 	italic: false,
 	underlined: false,
@@ -288,6 +291,8 @@ const parseLegacyPreviewLine = (line: string): MotdPreviewLine => {
 };
 
 const parseMiniMessageEffect = (tagName: string, args: string[]): MotdPreviewEffect | null => {
+	const tag = args.length > 0 ? `${tagName}:${args.join(':')}` : tagName;
+
 	if (tagName === 'rainbow' || tagName === 'pride') {
 		const first = args[0] ?? '';
 		const reverse = first.includes('!');
@@ -297,6 +302,7 @@ const parseMiniMessageEffect = (tagName: string, args: string[]): MotdPreviewEff
 			colors: [],
 			phase: Number.isFinite(phase) ? phase : 0,
 			reverse,
+			tag,
 		};
 	}
 
@@ -313,6 +319,7 @@ const parseMiniMessageEffect = (tagName: string, args: string[]): MotdPreviewEff
 			colors: colors.length > 0 ? colors : ['#ffffff'],
 			phase: Number.isFinite(phase) ? phase : 0,
 			reverse: false,
+			tag,
 		};
 	}
 
@@ -336,22 +343,22 @@ const parseMiniMessageOpeningTag = (
 
 	if (name === 'color' || name === 'colour' || name === 'c') {
 		const color = normalizeColorToken(args[0]);
-		return color ? { kind: 'color', style: { color } } : null;
+		return color ? { kind: 'color', style: { color, colorToken: args[0] ?? color } } : null;
 	}
 
 	if (name.startsWith('#')) {
 		const color = normalizeColorToken(name);
-		return color ? { kind: 'color', style: { color } } : null;
+		return color ? { kind: 'color', style: { color, colorToken: name } } : null;
 	}
 
 	if (MINI_MESSAGE_COLOR_ALIASES.has(name)) {
 		const color = normalizeColorToken(name);
-		return color ? { kind: 'color', style: { color } } : null;
+		return color ? { kind: 'color', style: { color, colorToken: name } } : null;
 	}
 
 	if (name === 'shadow') {
 		const color = resolveShadowColor(args[0], args[1] ? Number.parseFloat(args[1]) : 0.25);
-		return color ? { kind: 'shadow', style: { shadowColor: color } } : null;
+		return color ? { kind: 'shadow', style: { shadowColor: color, shadowToken: args[0] } } : null;
 	}
 
 	if (name === '!shadow') {
@@ -447,29 +454,52 @@ const parseMiniMessagePreviewLine = (line: string): MotdPreviewLine => {
 		buffer = '';
 	};
 
-	const tokens = line.match(MOTD_TAG_RE) ?? [];
-	for (const token of tokens) {
-		if (token.startsWith('<') && token.endsWith('>')) {
-			const rawTag = token.slice(1, -1).trim();
+	for (let index = 0; index < line.length; index += 1) {
+		const char = line[index];
+
+		if (char === '\\' && index + 1 < line.length) {
+			const nextChar = line[index + 1];
+			if (nextChar === '<' || nextChar === '\\') {
+				buffer += nextChar;
+				index += 1;
+				continue;
+			}
+		}
+
+		if (char === '<') {
+			const closeIndex = line.indexOf('>', index + 1);
+			if (closeIndex === -1) {
+				buffer += char;
+				continue;
+			}
+
+			const rawToken = line.slice(index, closeIndex + 1);
+			const rawTag = rawToken.slice(1, -1).trim();
 			const lower = rawTag.toLowerCase();
 
-			if (!lower) continue;
+			if (!lower) {
+				index = closeIndex;
+				continue;
+			}
 
 			if (lower === 'reset') {
 				flush();
 				stack.splice(1);
 				stack[0] = { kind: 'base', style: baseStyle() };
+				index = closeIndex;
 				continue;
 			}
 
 			if (lower === 'newline' || lower === 'br') {
 				buffer += '\n';
+				index = closeIndex;
 				continue;
 			}
 
 			if (lower.startsWith('/')) {
 				flush();
 				closeMiniMessageFrame(stack, lower.slice(1).split(':')[0].trim());
+				index = closeIndex;
 				continue;
 			}
 
@@ -488,13 +518,15 @@ const parseMiniMessagePreviewLine = (line: string): MotdPreviewLine => {
 						style: { ...stack[stack.length - 1].style, ...parsed.style },
 					});
 				}
+				index = closeIndex;
 				continue;
 			}
 
+			index = closeIndex;
 			continue;
 		}
 
-		buffer += token;
+		buffer += char;
 	}
 
 	flush();

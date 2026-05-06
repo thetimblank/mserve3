@@ -174,10 +174,10 @@ const ServerCard: React.FC<Props> = ({ server, delay }) => {
 
 	return (
 		<m.div
-			initial={{ y: 50, opacity: 0 }}
-			whileInView={{ y: 0, opacity: 1 }}
-			transition={{ type: 'spring', duration: 0.5, bounce: 0, delay: delay }}>
-			<Card>
+			initial={{ scale: 0.9, opacity: 0 }}
+			whileInView={{ scale: 1, opacity: 1 }}
+			transition={{ type: 'spring', duration: 0.3, bounce: 0, delay: delay }}>
+			<Card className='overflow-hidden'>
 				<CardHeader className='border-b-2 border-b-border'>
 					<CardTitle className='text-3xl'>{server.name}</CardTitle>
 					<CardDescription className='flex gap-6'>

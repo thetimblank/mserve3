@@ -64,7 +64,7 @@ type SectionConfig = {
 
 const CORE_SETTINGS_SECTION: SectionConfig = {
 	id: 'core-settings',
-	title: 'Core Settings',
+	title: 'General',
 	description: 'Sync mserve.json and edit the main server settings.',
 	keywords: ['sync', 'mserve.json', 'properties', 'ram', 'storage', 'java', 'provider', 'telemetry'],
 	render: (props) => <GeneralSettingsSection {...props} />,

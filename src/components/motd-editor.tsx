@@ -1,23 +1,38 @@
 import * as React from 'react';
-import { ChevronLeft, ChevronRight, Palette, Paintbrush, Sparkles, Type } from 'lucide-react';
+import {
+	AlignCenter,
+	AlignLeft,
+	AlignRight,
+	Bold,
+	Italic,
+	Palette,
+	Paintbrush,
+	Sparkles,
+	Strikethrough,
+	Type,
+	Underline,
+} from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { ButtonGroup, ButtonGroupSeparator } from '@/components/ui/button-group';
+import { ButtonGroup } from '@/components/ui/button-group';
 import { Textarea } from '@/components/ui/textarea';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import {
 	applyMotdAlignment,
-	getMotdVisibleLineLengths,
 	MOTD_COLOR_OPTIONS,
 	MOTD_DECORATION_OPTIONS,
+	MOTD_MAX_LINES,
 	MOTD_VISUAL_LINE_WIDTH,
 	parseMotdPreviewLines,
 	type MotdAlignment,
+	type MotdDecorationKey,
 	type MotdFormat,
 	type MotdPreviewEffect,
-	type MotdPreviewLine,
 	type MotdPreviewRun,
+	type MotdPreviewStyle,
 } from '@/lib/motd-format';
+import { Container } from './ui/container';
 
 type MotdEditorProps = {
 	value: string;
@@ -30,20 +45,79 @@ type MotdEditorProps = {
 	className?: string;
 };
 
-const OBFUSCATED_POOL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()-_=+[]{};:,.?/';
+type MotdEditorSelection = {
+	startLine: number;
+	startOffset: number;
+	endLine: number;
+	endOffset: number;
+};
 
-const toPreviewStyle = (run: MotdPreviewRun): React.CSSProperties => {
-	const decorationLines = [run.style.underlined ? 'underline' : null, run.style.strikethrough ? 'line-through' : null]
+type MotdRichLine = MotdPreviewRun[];
+
+const SECTION_SIGN = '\u00a7';
+const MINI_DECORATION_TAGS: Record<MotdDecorationKey, string> = {
+	bold: 'bold',
+	italic: 'italic',
+	underlined: 'underlined',
+	strikethrough: 'strikethrough',
+	obfuscated: 'obfuscated',
+};
+
+const EMPTY_STYLE: MotdPreviewStyle = {
+	color: undefined,
+	colorToken: undefined,
+	shadowColor: undefined,
+	shadowToken: undefined,
+	bold: false,
+	italic: false,
+	underlined: false,
+	strikethrough: false,
+	obfuscated: false,
+};
+
+const NORMALIZED_DECORATION_KEYS: MotdDecorationKey[] = [
+	'bold',
+	'italic',
+	'underlined',
+	'strikethrough',
+	'obfuscated',
+];
+
+const normalizeStyle = (style?: MotdPreviewStyle): MotdPreviewStyle => ({
+	...EMPTY_STYLE,
+	...style,
+	bold: Boolean(style?.bold),
+	italic: Boolean(style?.italic),
+	underlined: Boolean(style?.underlined),
+	strikethrough: Boolean(style?.strikethrough),
+	obfuscated: Boolean(style?.obfuscated),
+});
+
+const cloneRun = (run: MotdPreviewRun): MotdPreviewRun => ({
+	text: run.text,
+	style: normalizeStyle(run.style),
+	effect: run.effect ? { ...run.effect } : undefined,
+});
+
+const getDecorationLine = (style: MotdPreviewStyle) =>
+	[style.underlined ? 'underline' : null, style.strikethrough ? 'line-through' : null]
 		.filter(Boolean)
 		.join(' ');
 
+const toEditorCss = (run: MotdPreviewRun): React.CSSProperties => {
+	const style = normalizeStyle(run.style);
+	const decorationLine = getDecorationLine(style);
+
 	return {
-		color: run.style.color,
-		fontWeight: run.style.bold ? 700 : 400,
-		fontStyle: run.style.italic ? 'italic' : 'normal',
-		textDecorationLine: decorationLines || undefined,
-		textShadow: run.style.shadowColor ? `0 0 0.15em ${run.style.shadowColor}, 0.05em 0.05em 0 ${run.style.shadowColor}` : undefined,
-		letterSpacing: run.style.obfuscated ? '0.08em' : undefined,
+		color: style.color,
+		fontWeight: style.bold ? 700 : 400,
+		fontStyle: style.italic ? 'italic' : 'normal',
+		textDecorationLine: decorationLine || undefined,
+		textShadow: style.shadowColor
+			? `0 0 0.15em ${style.shadowColor}, 0.05em 0.05em 0 ${style.shadowColor}`
+			: undefined,
+		letterSpacing: style.obfuscated ? '0.08em' : undefined,
+		whiteSpace: 'pre-wrap',
 	};
 };
 
@@ -60,7 +134,11 @@ const hexToRgb = (value: string) => {
 
 const rgbToCss = (color: { r: number; g: number; b: number }) => `rgb(${color.r} ${color.g} ${color.b})`;
 
-const mixRgb = (left: { r: number; g: number; b: number }, right: { r: number; g: number; b: number }, t: number) => ({
+const mixRgb = (
+	left: { r: number; g: number; b: number },
+	right: { r: number; g: number; b: number },
+	t: number,
+) => ({
 	r: Math.round(left.r + (right.r - left.r) * t),
 	g: Math.round(left.g + (right.g - left.g) * t),
 	b: Math.round(left.b + (right.b - left.b) * t),
@@ -68,7 +146,7 @@ const mixRgb = (left: { r: number; g: number; b: number }, right: { r: number; g
 
 const resolveEffectColor = (effect: MotdPreviewEffect, index: number, total: number) => {
 	const progress = total <= 1 ? 0 : index / (total - 1);
-	const shiftedProgress = ((progress + effect.phase) % 1 + 1) % 1;
+	const shiftedProgress = (((progress + effect.phase) % 1) + 1) % 1;
 
 	if (effect.type === 'rainbow') {
 		const hue = Math.round(shiftedProgress * 360);
@@ -89,91 +167,579 @@ const resolveEffectColor = (effect: MotdPreviewEffect, index: number, total: num
 	return rgbToCss(mixRgb(left, right, effect.reverse ? 1 - localProgress : localProgress));
 };
 
-const ObfuscatedText: React.FC<{ value: string; style: React.CSSProperties }> = ({ value, style }) => {
-	const [tick, setTick] = React.useState(0);
+const stylePayload = (run: MotdPreviewRun) =>
+	JSON.stringify({
+		style: normalizeStyle(run.style),
+		effect: run.effect,
+	});
 
-	React.useEffect(() => {
-		const intervalId = window.setInterval(() => {
-			setTick((previous) => previous + 1);
-		}, 120);
-
-		return () => window.clearInterval(intervalId);
-	}, []);
-
-	const displayValue = React.useMemo(
-		() =>
-			value
-				.split('')
-				.map((char, index) => {
-					if (char === ' ') return ' ';
-					const poolIndex = (index + tick) % OBFUSCATED_POOL.length;
-					return OBFUSCATED_POOL[poolIndex];
-				})
-				.join(''),
-		[value, tick],
-	);
-
-	return <span style={style}>{displayValue}</span>;
-};
-
-const PreviewRun: React.FC<{ run: MotdPreviewRun }> = ({ run }) => {
-	const style = toPreviewStyle(run);
-
-	if (run.effect) {
-		const characters = run.text.split('');
-		if (characters.length === 0) {
-			return null;
-		}
-
-		return (
-			<>
-				{characters.map((char, index) => (
-					<span
-						key={`${char}-${index}`}
-						style={{
-							...style,
-							color: resolveEffectColor(run.effect as MotdPreviewEffect, index, characters.length),
-							display: 'inline-block',
-						}}>
-						{char}
-					</span>
-				))}
-			</>
-		);
+const parseStylePayload = (value: string | null): MotdPreviewRun => {
+	if (!value) {
+		return { text: '', style: normalizeStyle() };
 	}
 
-	if (run.style.obfuscated) {
-		return <ObfuscatedText value={run.text} style={style} />;
-	}
+	try {
+		const parsed = JSON.parse(value) as {
+			style?: MotdPreviewStyle;
+			effect?: MotdPreviewEffect;
+		};
 
-	return <span style={style}>{run.text}</span>;
+		return {
+			text: '',
+			style: normalizeStyle(parsed.style),
+			effect: parsed.effect,
+		};
+	} catch {
+		return { text: '', style: normalizeStyle() };
+	}
 };
 
-const MotdPreview: React.FC<{ value: string; format: MotdFormat }> = ({ value, format }) => {
-	const lines = React.useMemo<MotdPreviewLine[]>(() => parseMotdPreviewLines(value, format), [format, value]);
+const areEffectsEqual = (left?: MotdPreviewEffect, right?: MotdPreviewEffect) =>
+	JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+
+const areStylesEqual = (left?: MotdPreviewStyle, right?: MotdPreviewStyle) => {
+	const normalizedLeft = normalizeStyle(left);
+	const normalizedRight = normalizeStyle(right);
 
 	return (
-		<div className='rounded-xl border-2 bg-neutral-950 p-4 shadow-inner shadow-black/30'>
-			<div className='mb-3 flex items-center justify-between gap-4 text-xs text-neutral-400'>
-				<span className='inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 font-medium text-neutral-200'>
-					<Palette className='size-3.5' />
-					Server list preview
-				</span>
-				<span>59 columns per line</span>
-			</div>
-			<div className='space-y-1 rounded-lg bg-black/20 px-4 py-3 font-minecraft text-sm leading-6 text-white'>
-				{lines.length > 0 ? (
-					lines.map((line, lineIndex) => (
-						<div key={`motd-preview-line-${lineIndex}`} className='min-h-6 whitespace-pre-wrap'>
-							{line.length > 0 ? line.map((run, runIndex) => <PreviewRun key={`${lineIndex}-${runIndex}`} run={run} />) : '\u00a0'}
-						</div>
-					))
-				) : (
-					<div className='text-white/50'>Your MOTD preview will appear here.</div>
-				)}
-			</div>
-		</div>
+		normalizedLeft.color === normalizedRight.color &&
+		normalizedLeft.colorToken === normalizedRight.colorToken &&
+		normalizedLeft.shadowColor === normalizedRight.shadowColor &&
+		normalizedLeft.shadowToken === normalizedRight.shadowToken &&
+		normalizedLeft.bold === normalizedRight.bold &&
+		normalizedLeft.italic === normalizedRight.italic &&
+		normalizedLeft.underlined === normalizedRight.underlined &&
+		normalizedLeft.strikethrough === normalizedRight.strikethrough &&
+		normalizedLeft.obfuscated === normalizedRight.obfuscated
 	);
+};
+
+const areRunsVisuallyEqual = (left: MotdPreviewRun, right: MotdPreviewRun) =>
+	areStylesEqual(left.style, right.style) && areEffectsEqual(left.effect, right.effect);
+
+const appendRun = (runs: MotdPreviewRun[], run: MotdPreviewRun) => {
+	const text = run.text.replace(/\u00a0/g, ' ').replace(/\r?\n/g, '');
+	if (!text) return;
+
+	const normalizedRun = {
+		text,
+		style: normalizeStyle(run.style),
+		effect: run.effect ? { ...run.effect } : undefined,
+	};
+	const previous = runs[runs.length - 1];
+
+	if (previous && areRunsVisuallyEqual(previous, normalizedRun)) {
+		previous.text += normalizedRun.text;
+		return;
+	}
+
+	runs.push(normalizedRun);
+};
+
+const mergeRuns = (runs: MotdPreviewRun[]) =>
+	runs.reduce<MotdPreviewRun[]>((nextRuns, run) => {
+		appendRun(nextRuns, run);
+		return nextRuns;
+	}, []);
+
+const getRunsLength = (runs: MotdPreviewRun[]) => runs.reduce((total, run) => total + run.text.length, 0);
+
+const clampRunsToWidth = (runs: MotdPreviewRun[]) => {
+	let remaining = MOTD_VISUAL_LINE_WIDTH;
+	const nextRuns: MotdPreviewRun[] = [];
+
+	for (const run of runs) {
+		if (remaining <= 0) break;
+
+		const text = run.text.slice(0, remaining);
+		appendRun(nextRuns, { ...cloneRun(run), text });
+		remaining -= text.length;
+	}
+
+	return nextRuns;
+};
+
+const getEditorLinesFromValue = (value: string, format: MotdFormat): MotdRichLine[] => {
+	const parsedLines = parseMotdPreviewLines(value, format).slice(0, MOTD_MAX_LINES);
+	const lines = Array.from({ length: MOTD_MAX_LINES }, (_, index) =>
+		clampRunsToWidth((parsedLines[index] ?? []).map(cloneRun)),
+	);
+
+	return lines;
+};
+
+const isBaseStyle = (style?: MotdPreviewStyle) => {
+	const normalized = normalizeStyle(style);
+	return (
+		!normalized.color &&
+		!normalized.shadowColor &&
+		!normalized.bold &&
+		!normalized.italic &&
+		!normalized.underlined &&
+		!normalized.strikethrough &&
+		!normalized.obfuscated
+	);
+};
+
+const getLegacyColorCode = (style: MotdPreviewStyle) =>
+	MOTD_COLOR_OPTIONS.find((option) => option.hex.toLowerCase() === style.color?.toLowerCase())?.legacyCode;
+
+const serializeLegacyRuns = (runs: MotdPreviewRun[]) => {
+	let output = '';
+	let previousStyle = normalizeStyle();
+
+	for (const run of mergeRuns(runs)) {
+		const style = normalizeStyle(run.style);
+
+		if (!areStylesEqual(style, previousStyle)) {
+			if (isBaseStyle(style)) {
+				output += `${SECTION_SIGN}r`;
+			} else {
+				if (!isBaseStyle(previousStyle)) {
+					output += `${SECTION_SIGN}r`;
+				}
+
+				const colorCode = getLegacyColorCode(style);
+				if (colorCode) {
+					output += `${SECTION_SIGN}${colorCode}`;
+				}
+
+				for (const option of MOTD_DECORATION_OPTIONS) {
+					if (style[option.key]) {
+						output += `${SECTION_SIGN}${option.legacyCode}`;
+					}
+				}
+			}
+		}
+
+		output += run.text;
+		previousStyle = style;
+	}
+
+	return output;
+};
+
+const escapeMiniMessageText = (value: string) => value.replace(/\\/g, '\\\\').replace(/</g, '\\<');
+
+const getMiniMessageColorTag = (style: MotdPreviewStyle) => {
+	const token = style.colorToken?.trim();
+	if (token) return token;
+
+	const matchingOption = MOTD_COLOR_OPTIONS.find(
+		(option) => option.hex.toLowerCase() === style.color?.toLowerCase(),
+	);
+	return matchingOption?.miniMessageTag ?? style.color;
+};
+
+const serializeMiniMessageRuns = (runs: MotdPreviewRun[]) =>
+	mergeRuns(runs)
+		.map((run) => {
+			const style = normalizeStyle(run.style);
+			const tags: string[] = [];
+
+			if (run.effect?.tag) {
+				tags.push(run.effect.tag);
+			}
+
+			const colorTag = getMiniMessageColorTag(style);
+			if (colorTag) {
+				tags.push(colorTag);
+			}
+
+			if (style.shadowToken) {
+				tags.push(`shadow:${style.shadowToken}`);
+			}
+
+			for (const key of NORMALIZED_DECORATION_KEYS) {
+				if (style[key]) {
+					tags.push(MINI_DECORATION_TAGS[key]);
+				}
+			}
+
+			const openingTags = tags.map((tag) => `<${tag}>`).join('');
+			return `${openingTags}${escapeMiniMessageText(run.text)}${tags.length > 0 ? '<reset>' : ''}`;
+		})
+		.join('');
+
+const serializeRuns = (runs: MotdPreviewRun[], format: MotdFormat) =>
+	format === 'legacy' ? serializeLegacyRuns(runs) : serializeMiniMessageRuns(runs);
+
+const serializeLines = (lines: MotdRichLine[], format: MotdFormat) => {
+	const clampedLines = Array.from({ length: MOTD_MAX_LINES }, (_, index) =>
+		clampRunsToWidth(lines[index] ?? []),
+	);
+	const serializedLines = clampedLines.map((line) => serializeRuns(line, format));
+
+	return getRunsLength(clampedLines[1]) > 0 ? serializedLines.join('\n') : serializedLines[0];
+};
+
+const readElementStyle = (element: Element, inheritedRun: MotdPreviewRun): MotdPreviewRun => {
+	const payload = parseStylePayload(element.getAttribute('data-motd-style'));
+	if (element.hasAttribute('data-motd-style')) {
+		return payload;
+	}
+
+	const nextRun = cloneRun(inheritedRun);
+	const tagName = element.tagName.toLowerCase();
+
+	if (tagName === 'b' || tagName === 'strong') {
+		nextRun.style.bold = true;
+	}
+
+	if (tagName === 'i' || tagName === 'em') {
+		nextRun.style.italic = true;
+	}
+
+	if (tagName === 'u') {
+		nextRun.style.underlined = true;
+	}
+
+	if (tagName === 's' || tagName === 'strike' || tagName === 'del') {
+		nextRun.style.strikethrough = true;
+	}
+
+	return nextRun;
+};
+
+const readLineRunsFromElement = (element: HTMLElement | null): MotdPreviewRun[] => {
+	if (!element) return [];
+
+	const runs: MotdPreviewRun[] = [];
+
+	const walk = (node: Node, inheritedRun: MotdPreviewRun) => {
+		if (node.nodeType === Node.TEXT_NODE) {
+			appendRun(runs, {
+				...cloneRun(inheritedRun),
+				text: node.textContent ?? '',
+			});
+			return;
+		}
+
+		if (node.nodeType !== Node.ELEMENT_NODE) return;
+
+		const elementNode = node as Element;
+		if (elementNode.tagName.toLowerCase() === 'br') return;
+
+		const nextRun = readElementStyle(elementNode, inheritedRun);
+		elementNode.childNodes.forEach((childNode) => walk(childNode, nextRun));
+	};
+
+	element.childNodes.forEach((childNode) => walk(childNode, { text: '', style: normalizeStyle() }));
+	return clampRunsToWidth(runs);
+};
+
+const getLineElementForNode = (node: Node | null): HTMLElement | null => {
+	if (!node) return null;
+
+	const element = node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
+	return element?.closest<HTMLElement>('[data-motd-line]') ?? null;
+};
+
+const getLineIndex = (element: HTMLElement | null) => {
+	const value = element?.dataset.motdLine;
+	if (value === undefined) return -1;
+
+	const index = Number.parseInt(value, 10);
+	return Number.isFinite(index) ? index : -1;
+};
+
+const getOffsetWithinLine = (lineElement: HTMLElement, node: Node, offset: number) => {
+	const range = document.createRange();
+	range.selectNodeContents(lineElement);
+
+	try {
+		range.setEnd(node, offset);
+		return range.toString().length;
+	} catch {
+		return getRunsLength(readLineRunsFromElement(lineElement));
+	} finally {
+		range.detach();
+	}
+};
+
+const normalizeSelection = (selection: MotdEditorSelection): MotdEditorSelection => {
+	const startsAfterEnd =
+		selection.startLine > selection.endLine ||
+		(selection.startLine === selection.endLine && selection.startOffset > selection.endOffset);
+
+	if (!startsAfterEnd) return selection;
+
+	return {
+		startLine: selection.endLine,
+		startOffset: selection.endOffset,
+		endLine: selection.startLine,
+		endOffset: selection.startOffset,
+	};
+};
+
+const isSelectionCollapsed = (selection: MotdEditorSelection) =>
+	selection.startLine === selection.endLine && selection.startOffset === selection.endOffset;
+
+const readEditorSelection = (): MotdEditorSelection | null => {
+	const selection = document.getSelection();
+	if (!selection || selection.rangeCount === 0) return null;
+
+	const anchorLine = getLineElementForNode(selection.anchorNode);
+	const focusLine = getLineElementForNode(selection.focusNode);
+	const anchorLineIndex = getLineIndex(anchorLine);
+	const focusLineIndex = getLineIndex(focusLine);
+
+	if (!anchorLine || !focusLine || anchorLineIndex < 0 || focusLineIndex < 0) {
+		return null;
+	}
+
+	return normalizeSelection({
+		startLine: anchorLineIndex,
+		startOffset: getOffsetWithinLine(anchorLine, selection.anchorNode as Node, selection.anchorOffset),
+		endLine: focusLineIndex,
+		endOffset: getOffsetWithinLine(focusLine, selection.focusNode as Node, selection.focusOffset),
+	});
+};
+
+const findTextPosition = (lineElement: HTMLElement, offset: number): { node: Node; offset: number } => {
+	const walker = document.createTreeWalker(lineElement, NodeFilter.SHOW_TEXT);
+	let remaining = Math.max(0, offset);
+	let lastTextNode: Text | null = null;
+
+	while (walker.nextNode()) {
+		const textNode = walker.currentNode as Text;
+		const length = textNode.textContent?.length ?? 0;
+		lastTextNode = textNode;
+
+		if (remaining <= length) {
+			return { node: textNode, offset: remaining };
+		}
+
+		remaining -= length;
+	}
+
+	if (lastTextNode) {
+		return { node: lastTextNode, offset: lastTextNode.textContent?.length ?? 0 };
+	}
+
+	return { node: lineElement, offset: 0 };
+};
+
+const sliceRuns = (runs: MotdPreviewRun[], startOffset: number, endOffset: number) => {
+	const slicedRuns: MotdPreviewRun[] = [];
+	let cursor = 0;
+
+	for (const run of runs) {
+		const runStart = cursor;
+		const runEnd = cursor + run.text.length;
+		cursor = runEnd;
+
+		if (runEnd <= startOffset || runStart >= endOffset) continue;
+
+		const textStart = Math.max(0, startOffset - runStart);
+		const textEnd = Math.min(run.text.length, endOffset - runStart);
+		appendRun(slicedRuns, {
+			...cloneRun(run),
+			text: run.text.slice(textStart, textEnd),
+		});
+	}
+
+	return slicedRuns;
+};
+
+const replaceRunsInRange = (
+	runs: MotdPreviewRun[],
+	startOffset: number,
+	endOffset: number,
+	insertedRuns: MotdPreviewRun[],
+) =>
+	mergeRuns([
+		...sliceRuns(runs, 0, startOffset),
+		...insertedRuns.map(cloneRun),
+		...sliceRuns(runs, endOffset, getRunsLength(runs)),
+	]);
+
+const clampSelectionToLines = (
+	selection: MotdEditorSelection,
+	lines: MotdRichLine[],
+): MotdEditorSelection => {
+	const startLine = Math.min(MOTD_MAX_LINES - 1, Math.max(0, selection.startLine));
+	const endLine = Math.min(MOTD_MAX_LINES - 1, Math.max(0, selection.endLine));
+
+	return {
+		startLine,
+		startOffset: Math.min(selection.startOffset, getRunsLength(lines[startLine] ?? [])),
+		endLine,
+		endOffset: Math.min(selection.endOffset, getRunsLength(lines[endLine] ?? [])),
+	};
+};
+
+const getSelectedRuns = (lines: MotdRichLine[], selection: MotdEditorSelection) => {
+	const normalizedSelection = normalizeSelection(selection);
+	const runs: MotdPreviewRun[] = [];
+
+	for (
+		let lineIndex = normalizedSelection.startLine;
+		lineIndex <= normalizedSelection.endLine;
+		lineIndex += 1
+	) {
+		const line = lines[lineIndex] ?? [];
+		const startOffset = lineIndex === normalizedSelection.startLine ? normalizedSelection.startOffset : 0;
+		const endOffset =
+			lineIndex === normalizedSelection.endLine ? normalizedSelection.endOffset : getRunsLength(line);
+		runs.push(...sliceRuns(line, startOffset, endOffset));
+	}
+
+	return runs;
+};
+
+const transformSelectedRuns = (
+	lines: MotdRichLine[],
+	selection: MotdEditorSelection,
+	transform: (run: MotdPreviewRun) => MotdPreviewRun,
+) => {
+	const nextLines = lines.map((line) => line.map(cloneRun));
+	const normalizedSelection = normalizeSelection(selection);
+
+	for (
+		let lineIndex = normalizedSelection.startLine;
+		lineIndex <= normalizedSelection.endLine;
+		lineIndex += 1
+	) {
+		const line = nextLines[lineIndex] ?? [];
+		const startOffset = lineIndex === normalizedSelection.startLine ? normalizedSelection.startOffset : 0;
+		const endOffset =
+			lineIndex === normalizedSelection.endLine ? normalizedSelection.endOffset : getRunsLength(line);
+
+		const selectedRuns = sliceRuns(line, startOffset, endOffset).map(transform);
+		nextLines[lineIndex] = replaceRunsInRange(line, startOffset, endOffset, selectedRuns);
+	}
+
+	return nextLines;
+};
+
+const clampRawLegacyLine = (line: string) => {
+	let output = '';
+	let visibleLength = 0;
+
+	for (let index = 0; index < line.length; index += 1) {
+		const char = line[index];
+
+		if (char === SECTION_SIGN && index + 1 < line.length) {
+			output += `${char}${line[index + 1]}`;
+			index += 1;
+			continue;
+		}
+
+		if (visibleLength >= MOTD_VISUAL_LINE_WIDTH) break;
+
+		output += char;
+		visibleLength += 1;
+	}
+
+	return output;
+};
+
+const clampRawMiniMessageLine = (line: string) => {
+	let output = '';
+	let visibleLength = 0;
+
+	for (let index = 0; index < line.length; index += 1) {
+		const char = line[index];
+
+		if (char === '\\' && index + 1 < line.length) {
+			if (visibleLength >= MOTD_VISUAL_LINE_WIDTH) break;
+
+			output += `${char}${line[index + 1]}`;
+			visibleLength += 1;
+			index += 1;
+			continue;
+		}
+
+		if (char === '<') {
+			const closeIndex = line.indexOf('>', index + 1);
+			if (closeIndex !== -1) {
+				output += line.slice(index, closeIndex + 1);
+				index = closeIndex;
+				continue;
+			}
+		}
+
+		if (visibleLength >= MOTD_VISUAL_LINE_WIDTH) break;
+
+		output += char;
+		visibleLength += 1;
+	}
+
+	return output;
+};
+
+const clampRawSourceValue = (value: string, format: MotdFormat) =>
+	value
+		.replace(/\r\n?/g, '\n')
+		.split('\n')
+		.slice(0, MOTD_MAX_LINES)
+		.map((line) => (format === 'legacy' ? clampRawLegacyLine(line) : clampRawMiniMessageLine(line)))
+		.join('\n');
+
+const createStyledInsertionRuns = (text: string, style: MotdPreviewStyle) =>
+	text.replace(/\r?\n/g, '')
+		? [
+				{
+					text: text.replace(/\r?\n/g, ''),
+					style: normalizeStyle(style),
+				},
+			]
+		: [];
+
+const applyEditorCss = (element: HTMLElement, run: MotdPreviewRun, colorOverride?: string) => {
+	const style = toEditorCss(run);
+	element.style.color = colorOverride ?? (typeof style.color === 'string' ? style.color : '');
+	element.style.fontWeight = style.fontWeight ? String(style.fontWeight) : '';
+	element.style.fontStyle = typeof style.fontStyle === 'string' ? style.fontStyle : '';
+	element.style.textDecorationLine =
+		typeof style.textDecorationLine === 'string' ? style.textDecorationLine : '';
+	element.style.textShadow = typeof style.textShadow === 'string' ? style.textShadow : '';
+	element.style.letterSpacing = typeof style.letterSpacing === 'string' ? style.letterSpacing : '';
+	element.style.whiteSpace = 'pre-wrap';
+};
+
+const createRunSpan = (run: MotdPreviewRun, text: string, colorOverride?: string) => {
+	const span = document.createElement('span');
+	span.dataset.motdStyle = stylePayload(run);
+	applyEditorCss(span, run, colorOverride);
+	span.textContent = text;
+	return span;
+};
+
+const renderRunsIntoElement = (element: HTMLElement | null, runs: MotdPreviewRun[]) => {
+	if (!element) return;
+
+	const fragment = document.createDocumentFragment();
+
+	for (const run of runs) {
+		if (run.effect) {
+			const characters = run.text.split('');
+
+			characters.forEach((char, charIndex) => {
+				const span = createRunSpan(
+					run,
+					char,
+					resolveEffectColor(run.effect as MotdPreviewEffect, charIndex, characters.length),
+				);
+				span.style.display = 'inline-block';
+				fragment.append(span);
+			});
+			continue;
+		}
+
+		fragment.append(createRunSpan(run, run.text));
+	}
+
+	element.replaceChildren(fragment);
+};
+
+const decorationIcon = (key: MotdDecorationKey) => {
+	if (key === 'bold') return <Bold className='size-3.5' />;
+	if (key === 'italic') return <Italic className='size-3.5' />;
+	if (key === 'underlined') return <Underline className='size-3.5' />;
+	if (key === 'strikethrough') return <Strikethrough className='size-3.5' />;
+	return <Sparkles className='size-3.5' />;
 };
 
 const MotdEditor: React.FC<MotdEditorProps> = ({
@@ -186,9 +752,12 @@ const MotdEditor: React.FC<MotdEditorProps> = ({
 	description,
 	className,
 }) => {
-	const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
-	const pendingSelectionRef = React.useRef<{ start: number; end: number } | null>(null);
+	const lineRefs = React.useRef<Array<HTMLDivElement | null>>([]);
+	const selectionRef = React.useRef<MotdEditorSelection | null>(null);
+	const pendingSelectionRef = React.useRef<MotdEditorSelection | null>(null);
+	const [activeLine, setActiveLine] = React.useState(0);
 	const [sourceMode, setSourceMode] = React.useState(false);
+	const [pendingStyle, setPendingStyle] = React.useState<MotdPreviewStyle>(() => normalizeStyle());
 
 	React.useEffect(() => {
 		if (!advancedMode) {
@@ -196,153 +765,392 @@ const MotdEditor: React.FC<MotdEditorProps> = ({
 		}
 	}, [advancedMode]);
 
-	React.useEffect(() => {
-		const pendingSelection = pendingSelectionRef.current;
-		const textarea = textareaRef.current;
-		if (!pendingSelection || !textarea) return;
-
-		textarea.focus();
-		textarea.setSelectionRange(pendingSelection.start, pendingSelection.end);
-		pendingSelectionRef.current = null;
-	}, [value]);
-
 	const isLocked = disabled;
-	const visibleLengths = React.useMemo(() => getMotdVisibleLineLengths(value, format), [format, value]);
+	const richLines = React.useMemo(() => getEditorLinesFromValue(value, format), [format, value]);
+	const visibleLengths = React.useMemo(() => richLines.map(getRunsLength), [richLines]);
 	const formatLabel = format === 'legacy' ? 'Legacy section codes' : 'MiniMessage';
 
-	const commitValue = React.useCallback(
-		(nextValue: string, selection?: { start: number; end: number }) => {
-			const normalized = nextValue.replace(/\r\n?/g, '\n').split('\n').slice(0, 2).join('\n');
-			pendingSelectionRef.current = selection ?? null;
-			onChange(normalized);
-		},
-		[onChange],
+	const readLinesFromDom = React.useCallback(
+		() =>
+			Array.from({ length: MOTD_MAX_LINES }, (_, index) =>
+				readLineRunsFromElement(lineRefs.current[index]),
+			),
+		[],
 	);
 
-	const updateValueAtSelection = React.useCallback(
-		(transform: (context: { before: string; selected: string; after: string }) => { value: string; selection?: { start: number; end: number } }) => {
-			if (isLocked) return;
-			const textarea = textareaRef.current;
-			if (!textarea) return;
+	const captureSelection = React.useCallback(() => {
+		const selection = readEditorSelection();
+		if (selection) {
+			selectionRef.current = selection;
+			setActiveLine(selection.endLine);
+		}
 
-			const start = textarea.selectionStart ?? value.length;
-			const end = textarea.selectionEnd ?? start;
-			const before = value.slice(0, start);
-			const selected = value.slice(start, end);
-			const after = value.slice(end);
-			const next = transform({ before, selected, after });
-			commitValue(next.value, next.selection);
+		return selection;
+	}, []);
+
+	const restoreSelection = React.useCallback((selection: MotdEditorSelection) => {
+		const normalizedSelection = normalizeSelection(selection);
+		const startLine = lineRefs.current[normalizedSelection.startLine];
+		const endLine = lineRefs.current[normalizedSelection.endLine];
+		if (!startLine || !endLine) return;
+
+		const startPosition = findTextPosition(startLine, normalizedSelection.startOffset);
+		const endPosition = findTextPosition(endLine, normalizedSelection.endOffset);
+		const range = document.createRange();
+		range.setStart(startPosition.node, startPosition.offset);
+		range.setEnd(endPosition.node, endPosition.offset);
+
+		const browserSelection = document.getSelection();
+		browserSelection?.removeAllRanges();
+		browserSelection?.addRange(range);
+		endLine.focus();
+		selectionRef.current = normalizedSelection;
+		setActiveLine(normalizedSelection.endLine);
+	}, []);
+
+	React.useLayoutEffect(() => {
+		if (sourceMode) return;
+
+		richLines.forEach((line, lineIndex) => {
+			renderRunsIntoElement(lineRefs.current[lineIndex], line);
+		});
+
+		const selection = pendingSelectionRef.current;
+		if (!selection) return;
+
+		pendingSelectionRef.current = null;
+		restoreSelection(clampSelectionToLines(selection, richLines));
+	}, [restoreSelection, richLines, sourceMode]);
+
+	React.useEffect(() => {
+		if (sourceMode) return;
+
+		const handleSelectionChange = () => {
+			captureSelection();
+		};
+
+		document.addEventListener('selectionchange', handleSelectionChange);
+		return () => document.removeEventListener('selectionchange', handleSelectionChange);
+	}, [captureSelection, sourceMode]);
+
+	const commitLines = React.useCallback(
+		(lines: MotdRichLine[], selection?: MotdEditorSelection | null) => {
+			const clampedLines = lines.map(clampRunsToWidth);
+			const clampedSelection = selection ? clampSelectionToLines(selection, clampedLines) : null;
+			clampedLines.forEach((line, lineIndex) => {
+				renderRunsIntoElement(lineRefs.current[lineIndex], line);
+			});
+			if (clampedSelection) {
+				restoreSelection(clampedSelection);
+			}
+			pendingSelectionRef.current = clampedSelection;
+			onChange(serializeLines(clampedLines, format));
 		},
-		[commitValue, isLocked, value],
+		[format, onChange, restoreSelection],
+	);
+
+	const focusLine = React.useCallback(
+		(lineIndex: number, offset: number) => {
+			const lineLength = getRunsLength(readLineRunsFromElement(lineRefs.current[lineIndex]));
+			const clampedOffset = Math.min(offset, lineLength);
+			const selection = {
+				startLine: lineIndex,
+				startOffset: clampedOffset,
+				endLine: lineIndex,
+				endOffset: clampedOffset,
+			};
+
+			window.requestAnimationFrame(() => restoreSelection(selection));
+		},
+		[restoreSelection],
+	);
+
+	const handleRichInput = React.useCallback(() => {
+		const selection = captureSelection();
+		const nextLines = readLinesFromDom();
+		commitLines(nextLines, selection);
+	}, [captureSelection, commitLines, readLinesFromDom]);
+
+	const insertTextAtSelection = React.useCallback(
+		(text: string, style: MotdPreviewStyle = normalizeStyle()) => {
+			if (isLocked || !text) return;
+
+			const selection = captureSelection() ??
+				selectionRef.current ?? {
+					startLine: activeLine,
+					startOffset: getRunsLength(readLineRunsFromElement(lineRefs.current[activeLine])),
+					endLine: activeLine,
+					endOffset: getRunsLength(readLineRunsFromElement(lineRefs.current[activeLine])),
+				};
+			const normalizedSelection = normalizeSelection(selection);
+			const lines = readLinesFromDom();
+			const textLines = text.replace(/\r\n?/g, '\n').split('\n');
+			const firstText = textLines[0] ?? '';
+			const secondText = textLines.slice(1).join(' ');
+			const insertionStyle = normalizeStyle(style);
+
+			if (!secondText || normalizedSelection.startLine === MOTD_MAX_LINES - 1) {
+				const line = lines[normalizedSelection.startLine] ?? [];
+				const available =
+					MOTD_VISUAL_LINE_WIDTH -
+					(getRunsLength(line) - (normalizedSelection.endOffset - normalizedSelection.startOffset));
+				const insertedText = firstText.slice(0, Math.max(0, available));
+				const insertedRuns = createStyledInsertionRuns(insertedText, insertionStyle);
+				const nextLines = lines.map((entry) => entry.map(cloneRun));
+				nextLines[normalizedSelection.startLine] = replaceRunsInRange(
+					line,
+					normalizedSelection.startOffset,
+					normalizedSelection.endOffset,
+					insertedRuns,
+				);
+				const nextOffset = normalizedSelection.startOffset + insertedText.length;
+				commitLines(nextLines, {
+					startLine: normalizedSelection.startLine,
+					startOffset: nextOffset,
+					endLine: normalizedSelection.startLine,
+					endOffset: nextOffset,
+				});
+				return;
+			}
+
+			const firstLine = lines[normalizedSelection.startLine] ?? [];
+			const secondLine = lines[normalizedSelection.startLine + 1] ?? [];
+			const firstInserted = firstText.slice(
+				0,
+				Math.max(
+					0,
+					MOTD_VISUAL_LINE_WIDTH -
+						(getRunsLength(firstLine) -
+							(normalizedSelection.endLine === normalizedSelection.startLine
+								? normalizedSelection.endOffset - normalizedSelection.startOffset
+								: getRunsLength(firstLine) - normalizedSelection.startOffset)),
+				),
+			);
+			const firstLineNext = replaceRunsInRange(
+				firstLine,
+				normalizedSelection.startOffset,
+				normalizedSelection.endLine === normalizedSelection.startLine
+					? normalizedSelection.endOffset
+					: getRunsLength(firstLine),
+				createStyledInsertionRuns(firstInserted, insertionStyle),
+			);
+			const secondInserted = secondText.slice(0, MOTD_VISUAL_LINE_WIDTH);
+			const secondLineRemainder =
+				normalizedSelection.endLine > normalizedSelection.startLine
+					? sliceRuns(secondLine, normalizedSelection.endOffset, getRunsLength(secondLine))
+					: secondLine;
+			const secondLineNext = clampRunsToWidth([
+				...createStyledInsertionRuns(secondInserted, insertionStyle),
+				...secondLineRemainder,
+			]);
+			const nextLines = lines.map((entry) => entry.map(cloneRun));
+			nextLines[normalizedSelection.startLine] = firstLineNext;
+			nextLines[normalizedSelection.startLine + 1] = secondLineNext;
+			const nextOffset = Math.min(secondInserted.length, getRunsLength(secondLineNext));
+
+			commitLines(nextLines, {
+				startLine: normalizedSelection.startLine + 1,
+				startOffset: nextOffset,
+				endLine: normalizedSelection.startLine + 1,
+				endOffset: nextOffset,
+			});
+		},
+		[activeLine, captureSelection, commitLines, isLocked, readLinesFromDom],
+	);
+
+	const updateSelectedText = React.useCallback(
+		(
+			transform: (run: MotdPreviewRun) => MotdPreviewRun,
+			fallbackStyle: (style: MotdPreviewStyle) => MotdPreviewStyle,
+		) => {
+			if (isLocked) return;
+
+			const selection = captureSelection() ?? selectionRef.current;
+			if (!selection || isSelectionCollapsed(selection)) {
+				setPendingStyle((previous) => fallbackStyle(normalizeStyle(previous)));
+				return;
+			}
+
+			const nextLines = transformSelectedRuns(readLinesFromDom(), selection, transform);
+			commitLines(nextLines, selection);
+		},
+		[captureSelection, commitLines, isLocked, readLinesFromDom],
 	);
 
 	const applyAlignment = React.useCallback(
 		(alignment: MotdAlignment) => {
 			if (isLocked) return;
-			commitValue(applyMotdAlignment(value, format, alignment));
+			onChange(applyMotdAlignment(value, format, alignment));
 		},
-		[commitValue, format, isLocked, value],
+		[format, isLocked, onChange, value],
 	);
 
-	const applyLegacyCode = React.useCallback(
-		(code: string) => {
-			if (format !== 'legacy') return;
-			updateValueAtSelection(({ before, selected, after }) => {
-				if (!selected) {
-					const nextValue = `${before}§${code}${after}`;
-					return {
-						value: nextValue,
-						selection: { start: before.length + 2, end: before.length + 2 },
-					};
-				}
-
-				const insertion = `§${code}${selected}§r`;
-				const cursor = before.length + 2 + selected.length + 2;
-				return {
-					value: `${before}${insertion}${after}`,
-					selection: { start: cursor, end: cursor },
-				};
-			});
+	const applyColor = React.useCallback(
+		(color: { color: string; colorToken: string }) => {
+			updateSelectedText(
+				(run) => ({
+					...cloneRun(run),
+					style: {
+						...normalizeStyle(run.style),
+						color: color.color,
+						colorToken: color.colorToken,
+					},
+				}),
+				(style) => ({
+					...style,
+					color: color.color,
+					colorToken: color.colorToken,
+				}),
+			);
 		},
-		[format, updateValueAtSelection],
+		[updateSelectedText],
 	);
 
-	const applyMiniMessageColor = React.useCallback(
-		(tag: string) => {
-			if (format !== 'minimessage') return;
-			wrapSelection(`<${tag}>`, '<reset>', true);
-		},
-		[format],
-	);
-
-	const wrapSelection = React.useCallback(
-		(startToken: string, endToken: string, collapseToStart = false) => {
-			updateValueAtSelection(({ before, selected, after }) => {
-				if (!selected) {
-					const insertion = `${startToken}${endToken}`;
-					return {
-						value: `${before}${insertion}${after}`,
-						selection: { start: before.length + startToken.length, end: before.length + startToken.length },
-					};
-				}
-
-				const nextValue = `${before}${startToken}${selected}${endToken}${after}`;
-				return {
-					value: nextValue,
-					selection: collapseToStart
-						? { start: before.length + startToken.length, end: before.length + startToken.length }
-						: { start: before.length + startToken.length + selected.length, end: before.length + startToken.length + selected.length },
-				};
-			});
-		},
-		[updateValueAtSelection],
-	);
-
-	const applyMiniMessageDecoration = React.useCallback(
-		(tag: string) => {
-			if (format !== 'minimessage') return;
-			wrapSelection(`<${tag}>`, `</${tag}>`, true);
-		},
-		[format, wrapSelection],
-	);
-
-	const applyMiniMessageShadow = React.useCallback(
+	const applyShadow = React.useCallback(
 		(hex: string) => {
-			if (format !== 'minimessage') return;
-			wrapSelection(`<shadow:${hex}>`, '<reset>', true);
+			updateSelectedText(
+				(run) => ({
+					...cloneRun(run),
+					style: {
+						...normalizeStyle(run.style),
+						shadowColor: hex,
+						shadowToken: hex,
+					},
+				}),
+				(style) => ({
+					...style,
+					shadowColor: hex,
+					shadowToken: hex,
+				}),
+			);
 		},
-		[format, wrapSelection],
+		[updateSelectedText],
 	);
 
-	const handleTextareaChange = React.useCallback(
-		(event: React.ChangeEvent<HTMLTextAreaElement>) => {
-			commitValue(event.target.value);
+	const applyDecoration = React.useCallback(
+		(key: MotdDecorationKey) => {
+			const selection = captureSelection() ?? selectionRef.current;
+			const lines = readLinesFromDom();
+			const selectedRuns =
+				selection && !isSelectionCollapsed(selection) ? getSelectedRuns(lines, selection) : [];
+			const shouldEnable =
+				selectedRuns.length === 0 || selectedRuns.some((run) => !normalizeStyle(run.style)[key]);
+
+			updateSelectedText(
+				(run) => ({
+					...cloneRun(run),
+					style: {
+						...normalizeStyle(run.style),
+						[key]: shouldEnable,
+					},
+				}),
+				(style) => ({
+					...style,
+					[key]: !style[key],
+				}),
+			);
 		},
-		[commitValue],
+		[captureSelection, readLinesFromDom, updateSelectedText],
 	);
 
-	const onColorPickerChange = React.useCallback(
-		(event: React.ChangeEvent<HTMLInputElement>) => {
-			if (format === 'legacy') {
-				const match = MOTD_COLOR_OPTIONS.find((option) => option.hex.toLowerCase() === event.target.value.toLowerCase());
-				if (match) {
-					applyLegacyCode(match.legacyCode);
-				}
+	const handleBeforeInput = React.useCallback(
+		(event: React.FormEvent<HTMLDivElement>) => {
+			const inputEvent = event.nativeEvent as InputEvent;
+
+			if (inputEvent.inputType === 'insertParagraph' || inputEvent.inputType === 'insertLineBreak') {
+				event.preventDefault();
+				focusLine(Math.min(MOTD_MAX_LINES - 1, activeLine + 1), 0);
 				return;
 			}
 
-			applyMiniMessageColor(event.target.value);
+			if (!inputEvent.data || !inputEvent.inputType.startsWith('insert')) return;
+
+			const selection = captureSelection() ?? selectionRef.current;
+			if (!selection || selection.startLine !== selection.endLine) return;
+
+			const line = readLineRunsFromElement(lineRefs.current[selection.startLine]);
+			const available =
+				MOTD_VISUAL_LINE_WIDTH - (getRunsLength(line) - (selection.endOffset - selection.startOffset));
+			const text = inputEvent.data.slice(0, Math.max(0, available));
+
+			if (available <= 0 || text.length < inputEvent.data.length || !isBaseStyle(pendingStyle)) {
+				event.preventDefault();
+				insertTextAtSelection(text, pendingStyle);
+			}
 		},
-		[applyLegacyCode, applyMiniMessageColor, format],
+		[activeLine, captureSelection, focusLine, insertTextAtSelection, pendingStyle],
 	);
 
-	const onShadowPickerChange = React.useCallback(
-		(event: React.ChangeEvent<HTMLInputElement>) => {
-			if (format !== 'minimessage') return;
-			applyMiniMessageShadow(event.target.value);
+	const handleLineKeyDown = React.useCallback(
+		(event: React.KeyboardEvent<HTMLDivElement>, lineIndex: number) => {
+			if (event.key === 'Enter') {
+				event.preventDefault();
+				focusLine(Math.min(MOTD_MAX_LINES - 1, lineIndex + 1), 0);
+				return;
+			}
+
+			if (event.key === 'ArrowDown' && lineIndex < MOTD_MAX_LINES - 1) {
+				const selection = captureSelection() ?? selectionRef.current;
+				const offset = selection?.endOffset ?? 0;
+				event.preventDefault();
+				focusLine(lineIndex + 1, offset);
+				return;
+			}
+
+			if (event.key === 'ArrowUp' && lineIndex > 0) {
+				const selection = captureSelection() ?? selectionRef.current;
+				const offset = selection?.endOffset ?? 0;
+				event.preventDefault();
+				focusLine(lineIndex - 1, offset);
+				return;
+			}
+
+			if (event.key === 'Backspace' && lineIndex > 0) {
+				const selection = captureSelection() ?? selectionRef.current;
+				if (selection && isSelectionCollapsed(selection) && selection.startOffset === 0) {
+					event.preventDefault();
+					focusLine(
+						lineIndex - 1,
+						getRunsLength(readLineRunsFromElement(lineRefs.current[lineIndex - 1])),
+					);
+				}
+			}
 		},
-		[applyMiniMessageShadow, format],
+		[captureSelection, focusLine],
 	);
+
+	const handlePaste = React.useCallback(
+		(event: React.ClipboardEvent<HTMLDivElement>) => {
+			event.preventDefault();
+			insertTextAtSelection(event.clipboardData.getData('text/plain'), pendingStyle);
+		},
+		[insertTextAtSelection, pendingStyle],
+	);
+
+	const handleSourceChange = React.useCallback(
+		(event: React.ChangeEvent<HTMLTextAreaElement>) => {
+			onChange(clampRawSourceValue(event.target.value, format));
+		},
+		[format, onChange],
+	);
+
+	const handleCustomColorChange = React.useCallback(
+		(event: React.ChangeEvent<HTMLInputElement>) => {
+			applyColor({ color: event.target.value, colorToken: event.target.value });
+		},
+		[applyColor],
+	);
+
+	const handleShadowChange = React.useCallback(
+		(event: React.ChangeEvent<HTMLInputElement>) => {
+			applyShadow(event.target.value);
+		},
+		[applyShadow],
+	);
+
+	const toolbarMouseDown = React.useCallback((event: React.MouseEvent) => {
+		event.preventDefault();
+	}, []);
 
 	return (
 		<div className={cn('space-y-4 max-w-3xl', className)}>
@@ -351,140 +1159,214 @@ const MotdEditor: React.FC<MotdEditorProps> = ({
 				<p className='text-sm text-muted-foreground'>{description}</p>
 			</div>
 
-			<MotdPreview value={value} format={format} />
-
-			<div className='flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground'>
+			<div className='flex flex-wrap items-center justify-between gap-3 text-xs'>
 				<div className='flex flex-wrap items-center gap-2'>
-					<span className='rounded-full border border-border bg-muted px-3 py-1 font-medium text-foreground'>
-						{formatLabel}
-					</span>
-					<span className='rounded-full border border-border bg-muted px-3 py-1 font-medium text-foreground'>
-						Line lengths: {visibleLengths.map((length) => `${length}/${MOTD_VISUAL_LINE_WIDTH}`).join(' / ')}
-					</span>
+					<Container className='px-3 py-1'>{formatLabel}</Container>
+					<Container className='px-3 py-1'>
+						Line lengths{'  '}
+						<span className='font-bold'>
+							{visibleLengths.map((length) => `${length}/${MOTD_VISUAL_LINE_WIDTH}`).join('  ')}
+						</span>
+					</Container>
 				</div>
 				{advancedMode && (
-					<ButtonGroup>
-						<Button type='button' variant={!sourceMode ? 'secondary' : 'outline'} size='xs' onClick={() => setSourceMode(false)}>
-							<Type className='size-3.5' /> Builder
-						</Button>
-						<Button type='button' variant={sourceMode ? 'secondary' : 'outline'} size='xs' onClick={() => setSourceMode(true)}>
+					<Container className='p-0 flex items-center overflow-hidden'>
+						<div
+							className={cn(
+								'flex items-center gap-1 px-2 py-1 cursor-pointer',
+								!sourceMode && 'bg-accent text-accent-foreground',
+							)}
+							onMouseDown={toolbarMouseDown}
+							onClick={() => setSourceMode(false)}>
+							<Type className='size-3.5' /> Editor
+						</div>
+						<div
+							className={cn(
+								'flex items-center gap-1 px-2 py-1 cursor-pointer',
+								sourceMode && 'bg-accent text-accent-foreground',
+							)}
+							onMouseDown={toolbarMouseDown}
+							onClick={() => setSourceMode(true)}>
 							<Sparkles className='size-3.5' /> Source
-						</Button>
-					</ButtonGroup>
+						</div>
+					</Container>
 				)}
 			</div>
 
 			{!sourceMode ? (
-				<div className='space-y-4 rounded-xl border-2 p-4'>
+				<div className='space-y-3'>
 					<div className='flex flex-wrap items-center gap-2'>
 						<ButtonGroup>
-							<Button type='button' variant='outline' size='xs' onClick={() => applyAlignment('left')} disabled={isLocked}>
-								<ChevronLeft className='size-3.5' /> Left
-							</Button>
-							<Button type='button' variant='outline' size='xs' onClick={() => applyAlignment('center')} disabled={isLocked}>
-								Center
-							</Button>
-							<Button type='button' variant='outline' size='xs' onClick={() => applyAlignment('right')} disabled={isLocked}>
-								Right <ChevronRight className='size-3.5' />
-							</Button>
+							<Tooltip>
+								<TooltipTrigger asChild>
+									<Button
+										type='button'
+										variant='secondary'
+										size='icon-xs'
+										onMouseDown={toolbarMouseDown}
+										onClick={() => applyAlignment('left')}
+										disabled={isLocked}
+										aria-label='Align left'>
+										<AlignLeft className='size-3.5' />
+									</Button>
+								</TooltipTrigger>
+								<TooltipContent>Align left</TooltipContent>
+							</Tooltip>
+							<Tooltip>
+								<TooltipTrigger asChild>
+									<Button
+										type='button'
+										variant='secondary'
+										size='icon-xs'
+										onMouseDown={toolbarMouseDown}
+										onClick={() => applyAlignment('center')}
+										disabled={isLocked}
+										aria-label='Align center'>
+										<AlignCenter className='size-3.5' />
+									</Button>
+								</TooltipTrigger>
+								<TooltipContent>Align center</TooltipContent>
+							</Tooltip>
+							<Tooltip>
+								<TooltipTrigger asChild>
+									<Button
+										type='button'
+										variant='secondary'
+										size='icon-xs'
+										onMouseDown={toolbarMouseDown}
+										onClick={() => applyAlignment('right')}
+										disabled={isLocked}
+										aria-label='Align right'>
+										<AlignRight className='size-3.5' />
+									</Button>
+								</TooltipTrigger>
+								<TooltipContent>Align right</TooltipContent>
+							</Tooltip>
 						</ButtonGroup>
 
-						<ButtonGroupSeparator />
-
-						<div className='flex flex-wrap items-center gap-1'>
+						<ButtonGroup>
 							{MOTD_DECORATION_OPTIONS.map((option) => (
-								<Button
-									key={option.label}
-									type='button'
-									variant='outline'
-									size='xs'
-									title={option.label}
-									onClick={() => (format === 'legacy' ? applyLegacyCode(option.legacyCode) : applyMiniMessageDecoration(option.miniMessageTag))}
-									disabled={isLocked}>
-									{option.label[0]}
-								</Button>
+								<Tooltip key={option.label}>
+									<TooltipTrigger asChild>
+										<Button
+											type='button'
+											variant={pendingStyle[option.key] ? 'default' : 'secondary'}
+											size='icon-xs'
+											onMouseDown={toolbarMouseDown}
+											onClick={() => applyDecoration(option.key)}
+											disabled={isLocked}
+											aria-label={option.label}>
+											{decorationIcon(option.key)}
+										</Button>
+									</TooltipTrigger>
+									<TooltipContent>{option.label}</TooltipContent>
+								</Tooltip>
 							))}
-						</div>
+						</ButtonGroup>
+
+						{format === 'minimessage' && (
+							<div className='flex items-center gap-2 rounded-md border-2 px-2 py-1'>
+								<Palette className='size-4 text-muted-foreground' />
+								<input
+									type='color'
+									className='size-7 rounded-md border-0 bg-transparent p-0'
+									onChange={handleCustomColorChange}
+									disabled={isLocked}
+									aria-label='Custom text color'
+								/>
+							</div>
+						)}
+
+						{format === 'minimessage' && (
+							<div className='flex items-center gap-2 rounded-md border-2 px-2 py-1'>
+								<Paintbrush className='size-4 text-muted-foreground' />
+								<input
+									type='color'
+									className='size-7 rounded-md border-0 bg-transparent p-0'
+									onChange={handleShadowChange}
+									disabled={isLocked}
+									aria-label='Text shadow color'
+								/>
+							</div>
+						)}
 					</div>
 
-					<div className='space-y-3'>
-						<div className='flex flex-wrap items-center gap-2'>
-							{format === 'minimessage' && (
-								<div className='flex items-center gap-2 rounded-lg border-2 px-3 py-2'>
-									<Palette className='size-4 text-muted-foreground' />
-									<label className='flex items-center gap-2 text-sm font-medium'>
-										<span>Color</span>
-										<input
-											type='color'
-											className='size-8 rounded-md border-0 bg-transparent p-0'
-											onChange={onColorPickerChange}
-											disabled={isLocked}
-										/>
-									</label>
-								</div>
-							)}
-
-							{format === 'minimessage' && (
-								<div className='flex items-center gap-2 rounded-lg border-2 px-3 py-2'>
-									<Paintbrush className='size-4 text-muted-foreground' />
-									<label className='flex items-center gap-2 text-sm font-medium'>
-										<span>Shadow</span>
-										<input
-											type='color'
-											className='size-8 rounded-md border-0 bg-transparent p-0'
-											onChange={onShadowPickerChange}
-											disabled={isLocked}
-										/>
-									</label>
-								</div>
-							)}
-						</div>
-
-						<div className='grid grid-cols-4 gap-1 sm:grid-cols-8'>
-							{MOTD_COLOR_OPTIONS.map((option) => (
-								<Button
-									key={option.label}
-									type='button'
-									variant='outline'
-									size='icon-xs'
-									title={option.label}
-									aria-label={option.label}
-									className='border-border p-0'
-									style={{ backgroundColor: option.hex, color: '#000' }}
-									onClick={() => (format === 'legacy' ? applyLegacyCode(option.legacyCode) : applyMiniMessageColor(option.miniMessageTag))}
-									disabled={isLocked}>
-									<span className='sr-only'>{option.label}</span>
-								</Button>
-							))}
-						</div>
+					<div className='grid w-fit grid-cols-8 gap-1'>
+						{MOTD_COLOR_OPTIONS.map((option) => (
+							<Tooltip key={option.label}>
+								<TooltipTrigger asChild>
+									<Button
+										type='button'
+										variant='outline'
+										size='icon-xs'
+										aria-label={option.label}
+										className='border-border p-0'
+										style={{ backgroundColor: option.hex, color: '#000' }}
+										onMouseDown={toolbarMouseDown}
+										onClick={() =>
+											applyColor({
+												color: option.hex,
+												colorToken:
+													format === 'legacy' ? option.legacyCode : option.miniMessageTag,
+											})
+										}
+										disabled={isLocked}>
+										<span className='sr-only'>{option.label}</span>
+									</Button>
+								</TooltipTrigger>
+								<TooltipContent>{option.label}</TooltipContent>
+							</Tooltip>
+						))}
 					</div>
 
-					<Textarea
-						ref={textareaRef}
-						rows={2}
-						className='min-h-24 font-mono text-sm leading-6'
-						value={value}
-						onChange={handleTextareaChange}
-						disabled={isLocked}
-						spellCheck={false}
-					/>
+					<div
+						className={cn(
+							'overflow-hidden rounded-lg border-2 bg-background shadow-xs transition-colors focus-within:border-ring focus-within:ring-ring/50 focus-within:ring-[3px]',
+							isLocked && 'opacity-60',
+						)}>
+						{richLines.map((_, lineIndex) => (
+							<div
+								key={`motd-line-${lineIndex}`}
+								ref={(node) => {
+									lineRefs.current[lineIndex] = node;
+								}}
+								data-motd-line={lineIndex}
+								role='textbox'
+								aria-label={`${label} line ${lineIndex + 1}`}
+								aria-multiline='false'
+								contentEditable={!isLocked}
+								suppressContentEditableWarning
+								spellCheck={false}
+								data-placeholder={lineIndex === 0 ? 'Server message line 1' : 'Server message line 2'}
+								className={cn(
+									'min-h-12 px-4 py-3 font-minecraft text-sm leading-6 whitespace-pre-wrap outline-none empty:before:text-muted-foreground/55 empty:before:content-[attr(data-placeholder)]',
+									lineIndex === 0 && 'border-b-2',
+									activeLine === lineIndex && 'bg-muted/30',
+									isLocked ? 'cursor-not-allowed' : 'cursor-text',
+								)}
+								onBeforeInput={handleBeforeInput}
+								onInput={handleRichInput}
+								onFocus={() => {
+									setActiveLine(lineIndex);
+									window.requestAnimationFrame(captureSelection);
+								}}
+								onMouseUp={captureSelection}
+								onKeyUp={captureSelection}
+								onKeyDown={(event) => handleLineKeyDown(event, lineIndex)}
+								onPaste={handlePaste}
+							/>
+						))}
+					</div>
 				</div>
 			) : (
-				<div className='space-y-3 rounded-xl border-2 p-4'>
-					<div className='flex items-center gap-2 text-sm text-muted-foreground'>
-						<Sparkles className='size-4' />
-						Raw source mode is available in advanced mode so you can edit the exact output string.
-					</div>
-					<Textarea
-						ref={textareaRef}
-						rows={2}
-						className='min-h-24 font-mono text-sm leading-6'
-						value={value}
-						onChange={handleTextareaChange}
-						disabled={isLocked}
-						spellCheck={false}
-					/>
-				</div>
+				<Textarea
+					rows={2}
+					className='min-h-28 font-mono text-sm leading-6'
+					value={value}
+					onChange={handleSourceChange}
+					disabled={isLocked}
+					spellCheck={false}
+				/>
 			)}
 		</div>
 	);
