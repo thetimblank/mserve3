@@ -1,8 +1,31 @@
 use super::super::*;
 use std::env;
+use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+/// Windows process-creation flag that suppresses the console window that would
+/// otherwise be allocated when a GUI (no-console) build spawns a child process.
+/// https://learn.microsoft.com/windows/win32/procthread/process-creation-flags
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+/// Builds a [`Command`] for `program` that will not flash a console window on
+/// Windows. In release builds the app has no attached console, so every spawned
+/// child (powershell, netsh, java, etc.) would otherwise pop up its own terminal
+/// and stall the UI. On non-Windows platforms this is just `Command::new`.
+///
+/// Always use this instead of `Command::new` for any process the app spawns.
+pub(in crate::app) fn no_window_command<S: AsRef<OsStr>>(program: S) -> Command {
+    let mut command = Command::new(program);
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    command
+}
 
 pub(in crate::app) fn home_dir() -> PathBuf {
     if let Some(home) = env::var_os("HOME") {
@@ -115,7 +138,7 @@ pub(in crate::app) fn open_path_in_file_manager(path: &Path) -> Result<(), Strin
             .to_string_lossy()
             .replace('/', "\\");
 
-        Command::new("explorer")
+        no_window_command("explorer")
             .arg(normalized)
             .spawn()
             .map_err(|err| err.to_string())?;
@@ -124,7 +147,7 @@ pub(in crate::app) fn open_path_in_file_manager(path: &Path) -> Result<(), Strin
 
     #[cfg(target_os = "macos")]
     {
-        Command::new("open")
+        no_window_command("open")
             .arg(path)
             .spawn()
             .map_err(|err| err.to_string())?;
@@ -133,7 +156,7 @@ pub(in crate::app) fn open_path_in_file_manager(path: &Path) -> Result<(), Strin
 
     #[cfg(all(unix, not(target_os = "macos")))]
     {
-        Command::new("xdg-open")
+        no_window_command("xdg-open")
             .arg(path)
             .spawn()
             .map_err(|err| err.to_string())?;

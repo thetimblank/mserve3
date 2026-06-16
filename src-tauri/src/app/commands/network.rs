@@ -80,7 +80,7 @@ fn unique_destination_path(base_directory: &Path, file_name: &str) -> PathBuf {
 fn system_memory_bytes() -> Result<u64, String> {
     #[cfg(target_os = "windows")]
     {
-        let output = std::process::Command::new("powershell")
+        let output = no_window_command("powershell")
             .args([
                 "-NoProfile",
                 "-NonInteractive",
@@ -116,7 +116,7 @@ fn system_memory_bytes() -> Result<u64, String> {
 
     #[cfg(target_os = "macos")]
     {
-        let output = std::process::Command::new("sysctl")
+        let output = no_window_command("sysctl")
             .args(["-n", "hw.memsize"])
             .output()
             .map_err(|err| format!("Failed to query system memory: {err}"))?;

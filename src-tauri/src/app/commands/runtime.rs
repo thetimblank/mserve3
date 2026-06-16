@@ -2,7 +2,7 @@ use super::super::support::*;
 use super::super::*;
 use std::io::Write;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use tauri::State;
 
 fn resolve_server_start_args(config: &RuntimeServerConfig) -> Vec<String> {
@@ -84,7 +84,7 @@ pub(in crate::app) fn start_server(
     let command_str = build_server_start_command(&config, &java_executable);
     eprintln!("[Server] Executing: {}", command_str);
 
-    let mut child = Command::new(&java_executable)
+    let mut child = no_window_command(&java_executable)
         .args(args)
         .current_dir(&directory_path)
         .stdin(Stdio::piped())

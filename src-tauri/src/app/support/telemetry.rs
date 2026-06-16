@@ -2,11 +2,11 @@ use super::super::*;
 use super::mserve_config::{
     default_telemetry_host, detect_default_telemetry_port,
 };
+use super::no_window_command;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
-use std::process::Command;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -271,7 +271,7 @@ fn collect_platform_process_metrics(pid: u32, configured_ram_gb: Option<u32>) ->
         "$p = Get-CimInstance Win32_PerfFormattedData_PerfProc_Process -Filter \"IDProcess = {pid}\"; if ($null -eq $p) {{ exit 1 }}; Write-Output $p.PercentProcessorTime; Write-Output $p.WorkingSet"
     );
 
-    let output = match Command::new("powershell")
+    let output = match no_window_command("powershell")
         .args(["-NoProfile", "-NonInteractive", "-Command", &script])
         .output()
     {
@@ -297,7 +297,7 @@ fn collect_platform_process_metrics(pid: u32, configured_ram_gb: Option<u32>) ->
 
 #[cfg(not(target_os = "windows"))]
 fn collect_platform_process_metrics(pid: u32, configured_ram_gb: Option<u32>) -> ProcessMetricsResult {
-    let output = match Command::new("ps")
+    let output = match no_window_command("ps")
         .args(["-p", &pid.to_string(), "-o", "%cpu=", "-o", "rss="])
         .output()
     {

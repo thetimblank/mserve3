@@ -1,4 +1,4 @@
-use std::process::Command;
+use super::no_window_command;
 
 pub(in crate::app) fn add_windows_firewall_rule(port: u16, protocol: &str, direction: &str) -> Result<String, String> {
     let way = if direction.eq_ignore_ascii_case("in") {
@@ -9,7 +9,7 @@ pub(in crate::app) fn add_windows_firewall_rule(port: u16, protocol: &str, direc
 
     let rule_name = format!("MC Server {port} {protocol} {way} Allow");
 
-    let _ = Command::new("netsh")
+    let _ = no_window_command("netsh")
         .args([
             "advfirewall",
             "firewall",
@@ -21,7 +21,7 @@ pub(in crate::app) fn add_windows_firewall_rule(port: u16, protocol: &str, direc
         ])
         .output();
 
-    let output = Command::new("netsh")
+    let output = no_window_command("netsh")
         .args([
             "advfirewall",
             "firewall",
@@ -67,7 +67,7 @@ pub(in crate::app) fn firewall_rule_name(port: u16, protocol: &str, direction: &
 
 #[cfg(target_os = "windows")]
 pub(in crate::app) fn is_windows_admin() -> Result<bool, String> {
-    let output = Command::new("powershell")
+    let output = no_window_command("powershell")
         .args([
             "-NoProfile",
             "-NonInteractive",
@@ -114,7 +114,7 @@ pub(in crate::app) fn forward_port_windows_firewall_elevated(port: u16) -> Resul
         "$ErrorActionPreference = 'Stop'; $cmd = '{escaped_cmd_chain}'; $proc = Start-Process -FilePath cmd.exe -Verb RunAs -ArgumentList @('/d','/c',$cmd) -Wait -PassThru; exit $proc.ExitCode"
     );
 
-    let output = Command::new("powershell")
+    let output = no_window_command("powershell")
         .args(["-NoProfile", "-NonInteractive", "-Command", &script])
         .output()
         .map_err(|err| format!("Failed requesting administrator access: {err}"))?;

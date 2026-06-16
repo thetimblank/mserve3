@@ -1,8 +1,8 @@
+use super::super::support::no_window_command;
 use super::super::*;
 use std::collections::HashSet;
 use std::env;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 #[derive(Clone)]
 struct JavaCandidate {
@@ -78,10 +78,10 @@ fn collect_path_candidates(
     errors: &mut Vec<String>,
 ) {
     #[cfg(target_os = "windows")]
-    let output = Command::new("where").arg("java").output();
+    let output = no_window_command("where").arg("java").output();
 
     #[cfg(not(target_os = "windows"))]
-    let output = Command::new("which").args(["-a", "java"]).output();
+    let output = no_window_command("which").args(["-a", "java"]).output();
 
     let result = match output {
         Ok(value) => value,
@@ -309,7 +309,7 @@ fn infer_java_vendor(version_output: &str, path: &Path) -> String {
 }
 
 fn inspect_java_candidate(candidate: &JavaCandidate) -> Result<JavaRuntimeInfo, String> {
-    let output = Command::new(&candidate.path)
+    let output = no_window_command(&candidate.path)
         .arg("-version")
         .output()
         .map_err(|err| {
