@@ -60,12 +60,12 @@ pub(in crate::app) fn initialize_server(payload: InitServerPayload) -> Result<In
     let config = SyncedMserveConfig {
         id: server_id.clone(),
         file: resolved_file.clone(),
-        ram: payload.ram.max(1),
+        ram: payload.ram.max(0.25),
         storage_limit: payload.storage_limit.max(1),
         auto_backup,
         auto_backup_interval: payload.auto_backup_interval.max(1),
         auto_restart: payload.auto_restart,
-        custom_flags: default_custom_flags(),
+        custom_flags: normalize_custom_flags(payload.custom_flags.unwrap_or_default()),
         java_installation: payload
             .java_installation
             .as_deref()
@@ -339,7 +339,7 @@ pub(in crate::app) fn import_server(directory: String) -> Result<InitServerResul
         let config = SyncedMserveConfig {
             id: server_id.clone(),
             file: found_jar.clone(),
-            ram: 4,
+            ram: 4.0,
             storage_limit: 200,
             auto_backup: default_auto_backup(),
             auto_backup_interval: 120,
@@ -488,7 +488,7 @@ pub(in crate::app) fn repair_server_mserve_json(payload: RepairMserveJsonPayload
     let config = SyncedMserveConfig {
         id: existing_id,
         file: resolved_file,
-        ram: payload.ram.max(1),
+        ram: payload.ram.max(0.25),
         storage_limit: payload.storage_limit.max(1),
         auto_backup,
         auto_backup_interval: payload.auto_backup_interval.max(1),

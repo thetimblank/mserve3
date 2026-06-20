@@ -14,11 +14,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useUser } from '@/data/user';
 import { resolveJavaRequirement } from '@/lib/java-compatibility';
 import {
-	downloadJarRow,
+	downloadAndResolveJarRow,
 	fetchJarRows,
 	getJarTabs,
-	isJarRowDownloadable,
-	toProviderFromJarRow,
 	type DownloadServerJarProgressEvent,
 	type JarTab,
 	type JarVersionRow,
@@ -54,6 +52,7 @@ const SlideJarFile: React.FC = () => {
 	const { form, updateField, nextSlide, setError, clearError } = useCreateServer();
 	const tabs = React.useMemo(() => getJarTabs(), []);
 	const [activeTab, setActiveTab] = React.useState<JarTab>('plugin');
+	const [includeUnstable, setIncludeUnstable] = React.useState(false);
 	const [rows, setRows] = React.useState<JarVersionRow[]>([]);
 	const [isLoadingRows, setIsLoadingRows] = React.useState(false);
 	const [selectedRow, setSelectedRow] = React.useState<JarVersionRow | null>(null);
@@ -97,7 +96,7 @@ const SlideJarFile: React.FC = () => {
 		setIsLoadingRows(true);
 		setSelectedRow(null);
 
-		void fetchJarRows(activeTab)
+		void fetchJarRows(activeTab, includeUnstable)
 			.then((result) => {
 				if (cancelled) return;
 				setRows(result);
@@ -116,7 +115,7 @@ const SlideJarFile: React.FC = () => {
 		return () => {
 			cancelled = true;
 		};
-	}, [activeTab, setError]);
+	}, [activeTab, includeUnstable, setError]);
 
 	const maybeApplyJavaOverride = React.useCallback(
 		(providerId: string, version: string) => {
@@ -186,7 +185,7 @@ const SlideJarFile: React.FC = () => {
 		if (isDownloading) return;
 
 		try {
-			if (selectedRow && isJarRowDownloadable(selectedRow)) {
+			if (selectedRow) {
 				const downloadId =
 					typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
 						? crypto.randomUUID()
@@ -209,7 +208,7 @@ const SlideJarFile: React.FC = () => {
 						},
 					);
 
-					const result = await downloadJarRow(selectedRow, { downloadId });
+					const { result, provider } = await downloadAndResolveJarRow(selectedRow, { downloadId });
 					const fileValidation = await invoke<PathValidationResult>('validate_path', {
 						path: result.path,
 					});
@@ -217,11 +216,6 @@ const SlideJarFile: React.FC = () => {
 					if (!fileValidation.exists || !fileValidation.isFile) {
 						throw new Error('Downloaded jar could not be validated. Please try again.');
 					}
-
-					const provider = {
-						...toProviderFromJarRow(selectedRow),
-						file: result.path,
-					};
 
 					setDownloadProgress(1);
 					updateField('file', result.path);
@@ -323,7 +317,10 @@ const SlideJarFile: React.FC = () => {
 									type='button'
 									className='flex-1'
 									variant={tab.id === activeTab ? 'default' : 'secondary'}
-									onClick={() => setActiveTab(tab.id)}
+									onClick={() => {
+										setActiveTab(tab.id);
+										setIncludeUnstable(false);
+									}}
 									disabled={isDownloading}>
 									{tab.label}
 									<Tooltip>
@@ -352,6 +349,7 @@ const SlideJarFile: React.FC = () => {
 							isCheckingJavaCompatibility={isCheckingJavaCompatibility}
 							selectedRowId={selectedRow?.id ?? null}
 							onSelectRow={setSelectedRow}
+							onRequestUnstableVersions={() => setIncludeUnstable(true)}
 						/>
 					)}
 				</Field>

@@ -5,6 +5,18 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use tauri::State;
 
+/// Formats a heap size (in gigabytes, fractional allowed) into a JVM size token.
+/// Whole gigabytes use the `G` suffix; sub-gigabyte values fall back to `M` so
+/// values like 0.5 GB are emitted as `512M` (the JVM rejects fractional `G`).
+fn format_heap_size(ram_gb: f64) -> String {
+    let megabytes = (ram_gb.max(0.25) * 1024.0).round() as u64;
+    if megabytes % 1024 == 0 {
+        format!("{}G", megabytes / 1024)
+    } else {
+        format!("{}M", megabytes)
+    }
+}
+
 fn resolve_server_start_args(config: &RuntimeServerConfig) -> Vec<String> {
     let file = if config.file.trim().is_empty() {
         "server.jar".to_string()
@@ -12,9 +24,10 @@ fn resolve_server_start_args(config: &RuntimeServerConfig) -> Vec<String> {
         config.file.trim().to_string()
     };
 
+    let heap = format_heap_size(config.ram.unwrap_or(4.0));
     let mut args = vec![
-        format!("-Xmx{}G", config.ram.unwrap_or(4).max(1)),
-        format!("-Xms{}G", config.ram.unwrap_or(4).max(1)),
+        format!("-Xmx{heap}"),
+        format!("-Xms{heap}"),
         "-jar".to_string(),
         file,
     ];

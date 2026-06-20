@@ -7,6 +7,8 @@ import { useUser } from '@/data/user';
 import { buildCreatedServer } from '@/lib/mserve-server-mapper';
 import type { Provider } from '@/lib/mserve-schema';
 import { createDefaultServerSetupForm, type ServerSetupFormData } from '@/lib/mserve-sync';
+import { clampRamGb } from '@/lib/ram-utils';
+import { isProxyProvider } from '@/lib/server-provider';
 import { getDefaultServersRootPath } from '@/lib/server-root-path';
 import {
 	CREATE_SERVER_SLIDE_INDEX,
@@ -28,6 +30,7 @@ type InitServerPayload = {
 	auto_backup_interval: number;
 	auto_agree_eula: boolean;
 	java_installation: string;
+	custom_flags: string[];
 	provider: Provider;
 };
 
@@ -350,13 +353,16 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 				directory,
 				create_directory_if_missing: true,
 				file,
-				ram: Math.max(1, Number(form.ram) || 3),
+				ram: clampRamGb(form.ram),
 				storage_limit: Math.max(1, Number(form.storage_limit) || 200),
 				auto_restart: form.auto_restart,
 				auto_backup: form.auto_backup,
 				auto_backup_interval: Math.max(1, Number(form.auto_backup_interval) || 120),
 				auto_agree_eula: form.auto_agree_eula,
 				java_installation: form.java_installation,
+				// GUI-capable servers (vanilla/plugin) ship with --nogui by default;
+				// proxies have no GUI. Written into mserve.json as an editable default.
+				custom_flags: isProxyProvider(provider) ? [] : ['--nogui'],
 				provider,
 			};
 

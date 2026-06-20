@@ -9,10 +9,12 @@ import { ThemeProvider } from '@/components/theme-provider';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { AppSidebar } from '@/components/app-sidebar';
 import { ServersProvider } from './data/servers';
+import { NetworksProvider } from './data/networks';
 import { UserProvider } from './data/user';
 import Home from './pages/Home';
 import Settings from './pages/Settings';
 import Server from './pages/Server';
+import NetworkPage from './pages/Network';
 import JavaGuide from './pages/JavaGuide';
 import { Toaster } from './components/ui/sonner';
 import Setup from './pages/Setup';
@@ -87,6 +89,7 @@ const RootLayout: React.FC = () => {
 					<SidebarProvider className='h-svh overflow-hidden pt-10'>
 						<UserProvider>
 							<ServersProvider>
+								<NetworksProvider>
 								<CreateServerProvider>
 									<MserveRepairDialog />
 									<Nav />
@@ -96,12 +99,14 @@ const RootLayout: React.FC = () => {
 											<Route path='/' element={<Home />} />
 											<Route path='/setup' element={<Setup />} />
 											<Route path='/java-guide' element={<JavaGuide />} />
+											<Route path='/network' element={<NetworkPage />} />
 											<Route path='/servers/new' element={<CreateServerPage />} />
 											<Route path='/servers/:serverId/:tab?' element={<Server />} />
 											<Route path='/settings' element={<Settings />} />
 										</Routes>
 									</SidebarInset>
 								</CreateServerProvider>
+								</NetworksProvider>
 							</ServersProvider>
 						</UserProvider>
 					</SidebarProvider>

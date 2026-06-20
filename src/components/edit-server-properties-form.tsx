@@ -1,7 +1,7 @@
 import React from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
-import { FolderOpen, Info, Loader, Save, Trash } from 'lucide-react';
+import { Download, FolderOpen, Info, Loader, RefreshCcw, Save, Trash } from 'lucide-react';
 import { toast } from 'sonner';
 import clsx from 'clsx';
 import { type Server, useServers } from '@/data/servers';
@@ -28,6 +28,7 @@ import {
 	resolveJavaRuntimeForRequirement,
 	type JavaRuntimeInfo,
 } from '@/lib/java-runtime-service';
+import { clampRamGb } from '@/lib/ram-utils';
 import { backupChoices } from '@/pages/server/server-constants';
 import {
 	buildServerRunCommandPreview,
@@ -41,15 +42,10 @@ import type { ServerSettingsForm, UpdateServerSettingsResult } from '@/pages/ser
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { InputGroup, InputGroupAddon, InputGroupInput } from './ui/input-group';
 import RamSelector from './ram-selector';
-
-type EditServerPropertiesFormProps = {
-	server: Server;
-	javaRuntimes: JavaRuntimeInfo[];
-	disabled?: boolean;
-	onSaved?: () => Promise<void> | void;
-	saveLabel?: string;
-	className?: string;
-};
+import JavaRuntimeSelect from './java-runtime-select';
+import JarDownloadModal, {
+	type DownloadedJarSelection,
+} from '@/pages/create-server/slides/components/JarDownloadModal';
 
 const TELEMETRY_LABELS: Record<TelemetryKey, string> = {
 	list: 'Players list polling',
@@ -78,12 +74,76 @@ const parseJdkVersions = (value: string): number[] =>
 		),
 	);
 
-const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
+const buildFormFromServer = (server: Server): ServerSettingsForm => ({
+	ram: clampRamGb(server.ram),
+	storage_limit: Math.max(1, Number(server.storage_limit) || 200),
+	auto_backup: server.auto_backup,
+	auto_backup_interval: Math.max(1, server.auto_backup_interval),
+	auto_restart: server.auto_restart,
+	custom_flags: server.custom_flags,
+	java_installation: server.java_installation ?? '',
+	provider: createProvider(server.provider, { file: server.file }),
+	telemetry_host: server.telemetry_host ?? '127.0.0.1',
+	telemetry_port: Math.max(1, Number(server.telemetry_port) || 25565),
+	jar_swap_path: '',
+	new_directory: server.directory,
+});
+
+type EditServerSettingsContextValue = {
+	server: Server;
+	javaRuntimes: JavaRuntimeInfo[];
+	advancedMode: boolean;
+	globalJavaDefault: string;
+	settingsForm: ServerSettingsForm;
+	customFlagsDraft: string;
+	setCustomFlagsDraft: React.Dispatch<React.SetStateAction<string>>;
+	jdkVersionsDraft: string;
+	setJdkVersionsDraft: React.Dispatch<React.SetStateAction<string>>;
+	isJarModalOpen: boolean;
+	setIsJarModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
+	updateSettingsField: <K extends keyof ServerSettingsForm>(key: K, value: ServerSettingsForm[K]) => void;
+	updateProvider: (updater: (provider: Provider) => Provider) => void;
+	toggleSettingsBackupMode: (mode: (typeof backupChoices)[number]['value'], enabled: boolean) => void;
+	toggleSupportedTelemetry: (key: TelemetryKey, enabled: boolean) => void;
+	handleProviderJarDownloaded: (selection: DownloadedJarSelection) => void;
+	pickSwapJarFile: () => Promise<void>;
+	pickNewDirectory: () => Promise<void>;
+	providerCommandSupport: ReturnType<typeof getDefaultProviderCommandSupport>;
+	runCommandPreview: string;
+	effectiveJavaRuntimeLabel: string | null;
+	settingsError: string | null;
+	isFormLocked: boolean;
+	isSaving: boolean;
+	isOffline: boolean;
+	onManualSync?: () => void;
+};
+
+const EditServerSettingsContext = React.createContext<EditServerSettingsContextValue | null>(null);
+
+export const useEditServerSettings = (): EditServerSettingsContextValue => {
+	const context = React.useContext(EditServerSettingsContext);
+	if (!context) {
+		throw new Error('useEditServerSettings must be used within an EditServerSettingsProvider.');
+	}
+	return context;
+};
+
+type EditServerSettingsProviderProps = {
+	server: Server;
+	javaRuntimes: JavaRuntimeInfo[];
+	disabled?: boolean;
+	onSaved?: () => Promise<void> | void;
+	onManualSync?: () => void;
+	children: React.ReactNode;
+};
+
+export const EditServerSettingsProvider: React.FC<EditServerSettingsProviderProps> = ({
 	server,
 	javaRuntimes,
 	disabled,
 	onSaved,
-	className,
+	onManualSync,
+	children,
 }) => {
 	const { updateServer } = useServers();
 	const { user } = useUser();
@@ -91,20 +151,8 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 	const [settingsError, setSettingsError] = React.useState<string | null>(null);
 	const [customFlagsDraft, setCustomFlagsDraft] = React.useState('');
 	const [jdkVersionsDraft, setJdkVersionsDraft] = React.useState('21');
-	const [settingsForm, setSettingsForm] = React.useState<ServerSettingsForm>({
-		ram: 4,
-		storage_limit: 200,
-		auto_backup: [],
-		auto_backup_interval: 120,
-		auto_restart: false,
-		custom_flags: [],
-		java_installation: '',
-		provider: createProvider('vanilla'),
-		telemetry_host: '127.0.0.1',
-		telemetry_port: 25565,
-		jar_swap_path: '',
-		new_directory: '',
-	});
+	const [isJarModalOpen, setIsJarModalOpen] = React.useState(false);
+	const [settingsForm, setSettingsForm] = React.useState<ServerSettingsForm>(() => buildFormFromServer(server));
 
 	const serverId = server.id;
 	const unsavedToastId = React.useMemo(() => `server-settings-unsaved-${serverId}`, [serverId]);
@@ -113,8 +161,10 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 		[settingsForm.provider.name],
 	);
 	const isFormLocked = Boolean(disabled || isSaving || server.status !== 'offline');
+	const isOffline = server.status === 'offline';
+
 	const hasUnsavedChanges = React.useMemo(() => {
-		if (settingsForm.ram !== Math.max(1, server.ram ?? 4)) return true;
+		if (settingsForm.ram !== clampRamGb(server.ram)) return true;
 		if (settingsForm.storage_limit !== Math.max(1, Number(server.storage_limit) || 200)) return true;
 		if (settingsForm.auto_backup_interval !== Math.max(1, server.auto_backup_interval)) return true;
 		if (settingsForm.auto_restart !== server.auto_restart) return true;
@@ -147,20 +197,7 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 
 	React.useEffect(() => {
 		const provider = createProvider(server.provider, { file: server.file });
-		setSettingsForm({
-			ram: Math.max(1, server.ram ?? 4),
-			storage_limit: Math.max(1, Number(server.storage_limit) || 200),
-			auto_backup: server.auto_backup,
-			auto_backup_interval: Math.max(1, server.auto_backup_interval),
-			auto_restart: server.auto_restart,
-			custom_flags: server.custom_flags,
-			java_installation: server.java_installation ?? '',
-			provider,
-			telemetry_host: server.telemetry_host ?? '127.0.0.1',
-			telemetry_port: Math.max(1, Number(server.telemetry_port) || 25565),
-			jar_swap_path: '',
-			new_directory: server.directory,
-		});
+		setSettingsForm(buildFormFromServer(server));
 		setCustomFlagsDraft(formatCustomFlagsInput(server.custom_flags));
 		setJdkVersionsDraft(provider.jdk_versions.join(', '));
 		setSettingsError(null);
@@ -170,6 +207,7 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 		server.auto_restart,
 		server.custom_flags,
 		server.directory,
+		server.file,
 		server.java_installation,
 		server.provider,
 		server.ram,
@@ -245,6 +283,20 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 		}
 	}, [updateSettingsField]);
 
+	const handleProviderJarDownloaded = React.useCallback(
+		(selection: DownloadedJarSelection) => {
+			// The downloaded jar is swapped into the server directory, which keeps
+			// the existing jar filename — only the contents and provider metadata
+			// (version, jdk, stability, …) change.
+			updateSettingsField('jar_swap_path', selection.filePath);
+			updateProvider((prev) => ({ ...selection.provider, file: prev.file }));
+			setJdkVersionsDraft(selection.provider.jdk_versions.join(', '));
+			setSettingsError(null);
+			toast.success(`Selected ${selection.selectionLabel}. Save to apply the update.`);
+		},
+		[updateProvider, updateSettingsField],
+	);
+
 	const pickNewDirectory = React.useCallback(async () => {
 		try {
 			const selected = await openDialog({
@@ -265,39 +317,12 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 
 	const handleResetSettingsForm = React.useCallback(() => {
 		const provider = createProvider(server.provider, { file: server.file });
-		setSettingsForm({
-			ram: Math.max(1, server.ram ?? 4),
-			storage_limit: Math.max(1, Number(server.storage_limit) || 200),
-			auto_backup: server.auto_backup,
-			auto_backup_interval: Math.max(1, server.auto_backup_interval),
-			auto_restart: server.auto_restart,
-			custom_flags: server.custom_flags,
-			java_installation: server.java_installation ?? '',
-			provider,
-			telemetry_host: server.telemetry_host ?? '127.0.0.1',
-			telemetry_port: Math.max(1, Number(server.telemetry_port) || 25565),
-			jar_swap_path: '',
-			new_directory: server.directory,
-		});
+		setSettingsForm(buildFormFromServer(server));
 		setCustomFlagsDraft(formatCustomFlagsInput(server.custom_flags));
 		setJdkVersionsDraft(provider.jdk_versions.join(', '));
 		setSettingsError(null);
 		toast.dismiss(unsavedToastId);
-	}, [
-		server.auto_backup,
-		server.auto_backup_interval,
-		server.auto_restart,
-		server.custom_flags,
-		server.directory,
-		server.file,
-		server.java_installation,
-		server.provider,
-		server.ram,
-		server.storage_limit,
-		server.telemetry_host,
-		server.telemetry_port,
-		unsavedToastId,
-	]);
+	}, [server, unsavedToastId]);
 
 	const handleSaveSettings = React.useCallback(async () => {
 		if (isFormLocked) return;
@@ -391,7 +416,14 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 				</div>
 			),
 		});
-	}, [handleSaveSettings, hasUnsavedChanges, isFormLocked, unsavedToastId]);
+	}, [
+		handleResetSettingsForm,
+		handleSaveSettings,
+		hasUnsavedChanges,
+		isFormLocked,
+		isSaving,
+		unsavedToastId,
+	]);
 
 	const runCommandPreview = React.useMemo(
 		() =>
@@ -420,14 +452,64 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 	);
 	const effectiveJavaRuntimeLabel = getJavaRuntimeBadgeLabel(effectiveJavaRuntime);
 
+	const value: EditServerSettingsContextValue = {
+		server,
+		javaRuntimes,
+		advancedMode: user.advanced_mode,
+		globalJavaDefault: user.java_installation_default,
+		settingsForm,
+		customFlagsDraft,
+		setCustomFlagsDraft,
+		jdkVersionsDraft,
+		setJdkVersionsDraft,
+		isJarModalOpen,
+		setIsJarModalOpen,
+		updateSettingsField,
+		updateProvider,
+		toggleSettingsBackupMode,
+		toggleSupportedTelemetry,
+		handleProviderJarDownloaded,
+		pickSwapJarFile,
+		pickNewDirectory,
+		providerCommandSupport,
+		runCommandPreview,
+		effectiveJavaRuntimeLabel,
+		settingsError,
+		isFormLocked,
+		isSaving,
+		isOffline,
+		onManualSync,
+	};
+
+	return (
+		<EditServerSettingsContext.Provider value={value}>{children}</EditServerSettingsContext.Provider>
+	);
+};
+
+const SectionShell: React.FC<{ children: React.ReactNode; className?: string }> = ({
+	children,
+	className,
+}) => {
+	const { isFormLocked } = useEditServerSettings();
 	return (
 		<div
 			aria-disabled={isFormLocked}
-			className={clsx(
-				'space-y-20 transition-opacity',
-				isFormLocked && 'opacity-50 pointer-events-none',
-				className,
-			)}>
+			className={clsx('transition-opacity', isFormLocked && 'opacity-50 pointer-events-none', className)}>
+			{children}
+		</div>
+	);
+};
+
+const SettingsErrorNote: React.FC = () => {
+	const { settingsError } = useEditServerSettings();
+	if (!settingsError) return null;
+	return <p className='text-sm text-destructive'>{settingsError}</p>;
+};
+
+export const RamSettingsSection: React.FC = () => {
+	const { settingsForm, updateSettingsField } = useEditServerSettings();
+	return (
+		<SectionShell>
 			<div className='space-y-2 max-w-lg'>
 				<p className='text-xl'>RAM</p>
 				<RamSelector
@@ -437,7 +519,14 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 					className='max-w-lg'
 				/>
 			</div>
+		</SectionShell>
+	);
+};
 
+export const StorageBackupsSettingsSection: React.FC = () => {
+	const { settingsForm, updateSettingsField, toggleSettingsBackupMode } = useEditServerSettings();
+	return (
+		<SectionShell className='space-y-12'>
 			<div className='space-y-2 max-w-lg'>
 				<Label htmlFor='edit-storage-limit' className='text-xl'>
 					Backup storage limit
@@ -456,21 +545,111 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 				</InputGroup>
 			</div>
 
-			{user.advanced_mode && (
-				<div className='space-y-2 max-w-lg'>
-					<div className='flex items-center gap-2 flex-wrap'>
-						<Label htmlFor='edit-java-installation' className='text-xl'>
-							Java installation override
-						</Label>
-						{effectiveJavaRuntimeLabel && (
-							<span className='rounded-full bg-accent px-2 py-1 text-xs font-medium text-accent-foreground'>
-								{effectiveJavaRuntimeLabel}
-							</span>
-						)}
+			<div className='space-y-4 max-w-lg'>
+				<div className='space-y-2'>
+					<p className='text-xl'>Auto backup modes</p>
+					<div className='space-y-2'>
+						{backupChoices.map((choice) => (
+							<Label key={choice.value} className='flex items-center gap-3'>
+								<Checkbox
+									checked={settingsForm.auto_backup.includes(choice.value)}
+									onCheckedChange={(checked) =>
+										toggleSettingsBackupMode(
+											choice.value,
+											typeof checked === 'boolean' ? checked : false,
+										)
+									}
+								/>
+								{choice.label}
+							</Label>
+						))}
 					</div>
-					<p className='text-sm text-muted-foreground -mt-2 mb-4'>
-						Leave blank to use global Java default:{' '}
-						<span className='font-mono'>{user.java_installation_default}</span>
+				</div>
+
+				{settingsForm.auto_backup.includes('interval') && (
+					<div className='space-y-2 max-w-lg'>
+						<Label htmlFor='edit-backup-interval'>Backup interval</Label>
+						<InputGroup>
+							<InputGroupInput
+								id='edit-backup-interval'
+								type='number'
+								min={1}
+								value={settingsForm.auto_backup_interval}
+								onChange={(event) =>
+									updateSettingsField('auto_backup_interval', Number(event.target.value))
+								}
+							/>
+							<InputGroupAddon className='font-mono font-bold uppercase text-xs' align='inline-end'>
+								Minutes
+							</InputGroupAddon>
+						</InputGroup>
+					</div>
+				)}
+			</div>
+
+			<div className='space-y-2 max-w-lg'>
+				<p className='text-xl'>Auto Restart</p>
+				<Label className='flex items-center gap-3'>
+					<Checkbox
+						checked={settingsForm.auto_restart}
+						onCheckedChange={(checked) =>
+							updateSettingsField('auto_restart', typeof checked === 'boolean' ? checked : false)
+						}
+					/>
+					Auto restart server when it closes
+				</Label>
+			</div>
+		</SectionShell>
+	);
+};
+
+export const JavaSettingsSection: React.FC = () => {
+	const {
+		advancedMode,
+		globalJavaDefault,
+		settingsForm,
+		javaRuntimes,
+		updateSettingsField,
+		effectiveJavaRuntimeLabel,
+		customFlagsDraft,
+		setCustomFlagsDraft,
+		runCommandPreview,
+	} = useEditServerSettings();
+
+	return (
+		<SectionShell className='space-y-12'>
+			<div className='space-y-2 max-w-lg'>
+				<div className='flex items-center gap-2 flex-wrap'>
+					<Label htmlFor='edit-java-runtime' className='text-xl'>
+						Java runtime
+					</Label>
+					{effectiveJavaRuntimeLabel && (
+						<span className='rounded-full bg-accent px-2 py-1 text-xs font-medium text-accent-foreground'>
+							{effectiveJavaRuntimeLabel}
+						</span>
+					)}
+				</div>
+				<p className='text-sm text-muted-foreground -mt-1 mb-2'>
+					Pick which detected JDK runs this server. "Automatic" uses the global default:{' '}
+					<span className='font-mono'>{globalJavaDefault}</span>
+				</p>
+				<JavaRuntimeSelect
+					id='edit-java-runtime'
+					provider={settingsForm.provider}
+					javaRuntimes={javaRuntimes}
+					value={settingsForm.java_installation}
+					onChange={(next) => updateSettingsField('java_installation', next)}
+				/>
+			</div>
+
+			{advancedMode && (
+				<div className='space-y-2 max-w-lg'>
+					<Label htmlFor='edit-java-installation' className='text-xl'>
+						Java installation override
+					</Label>
+					<p className='text-sm text-muted-foreground -mt-1 mb-2'>
+						Point to a specific <span className='font-mono'>java</span> executable. Leave blank to use
+						the dropdown / global default.
 					</p>
 					<Input
 						className='font-mono'
@@ -482,7 +661,50 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 				</div>
 			)}
 
-			{user.advanced_mode && (
+			{advancedMode && (
+				<div className='space-y-2 max-w-lg'>
+					<Label htmlFor='edit-custom-flags' className='text-xl'>
+						Extra Java flags
+					</Label>
+					<Textarea
+						id='edit-custom-flags'
+						className='min-h-32 font-mono'
+						placeholder='--nogui'
+						value={customFlagsDraft}
+						onChange={(event) => {
+							const nextValue = event.target.value;
+							setCustomFlagsDraft(nextValue);
+							updateSettingsField('custom_flags', parseCustomFlagsInput(nextValue));
+						}}
+					/>
+					<div className='space-y-2'>
+						<Label className='text-xl mt-4'>Resolved start command preview</Label>
+						<p className='font-mono text-xs px-3 py-1 border-2 border-border rounded-md'>
+							{runCommandPreview}
+						</p>
+					</div>
+				</div>
+			)}
+		</SectionShell>
+	);
+};
+
+export const ProviderTelemetrySettingsSection: React.FC = () => {
+	const {
+		advancedMode,
+		server,
+		settingsForm,
+		updateProvider,
+		updateSettingsField,
+		toggleSupportedTelemetry,
+		providerCommandSupport,
+		jdkVersionsDraft,
+		setJdkVersionsDraft,
+	} = useEditServerSettings();
+
+	return (
+		<SectionShell className='space-y-12'>
+			{advancedMode && (
 				<div className='space-y-4 max-w-2xl'>
 					<p className='text-xl flex items-center gap-2'>
 						Provider
@@ -578,9 +800,7 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 						</div>
 
 						<div className='space-y-2'>
-							<Label htmlFor='edit-provider-jdk-versions'>
-								Supported JDK versions (comma separated)
-							</Label>
+							<Label htmlFor='edit-provider-jdk-versions'>Supported JDK versions (comma separated)</Label>
 							<Input
 								id='edit-provider-jdk-versions'
 								placeholder='17, 21'
@@ -631,10 +851,7 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 									checked={checked}
 									disabled={disabled}
 									onCheckedChange={(value) =>
-										toggleSupportedTelemetry(
-											telemetryKey,
-											typeof value === 'boolean' ? value : false,
-										)
+										toggleSupportedTelemetry(telemetryKey, typeof value === 'boolean' ? value : false)
 									}
 								/>
 								{TELEMETRY_LABELS[telemetryKey]}
@@ -644,7 +861,7 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 				</div>
 			</div>
 
-			{user.advanced_mode && (
+			{advancedMode && (
 				<div className='space-y-4 max-w-lg'>
 					<p className='text-xl'>Telemetry target</p>
 					<div className='space-y-2'>
@@ -670,127 +887,112 @@ const EditServerPropertiesForm: React.FC<EditServerPropertiesFormProps> = ({
 					</div>
 				</div>
 			)}
-
-			<div className='space-y-4 max-w-lg'>
-				<div className='space-y-2'>
-					<p className='text-xl'>Auto backup modes</p>
-					<div className='space-y-2'>
-						{backupChoices.map((choice) => (
-							<Label key={choice.value} className='flex items-center gap-3'>
-								<Checkbox
-									checked={settingsForm.auto_backup.includes(choice.value)}
-									onCheckedChange={(checked) =>
-										toggleSettingsBackupMode(
-											choice.value,
-											typeof checked === 'boolean' ? checked : false,
-										)
-									}
-								/>
-								{choice.label}
-							</Label>
-						))}
-					</div>
-				</div>
-
-				{settingsForm.auto_backup.includes('interval') && (
-					<div className='space-y-2 max-w-lg'>
-						<Label htmlFor='edit-backup-interval'>Backup interval</Label>
-						<InputGroup>
-							<InputGroupInput
-								id='edit-backup-interval'
-								type='number'
-								min={1}
-								value={settingsForm.auto_backup_interval}
-								onChange={(event) =>
-									updateSettingsField('auto_backup_interval', Number(event.target.value))
-								}
-							/>
-							<InputGroupAddon className='font-mono font-bold uppercase text-xs' align='inline-end'>
-								Minutes
-							</InputGroupAddon>
-						</InputGroup>
-					</div>
-				)}
-			</div>
-
-			<div className='space-y-2 max-w-lg'>
-				<p className='text-xl'>Auto Restart</p>
-				<Label className='flex items-center gap-3'>
-					<Checkbox
-						checked={settingsForm.auto_restart}
-						onCheckedChange={(checked) =>
-							updateSettingsField('auto_restart', typeof checked === 'boolean' ? checked : false)
-						}
-					/>
-					Auto restart server when it closes
-				</Label>
-			</div>
-
-			{user.advanced_mode && (
-				<div className='space-y-2 max-w-lg'>
-					<Label htmlFor='edit-custom-flags' className='text-xl'>
-						Extra Java flags
-					</Label>
-					<Textarea
-						id='edit-custom-flags'
-						className='min-h-32 font-mono'
-						placeholder='--nogui'
-						value={customFlagsDraft}
-						onChange={(event) => {
-							const nextValue = event.target.value;
-							setCustomFlagsDraft(nextValue);
-							updateSettingsField('custom_flags', parseCustomFlagsInput(nextValue));
-						}}
-					/>
-					<div className='space-y-2'>
-						<Label className='text-xl mt-4'>Resolved start command preview</Label>
-						<p className='font-mono text-xs px-3 py-1 border-2 border-border rounded-md'>
-							{runCommandPreview}
-						</p>
-					</div>
-				</div>
-			)}
-
-			{user.advanced_mode && (
-				<div className='space-y-2 max-w-lg'>
-					<Label htmlFor='edit-new-location' className='text-xl'>
-						Move server location
-					</Label>
-					<div className='flex gap-2'>
-						<Input
-							id='edit-new-location'
-							placeholder='C:\servers\MyServer'
-							value={settingsForm.new_directory}
-							onChange={(event) => updateSettingsField('new_directory', event.target.value)}
-						/>
-						<Button type='button' variant='outline' onClick={pickNewDirectory}>
-							<FolderOpen /> Browse
-						</Button>
-					</div>
-				</div>
-			)}
-
-			{user.advanced_mode && (
-				<div className='space-y-2 mt-6 max-w-lg'>
-					<Label htmlFor='edit-jar-swap' className='text-xl'>
-						Swap server jar with selected jar file
-					</Label>
-					<div className='flex gap-2'>
-						<Input
-							id='edit-jar-swap'
-							placeholder='C:\path\to\another-server.jar'
-							value={settingsForm.jar_swap_path}
-							onChange={(event) => updateSettingsField('jar_swap_path', event.target.value)}
-						/>
-						<Button type='button' variant='outline' onClick={pickSwapJarFile}>
-							<FolderOpen /> Browse
-						</Button>
-					</div>
-				</div>
-			)}
-			{settingsError && <p className='text-sm text-destructive'>{settingsError}</p>}
-		</div>
+		</SectionShell>
 	);
 };
 
-export default React.memo(EditServerPropertiesForm);
+export const ServerJarSettingsSection: React.FC = () => {
+	const {
+		advancedMode,
+		settingsForm,
+		updateSettingsField,
+		isFormLocked,
+		isOffline,
+		onManualSync,
+		isJarModalOpen,
+		setIsJarModalOpen,
+		handleProviderJarDownloaded,
+		pickSwapJarFile,
+	} = useEditServerSettings();
+
+	return (
+		<SectionShell className='space-y-12'>
+			<section className='space-y-3 max-w-lg'>
+				<div className='space-y-1'>
+					<p className='text-xl'>Sync mserve.json</p>
+					<p className='text-sm text-muted-foreground'>
+						Refresh the stored configuration and rebuild it if the file is missing.
+					</p>
+				</div>
+				<Button
+					variant='secondary'
+					className='w-fit'
+					onClick={onManualSync}
+					disabled={isFormLocked || !isOffline}>
+					<RefreshCcw />
+					<span>Sync mserve.json</span>
+				</Button>
+			</section>
+
+			<div className='space-y-2 max-w-lg'>
+				<Label htmlFor='edit-jar-swap' className='text-xl'>
+					Update or swap the server jar
+				</Label>
+				<p className='text-sm text-muted-foreground'>
+					Download a newer build straight from the provider, or point to a jar file on disk. The jar is
+					swapped in when you save.
+				</p>
+				<div className='flex gap-2'>
+					<Button
+						type='button'
+						variant='outline'
+						onClick={() => setIsJarModalOpen(true)}
+						disabled={isFormLocked}>
+						<Download /> Download from provider
+					</Button>
+					{advancedMode && (
+						<Button type='button' variant='outline' onClick={pickSwapJarFile} disabled={isFormLocked}>
+							<FolderOpen /> Browse files
+						</Button>
+					)}
+				</div>
+				{advancedMode && (
+					<Input
+						id='edit-jar-swap'
+						placeholder='C:\path\to\another-server.jar'
+						value={settingsForm.jar_swap_path}
+						onChange={(event) => updateSettingsField('jar_swap_path', event.target.value)}
+					/>
+				)}
+				{settingsForm.jar_swap_path.trim().length > 0 && (
+					<p className='text-sm text-muted-foreground break-all'>
+						Pending jar: {settingsForm.jar_swap_path}
+					</p>
+				)}
+			</div>
+
+			<SettingsErrorNote />
+
+			<JarDownloadModal
+				open={isJarModalOpen}
+				onOpenChange={setIsJarModalOpen}
+				onDownloaded={handleProviderJarDownloaded}
+			/>
+		</SectionShell>
+	);
+};
+
+export const LocationSettingsSection: React.FC = () => {
+	const { settingsForm, updateSettingsField, pickNewDirectory } = useEditServerSettings();
+	return (
+		<SectionShell>
+			<div className='space-y-2 max-w-lg'>
+				<Label htmlFor='edit-new-location' className='text-xl'>
+					Move server location
+				</Label>
+				<div className='flex gap-2'>
+					<Input
+						id='edit-new-location'
+						placeholder='C:\servers\MyServer'
+						value={settingsForm.new_directory}
+						onChange={(event) => updateSettingsField('new_directory', event.target.value)}
+					/>
+					<Button type='button' variant='outline' onClick={pickNewDirectory}>
+						<FolderOpen /> Browse
+					</Button>
+				</div>
+				<SettingsErrorNote />
+			</div>
+		</SectionShell>
+	);
+};

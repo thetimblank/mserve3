@@ -4,7 +4,7 @@ import {
 	filterJarRows,
 	formatStabilityLabel,
 	getJarFiltersForTab,
-	isJarRowDownloadable,
+	UNSTABLE_STABILITY_IDS,
 	type JarProviderFilterId,
 	type JarStabilityFilterId,
 	type JarTab,
@@ -27,6 +27,7 @@ type JarVersionSelectorPaneProps = {
 	isCheckingJavaCompatibility?: boolean;
 	selectedRowId: string | null;
 	onSelectRow: (row: JarVersionRow | null) => void;
+	onRequestUnstableVersions?: () => void;
 };
 
 const JarVersionSelectorPane: React.FC<JarVersionSelectorPaneProps> = ({
@@ -36,26 +37,32 @@ const JarVersionSelectorPane: React.FC<JarVersionSelectorPaneProps> = ({
 	isCheckingJavaCompatibility = false,
 	selectedRowId,
 	onSelectRow,
+	onRequestUnstableVersions,
 }) => {
 	const { providers, stabilities } = React.useMemo(() => getJarFiltersForTab(tab), [tab]);
+	const unstableStabilityId = UNSTABLE_STABILITY_IDS[tab];
+	const stableStabilityIds = React.useMemo(
+		() => stabilities.map((filter) => filter.id).filter((id) => id !== unstableStabilityId),
+		[stabilities, unstableStabilityId],
+	);
 	const [searchTerm, setSearchTerm] = React.useState('');
 	const [activeProviderFilterIds, setActiveProviderFilterIds] = React.useState<JarProviderFilterId[]>(
 		providers.map((filter) => filter.id),
 	);
-	const [activeStabilityFilterIds, setActiveStabilityFilterIds] = React.useState<JarStabilityFilterId[]>(
-		stabilities.map((filter) => filter.id),
-	);
+	// Unstable channels (snapshots / preview builds) are hidden by default.
+	const [activeStabilityFilterIds, setActiveStabilityFilterIds] =
+		React.useState<JarStabilityFilterId[]>(stableStabilityIds);
 	const [showCompatible, setShowCompatible] = React.useState(true);
 	const [showIncompatible, setShowIncompatible] = React.useState(false);
 
 	React.useEffect(() => {
 		setSearchTerm('');
 		setActiveProviderFilterIds(providers.map((filter) => filter.id));
-		setActiveStabilityFilterIds(stabilities.map((filter) => filter.id));
+		setActiveStabilityFilterIds(stableStabilityIds);
 		setShowCompatible(true);
 		setShowIncompatible(false);
 		onSelectRow(null);
-	}, [providers, stabilities, onSelectRow]);
+	}, [providers, stableStabilityIds, onSelectRow]);
 
 	const rowCompatibilityById = React.useMemo(() => {
 		const map = new Map<
@@ -129,6 +136,12 @@ const JarVersionSelectorPane: React.FC<JarVersionSelectorPaneProps> = ({
 	};
 
 	const toggleStabilityFilter = (filterId: JarStabilityFilterId, checked: boolean) => {
+		if (checked && filterId === unstableStabilityId) {
+			// Enabling an unstable channel may require loading the larger unstable
+			// version set from the backend.
+			onRequestUnstableVersions?.();
+		}
+
 		setActiveStabilityFilterIds((prev) => {
 			if (checked) {
 				if (prev.includes(filterId)) return prev;
@@ -254,7 +267,6 @@ const JarVersionSelectorPane: React.FC<JarVersionSelectorPaneProps> = ({
 					</thead>
 					<tbody>
 						{visibleRows.map((row) => {
-							const disabled = !isJarRowDownloadable(row);
 							const selected = selectedRowId === row.id;
 							const compatibility = rowCompatibilityById.get(row.id);
 							const isCompatible = compatibility?.compatible ?? false;
@@ -265,13 +277,9 @@ const JarVersionSelectorPane: React.FC<JarVersionSelectorPaneProps> = ({
 							return (
 								<tr
 									key={row.id}
-									onClick={() => {
-										if (disabled) return;
-										onSelectRow(row);
-									}}
+									onClick={() => onSelectRow(row)}
 									className={[
 										'border-t transition-colors',
-										disabled ? 'opacity-55' : '',
 										selected
 											? 'bg-accent text-accent-foreground'
 											: 'cursor-pointer hover:bg-secondary/50',
@@ -310,16 +318,13 @@ const JarVersionSelectorPane: React.FC<JarVersionSelectorPaneProps> = ({
 												</span>
 											)
 										)}
-										{disabled && (
-											<span className='text-xs text-muted-foreground'>Unavailable right now</span>
-										)}
 									</td>
 								</tr>
 							);
 						})}
 						{visibleRows.length === 0 && (
 							<tr>
-								<td className='px-3 py-5 text-muted-foreground text-center' colSpan={2}>
+								<td className='px-3 py-5 text-muted-foreground text-center' colSpan={4}>
 									No versions found for the current search and filter selection.
 								</td>
 							</tr>

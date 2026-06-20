@@ -33,7 +33,11 @@ const SlideShell: React.FC<SlideShellProps> = ({
 				<p>{description}</p>
 			</div>
 			{children}
-			{actions && <div className='mt-10 flex items-center justify-center gap-3'>{actions}</div>}
+			{actions && (
+				<div className='sticky bottom-0 mt-10 flex items-center justify-center gap-3  py-4'>
+					{actions}
+				</div>
+			)}
 		</m.div>
 	);
 };

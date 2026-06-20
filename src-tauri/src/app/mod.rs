@@ -27,13 +27,15 @@ struct InitServerPayload {
     directory: String,
     create_directory_if_missing: bool,
     file: String,
-    ram: u32,
+    ram: f64,
     storage_limit: u32,
     auto_restart: bool,
     auto_backup: Vec<String>,
     auto_backup_interval: u32,
     auto_agree_eula: bool,
     java_installation: Option<String>,
+    #[serde(default)]
+    custom_flags: Option<Vec<String>>,
     provider: Option<MserveProvider>,
 }
 
@@ -51,7 +53,7 @@ struct InitServerResult {
 struct RepairMserveJsonPayload {
     directory: String,
     file: String,
-    ram: u32,
+    ram: f64,
     storage_limit: u32,
     auto_backup: Vec<String>,
     auto_backup_interval: u32,
@@ -67,7 +69,7 @@ struct RepairMserveJsonPayload {
 struct SyncedMserveConfig {
     id: String,
     file: String,
-    ram: u32,
+    ram: f64,
     storage_limit: u32,
     auto_backup: Vec<String>,
     auto_backup_interval: u32,
@@ -115,7 +117,7 @@ struct RestoreBackupPayload {
 #[derive(Debug, Deserialize)]
 struct UpdateServerSettingsPayload {
     directory: String,
-    ram: u32,
+    ram: f64,
     storage_limit: u32,
     auto_backup: Vec<String>,
     auto_backup_interval: u32,
@@ -157,7 +159,7 @@ struct ExportWorldResult {
 #[serde(default)]
 struct RuntimeServerConfig {
     file: String,
-    ram: Option<u32>,
+    ram: Option<f64>,
     storage_limit: Option<u32>,
     custom_flags: Option<Vec<String>>,
     java_installation: Option<String>,
@@ -229,6 +231,50 @@ struct DownloadServerJarResult {
     path: String,
     file_name: String,
     size_bytes: u64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ListProviderVersionsPayload {
+    tab: String,
+    #[serde(default)]
+    include_unstable: bool,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct ProviderVersionEntry {
+    provider: String,
+    tab: String,
+    version: String,
+    minecraft_version: String,
+    /// "stable" | "unstable" | "release" | "snapshot"
+    stability: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ResolveProviderVersionPayload {
+    provider: String,
+    version: String,
+    #[serde(default)]
+    stability: Option<String>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct ResolvedProvider {
+    name: String,
+    file: String,
+    download_url: String,
+    provider_version: String,
+    minecraft_version: String,
+    jdk_versions: Vec<u32>,
+    stable: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    size_bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sha256: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -366,6 +412,8 @@ pub fn run() {
             get_system_memory_gb,
             detect_java_runtimes,
             download_server_jar,
+            list_provider_versions,
+            resolve_provider_version,
             initialize_server,
             inspect_server_directory,
             import_server,
@@ -374,6 +422,10 @@ pub fn run() {
             scan_managed_server_config_files,
             read_managed_server_config_file,
             write_managed_server_config_file,
+            read_networks_config,
+            write_networks_config,
+            read_server_network_file,
+            write_server_network_file,
             get_default_servers_root_path,
             open_server_folder,
             open_server_path,

@@ -147,14 +147,14 @@ fn clamp_percentage(value: f64) -> f64 {
     value.max(0.0).min(100.0)
 }
 
-fn ram_percent_from_bytes(memory_bytes: u64, configured_ram_gb: Option<u32>) -> Option<f64> {
-    let limit_gb = configured_ram_gb.filter(|value| *value > 0)?;
-    let limit_bytes = u64::from(limit_gb).saturating_mul(1024 * 1024 * 1024);
-    if limit_bytes == 0 {
+fn ram_percent_from_bytes(memory_bytes: u64, configured_ram_gb: Option<f64>) -> Option<f64> {
+    let limit_gb = configured_ram_gb.filter(|value| value.is_finite() && *value > 0.0)?;
+    let limit_bytes = limit_gb * (1024.0 * 1024.0 * 1024.0);
+    if limit_bytes <= 0.0 {
         return None;
     }
 
-    let percentage = (memory_bytes as f64 / limit_bytes as f64) * 100.0;
+    let percentage = (memory_bytes as f64 / limit_bytes) * 100.0;
     Some(clamp_percentage(percentage))
 }
 
@@ -266,7 +266,7 @@ pub(in crate::app) fn infer_provider_version(config: &RuntimeServerConfig) -> Op
 }
 
 #[cfg(target_os = "windows")]
-fn collect_platform_process_metrics(pid: u32, configured_ram_gb: Option<u32>) -> ProcessMetricsResult {
+fn collect_platform_process_metrics(pid: u32, configured_ram_gb: Option<f64>) -> ProcessMetricsResult {
     let script = format!(
         "$p = Get-CimInstance Win32_PerfFormattedData_PerfProc_Process -Filter \"IDProcess = {pid}\"; if ($null -eq $p) {{ exit 1 }}; Write-Output $p.PercentProcessorTime; Write-Output $p.WorkingSet"
     );
@@ -296,7 +296,7 @@ fn collect_platform_process_metrics(pid: u32, configured_ram_gb: Option<u32>) ->
 }
 
 #[cfg(not(target_os = "windows"))]
-fn collect_platform_process_metrics(pid: u32, configured_ram_gb: Option<u32>) -> ProcessMetricsResult {
+fn collect_platform_process_metrics(pid: u32, configured_ram_gb: Option<f64>) -> ProcessMetricsResult {
     let output = match no_window_command("ps")
         .args(["-p", &pid.to_string(), "-o", "%cpu=", "-o", "rss="])
         .output()
@@ -322,7 +322,7 @@ fn collect_platform_process_metrics(pid: u32, configured_ram_gb: Option<u32>) ->
     ProcessMetricsResult { ram_used, cpu_used }
 }
 
-pub(in crate::app) fn collect_process_metrics(pid: u32, configured_ram_gb: Option<u32>) -> ProcessMetricsResult {
+pub(in crate::app) fn collect_process_metrics(pid: u32, configured_ram_gb: Option<f64>) -> ProcessMetricsResult {
     collect_platform_process_metrics(pid, configured_ram_gb)
 }
 
@@ -334,7 +334,7 @@ pub(in crate::app) fn clear_process_metrics_cache(pid: u32) {
 
 pub(in crate::app) fn collect_process_metrics_cached(
     pid: u32,
-    configured_ram_gb: Option<u32>,
+    configured_ram_gb: Option<f64>,
     max_age: Duration,
 ) -> ProcessMetricsResult {
     if let Ok(cache) = process_metrics_cache().lock() {

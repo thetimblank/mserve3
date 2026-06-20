@@ -2,13 +2,11 @@ import * as React from 'react';
 import { CircleHelp, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import {
-	downloadJarRow,
+	downloadAndResolveJarRow,
 	fetchJarRows,
 	getJarSelectionLabel,
 	getJarTabInfo,
 	getJarTabs,
-	isJarRowDownloadable,
-	toProviderFromJarRow,
 	type JarTab,
 	type JarVersionRow,
 } from '@/lib/jar-download-service';
@@ -42,6 +40,7 @@ type JarDownloadModalProps = {
 const JarDownloadModal: React.FC<JarDownloadModalProps> = ({ open, onOpenChange, onDownloaded }) => {
 	const tabs = React.useMemo(() => getJarTabs(), []);
 	const [activeTab, setActiveTab] = React.useState<JarTab>('plugin');
+	const [includeUnstable, setIncludeUnstable] = React.useState(false);
 	const [rows, setRows] = React.useState<JarVersionRow[]>([]);
 	const [isLoadingRows, setIsLoadingRows] = React.useState(false);
 	const [selectedRow, setSelectedRow] = React.useState<JarVersionRow | null>(null);
@@ -54,7 +53,7 @@ const JarDownloadModal: React.FC<JarDownloadModalProps> = ({ open, onOpenChange,
 		setIsLoadingRows(true);
 		setSelectedRow(null);
 
-		void fetchJarRows(activeTab)
+		void fetchJarRows(activeTab, includeUnstable)
 			.then((result) => {
 				if (!cancelled) {
 					setRows(result);
@@ -76,25 +75,21 @@ const JarDownloadModal: React.FC<JarDownloadModalProps> = ({ open, onOpenChange,
 		return () => {
 			cancelled = true;
 		};
-	}, [activeTab, open]);
+	}, [activeTab, includeUnstable, open]);
 
-	const confirmDisabled =
-		!selectedRow || !isJarRowDownloadable(selectedRow) || isDownloading || isLoadingRows;
+	const confirmDisabled = !selectedRow || isDownloading || isLoadingRows;
 
 	const onConfirm = async () => {
-		if (!selectedRow || !isJarRowDownloadable(selectedRow)) return;
+		if (!selectedRow) return;
 
 		setIsDownloading(true);
 		try {
-			const result = await downloadJarRow(selectedRow);
+			const { result, provider } = await downloadAndResolveJarRow(selectedRow);
 			await onDownloaded({
 				filePath: result.path,
 				selectionLabel: getJarSelectionLabel(activeTab, selectedRow.version),
 				tab: activeTab,
-				provider: {
-					...toProviderFromJarRow(selectedRow),
-					file: result.path,
-				},
+				provider,
 			});
 			onOpenChange(false);
 		} catch (error) {
@@ -131,7 +126,10 @@ const JarDownloadModal: React.FC<JarDownloadModalProps> = ({ open, onOpenChange,
 										type='button'
 										className='flex-1'
 										variant={isActive ? 'default' : 'secondary'}
-										onClick={() => setActiveTab(tab.id)}
+										onClick={() => {
+											setActiveTab(tab.id);
+											setIncludeUnstable(false);
+										}}
 										disabled={isDownloading}>
 										{tab.label}
 										<Tooltip>
@@ -167,6 +165,7 @@ const JarDownloadModal: React.FC<JarDownloadModalProps> = ({ open, onOpenChange,
 							rows={rows}
 							selectedRowId={selectedRow?.id ?? null}
 							onSelectRow={setSelectedRow}
+							onRequestUnstableVersions={() => setIncludeUnstable(true)}
 						/>
 					)}
 				</div>

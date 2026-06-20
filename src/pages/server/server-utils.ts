@@ -1,4 +1,5 @@
 import type { AutoBackupMode } from '@/data/servers';
+import { clampRamGb, formatHeapSize } from '@/lib/ram-utils';
 import type { ScannedBackupEntry, ServerSettingsForm, UpdateServerSettingsPayload } from './server-types';
 
 export const toggleBackupMode = (
@@ -20,7 +21,7 @@ export const buildUpdateServerSettingsPayload = (
 	settingsForm: ServerSettingsForm,
 ): UpdateServerSettingsPayload => ({
 	directory,
-	ram: Math.max(1, Number(settingsForm.ram) || 1),
+	ram: clampRamGb(settingsForm.ram),
 	storage_limit: Math.max(1, Number(settingsForm.storage_limit) || 200),
 	auto_backup: settingsForm.auto_backup,
 	auto_backup_interval: Math.max(1, Number(settingsForm.auto_backup_interval) || 1),
@@ -56,13 +57,13 @@ export const buildServerRunCommandPreview = (config: {
 	java_installation?: string;
 	global_java_installation?: string;
 }): string => {
-	const resolvedRam = Math.max(1, config.ram ?? 4);
+	const heap = formatHeapSize(config.ram ?? 4);
 	const resolvedFile = config.file?.trim() || 'server.jar';
 	const resolvedJavaInstallation =
 		config.java_installation?.trim() || config.global_java_installation?.trim() || 'java';
 	const resolvedCustomFlags = (config.custom_flags ?? []).map((flag) => flag.trim()).filter(Boolean);
 
-	const args = [`-Xms${resolvedRam}G`, `-Xmx${resolvedRam}G`, '-jar', resolvedFile, ...resolvedCustomFlags];
+	const args = [`-Xms${heap}`, `-Xmx${heap}`, '-jar', resolvedFile, ...resolvedCustomFlags];
 
 	return `${resolvedJavaInstallation} ${args.join(' ')}`;
 };

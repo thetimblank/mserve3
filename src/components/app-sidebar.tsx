@@ -1,4 +1,4 @@
-import { Coffee, Home, Network, Plus, Server, Settings } from 'lucide-react';
+import { Coffee, Home, Network, Plus, Server, Settings, Waypoints } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import clsx from 'clsx';
 
@@ -31,6 +31,11 @@ const items = [
 		title: 'Java Guide',
 		url: '/java-guide',
 		icon: Coffee,
+	},
+	{
+		title: 'Server Network',
+		url: '/network',
+		icon: Waypoints,
 	},
 	{
 		title: 'Settings',

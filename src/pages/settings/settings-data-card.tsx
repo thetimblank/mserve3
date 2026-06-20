@@ -1,10 +1,10 @@
-import { Trash } from 'lucide-react';
+import { RotateCcw, Trash } from 'lucide-react';
 import * as React from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
 import { useUser } from '@/data/user';
 import { getDefaultServersRootPath } from '@/lib/server-root-path';
@@ -26,13 +26,8 @@ type SettingsDataCardProps = {
 
 const SettingsDataCard: React.FC<SettingsDataCardProps> = ({ onClearAllData }) => {
 	const { user, updateUserField } = useUser();
-	const [javaDefault, setJavaDefault] = React.useState(user.java_installation_default);
 	const [serversRootPath, setServersRootPath] = React.useState(user.servers_root_path);
 	const [defaultServersRootPath, setDefaultServersRootPath] = React.useState('');
-
-	React.useEffect(() => {
-		setJavaDefault(user.java_installation_default);
-	}, [user.java_installation_default]);
 
 	React.useEffect(() => {
 		setServersRootPath(user.servers_root_path || defaultServersRootPath);
@@ -56,35 +51,17 @@ const SettingsDataCard: React.FC<SettingsDataCardProps> = ({ onClearAllData }) =
 		};
 	}, []);
 
-	const handleSaveJavaDefault = () => {
-		const normalized = javaDefault.trim() || 'java';
-		updateUserField('java_installation_default', normalized);
-		setJavaDefault(normalized);
-		toast.success('Default Java installation updated.');
-	};
-
-	const handleResetJavaDefault = () => {
-		updateUserField('java_installation_default', 'java');
-		setJavaDefault('java');
-		toast.success('Default Java installation reset to java.');
-	};
-
-	const handleAdvancedModeChange = (checked: boolean | 'indeterminate') => {
-		const enabled = checked === true;
-		updateUserField('advanced_mode', enabled);
-		toast.success(`Advanced mode ${enabled ? 'enabled' : 'disabled'}.`);
-	};
-
-	const handleSaveServersRootPath = () => {
+	// Autosaves on blur. Empty input reverts to the last saved value.
+	const commitServersRootPath = () => {
 		const normalized = serversRootPath.trim();
 		if (!normalized) {
-			toast.error('Server root path cannot be empty.');
+			setServersRootPath(user.servers_root_path);
 			return;
 		}
-
-		updateUserField('servers_root_path', normalized);
+		if (normalized !== user.servers_root_path) {
+			updateUserField('servers_root_path', normalized);
+		}
 		setServersRootPath(normalized);
-		toast.success('Server root path updated.');
 	};
 
 	const handleResetServersRootPath = () => {
@@ -99,86 +76,85 @@ const SettingsDataCard: React.FC<SettingsDataCardProps> = ({ onClearAllData }) =
 		toast.success('Server root path reset to default.');
 	};
 
+	const handleAdvancedModeChange = (checked: boolean | 'indeterminate') => {
+		const enabled = checked === true;
+		updateUserField('advanced_mode', enabled);
+		toast.success(`Advanced mode ${enabled ? 'enabled' : 'disabled'}.`);
+	};
+
+	const isRootPathDefault =
+		Boolean(defaultServersRootPath) && serversRootPath.trim() === defaultServersRootPath.trim();
+
 	return (
 		<Card>
 			<CardHeader>
 				<CardTitle>Data & Privacy</CardTitle>
-				<CardDescription>Manage your data</CardDescription>
+				<CardDescription>Manage where your servers live and your stored data.</CardDescription>
 			</CardHeader>
-			<CardContent className='space-y-1'>
-				<div className='space-y-2'>
+			<CardContent className='space-y-6'>
+				<div className='space-y-2 max-w-lg'>
 					<Label htmlFor='settings-servers-root-path'>Servers root path</Label>
-					<Input
-						id='settings-servers-root-path'
-						className='font-mono'
-						placeholder='C:\\Users\\you\\mserve\\servers'
-						value={serversRootPath}
-						onChange={(event) => setServersRootPath(event.target.value)}
-					/>
+					<InputGroup>
+						<InputGroupInput
+							id='settings-servers-root-path'
+							className='font-mono'
+							placeholder='C:\\Users\\you\\mserve\\servers'
+							value={serversRootPath}
+							onChange={(event) => setServersRootPath(event.target.value)}
+							onBlur={commitServersRootPath}
+						/>
+						<InputGroupAddon align='inline-end'>
+							<InputGroupButton
+								type='button'
+								variant='ghost'
+								size='icon-xs'
+								aria-label='Reset to default'
+								onClick={handleResetServersRootPath}
+								disabled={isRootPathDefault}>
+								<RotateCcw />
+							</InputGroupButton>
+						</InputGroupAddon>
+					</InputGroup>
 					<p className='text-sm text-muted-foreground'>
-						New servers are created as child folders in this directory.
+						Saved automatically. New servers are created as child folders in this directory.
 					</p>
-					<div className='flex gap-2'>
-						<Button onClick={handleSaveServersRootPath}>Save</Button>
-						<Button variant='destructive-secondary' onClick={handleResetServersRootPath}>
-							Reset to default
-						</Button>
-					</div>
 				</div>
 
-				<div className='space-y-2 mt-4'>
-					<Label htmlFor='settings-java-default'>Default Java installation</Label>
-					<Input
-						id='settings-java-default'
-						className='font-mono'
-						placeholder='java'
-						value={javaDefault}
-						onChange={(event) => setJavaDefault(event.target.value)}
-					/>
-					<p className='text-sm text-muted-foreground'>
-						Used when a server does not set its own Java override.
-					</p>
-					<div className='flex gap-2'>
-						<Button onClick={handleSaveJavaDefault}>Save</Button>
-						<Button variant='destructive-secondary' onClick={handleResetJavaDefault}>
-							Reset to java
-						</Button>
-					</div>
-				</div>
-
-				<div className='space-y-2 mt-6'>
+				<div className='space-y-2'>
 					<Label className='flex items-center gap-3'>
 						<Checkbox checked={user.advanced_mode} onCheckedChange={handleAdvancedModeChange} />
 						Advanced Mode
 					</Label>
 					<p className='text-sm text-muted-foreground'>
-						Lets you bypass RAM safety caps and use the full detected system range.
+						Unlocks per-server overrides, sub-gigabyte RAM, and bypasses RAM safety caps.
 					</p>
 				</div>
 
-				<p className='font-medium mt-6'>Data management</p>
-				<AlertDialog>
-					<AlertDialogTrigger asChild>
-						<Button variant='destructive-secondary'>
-							<Trash />
-							Clear All Data
-						</Button>
-					</AlertDialogTrigger>
-					<AlertDialogContent>
-						<AlertDialogHeader>
-							<AlertDialogTitle>Are you sure?</AlertDialogTitle>
-							<AlertDialogDescription>
-								This will remove all servers and restore defaults forever.
-							</AlertDialogDescription>
-						</AlertDialogHeader>
-						<AlertDialogFooter>
-							<AlertDialogCancel>Cancel</AlertDialogCancel>
-							<AlertDialogAction variant='destructive' className='capitalize' onClick={onClearAllData}>
+				<div className='space-y-2'>
+					<p className='font-medium'>Data management</p>
+					<AlertDialog>
+						<AlertDialogTrigger asChild>
+							<Button variant='destructive-secondary'>
+								<Trash />
 								Clear All Data
-							</AlertDialogAction>
-						</AlertDialogFooter>
-					</AlertDialogContent>
-				</AlertDialog>
+							</Button>
+						</AlertDialogTrigger>
+						<AlertDialogContent>
+							<AlertDialogHeader>
+								<AlertDialogTitle>Are you sure?</AlertDialogTitle>
+								<AlertDialogDescription>
+									This will remove all servers and restore defaults forever.
+								</AlertDialogDescription>
+							</AlertDialogHeader>
+							<AlertDialogFooter>
+								<AlertDialogCancel>Cancel</AlertDialogCancel>
+								<AlertDialogAction variant='destructive' className='capitalize' onClick={onClearAllData}>
+									Clear All Data
+								</AlertDialogAction>
+							</AlertDialogFooter>
+						</AlertDialogContent>
+					</AlertDialog>
+				</div>
 			</CardContent>
 		</Card>
 	);

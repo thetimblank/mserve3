@@ -378,7 +378,7 @@ pub(in crate::app) fn default_synced_config(directory: &Path) -> SyncedMserveCon
     SyncedMserveConfig {
         id: generate_server_id(),
         file: fallback_file.clone(),
-        ram: 4,
+        ram: 4.0,
         storage_limit: 200,
         auto_backup: default_auto_backup(),
         auto_backup_interval: 120,
@@ -495,9 +495,10 @@ pub(in crate::app) fn sanitize_mserve_value_config(
 
     let normalized_ram = object
         .get("ram")
-        .and_then(|value| value.as_u64())
-        .map(|value| value.max(1) as u32)
-        .unwrap_or(3);
+        .and_then(|value| value.as_f64())
+        .filter(|value| value.is_finite())
+        .map(|value| value.max(0.25))
+        .unwrap_or(4.0);
 
     let normalized_storage_limit = object
         .get("storage_limit")
@@ -561,7 +562,7 @@ pub(in crate::app) fn synced_mserve_json_value(config: &SyncedMserveConfig) -> s
     serde_json::json!({
         "id": config.id,
         "file": config.file,
-        "ram": config.ram.max(1),
+        "ram": config.ram.max(0.25),
         "storage_limit": config.storage_limit.max(1),
         "auto_backup": config.auto_backup,
         "auto_backup_interval": config.auto_backup_interval.max(1),
@@ -636,7 +637,7 @@ pub(in crate::app) fn has_required_mserve_json_fields(
         return false;
     }
 
-    if object.get("ram").and_then(|value| value.as_u64()).is_none() {
+    if object.get("ram").and_then(|value| value.as_f64()).is_none() {
         return false;
     }
 

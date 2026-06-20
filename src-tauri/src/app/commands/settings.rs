@@ -88,7 +88,7 @@ pub(in crate::app) fn update_server_settings(
 
     let custom_flags = normalize_custom_flags(payload.custom_flags);
 
-    config.ram = payload.ram.max(1);
+    config.ram = payload.ram.max(0.25);
     config.storage_limit = payload.storage_limit.max(1);
     config.auto_backup_interval = payload.auto_backup_interval.max(1);
     config.auto_restart = payload.auto_restart;

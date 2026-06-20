@@ -67,7 +67,7 @@ Big
 ✅ inform user about proper java versions
 ✅ inform user & read minecraft settings (properties, ops, whitelist, etc.)
 ✅ motd generator
-🟨 auto fetch provider server jars [BETA]
+✅ auto fetch provider server jars [BETA]
 🟨 better explaination of hosting setup and integrate with server specific ports/ip
 ⬛ add testing!!!
 ⬛ update server
@@ -78,7 +78,6 @@ Small
 ✅ make create server slides based on the selected provider (e.g. no backups for proxy, no eula for proxy)
 ✅ better integration of version detection (pushing using own jar selection)
 ✅ rework server settings (advanced mode vs non-advanced)
-⬛ loading/add animation for detected server setting files
 ⬛ cleanup settings page
 
 Supported Providers

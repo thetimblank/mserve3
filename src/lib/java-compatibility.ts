@@ -22,14 +22,14 @@ export type JavaCompatibilityMatrixRow = {
 
 export const JAVA_COMPATIBILITY_MATRIX: JavaCompatibilityMatrixRow[] = [
 	{
-		label: 'Minecraft 1.21+',
+		label: 'Minecraft 26+',
 		serverScope: 'Vanilla, Paper, Folia, Spigot',
-		minimumMajor: 21,
-		recommendedMajor: 21,
-		notes: 'Current modern server versions should use Java 21.',
+		minimumMajor: 25,
+		recommendedMajor: 25,
+		notes: 'Current modern server versions should use Java 25.',
 	},
 	{
-		label: 'Minecraft 1.20.5 - 1.20.6',
+		label: 'Minecraft 1.20.5 - 1.21',
 		serverScope: 'Vanilla, Paper, Folia, Spigot',
 		minimumMajor: 21,
 		recommendedMajor: 21,
@@ -73,28 +73,64 @@ export const JAVA_COMPATIBILITY_MATRIX: JavaCompatibilityMatrixRow[] = [
 ];
 
 type ParsedMinecraftVersion = {
+	/** 1 for the legacy `1.x` scheme; the year (>= 26) for the modern scheme. */
+	major: number;
 	minor: number;
 	patch: number | null;
 };
 
 const parseMinecraftVersion = (version?: string | null): ParsedMinecraftVersion | null => {
 	if (!version) return null;
+	const normalized = version.trim().toLowerCase();
+	if (!normalized) return null;
 
-	const match = version.match(/\b1\.(\d{1,2})(?:\.(\d{1,2}))?\b/);
-	if (!match) return null;
+	// Legacy scheme: 1.20.4, 1.21
+	const legacy = normalized.match(/\b1\.(\d{1,2})(?:\.(\d{1,2}))?\b/);
+	if (legacy) {
+		const minor = Number(legacy[1]);
+		const patch = legacy[2] != null ? Number(legacy[2]) : null;
+		if (!Number.isInteger(minor)) return null;
+		return { major: 1, minor, patch: Number.isInteger(patch) ? patch : null };
+	}
 
-	const minor = Number(match[1]);
-	const patch = match[2] != null ? Number(match[2]) : null;
+	// Modern year-based snapshots: 26w03a
+	const snapshot = normalized.match(/\b(\d{2})w\d{2}[a-z]\b/);
+	if (snapshot) {
+		const year = Number(snapshot[1]);
+		if (Number.isInteger(year) && year >= 26) {
+			return { major: year, minor: 0, patch: null };
+		}
+	}
 
-	if (!Number.isInteger(minor)) return null;
+	// Modern year-based releases: 26, 26.1, 26.1.2
+	const modern = normalized.match(/\b(\d{2,})(?:\.(\d{1,2}))?(?:\.(\d{1,2}))?\b/);
+	if (modern) {
+		const major = Number(modern[1]);
+		if (Number.isInteger(major) && major >= 26) {
+			const minor = modern[2] != null ? Number(modern[2]) : 0;
+			const patch = modern[3] != null ? Number(modern[3]) : null;
+			return {
+				major,
+				minor: Number.isInteger(minor) ? minor : 0,
+				patch: Number.isInteger(patch) ? patch : null,
+			};
+		}
+	}
 
-	return {
-		minor,
-		patch: Number.isInteger(patch) ? patch : null,
-	};
+	return null;
 };
 
 const requirementFromMinecraftVersion = (version: ParsedMinecraftVersion): JavaRequirement => {
+	if (version.major >= 26) {
+		return {
+			minimumMajor: 25,
+			recommendedMajor: 25,
+			confidence: 'high',
+			summary: 'Minecraft 26+ should run on Java 25.',
+			notes: ['Minecraft 26 and newer moved to the Java 25 runtime.'],
+		};
+	}
+
 	if (version.minor >= 21) {
 		return {
 			minimumMajor: 21,
@@ -261,6 +297,15 @@ export const explainCompatibility = (options: {
 };
 
 export const describeWhatCanRunWithJava = (javaMajor: number): string[] => {
+	if (javaMajor >= 25) {
+		return [
+			'Minecraft 26+ on Vanilla/Paper/Folia/Spigot',
+			'Minecraft 1.20.5+ (including 1.21+)',
+			'Minecraft 1.18 - 1.20.4',
+			'Velocity 3.x+ proxies',
+		];
+	}
+
 	if (javaMajor >= 21) {
 		return [
 			'Minecraft 1.20.5+ (including 1.21+) on Vanilla/Paper/Folia/Spigot',

@@ -8,6 +8,8 @@ import {
 
 export type { ProviderName, TelemetryPolling } from './mserve-schema';
 
+/** A {@link Provider} whose descriptive (version-independent) metadata is always
+ *  present. Returned by the catalog lookups so consumers can rely on the fields. */
 export type ProviderCatalogEntry = Provider & {
 	aliases: string[];
 	description: string;
@@ -23,7 +25,30 @@ export type ProviderCatalogEntry = Provider & {
 const titleCase = (value: string) =>
 	value.length === 0 ? value : `${value[0].toUpperCase()}${value.slice(1)}`;
 
-const PROVIDER_CATALOG: ProviderCatalogEntry[] = [
+/**
+ * Static, version-independent metadata for each supported provider. The actual
+ * downloadable versions (file, download_url, provider_version, minecraft_version,
+ * jdk_versions, stable) are fetched live from the providers' official APIs by the
+ * backend `list_provider_versions` / `resolve_provider_version` commands — see
+ * {@link file://./jar-download-service.ts}. This catalog only holds the
+ * descriptive metadata the UI needs regardless of version.
+ */
+export type ProviderDescriptor = {
+	name: ProviderName;
+	aliases: string[];
+	description: string;
+	kind: 'plugin' | 'vanilla' | 'proxy';
+	tab: ProviderTab;
+	stable_name: string;
+	unstable_name: string;
+	supports_list_command: boolean;
+	supports_tps_command: boolean;
+	supports_version_command: boolean;
+	/** Sensible fallback when no live/exact requirement is known (manual flows). */
+	default_jdk_versions: number[];
+};
+
+const PROVIDER_DESCRIPTORS: ProviderDescriptor[] = [
 	{
 		name: 'paper',
 		aliases: ['paper'],
@@ -35,14 +60,7 @@ const PROVIDER_CATALOG: ProviderCatalogEntry[] = [
 		supports_list_command: true,
 		supports_tps_command: true,
 		supports_version_command: true,
-		file: 'paper-1.21.11-130.jar',
-		download_url:
-			'https://fill-data.papermc.io/v1/objects/25eb85bd8415195ce4bc188e1939e0c7cef77fb51d26d4e766407ee922561097/paper-1.21.11-130.jar',
-		provider_version: '130',
-		minecraft_version: '1.21.11',
-		jdk_versions: [21],
-		supported_telemetry: createDefaultProviderChecks(),
-		stable: true,
+		default_jdk_versions: [21],
 	},
 	{
 		name: 'folia',
@@ -55,33 +73,8 @@ const PROVIDER_CATALOG: ProviderCatalogEntry[] = [
 		supports_list_command: true,
 		supports_tps_command: true,
 		supports_version_command: true,
-		file: 'folia-1.21.11-14.jar',
-		download_url:
-			'https://fill-data.papermc.io/v1/objects/f52c408490a0225611e67907a3ca19f7e6da2c6bc899e715d5f46844e7103c39/folia-1.21.11-14.jar',
-		provider_version: '14',
-		minecraft_version: '1.21.11',
-		jdk_versions: [21],
-		supported_telemetry: createDefaultProviderChecks(),
-		stable: true,
+		default_jdk_versions: [21],
 	},
-	// {
-	// 	name: 'spigot',
-	// 	aliases: ['spigot', 'bukkit', 'craftbukkit'],
-	// 	description: 'Classic Bukkit-compatible server software for plugin ecosystems',
-	// 	kind: 'plugin',
-	// 	tab: 'plugin',
-	// 	stable_name: 'Stable',
-	// 	unstable_name: 'Unstable',
-	// 	supports_list_command: true,
-	// 	supports_tps_command: false,
-	// 	supports_version_command: true,
-	// 	file: 'spigot-1.21.1.jar',
-	// 	provider_version: 'latest',
-	// 	minecraft_version: '1.21.1',
-	// 	jdk_versions: [21],
-	// 	supported_telemetry: createDefaultProviderChecks(),
-	// 	stable: true,
-	// },
 	{
 		name: 'vanilla',
 		aliases: ['vanilla', 'minecraft', 'mojang', 'minecraft_server', 'server'],
@@ -93,14 +86,7 @@ const PROVIDER_CATALOG: ProviderCatalogEntry[] = [
 		supports_list_command: true,
 		supports_tps_command: false,
 		supports_version_command: true,
-		file: 'vanilla-26.1.2.jar',
-		download_url:
-			'https://piston-data.mojang.com/v1/objects/97ccd4c0ed3f81bbb7bfacddd1090b0c56f9bc51/server.jar',
-		provider_version: 'release',
-		minecraft_version: '26.1.2',
-		jdk_versions: [25],
-		supported_telemetry: createDefaultProviderChecks(),
-		stable: true,
+		default_jdk_versions: [21],
 	},
 	{
 		name: 'velocity',
@@ -113,48 +99,54 @@ const PROVIDER_CATALOG: ProviderCatalogEntry[] = [
 		supports_list_command: true,
 		supports_tps_command: false,
 		supports_version_command: true,
-		file: 'velocity-3.5.0-SNAPSHOT-592.jar',
-		download_url:
-			'https://fill-data.papermc.io/v1/objects/495f8ec5717edef9975383976c0b3e497a5509a9115d04c07fce16de11b6a72a/velocity-3.5.0-SNAPSHOT-592.jar',
-		provider_version: '3.5.0-SNAPSHOT-592',
-		minecraft_version: 'proxy',
-		jdk_versions: [17, 21],
-		supported_telemetry: createDefaultProviderChecks(),
-		stable: true,
+		default_jdk_versions: [17, 21],
 	},
-	// {
-	// 	name: 'bungeecord',
-	// 	aliases: ['bungeecord', 'bungee', 'waterfall'],
-	// 	description: 'Legacy proxy option used in older multi-server setups',
-	// 	kind: 'proxy',
-	// 	tab: 'proxies',
-	// 	stable_name: 'Stable',
-	// 	unstable_name: 'Unstable',
-	// 	supports_list_command: true,
-	// 	supports_tps_command: false,
-	// 	supports_version_command: true,
-	// 	file: 'bungeecord-latest.jar',
-	// 	provider_version: 'latest',
-	// 	minecraft_version: 'proxy',
-	// 	jdk_versions: [17, 21],
-	// 	supported_telemetry: createDefaultProviderChecks(),
-	// 	stable: true,
-	// },
 ];
 
-const providerByName = new Map(PROVIDER_CATALOG.map((provider) => [provider.name, provider]));
+const descriptorToProvider = (descriptor: ProviderDescriptor): ProviderCatalogEntry => ({
+	name: descriptor.name,
+	file: '',
+	download_url: undefined,
+	provider_version: '',
+	minecraft_version: descriptor.kind === 'proxy' ? 'proxy' : '',
+	jdk_versions: [...descriptor.default_jdk_versions],
+	supported_telemetry: createDefaultProviderChecks(),
+	stable: true,
+	aliases: [...descriptor.aliases],
+	description: descriptor.description,
+	kind: descriptor.kind,
+	tab: descriptor.tab,
+	stable_name: descriptor.stable_name,
+	unstable_name: descriptor.unstable_name,
+	supports_list_command: descriptor.supports_list_command,
+	supports_tps_command: descriptor.supports_tps_command,
+	supports_version_command: descriptor.supports_version_command,
+});
 
-const providerByAlias = new Map<string, ProviderCatalogEntry>();
-for (const provider of PROVIDER_CATALOG) {
-	providerByAlias.set(provider.name, provider);
-	for (const alias of provider.aliases) {
-		providerByAlias.set(alias.trim().toLowerCase(), provider);
+const descriptorByName = new Map(PROVIDER_DESCRIPTORS.map((descriptor) => [descriptor.name, descriptor]));
+
+const descriptorByAlias = new Map<string, ProviderDescriptor>();
+for (const descriptor of PROVIDER_DESCRIPTORS) {
+	descriptorByAlias.set(descriptor.name, descriptor);
+	for (const alias of descriptor.aliases) {
+		descriptorByAlias.set(alias.trim().toLowerCase(), descriptor);
 	}
 }
 
-export const PROVIDERS: ProviderCatalogEntry[] = PROVIDER_CATALOG.map((provider) => ({ ...provider }));
+export const PROVIDERS: ProviderCatalogEntry[] = PROVIDER_DESCRIPTORS.map(descriptorToProvider);
 
-export const PROVIDER_NAMES: ProviderName[] = PROVIDERS.map((provider) => provider.name);
+export const PROVIDER_NAMES: ProviderName[] = PROVIDER_DESCRIPTORS.map((descriptor) => descriptor.name);
+
+const providerByName = new Map(PROVIDERS.map((provider) => [provider.name, provider]));
+
+export const getProviderDescriptor = (name?: ProviderName | string | null): ProviderDescriptor | null => {
+	if (!name) return null;
+	const key = name.trim().toLowerCase();
+	return descriptorByName.get(key as ProviderName) ?? descriptorByAlias.get(key) ?? null;
+};
+
+export const getProviderDescriptorsForTab = (tab: ProviderTab): ProviderDescriptor[] =>
+	PROVIDER_DESCRIPTORS.filter((descriptor) => descriptor.tab === tab);
 
 export const getProviderDisplayName = (provider: ProviderName | string): string =>
 	titleCase(provider.trim().toLowerCase());
@@ -173,9 +165,8 @@ export const resolveProvider = (
 		return getProviderByName(provider.name);
 	}
 
-	const key = provider.trim().toLowerCase();
-	if (!key) return null;
-	return providerByAlias.get(key) ?? null;
+	const descriptor = getProviderDescriptor(provider);
+	return descriptor ? (getProviderByName(descriptor.name) ?? null) : null;
 };
 
 export const isServerProvider = (value: string): value is ProviderName => Boolean(getProviderByName(value));

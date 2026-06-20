@@ -5,6 +5,7 @@ import { Field } from '@/components/ui/field';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { formatHeapSize, formatRamLabel, RAM_MIN_GB } from '@/lib/ram-utils';
 
 type RamSliderFieldProps = {
 	id: string;
@@ -17,7 +18,7 @@ type NavigatorWithDeviceMemory = Navigator & {
 	deviceMemory?: number;
 };
 
-const ramMarkers = [1, 2, 3, 5, 10];
+const ramMarkers = [0.25, 0.5, 1, 2, 4, 8, 16, 24, 32];
 const warningBufferGb = 4;
 
 const getNavigatorMemoryLimitGb = () => {
@@ -28,8 +29,8 @@ const getNavigatorMemoryLimitGb = () => {
 };
 
 const toRamMarkerPercent = (marker: number, max: number) => {
-	if (max <= 1) return 0;
-	return ((marker - 1) / (max - 1)) * 100;
+	if (max <= RAM_MIN_GB) return 0;
+	return ((marker - RAM_MIN_GB) / (max - RAM_MIN_GB)) * 100;
 };
 
 const toRamGradientPercent = (marker: number, max: number) => {
@@ -74,10 +75,10 @@ const RamSliderField: React.FC<RamSliderFieldProps> = ({ id, value, onChange, cl
 
 	const maxRam = Math.max(10, systemMemoryLimitGb);
 	const warningStartRam = Math.max(1, maxRam - warningBufferGb);
-	const clampedRam = Math.max(1, Math.min(value, maxRam));
+	const clampedRam = Math.max(RAM_MIN_GB, Math.min(value, maxRam));
 	const proxyGradient = React.useMemo(() => buildRamGradient(maxRam), [maxRam]);
 	const visibleRamMarkers = React.useMemo(
-		() => ramMarkers.filter((marker) => marker >= 1 && marker <= maxRam),
+		() => ramMarkers.filter((marker) => marker >= RAM_MIN_GB && marker <= maxRam),
 		[maxRam],
 	);
 
@@ -104,17 +105,17 @@ const RamSliderField: React.FC<RamSliderFieldProps> = ({ id, value, onChange, cl
 						<br /> (detected system memory: {systemMemoryLimitGb} GB).
 					</TooltipContent>
 				</Tooltip>
-				<p className='text-sm font-medium text-muted-foreground'>{clampedRam} GB</p>
+				<p className='text-sm font-medium text-muted-foreground'>{formatRamLabel(clampedRam)}</p>
 			</div>
 			<Slider
 				id={id}
 				value={[clampedRam]}
-				min={1}
+				min={RAM_MIN_GB}
 				max={maxRam}
-				step={1}
+				step={0.25}
 				trackStyle={{ background: proxyGradient }}
 				rangeClassName='bg-transparent'
-				onValueChange={(nextValue) => onChange(nextValue[0] ?? 1)}
+				onValueChange={(nextValue) => onChange(nextValue[0] ?? RAM_MIN_GB)}
 			/>
 			<div className='relative h-1'>
 				{visibleRamMarkers.map((marker) => (
@@ -122,7 +123,7 @@ const RamSliderField: React.FC<RamSliderFieldProps> = ({ id, value, onChange, cl
 						key={marker}
 						className='absolute -top-[250%] -translate-x-1/2'
 						style={{ left: `${toRamMarkerPercent(marker, maxRam)}%` }}>
-						<span className='text-[12px] h-1 text-muted-foreground'>{marker}</span>
+						<span className='text-[12px] h-1 text-muted-foreground'>{formatHeapSize(marker)}</span>
 					</div>
 				))}
 			</div>
