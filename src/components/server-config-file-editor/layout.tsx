@@ -64,12 +64,11 @@ export const AdvancedModeDisclaimer = ({ user }: { user: UserData }) => {
 			<div className='rounded-md border-2 border-warning bg-warning/10 font-semibold p-4 text-sm text-warning-foreground flex gap-3 items-center'>
 				<Info className='text-warning-foreground size-8 shrink-0' />
 				<div>
-					You have advanced mode enabled. Certain properties that may be dangerous to modify are now
-					shown because{' '}
+					You have{' '}
 					<Link to='/settings' className='font-medium text-foreground underline underline-offset-4'>
 						advanced mode
 					</Link>{' '}
-					is turned on.
+					enabled. Certain properties that may be dangerous to modify are now shown.
 				</div>
 			</div>
 		);

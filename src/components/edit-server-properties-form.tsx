@@ -18,6 +18,7 @@ import { getDefaultProviderCommandSupport } from '@/lib/server-provider-capabili
 import {
 	createProvider,
 	getProviderDisplayName,
+	isProxyProvider,
 	isServerProvider,
 	PROVIDER_NAMES,
 } from '@/lib/server-provider';
@@ -525,8 +526,11 @@ export const RamSettingsSection: React.FC = () => {
 
 export const StorageBackupsSettingsSection: React.FC = () => {
 	const { settingsForm, updateSettingsField, toggleSettingsBackupMode } = useEditServerSettings();
+	// Proxy servers (e.g. Velocity) have no world data, so backups don't apply.
+	const supportsBackups = !isProxyProvider(settingsForm.provider);
 	return (
 		<SectionShell className='space-y-12'>
+			{supportsBackups && (
 			<div className='space-y-2 max-w-lg'>
 				<Label htmlFor='edit-storage-limit' className='text-xl'>
 					Backup storage limit
@@ -544,7 +548,9 @@ export const StorageBackupsSettingsSection: React.FC = () => {
 					</InputGroupAddon>
 				</InputGroup>
 			</div>
+			)}
 
+			{supportsBackups && (
 			<div className='space-y-4 max-w-lg'>
 				<div className='space-y-2'>
 					<p className='text-xl'>Auto backup modes</p>
@@ -586,6 +592,7 @@ export const StorageBackupsSettingsSection: React.FC = () => {
 					</div>
 				)}
 			</div>
+			)}
 
 			<div className='space-y-2 max-w-lg'>
 				<p className='text-xl'>Auto Restart</p>

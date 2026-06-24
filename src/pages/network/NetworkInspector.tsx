@@ -6,6 +6,7 @@ import {
 	ArrowDown,
 	ArrowUp,
 	Copy,
+	HelpCircle,
 	Plus,
 	RefreshCw,
 	ShieldCheck,
@@ -15,16 +16,27 @@ import clsx from 'clsx';
 
 import type { Server } from '@/data/servers';
 import type { NetworkUpdate } from '@/data/networks';
+import { useUser } from '@/data/user';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { resolveProviderKind } from '@/lib/server-provider-capabilities';
 import { getProviderDisplayName } from '@/lib/server-provider';
 import {
 	DEFAULT_BACKEND_HOST,
 	generateForwardingSecret,
-	sanitizeNetworkAlias,
 	type ManagedNetwork,
 	type NetworkMember,
 } from '@/lib/network-schema';
@@ -47,14 +59,13 @@ const MemberRow: React.FC<{
 	server: Server | undefined;
 	index: number;
 	total: number;
+	advancedMode: boolean;
 	onChange: (next: Partial<NetworkMember>) => void;
 	onMove: (direction: -1 | 1) => void;
 	onRemove: () => void;
-}> = ({ member, server, index, total, onChange, onMove, onRemove }) => {
-	const [alias, setAlias] = React.useState(member.alias);
+}> = ({ member, server, index, total, advancedMode, onChange, onMove, onRemove }) => {
 	const [host, setHost] = React.useState(member.host);
 
-	React.useEffect(() => setAlias(member.alias), [member.alias]);
 	React.useEffect(() => setHost(member.host), [member.host]);
 
 	return (
@@ -66,22 +77,23 @@ const MemberRow: React.FC<{
 				<span className='shrink-0 font-mono text-xs text-muted-foreground'>:{member.port}</span>
 			</div>
 
-			<div className='mt-2 grid grid-cols-2 gap-2'>
-				<label className='flex flex-col gap-1'>
-					<span className='text-[11px] text-muted-foreground'>Alias</span>
-					<Input
-						value={alias}
-						onChange={(event) => setAlias(event.target.value)}
-						onBlur={() => {
-							const sanitized = sanitizeNetworkAlias(alias);
-							setAlias(sanitized);
-							if (sanitized !== member.alias) onChange({ alias: sanitized });
-						}}
-						className='h-8'
-					/>
-				</label>
-				<label className='flex flex-col gap-1'>
-					<span className='text-[11px] text-muted-foreground'>Host</span>
+			{advancedMode && (
+				<label className='mt-2 flex flex-col gap-1'>
+					<span className='inline-flex items-center gap-1 text-[11px] text-muted-foreground'>
+						Host
+						<Tooltip>
+							<TooltipTrigger asChild>
+								<HelpCircle className='size-3 cursor-help' />
+							</TooltipTrigger>
+							<TooltipContent className='max-w-64'>
+								<p>
+									The address the proxy uses to reach this backend. Keep{' '}
+									<span className='font-mono'>127.0.0.1</span> when it runs on this machine; set a LAN
+									IP or hostname to route a backend on another machine.
+								</p>
+							</TooltipContent>
+						</Tooltip>
+					</span>
 					<Input
 						value={host}
 						onChange={(event) => setHost(event.target.value)}
@@ -93,7 +105,7 @@ const MemberRow: React.FC<{
 						className='h-8'
 					/>
 				</label>
-			</div>
+			)}
 
 			<div className='mt-2 flex items-center justify-between'>
 				<label className='flex cursor-pointer items-center gap-2 text-xs text-muted-foreground'>
@@ -142,8 +154,14 @@ export const NetworkInspector: React.FC<NetworkInspectorProps> = ({
 	onDelete,
 }) => {
 	const byId = React.useMemo(() => new Map(servers.map((server) => [server.id, server])), [servers]);
+	const { user } = useUser();
 	const [name, setName] = React.useState(network.name);
 	React.useEffect(() => setName(network.name), [network.name]);
+
+	const [basePort, setBasePort] = React.useState(String(network.basePort));
+	React.useEffect(() => setBasePort(String(network.basePort)), [network.basePort]);
+
+	const [pendingRemoval, setPendingRemoval] = React.useState<{ serverId: string; name: string } | null>(null);
 
 	const proxies = React.useMemo(
 		() => servers.filter((server) => resolveProviderKind(server.provider) === 'proxy'),
@@ -186,13 +204,28 @@ export const NetworkInspector: React.FC<NetworkInspectorProps> = ({
 	const addBackend = (server: Server) => {
 		const member: NetworkMember = {
 			serverId: server.id,
-			alias: sanitizeNetworkAlias(server.name),
 			host: DEFAULT_BACKEND_HOST,
 			port: 0,
 			inTry: true,
 			tryIndex: network.members.length,
 		};
 		setMembers([...network.members, member]);
+	};
+
+	const commitBasePort = () => {
+		const parsed = Number(basePort);
+		if (Number.isInteger(parsed) && parsed >= 1 && parsed <= 65535) {
+			if (parsed !== network.basePort) onUpdate({ basePort: parsed });
+			else setBasePort(String(network.basePort));
+		} else {
+			setBasePort(String(network.basePort));
+		}
+	};
+
+	const confirmRemoval = () => {
+		if (!pendingRemoval) return;
+		setMembers(network.members.filter((entry) => entry.serverId !== pendingRemoval.serverId));
+		setPendingRemoval(null);
 	};
 
 	const regenerateSecret = () => {
@@ -249,9 +282,26 @@ export const NetworkInspector: React.FC<NetworkInspectorProps> = ({
 			</div>
 
 			<div>
-				<div className='mb-2 flex items-center justify-between'>
+				<SectionLabel>Base port</SectionLabel>
+				<Input
+					type='number'
+					min={1}
+					max={65535}
+					value={basePort}
+					onChange={(event) => setBasePort(event.target.value)}
+					onBlur={commitBasePort}
+					onKeyDown={(event) => {
+						if (event.key === 'Enter') event.currentTarget.blur();
+					}}
+				/>
+				<p className='mt-1 text-[11px] text-muted-foreground'>
+					Players connect to the proxy here. Backend ports auto-assign from {network.basePort + 1}.
+				</p>
+			</div>
+
+			<div>
+				<div className='mb-2'>
 					<SectionLabel>Backends ({network.members.length})</SectionLabel>
-					<span className='text-[11px] text-muted-foreground'>base port {network.basePort}</span>
 				</div>
 
 				<div className='flex flex-col gap-2'>
@@ -262,9 +312,15 @@ export const NetworkInspector: React.FC<NetworkInspectorProps> = ({
 							server={byId.get(member.serverId)}
 							index={index}
 							total={orderedMembers.length}
+							advancedMode={user.advanced_mode}
 							onChange={(next) => updateMember(member.serverId, next)}
 							onMove={(direction) => moveMember(member.serverId, direction)}
-							onRemove={() => setMembers(network.members.filter((entry) => entry.serverId !== member.serverId))}
+							onRemove={() =>
+								setPendingRemoval({
+									serverId: member.serverId,
+									name: byId.get(member.serverId)?.name ?? 'this server',
+								})
+							}
 						/>
 					))}
 					{network.members.length === 0 && (
@@ -313,21 +369,23 @@ export const NetworkInspector: React.FC<NetworkInspectorProps> = ({
 				</div>
 			</div>
 
-			<div>
-				<SectionLabel>Modern forwarding secret</SectionLabel>
-				<div className='flex items-center gap-2'>
-					<Input readOnly value={network.forwarding.secret} className='font-mono text-xs' />
-					<Button variant='outline' size='icon' onClick={copySecret} title='Copy secret'>
-						<Copy />
-					</Button>
-					<Button variant='outline' size='icon' onClick={regenerateSecret} title='Regenerate secret'>
-						<RefreshCw />
-					</Button>
+			{user.advanced_mode && (
+				<div>
+					<SectionLabel>Modern forwarding secret</SectionLabel>
+					<div className='flex items-center gap-2'>
+						<Input readOnly value={network.forwarding.secret} className='font-mono text-xs' />
+						<Button variant='outline' size='icon' onClick={copySecret} title='Copy secret'>
+							<Copy />
+						</Button>
+						<Button variant='outline' size='icon' onClick={regenerateSecret} title='Regenerate secret'>
+							<RefreshCw />
+						</Button>
+					</div>
+					<p className='mt-1 flex items-center gap-1 text-[11px] text-muted-foreground'>
+						<ShieldCheck className='size-3' /> Synced to the proxy and every Paper/Folia backend on apply.
+					</p>
 				</div>
-				<p className='mt-1 flex items-center gap-1 text-[11px] text-muted-foreground'>
-					<ShieldCheck className='size-3' /> Synced to the proxy and every Paper/Folia backend on apply.
-				</p>
-			</div>
+			)}
 
 			{diagnostics.length > 0 && (
 				<div>
@@ -359,6 +417,24 @@ export const NetworkInspector: React.FC<NetworkInspectorProps> = ({
 					<Trash2 /> Delete network
 				</Button>
 			</div>
+
+			<AlertDialog open={pendingRemoval !== null} onOpenChange={(open) => !open && setPendingRemoval(null)}>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>Remove {pendingRemoval?.name} from this network?</AlertDialogTitle>
+						<AlertDialogDescription>
+							This removes the backend from the network and frees its auto-assigned port. The server itself
+							is not deleted.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel>Cancel</AlertDialogCancel>
+						<AlertDialogAction variant='destructive' onClick={confirmRemoval}>
+							Remove
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
 		</div>
 	);
 };

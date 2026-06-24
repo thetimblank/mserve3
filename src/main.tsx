@@ -9,6 +9,7 @@ import { ThemeProvider } from '@/components/theme-provider';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { AppSidebar } from '@/components/app-sidebar';
 import { ServersProvider } from './data/servers';
+import { ServerRuntimeMonitor } from './components/server-runtime-monitor';
 import { NetworksProvider } from './data/networks';
 import { UserProvider } from './data/user';
 import Home from './pages/Home';
@@ -91,6 +92,7 @@ const RootLayout: React.FC = () => {
 							<ServersProvider>
 								<NetworksProvider>
 								<CreateServerProvider>
+									<ServerRuntimeMonitor />
 									<MserveRepairDialog />
 									<Nav />
 									<AppSidebar />

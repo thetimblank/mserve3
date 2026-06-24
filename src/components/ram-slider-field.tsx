@@ -5,7 +5,13 @@ import { Field } from '@/components/ui/field';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { formatHeapSize, formatRamLabel, RAM_MIN_GB } from '@/lib/ram-utils';
+import {
+	formatHeapSize,
+	formatRamLabel,
+	RAM_MIN_GB,
+	ramToSliderFraction,
+	sliderFractionToRam,
+} from '@/lib/ram-utils';
 
 type RamSliderFieldProps = {
 	id: string;
@@ -20,6 +26,9 @@ type NavigatorWithDeviceMemory = Navigator & {
 
 const ramMarkers = [0.25, 0.5, 1, 2, 4, 8, 16, 24, 32];
 const warningBufferGb = 4;
+/** Resolution of the underlying linear slider; RAM is derived from this position
+ *  via the skewed scale, then snapped back to {@link RAM_MIN_GB} (256 MB) steps. */
+const SLIDER_RESOLUTION = 1000;
 
 const getNavigatorMemoryLimitGb = () => {
 	if (typeof navigator === 'undefined') return 16;
@@ -28,22 +37,19 @@ const getNavigatorMemoryLimitGb = () => {
 	return Math.max(1, Math.ceil(deviceMemory));
 };
 
-const toRamMarkerPercent = (marker: number, max: number) => {
-	if (max <= RAM_MIN_GB) return 0;
-	return ((marker - RAM_MIN_GB) / (max - RAM_MIN_GB)) * 100;
-};
-
-const toRamGradientPercent = (marker: number, max: number) => {
-	if (max <= 0) return 0;
-	return (Math.max(0, Math.min(marker, max)) / max) * 100;
-};
+const toRamPercent = (marker: number, max: number) => ramToSliderFraction(marker, RAM_MIN_GB, max) * 100;
 
 const buildRamGradient = (maxRam: number) => {
-	const greenStartPercent = toRamGradientPercent(1, maxRam);
-	const yellowReturnPercent = toRamGradientPercent(10, maxRam);
-	const redReturnPercent = toRamGradientPercent(16, maxRam);
+	const greenStartPercent = toRamPercent(2, maxRam);
+	const yellowReturnPercent = toRamPercent(10, maxRam);
+	const redReturnPercent = toRamPercent(16, maxRam);
 
 	return `linear-gradient(90deg, #facc15 0%, #22c55e ${greenStartPercent}%, #22c55e ${yellowReturnPercent}%, #facc15 ${redReturnPercent}%, #ef4444 100%)`;
+};
+
+const snapRam = (gb: number, max: number) => {
+	const stepped = Math.round(gb / RAM_MIN_GB) * RAM_MIN_GB;
+	return Math.max(RAM_MIN_GB, Math.min(stepped, max));
 };
 
 const RamSliderField: React.FC<RamSliderFieldProps> = ({ id, value, onChange, className }) => {
@@ -76,6 +82,9 @@ const RamSliderField: React.FC<RamSliderFieldProps> = ({ id, value, onChange, cl
 	const maxRam = Math.max(10, systemMemoryLimitGb);
 	const warningStartRam = Math.max(1, maxRam - warningBufferGb);
 	const clampedRam = Math.max(RAM_MIN_GB, Math.min(value, maxRam));
+	const sliderPosition = Math.round(
+		ramToSliderFraction(clampedRam, RAM_MIN_GB, maxRam) * SLIDER_RESOLUTION,
+	);
 	const proxyGradient = React.useMemo(() => buildRamGradient(maxRam), [maxRam]);
 	const visibleRamMarkers = React.useMemo(
 		() => ramMarkers.filter((marker) => marker >= RAM_MIN_GB && marker <= maxRam),
@@ -93,7 +102,7 @@ const RamSliderField: React.FC<RamSliderFieldProps> = ({ id, value, onChange, cl
 			<div className='flex items-center justify-between gap-3'>
 				<Tooltip>
 					<Label htmlFor={id}>
-						Memory (RAM){' '}
+						Memory{' '}
 						<TooltipTrigger>
 							<Info className='size-4' />
 						</TooltipTrigger>
@@ -101,6 +110,8 @@ const RamSliderField: React.FC<RamSliderFieldProps> = ({ id, value, onChange, cl
 
 					<TooltipContent className='text-center'>
 						The more RAM the better up to a point.
+						<br /> Diminishing returns usually start at 10GB.
+						<br /> The max recommended is 16GB even for heavily modded servers.
 						<br /> Too much can also cause system instability.
 						<br /> (detected system memory: {systemMemoryLimitGb} GB).
 					</TooltipContent>
@@ -109,20 +120,24 @@ const RamSliderField: React.FC<RamSliderFieldProps> = ({ id, value, onChange, cl
 			</div>
 			<Slider
 				id={id}
-				value={[clampedRam]}
-				min={RAM_MIN_GB}
-				max={maxRam}
-				step={0.25}
+				value={[sliderPosition]}
+				min={0}
+				max={SLIDER_RESOLUTION}
+				step={1}
 				trackStyle={{ background: proxyGradient }}
 				rangeClassName='bg-transparent'
-				onValueChange={(nextValue) => onChange(nextValue[0] ?? RAM_MIN_GB)}
+				onValueChange={(nextValue) => {
+					const position = nextValue[0] ?? 0;
+					const ram = sliderFractionToRam(position / SLIDER_RESOLUTION, RAM_MIN_GB, maxRam);
+					onChange(snapRam(ram, maxRam));
+				}}
 			/>
 			<div className='relative h-1'>
 				{visibleRamMarkers.map((marker) => (
 					<div
 						key={marker}
 						className='absolute -top-[250%] -translate-x-1/2'
-						style={{ left: `${toRamMarkerPercent(marker, maxRam)}%` }}>
+						style={{ left: `${toRamPercent(marker, maxRam)}%` }}>
 						<span className='text-[12px] h-1 text-muted-foreground'>{formatHeapSize(marker)}</span>
 					</div>
 				))}

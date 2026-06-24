@@ -1,18 +1,66 @@
 import React from 'react';
 import { m } from 'motion/react';
 import { Link } from 'react-router-dom';
-import { Plus, Share2, UploadCloud, Waypoints } from 'lucide-react';
+import { ChevronDown, Loader2, Play, Plus, RotateCcw, Share2, Square, UploadCloud, Waypoints } from 'lucide-react';
 import clsx from 'clsx';
 
 import { useServers } from '@/data/servers';
 import { useNetworks } from '@/data/networks';
 import { Button } from '@/components/ui/button';
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuSub,
+	DropdownMenuSubContent,
+	DropdownMenuSubTrigger,
+	DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { diagnoseNetwork, networkHasBlockingErrors } from '@/lib/network-config-engine';
-import type { NetworkNodePosition } from '@/lib/network-schema';
+import { getNetworkServerIds, type NetworkNodePosition } from '@/lib/network-schema';
 
 import { NetworkCanvas } from './network/NetworkCanvas';
 import { NetworkInspector } from './network/NetworkInspector';
 import { ApplyChangesDrawer } from './network/ApplyChangesDrawer';
+import { useNetworkTelemetry } from './network/use-network-telemetry';
+import { useNetworkOrchestration, type OrchestrationMode } from './network/use-network-orchestration';
+
+const RunSubmenu: React.FC<{
+	icon: React.ReactNode;
+	label: string;
+	onSelect: (mode: OrchestrationMode) => void;
+}> = ({ icon, label, onSelect }) => (
+	<DropdownMenuSub>
+		<DropdownMenuSubTrigger>
+			{icon} {label}
+		</DropdownMenuSubTrigger>
+		<DropdownMenuSubContent>
+			<DropdownMenuItem onSelect={() => onSelect('sequential')}>Sequential (one at a time)</DropdownMenuItem>
+			<DropdownMenuItem onSelect={() => onSelect('staged')}>Staged (backends, then proxy)</DropdownMenuItem>
+		</DropdownMenuSubContent>
+	</DropdownMenuSub>
+);
+
+const NetworkRunMenu: React.FC<{
+	busy: boolean;
+	disabled: boolean;
+	onStart: (mode: OrchestrationMode) => void;
+	onStop: (mode: OrchestrationMode) => void;
+	onRestart: (mode: OrchestrationMode) => void;
+}> = ({ busy, disabled, onStart, onStop, onRestart }) => (
+	<DropdownMenu>
+		<DropdownMenuTrigger asChild>
+			<Button variant='outline' disabled={busy || disabled} title='Run the whole network'>
+				{busy ? <Loader2 className='animate-spin' /> : <Play />} Run <ChevronDown />
+			</Button>
+		</DropdownMenuTrigger>
+		<DropdownMenuContent align='end' className='w-56'>
+			<RunSubmenu icon={<Play />} label='Start' onSelect={onStart} />
+			<RunSubmenu icon={<Square />} label='Stop' onSelect={onStop} />
+			<RunSubmenu icon={<RotateCcw />} label='Restart' onSelect={onRestart} />
+		</DropdownMenuContent>
+	</DropdownMenu>
+);
 
 const NetworkPage: React.FC = () => {
 	const { servers, isReady: serversReady, updateServerStats } = useServers();
@@ -61,6 +109,41 @@ const NetworkPage: React.FC = () => {
 
 	const hasBlockingErrors = networkHasBlockingErrors(diagnostics);
 
+	// Keep node metrics live while the page is open, and drive whole-network runs.
+	useNetworkTelemetry(activeNetwork, servers);
+	const { busy, progress, startNetwork, stopNetwork, restartNetwork } = useNetworkOrchestration(
+		activeNetwork,
+		servers,
+	);
+
+	const networkServerIds = React.useMemo(
+		() => (activeNetwork ? getNetworkServerIds(activeNetwork) : []),
+		[activeNetwork],
+	);
+	const onlineCount = React.useMemo(
+		() => servers.filter((server) => networkServerIds.includes(server.id) && server.status === 'online').length,
+		[servers, networkServerIds],
+	);
+	const progressServerName = progress?.currentServerId
+		? servers.find((server) => server.id === progress.currentServerId)?.name
+		: undefined;
+
+	const handleRemoveMember = React.useCallback(
+		(serverId: string) => {
+			if (!activeNetwork) return;
+			updateNetwork(activeNetwork.id, (network) => ({
+				...network,
+				members: network.members.filter((member) => member.serverId !== serverId),
+			}));
+		},
+		[activeNetwork, updateNetwork],
+	);
+
+	const handleRemoveProxy = React.useCallback(() => {
+		if (!activeNetwork) return;
+		updateNetwork(activeNetwork.id, { proxyServerId: null });
+	}, [activeNetwork, updateNetwork]);
+
 	const handleCreateNetwork = () => {
 		const id = createNetwork(`Network ${networks.length + 1}`);
 		setActiveNetworkId(id);
@@ -103,9 +186,28 @@ const NetworkPage: React.FC = () => {
 				</div>
 
 				<div className='flex shrink-0 items-center gap-2'>
+					{activeNetwork && (
+						<span className='mr-1 inline-flex items-center gap-2 text-xs text-muted-foreground'>
+							{busy && <Loader2 className='size-3.5 animate-spin' />}
+							{busy
+								? `${progress?.action === 'stop' ? 'Stopping' : progress?.action === 'restart' ? 'Restarting' : 'Starting'}${
+										progressServerName ? ` ${progressServerName}` : ''
+									}…`
+								: `${onlineCount}/${networkServerIds.length} online`}
+						</span>
+					)}
 					<Button variant='outline' onClick={handleCreateNetwork}>
 						<Plus /> New network
 					</Button>
+					{activeNetwork && (
+						<NetworkRunMenu
+							busy={busy}
+							disabled={!activeNetwork.proxyServerId}
+							onStart={startNetwork}
+							onStop={stopNetwork}
+							onRestart={restartNetwork}
+						/>
+					)}
 					{activeNetwork && (
 						<Button
 							onClick={() => setApplyOpen(true)}
@@ -173,6 +275,8 @@ const NetworkPage: React.FC = () => {
 							selectedServerId={selectedServerId}
 							onSelectServer={setSelectedServerId}
 							onLayoutChange={handleLayoutChange}
+							onRemoveMember={handleRemoveMember}
+							onRemoveProxy={handleRemoveProxy}
 						/>
 					</div>
 					<aside className='flex w-[360px] shrink-0 flex-col overflow-hidden rounded-2xl border bg-background p-3'>

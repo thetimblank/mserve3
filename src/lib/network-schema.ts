@@ -16,8 +16,6 @@ export interface NetworkForwarding {
 export interface NetworkMember {
 	/** References a {@link Server} id whose provider kind is 'plugin' | 'vanilla'. */
 	serverId: string;
-	/** Velocity `[servers]` table key, e.g. "lobby". Unique within the network. */
-	alias: string;
 	/** Address the proxy uses to reach this backend. Defaults to 127.0.0.1. */
 	host: string;
 	/** Auto-assigned backend port, unique within the network. */
@@ -42,17 +40,25 @@ export interface ManagedNetwork {
 	proxyServerId: string | null;
 	members: NetworkMember[];
 	forwarding: NetworkForwarding;
-	/** First port auto-assigned to backends. */
+	/**
+	 * The proxy's public bind port — the port players connect to (default 25565).
+	 * Editable per network. Backend sub-ports are auto-assigned upward from
+	 * `basePort + 1`, so this is the single source of truth for the whole range.
+	 */
 	basePort: number;
 	/** React Flow node positions, keyed by Server id (proxy + members). */
 	layout: Record<string, NetworkNodePosition>;
 }
 
-export const DEFAULT_NETWORK_BASE_PORT = 25566;
+export const DEFAULT_NETWORK_BASE_PORT = 25565;
 export const DEFAULT_BACKEND_HOST = '127.0.0.1';
-export const DEFAULT_PROXY_BIND = '0.0.0.0:25577';
+export const DEFAULT_PROXY_BIND_ADDRESS = '0.0.0.0';
 export const FORWARDING_SECRET_FILE = 'forwarding.secret';
 export const PAPER_GLOBAL_CONFIG_RELATIVE = 'config/paper-global.yml';
+
+/** The address:port the Velocity proxy binds to, derived from the base port. */
+export const getProxyBind = (network: Pick<ManagedNetwork, 'basePort'>): string =>
+	`${DEFAULT_PROXY_BIND_ADDRESS}:${network.basePort}`;
 
 const SECRET_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
 
@@ -134,12 +140,33 @@ const normalizeMember = (member: Partial<NetworkMember>, index: number): Network
 	if (!serverId) return null;
 	return {
 		serverId,
-		alias: sanitizeNetworkAlias(member.alias ?? `server-${index + 1}`),
 		host: typeof member.host === 'string' && member.host.trim() ? member.host.trim() : DEFAULT_BACKEND_HOST,
-		port: normalizePort(member.port, DEFAULT_NETWORK_BASE_PORT + index),
+		port: normalizePort(member.port, DEFAULT_NETWORK_BASE_PORT + index + 1),
 		inTry: member.inTry ?? true,
 		tryIndex: Number.isInteger(member.tryIndex) ? Number(member.tryIndex) : index,
 	};
+};
+
+/**
+ * Derive a unique, Velocity-safe alias per member from its server name. Aliases
+ * are no longer stored or user-editable — they are computed deterministically at
+ * config-generation and display time. Members are processed in `tryIndex` order
+ * so the same topology always yields the same aliases.
+ */
+export const buildNetworkAliasMap = (
+	members: NetworkMember[],
+	byId: Map<string, { name: string }>,
+): Map<string, string> => {
+	const used = new Set<string>();
+	const result = new Map<string, string>();
+	const ordered = [...members].sort((left, right) => left.tryIndex - right.tryIndex);
+	for (const member of ordered) {
+		const server = byId.get(member.serverId);
+		const alias = uniqueNetworkAlias(server?.name ?? member.serverId, used);
+		used.add(alias);
+		result.set(member.serverId, alias);
+	}
+	return result;
 };
 
 /**
@@ -193,13 +220,10 @@ const normalizeLayout = (layout: unknown): Record<string, NetworkNodePosition> =
 };
 
 export const normalizeNetwork = (network: Partial<ManagedNetwork>): ManagedNetwork => {
-	const usedAliases = new Set<string>();
 	const members: NetworkMember[] = [];
 	(network.members ?? []).forEach((member, index) => {
 		const normalized = normalizeMember(member, index);
 		if (!normalized) return;
-		normalized.alias = uniqueNetworkAlias(normalized.alias, usedAliases);
-		usedAliases.add(normalized.alias);
 		members.push(normalized);
 	});
 
@@ -209,7 +233,8 @@ export const normalizeNetwork = (network: Partial<ManagedNetwork>): ManagedNetwo
 	});
 
 	const basePort = normalizePort(network.basePort, DEFAULT_NETWORK_BASE_PORT);
-	const portedMembers = assignMemberPorts(members, basePort, [Number(DEFAULT_PROXY_BIND.split(':')[1])]);
+	// The proxy owns `basePort`; backends auto-assign from `basePort + 1` upward.
+	const portedMembers = assignMemberPorts(members, basePort + 1, [basePort]);
 
 	const secret =
 		typeof network.forwarding?.secret === 'string' && network.forwarding.secret.trim()

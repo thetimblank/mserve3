@@ -15,11 +15,16 @@ import React from 'react';
 import { m } from 'motion/react';
 import { Link } from 'react-router-dom';
 import ServerStatus from './server-status';
-import { invoke } from '@tauri-apps/api/core';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import OpenFolderButton from '@/components/open-folder-button';
-import { getPrimaryMinecraftVersion } from '@/lib/utils';
-import { toast } from 'sonner';
+import { formatUptime, getPrimaryMinecraftVersion } from '@/lib/utils';
+import {
+	forceKillServer,
+	restartServer,
+	startServer,
+	stopServer,
+	type ServerControlContext,
+} from '@/lib/server-controls';
 import { useUser } from '@/data/user';
 
 interface Props {
@@ -31,146 +36,29 @@ const ServerCard: React.FC<Props> = ({ server, delay }) => {
 	const { setServerStatus, updateServerStats } = useServers();
 	const { user } = useUser();
 	const [isBusy, setIsBusy] = React.useState(false);
-	const serverId = server.id;
 	const displayVersion = server.stats.server_version ?? server.provider.minecraft_version ?? null;
 
-	const handleStart = async () => {
+	const controlContext = (): ServerControlContext => ({
+		server,
+		javaInstallation: user.java_installation_default,
+		setServerStatus,
+		updateServerStats,
+	});
+
+	const runControl = async (action: (context: ServerControlContext) => Promise<boolean>) => {
 		if (isBusy) return;
 		setIsBusy(true);
-		setServerStatus(serverId, 'starting');
-		updateServerStats(serverId, {
-			online: false,
-			players_online: null,
-			players_max: null,
-			tps: null,
-			ram_used: null,
-			cpu_used: null,
-			uptime: new Date(),
-		});
 		try {
-			await invoke('start_server', {
-				directory: server.directory,
-				globalJavaInstallation: user.java_installation_default,
-			});
-			setServerStatus(serverId, 'online');
-		} catch (err) {
-			setServerStatus(serverId, 'offline');
-			const message = err instanceof Error ? err.message : 'Failed to start server.';
-			toast.error(message);
+			await action(controlContext());
 		} finally {
 			setIsBusy(false);
 		}
 	};
 
-	const handleStop = async () => {
-		if (isBusy) return;
-		setIsBusy(true);
-		setServerStatus(serverId, 'closing');
-		try {
-			await invoke('stop_server', { directory: server.directory });
-			setServerStatus(serverId, 'offline');
-			updateServerStats(serverId, {
-				online: false,
-				players_online: null,
-				players_max: null,
-				tps: null,
-				ram_used: null,
-				cpu_used: null,
-				uptime: null,
-			});
-		} catch (err) {
-			setServerStatus(serverId, 'offline');
-			updateServerStats(serverId, {
-				online: false,
-				players_online: null,
-				players_max: null,
-				tps: null,
-				ram_used: null,
-				cpu_used: null,
-				uptime: null,
-			});
-			const message = err instanceof Error ? err.message : 'Failed to stop server.';
-			toast.error(message);
-		} finally {
-			setIsBusy(false);
-		}
-	};
-
-	const handleRestart = async () => {
-		if (isBusy) return;
-		setIsBusy(true);
-		setServerStatus(serverId, 'closing');
-		try {
-			await invoke('stop_server', { directory: server.directory });
-		} catch {}
-
-		setServerStatus(serverId, 'starting');
-		updateServerStats(serverId, {
-			online: false,
-			players_online: null,
-			players_max: null,
-			tps: null,
-			ram_used: null,
-			cpu_used: null,
-			uptime: new Date(),
-		});
-		try {
-			await invoke('start_server', {
-				directory: server.directory,
-				globalJavaInstallation: user.java_installation_default,
-			});
-			setServerStatus(serverId, 'online');
-		} catch (err) {
-			setServerStatus(serverId, 'offline');
-			updateServerStats(serverId, {
-				online: false,
-				players_online: null,
-				players_max: null,
-				tps: null,
-				ram_used: null,
-				cpu_used: null,
-				uptime: null,
-			});
-			const message = err instanceof Error ? err.message : 'Failed to restart server.';
-			toast.error(message);
-		} finally {
-			setIsBusy(false);
-		}
-	};
-
-	const handleForceKill = async () => {
-		if (isBusy) return;
-		setIsBusy(true);
-		setServerStatus(serverId, 'closing');
-		try {
-			await invoke('force_kill_server', { directory: server.directory });
-			setServerStatus(serverId, 'offline');
-			updateServerStats(serverId, {
-				online: false,
-				players_online: null,
-				players_max: null,
-				tps: null,
-				ram_used: null,
-				cpu_used: null,
-				uptime: null,
-			});
-		} catch (err) {
-			setServerStatus(serverId, 'offline');
-			updateServerStats(serverId, {
-				online: false,
-				players_online: null,
-				players_max: null,
-				tps: null,
-				ram_used: null,
-				cpu_used: null,
-				uptime: null,
-			});
-			const message = err instanceof Error ? err.message : 'Failed to force kill server process.';
-			toast.error(message);
-		} finally {
-			setIsBusy(false);
-		}
-	};
+	const handleStart = () => void runControl(startServer);
+	const handleStop = () => void runControl(stopServer);
+	const handleRestart = () => void runControl(restartServer);
+	const handleForceKill = () => void runControl(forceKillServer);
 
 	return (
 		<m.div
@@ -236,18 +124,7 @@ const ServerCard: React.FC<Props> = ({ server, delay }) => {
 								<TooltipTrigger>
 									<div className='flex items-center lg:text-lg gap-1'>
 										<Clock className='size-4' />
-										{(() => {
-											const now = new Date();
-											const diff = now.getTime() - server.stats.uptime.getTime();
-											const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-											const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
-											const minutes = Math.floor((diff / (1000 * 60)) % 60);
-
-											if (days > 0) return `${days}d ${hours}h`;
-											if (hours > 0) return `${hours}h ${minutes}m`;
-											if (minutes < 1) return `Now`;
-											return `${minutes}m`;
-										})()}
+										{formatUptime(server.stats.uptime)}
 									</div>
 								</TooltipTrigger>
 								<TooltipContent>

@@ -118,8 +118,7 @@ export default function RamSelector({ provider, ram, className, updateField, ...
 		if (visiblePresets.length === 0) return;
 		if (visiblePresets.some((preset) => preset.ram === ram)) return;
 		const recommended =
-			visiblePresets.find((preset) => preset.recommended) ??
-			visiblePresets[visiblePresets.length - 1];
+			visiblePresets.find((preset) => preset.recommended) ?? visiblePresets[visiblePresets.length - 1];
 		updateField('ram', recommended.ram);
 	}, [ram, isAdvancedMode, updateField, visiblePresets]);
 
@@ -163,7 +162,6 @@ export default function RamSelector({ provider, ram, className, updateField, ...
 							</button>
 						);
 					})}
-					<p className='text-xs text-muted-foreground'>Detected {systemMemoryGb} GB</p>
 				</div>
 			)}
 		</>

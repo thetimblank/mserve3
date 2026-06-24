@@ -6,9 +6,11 @@ import { Button } from '@/components/ui/button';
 import { Container } from '@/components/ui/container';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { AlertTriangle } from 'lucide-react';
+import { useUser } from '@/data/user';
 
 export default function Slide1() {
 	const { nextSlide, runtime, state } = useSlide();
+	const { user } = useUser();
 
 	const sourceLabel = (source: string) => {
 		if (source === 'path') return 'PATH';
@@ -27,8 +29,13 @@ export default function Slide1() {
 				Detected Java Runtimes
 			</p>
 			<p className='mb-20 text-center'>
-				Auto-detected {runtime && <span> {runtime.scannedCandidates} Java executable(s)</span>} from PATH,
-				JAVA_HOME, and common install folders.{' '}
+				Found{' '}
+				{runtime && (
+					<span>
+						{runtime.scannedCandidates} Java executable{runtime.scannedCandidates != 1 && 's'}
+					</span>
+				)}
+				{user.advanced_mode ? 'from PATH, JAVA_HOME, and common install folders.' : '.'}
 			</p>
 			<div className='flex flex-col items-center'>
 				{state.is_loading && (

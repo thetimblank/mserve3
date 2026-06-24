@@ -14,7 +14,12 @@ import '@xyflow/react/dist/style.css';
 
 import type { Server } from '@/data/servers';
 import { resolveProviderKind } from '@/lib/server-provider-capabilities';
-import { DEFAULT_PROXY_BIND, type ManagedNetwork, type NetworkNodePosition } from '@/lib/network-schema';
+import {
+	buildNetworkAliasMap,
+	getProxyBind,
+	type ManagedNetwork,
+	type NetworkNodePosition,
+} from '@/lib/network-schema';
 import type { NetworkDiagnostic } from '@/lib/network-config-engine';
 
 import { networkNodeTypes, type BackendNodeData, type ProxyNodeData } from './nodes';
@@ -26,6 +31,8 @@ interface NetworkCanvasProps {
 	selectedServerId: string | null;
 	onSelectServer: (serverId: string | null) => void;
 	onLayoutChange: (serverId: string, position: NetworkNodePosition) => void;
+	onRemoveMember: (serverId: string) => void;
+	onRemoveProxy: () => void;
 }
 
 const getColorMode = (): 'dark' | 'light' => {
@@ -40,6 +47,8 @@ const buildNodes = (
 	byId: Map<string, Server>,
 	diagnostics: NetworkDiagnostic[],
 	selectedServerId: string | null,
+	onRemoveMember: (serverId: string) => void,
+	onRemoveProxy: () => void,
 ): Node[] => {
 	const nodes: Node[] = [];
 	const warningByServer = new Map<string, string>();
@@ -52,6 +61,7 @@ const buildNodes = (
 	}
 
 	const proxy = network.proxyServerId ? byId.get(network.proxyServerId) : undefined;
+	const aliasMap = buildNetworkAliasMap(network.members, byId);
 
 	network.members.forEach((member, index) => {
 		const server = byId.get(member.serverId);
@@ -61,9 +71,11 @@ const buildNodes = (
 		const data: BackendNodeData = {
 			server,
 			member,
+			alias: aliasMap.get(server.id) ?? server.id,
 			kind: resolveProviderKind(server.provider),
 			warning: warningByServer.get(server.id),
 			selected: selectedServerId === server.id,
+			onRemove: () => onRemoveMember(server.id),
 		};
 		nodes.push({
 			id: server.id,
@@ -79,8 +91,9 @@ const buildNodes = (
 			server: proxy,
 			memberCount: network.members.length,
 			warningCount: proxyWarnings,
-			bind: DEFAULT_PROXY_BIND,
+			bind: getProxyBind(network),
 			selected: selectedServerId === proxy.id,
+			onRemove: onRemoveProxy,
 		};
 		nodes.push({
 			id: proxy.id,
@@ -113,15 +126,17 @@ export const NetworkCanvas: React.FC<NetworkCanvasProps> = ({
 	selectedServerId,
 	onSelectServer,
 	onLayoutChange,
+	onRemoveMember,
+	onRemoveProxy,
 }) => {
 	const byId = React.useMemo(() => new Map(servers.map((server) => [server.id, server])), [servers]);
 	const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
 	const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
 	React.useEffect(() => {
-		setNodes(buildNodes(network, byId, diagnostics, selectedServerId));
+		setNodes(buildNodes(network, byId, diagnostics, selectedServerId, onRemoveMember, onRemoveProxy));
 		setEdges(buildEdges(network, byId));
-	}, [network, byId, diagnostics, selectedServerId, setNodes, setEdges]);
+	}, [network, byId, diagnostics, selectedServerId, onRemoveMember, onRemoveProxy, setNodes, setEdges]);
 
 	const handleNodesChange = React.useCallback(
 		(changes: NodeChange<Node>[]) => {

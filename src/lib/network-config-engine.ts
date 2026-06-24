@@ -13,8 +13,9 @@ import { parsePropertiesMap, serializePropertiesMap } from '@/components/server-
 import { resolveProviderKind } from '@/lib/server-provider-capabilities';
 import type { Server } from '@/data/servers';
 import {
-	DEFAULT_PROXY_BIND,
+	buildNetworkAliasMap,
 	FORWARDING_SECRET_FILE,
+	getProxyBind,
 	PAPER_GLOBAL_CONFIG_RELATIVE,
 	type ManagedNetwork,
 	type NetworkMember,
@@ -181,16 +182,20 @@ const buildPaperGlobalChange = (
 
 const buildVelocityChange = (
 	proxy: Server,
+	network: ManagedNetwork,
 	members: { member: NetworkMember; server: Server }[],
+	aliasMap: Map<string, string>,
 	existing: string | null,
 ): NetworkFileChange | null => {
 	const parsedRoot = existing ? (TOML.parse(existing) as Record<string, unknown>) : {};
 	const root: Record<string, unknown> = { ...parsedRoot };
 	const summary: string[] = [];
 
-	if (root.bind === undefined) {
-		root.bind = DEFAULT_PROXY_BIND;
-		summary.push(`bind → ${DEFAULT_PROXY_BIND}`);
+	// `bind` is network-managed (derived from the base port); force it.
+	const bind = getProxyBind(network);
+	if (root.bind !== bind) {
+		root.bind = bind;
+		summary.push(`bind → ${bind}`);
 	}
 	if (root['online-mode'] !== true) {
 		root['online-mode'] = true;
@@ -210,18 +215,21 @@ const buildVelocityChange = (
 		unknown
 	>;
 
+	const aliasFor = (member: NetworkMember) => aliasMap.get(member.serverId) ?? member.serverId;
+
 	for (const { member } of members) {
+		const alias = aliasFor(member);
 		const address = `${member.host}:${member.port}`;
-		if (servers[member.alias] !== address) {
-			summary.push(`servers.${member.alias} → ${address}`);
+		if (servers[alias] !== address) {
+			summary.push(`servers.${alias} → ${address}`);
 		}
-		servers[member.alias] = address;
+		servers[alias] = address;
 	}
 
 	const tryOrder = members
 		.filter(({ member }) => member.inTry)
 		.sort((left, right) => left.member.tryIndex - right.member.tryIndex)
-		.map(({ member }) => member.alias);
+		.map(({ member }) => aliasFor(member));
 	servers.try = tryOrder;
 	summary.push(`try → [${tryOrder.join(', ')}]`);
 
@@ -288,6 +296,8 @@ export const planNetworkApply = async (
 		.map((member) => ({ member, server: byId.get(member.serverId) }))
 		.filter((entry): entry is { member: NetworkMember; server: Server } => Boolean(entry.server));
 
+	const aliasMap = buildNetworkAliasMap(network.members, byId);
+
 	const changes: NetworkFileChange[] = [];
 
 	// Backends: server.properties (+ paper-global.yml for plugin backends).
@@ -306,7 +316,7 @@ export const planNetworkApply = async (
 
 	// Proxy: velocity.toml + forwarding.secret.
 	const velocityExisting = await readOptionalManagedFile(proxy.directory, 'velocity.toml');
-	const velocityChange = buildVelocityChange(proxy, resolvedMembers, velocityExisting);
+	const velocityChange = buildVelocityChange(proxy, network, resolvedMembers, aliasMap, velocityExisting);
 	if (velocityChange) changes.push(velocityChange);
 
 	const secretExisting = (await readServerNetworkFile(proxy.directory, FORWARDING_SECRET_FILE)).content;
@@ -362,7 +372,6 @@ export const diagnoseNetwork = (
 		diagnostics.push({ level: 'warning', message: 'This network has no backend servers yet.' });
 	}
 
-	const seenAliases = new Set<string>();
 	const seenPorts = new Set<number>();
 	for (const member of network.members) {
 		const server = byId.get(member.serverId);
@@ -391,15 +400,6 @@ export const diagnoseNetwork = (
 				serverId: server.id,
 			});
 		}
-
-		if (seenAliases.has(member.alias)) {
-			diagnostics.push({
-				level: 'error',
-				message: `Duplicate server alias "${member.alias}".`,
-				serverId: server.id,
-			});
-		}
-		seenAliases.add(member.alias);
 
 		if (seenPorts.has(member.port)) {
 			diagnostics.push({

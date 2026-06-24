@@ -6,6 +6,7 @@ import type { Server, ServerStatus, ServerUpdate } from '@/data/servers';
 import type { TelemetryKey } from '@/lib/mserve-schema';
 import { isServerReadyLine, parseTps, stripAnsi } from '@/lib/utils';
 import { getServerProviderCapabilities } from '@/lib/server-provider-capabilities';
+import { mapTelemetryToStats } from '@/lib/server-telemetry';
 import { useUser } from '@/data/user';
 import {
 	type CreateServerBackupResult,
@@ -15,6 +16,8 @@ import {
 	type ServerTelemetryResult,
 } from '../server-types';
 import { didRequestStop, isStopCommand, makeCloseBackupKey, mapScannedBackups } from '../server-utils';
+import { claimServerRuntime, releaseServerRuntime } from '@/lib/server-runtime-registry';
+import { isProxyProvider } from '@/lib/server-provider';
 
 type Args = {
 	server: Server | undefined;
@@ -124,12 +127,6 @@ export const useServerRuntime = ({
 		}
 	}, [appendTerminalLine, serverDirectory, user.java_installation_default]);
 
-	const toUptimeDate = React.useCallback((value: string | null): Date | null => {
-		if (!value) return null;
-		const parsed = new Date(value);
-		return Number.isNaN(parsed.getTime()) ? null : parsed;
-	}, []);
-
 	const setOfflineState = React.useCallback(() => {
 		setServerStatus(serverId, 'offline');
 		runtimeRef.current.startAt = null;
@@ -161,7 +158,7 @@ export const useServerRuntime = ({
 	}, [serverId, setServerStatus, updateServerStats]);
 
 	const syncTelemetry = React.useCallback(async () => {
-		if (!serverDirectory) return;
+		if (!serverDirectory || !server) return;
 		if (telemetryInFlightRef.current) return;
 		telemetryInFlightRef.current = true;
 
@@ -170,33 +167,10 @@ export const useServerRuntime = ({
 				directory: serverDirectory,
 			});
 
-			const pingAvailable = supportsTelemetry('online') && telemetry.online;
-			const uptime = toUptimeDate(telemetry.uptime) ?? runtimeRef.current.startAt;
-
-			const nextStats: Partial<Server['stats']> = {
-				uptime,
-				players_online: supportsTelemetry('list') && pingAvailable ? telemetry.playersOnline : null,
-				players_max: supportsTelemetry('list') && pingAvailable ? telemetry.playersMax : null,
-				server_version: supportsTelemetry('version') && pingAvailable ? telemetry.serverVersion : null,
-				provider_version: supportsTelemetry('provider') ? telemetry.providerVersion : null,
-				ram_used: supportsTelemetry('ram') ? telemetry.ramUsed : null,
-				cpu_used: supportsTelemetry('cpu') ? telemetry.cpuUsed : null,
-			};
-
-			if (supportsTelemetry('online')) {
-				nextStats.online = telemetry.online;
-				if (!telemetry.online) {
-					nextStats.players_online = null;
-					nextStats.players_max = null;
-					nextStats.server_version = null;
-				}
-			}
-
-			if (!providerCapabilities.supportsTpsCommand || !supportsTelemetry('tps')) {
-				nextStats.tps = null;
-			}
-
-			updateServerStats(serverId, nextStats);
+			updateServerStats(
+				serverId,
+				mapTelemetryToStats(server, telemetry, { fallbackUptime: runtimeRef.current.startAt }),
+			);
 
 			if (supportsTelemetry('online') && telemetry.online && serverStatus === 'starting') {
 				setServerStatus(serverId, 'online');
@@ -212,16 +186,7 @@ export const useServerRuntime = ({
 		} finally {
 			telemetryInFlightRef.current = false;
 		}
-	}, [
-		providerCapabilities.supportsTpsCommand,
-		supportsTelemetry,
-		serverDirectory,
-		serverId,
-		serverStatus,
-		setServerStatus,
-		toUptimeDate,
-		updateServerStats,
-	]);
+	}, [server, serverDirectory, serverId, serverStatus, supportsTelemetry, setServerStatus, updateServerStats]);
 
 	const syncServerContents = React.useCallback(async () => {
 		if (!serverDirectory) return;
@@ -247,6 +212,10 @@ export const useServerRuntime = ({
 	const createAutomaticBackup = React.useCallback(
 		async (reason: BackupReason) => {
 			if (!serverDirectory) return;
+			// Proxy servers (e.g. Velocity) have no world data to back up, so
+			// auto-backups always fail. Skip them entirely instead of surfacing a
+			// recurring "Auto backup failed" message.
+			if (isProxyProvider(server?.provider)) return;
 			if (runtimeRef.current.isCreatingAutoBackup) return;
 
 			runtimeRef.current.isCreatingAutoBackup = true;
@@ -276,13 +245,21 @@ export const useServerRuntime = ({
 				runtimeRef.current.isCreatingAutoBackup = false;
 			}
 		},
-		[appendTerminalLine, serverDirectory, syncServerContents],
+		[appendTerminalLine, server?.provider, serverDirectory, syncServerContents],
 	);
 
 	React.useEffect(() => {
 		setErrorMessage(null);
 		runtimeRef.current = initialRuntimeState();
 	}, [serverId, setErrorMessage]);
+
+	// Claim this server while the detail page is open so the app-wide
+	// ServerRuntimeMonitor defers its lifecycle handling to this richer loop.
+	React.useEffect(() => {
+		if (!serverId) return;
+		claimServerRuntime(serverId);
+		return () => releaseServerRuntime(serverId);
+	}, [serverId]);
 
 	React.useEffect(() => {
 		void syncServerContents();
