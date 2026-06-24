@@ -33,8 +33,8 @@ pub(in crate::app) fn restore_server_backup(payload: RestoreBackupPayload) -> Re
         return Err("Backup directory does not exist.".to_string());
     }
 
-    let backup_root_canonical = backup_root.canonicalize().map_err(|err| err.to_string())?;
-    let selected_backup_canonical = backup_directory.canonicalize().map_err(|err| err.to_string())?;
+    let backup_root_canonical = dunce::canonicalize(&backup_root).map_err(|err| err.to_string())?;
+    let selected_backup_canonical = dunce::canonicalize(&backup_directory).map_err(|err| err.to_string())?;
     if !selected_backup_canonical.starts_with(&backup_root_canonical) {
         return Err("Backup path is outside the server backup directory.".to_string());
     }
@@ -82,8 +82,8 @@ pub(in crate::app) fn delete_server_backup(payload: RestoreBackupPayload) -> Res
         return Err("Backup directory does not exist.".to_string());
     }
 
-    let backup_root_canonical = backup_root.canonicalize().map_err(|err| err.to_string())?;
-    let selected_backup_canonical = backup_directory.canonicalize().map_err(|err| err.to_string())?;
+    let backup_root_canonical = dunce::canonicalize(&backup_root).map_err(|err| err.to_string())?;
+    let selected_backup_canonical = dunce::canonicalize(&backup_directory).map_err(|err| err.to_string())?;
     if !selected_backup_canonical.starts_with(&backup_root_canonical) {
         return Err("Backup path is outside the server backup directory.".to_string());
     }

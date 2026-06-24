@@ -10,8 +10,8 @@ import { invoke } from '@tauri-apps/api/core';
 import type { Server } from '@/data/servers';
 import { useServers } from '@/data/servers';
 import { getNetworkServerIds, type ManagedNetwork } from '@/lib/network-schema';
-import { mapTelemetryToStats, providerSupportsOnlinePing } from '@/lib/server-telemetry';
-import type { ServerTelemetryResult } from '@/pages/server/server-types';
+import { mapSampleToStats } from '@/lib/server-telemetry';
+import type { TelemetrySample } from '@/pages/server/server-types';
 
 const TELEMETRY_POLL_INTERVAL_MS = 5000;
 
@@ -40,21 +40,19 @@ export const useNetworkTelemetry = (network: ManagedNetwork | null, servers: Ser
 					if (!server || inFlight.has(id)) return;
 					inFlight.add(id);
 					try {
-						const telemetry = await invoke<ServerTelemetryResult>('get_server_telemetry', {
+						const sample = await invoke<TelemetrySample>('get_server_telemetry', {
 							directory: server.directory,
 						});
 						if (!active) return;
-						updateServerStats(id, mapTelemetryToStats(server, telemetry));
+						updateServerStats(id, mapSampleToStats(sample));
 					} catch {
 						if (!active) return;
-						if (providerSupportsOnlinePing(server)) {
-							updateServerStats(id, {
-								online: false,
-								players_online: null,
-								players_max: null,
-								server_version: null,
-							});
-						}
+						updateServerStats(id, {
+							online: false,
+							players_online: null,
+							players_max: null,
+							server_version: null,
+						});
 					} finally {
 						inFlight.delete(id);
 					}

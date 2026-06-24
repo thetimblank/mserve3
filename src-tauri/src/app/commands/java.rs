@@ -38,7 +38,7 @@ fn candidate_key(path: &Path) -> String {
 }
 
 fn normalize_candidate_path(path: PathBuf) -> PathBuf {
-    path.canonicalize().unwrap_or(path)
+    dunce::canonicalize(&path).unwrap_or(path)
 }
 
 fn push_candidate(

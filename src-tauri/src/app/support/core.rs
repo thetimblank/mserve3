@@ -132,8 +132,7 @@ pub(in crate::app) fn get_runtime_config(directory: &Path) -> Result<RuntimeServ
 pub(in crate::app) fn open_path_in_file_manager(path: &Path) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        let normalized = path
-            .canonicalize()
+        let normalized = dunce::canonicalize(path)
             .unwrap_or_else(|_| path.to_path_buf())
             .to_string_lossy()
             .replace('/', "\\");

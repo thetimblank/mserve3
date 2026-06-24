@@ -9,46 +9,12 @@ export const stripAnsi = (value: string) => value.replace(/\x1b\[[0-9;]*m/g, '')
 
 type RuntimeProviderKind = 'plugin' | 'vanilla' | 'proxy' | 'unknown';
 
-const DONE_LINE = /Done \([\d.]+s\)!/i;
-
-export const isServerReadyLine = (line: string, providerKind: RuntimeProviderKind = 'unknown') => {
-	const cleaned = line.trim();
-	const markerMatch = cleaned.match(DONE_LINE);
-	if (!markerMatch || markerMatch.index == null) {
-		return false;
-	}
-
-	const markerEnd = markerMatch.index + markerMatch[0].length;
-	const suffix = cleaned.slice(markerEnd).trim();
-	const hasHelpSuffix = /^For help, type "help"\.?$/i.test(suffix);
-
-	if (providerKind === 'proxy') {
-		return suffix.length === 0;
-	}
-
-	if (providerKind === 'plugin' || providerKind === 'vanilla') {
-		return hasHelpSuffix;
-	}
-
-	return suffix.length === 0 || hasHelpSuffix;
-};
-
 export const parseListPlayers = (line: string) => {
 	const match = line.match(/There are\s+(\d+)\s+of a max of\s+(\d+)\s+players online/i);
 	if (!match) return null;
 	return {
 		players: Number(match[1]),
 		capacity: Number(match[2]),
-	};
-};
-
-export const parseTps = (line: string) => {
-	const match = line.match(
-		/TPS from last 1m, 5m, 15m:\s*([0-9]+(?:\.[0-9]+)?),\s*([0-9]+(?:\.[0-9]+)?),\s*([0-9]+(?:\.[0-9]+)?)/i,
-	);
-	if (!match) return null;
-	return {
-		tps: Number(match[1]),
 	};
 };
 

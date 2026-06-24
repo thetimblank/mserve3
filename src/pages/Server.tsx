@@ -17,6 +17,7 @@ import { useServerTerminal } from './server/hooks/use-server-terminal';
 import { useServerBackupActions } from './server/hooks/use-server-backup-actions';
 import { useServerRuntime } from './server/hooks/use-server-runtime';
 import ServerOverviewPanel from './server/server-overview-panel';
+import ServerStatisticsTab from './server/server-statistics-tab';
 import { getServerProviderCapabilities } from '@/lib/server-provider-capabilities';
 import type { ServerContentTab } from './server/server-types';
 import ServerContentTabs, {
@@ -197,6 +198,8 @@ const Server: React.FC = () => {
 						/>
 					</div>
 				)}
+
+				{activeTab === 'statistics' && <ServerStatisticsTab server={server} />}
 
 				{activeTab === 'plugins' && providerCapabilities.kind !== 'vanilla' && (
 					<ServerItemList

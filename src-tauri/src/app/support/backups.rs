@@ -60,7 +60,7 @@ fn backup_world_paths(directory: &Path) -> Vec<PathBuf> {
 }
 
 fn canonicalized_path(path: &Path) -> Option<PathBuf> {
-    path.canonicalize().ok()
+    dunce::canonicalize(path).ok()
 }
 
 fn list_backups_oldest_first(directory: &Path) -> Vec<PathBuf> {

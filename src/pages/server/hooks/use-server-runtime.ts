@@ -3,10 +3,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
 import type { Server, ServerStatus, ServerUpdate } from '@/data/servers';
-import type { TelemetryKey } from '@/lib/mserve-schema';
-import { isJavaVersionError, isServerReadyLine, parseTps, stripAnsi } from '@/lib/utils';
-import { getServerProviderCapabilities } from '@/lib/server-provider-capabilities';
-import { mapTelemetryToStats } from '@/lib/server-telemetry';
+import { isJavaVersionError, stripAnsi } from '@/lib/utils';
+import { mapRuntimeStateToStatus, mapSampleToStats } from '@/lib/server-telemetry';
 import { useUser } from '@/data/user';
 import { useJavaRuntimes } from '@/data/java-runtimes';
 import { useJavaDownload } from '@/data/java-download';
@@ -14,10 +12,11 @@ import { planJavaFallback, resolveServerJavaExecutable } from '@/lib/java-resolu
 import { setServerJavaInstallation } from '@/lib/java-runtime-service';
 import {
 	type CreateServerBackupResult,
-	type RuntimeStatusResult,
 	type ScanServerContentsResult,
 	type ServerOutputEvent,
-	type ServerTelemetryResult,
+	type ServerRuntimeSnapshot,
+	type ServerRuntimeStateEvent,
+	type ServerTelemetryEvent,
 } from '../server-types';
 import { didRequestStop, isStopCommand, makeCloseBackupKey, mapScannedBackups } from '../server-utils';
 import { claimServerRuntime, releaseServerRuntime } from '@/lib/server-runtime-registry';
@@ -40,7 +39,6 @@ type Args = {
 type BackupReason = 'on_start' | 'on_close' | 'interval';
 
 const BACKUP_STORAGE_LIMIT_ERROR_PREFIX = 'Backup storage limit exceeded';
-const TELEMETRY_POLL_INTERVAL_MS = 5000;
 
 type RuntimeState = {
 	startAt: Date | null;
@@ -48,9 +46,11 @@ type RuntimeState = {
 	lastOutputAt: number;
 	stopRequested: boolean;
 	restartRequested: boolean;
+	manualStopRequested: boolean;
+	forceKilled: boolean;
+	everRunning: boolean;
 	lastOnCloseBackupKey: string;
 	isAutoRestarting: boolean;
-	manualStopRequested: boolean;
 	previousStatus: ServerStatus;
 	isCreatingAutoBackup: boolean;
 	// Automatic Java resolution + start-failure fallback.
@@ -69,9 +69,11 @@ const initialRuntimeState = (): RuntimeState => ({
 	lastOutputAt: 0,
 	stopRequested: false,
 	restartRequested: false,
+	manualStopRequested: false,
+	forceKilled: false,
+	everRunning: false,
 	lastOnCloseBackupKey: '',
 	isAutoRestarting: false,
-	manualStopRequested: false,
 	previousStatus: 'offline',
 	isCreatingAutoBackup: false,
 	awaitingReady: false,
@@ -100,21 +102,8 @@ export const useServerRuntime = ({
 	const { runtimes: javaRuntimes } = useJavaRuntimes();
 	const { ensureJava } = useJavaDownload();
 	const runtimeRef = React.useRef<RuntimeState>(initialRuntimeState());
-	const telemetryInFlightRef = React.useRef(false);
 	const serverDirectory = server?.directory;
 	const serverStatus = server?.status;
-	const providerCapabilities = React.useMemo(
-		() => getServerProviderCapabilities(server?.provider),
-		[server?.provider],
-	);
-	const supportedTelemetry = React.useMemo(
-		() => server?.provider?.supported_telemetry ?? [],
-		[server?.provider?.supported_telemetry],
-	);
-	const supportsTelemetry = React.useCallback(
-		(key: TelemetryKey) => supportedTelemetry.includes(key),
-		[supportedTelemetry],
-	);
 
 	const autoBackupModes = server?.auto_backup ?? [];
 	const hasOnStartBackup = autoBackupModes.includes('on_start');
@@ -155,6 +144,9 @@ export const useServerRuntime = ({
 		setServerStatus(serverId, 'offline');
 		runtimeRef.current.startAt = null;
 		runtimeRef.current.manualStopRequested = false;
+		runtimeRef.current.stopRequested = false;
+		runtimeRef.current.restartRequested = false;
+		runtimeRef.current.everRunning = false;
 		updateServerStats(serverId, {
 			online: false,
 			players_online: null,
@@ -285,40 +277,6 @@ export const useServerRuntime = ({
 		user.java_installation_default,
 	]);
 
-	const syncTelemetry = React.useCallback(async () => {
-		if (!serverDirectory || !server) return;
-		if (telemetryInFlightRef.current) return;
-		telemetryInFlightRef.current = true;
-
-		try {
-			const telemetry = await invoke<ServerTelemetryResult>('get_server_telemetry', {
-				directory: serverDirectory,
-			});
-
-			updateServerStats(
-				serverId,
-				mapTelemetryToStats(server, telemetry, { fallbackUptime: runtimeRef.current.startAt }),
-			);
-
-			if (supportsTelemetry('online') && telemetry.online && serverStatus === 'starting') {
-				setServerStatus(serverId, 'online');
-				// Online via ping (no ready line needed) — stop watching for a startup
-				// Java-version error so later log noise can't trigger a false step-down.
-				runtimeRef.current.awaitingReady = false;
-			}
-		} catch {
-			if (!supportsTelemetry('online')) return;
-			updateServerStats(serverId, {
-				online: false,
-				players_online: null,
-				players_max: null,
-				server_version: null,
-			});
-		} finally {
-			telemetryInFlightRef.current = false;
-		}
-	}, [server, serverDirectory, serverId, serverStatus, supportsTelemetry, setServerStatus, updateServerStats]);
-
 	const syncServerContents = React.useCallback(async () => {
 		if (!serverDirectory) return;
 		if (!serverId) return;
@@ -396,6 +354,38 @@ export const useServerRuntime = ({
 		void syncServerContents();
 	}, [syncServerContents]);
 
+	// Sync initial state once (covers opening the page on an already-running or
+	// externally-running server).
+	React.useEffect(() => {
+		if (!serverDirectory || !serverId) return;
+		let active = true;
+		void (async () => {
+			try {
+				const snapshot = await invoke<ServerRuntimeSnapshot>('get_server_runtime', {
+					directory: serverDirectory,
+				});
+				if (!active) return;
+				setServerStatus(serverId, mapRuntimeStateToStatus(snapshot.state));
+				if (snapshot.state === 'online' || snapshot.state === 'running-external') {
+					runtimeRef.current.everRunning = true;
+					if (!runtimeRef.current.startAt) {
+						runtimeRef.current.startAt = snapshot.startedAt ? new Date(snapshot.startedAt) : new Date();
+					}
+				}
+				if (snapshot.sample) {
+					updateServerStats(
+						serverId,
+						mapSampleToStats(snapshot.sample, { fallbackUptime: runtimeRef.current.startAt }),
+					);
+				}
+			} catch {}
+		})();
+		return () => {
+			active = false;
+		};
+	}, [serverDirectory, serverId, setServerStatus, updateServerStats]);
+
+	// Console output: terminal display + early wrong-Java detection.
 	React.useEffect(() => {
 		if (!serverDirectory) return;
 		if (!serverId) return;
@@ -418,47 +408,6 @@ export const useServerRuntime = ({
 
 			runtimeRef.current.lastOutputKey = dedupeKey;
 			runtimeRef.current.lastOutputAt = now;
-
-			if (stream === 'stdout') {
-				if (isServerReadyLine(cleaned, providerCapabilities.kind)) {
-					setServerStatus(serverId, 'online');
-					if (!runtimeRef.current.startAt) {
-						runtimeRef.current.startAt = new Date();
-					}
-					updateServerStats(serverId, {
-						online: true,
-						uptime: runtimeRef.current.startAt,
-					});
-
-					// The current Java worked. Clear the start-cycle fallback state and,
-					// if we had to step down to find it, pin it so later starts skip the
-					// trial-and-error.
-					runtimeRef.current.awaitingReady = false;
-					runtimeRef.current.javaFallbackInProgress = false;
-					runtimeRef.current.javaAttemptMajors = [];
-					if (
-						runtimeRef.current.javaDidFallback &&
-						runtimeRef.current.currentJavaExecutable &&
-						(server?.java_installation ?? '').trim() === ''
-					) {
-						const pinned = runtimeRef.current.currentJavaExecutable;
-						runtimeRef.current.javaDidFallback = false;
-						void setServerJavaInstallation(serverDirectory, pinned)
-							.then(() => {
-								updateServer(serverId, { java_installation: pinned });
-								appendTerminalLine('[system] Saved this Java version for the server.');
-							})
-							.catch(() => {});
-					}
-				}
-
-				if (providerCapabilities.supportsTpsCommand && supportsTelemetry('tps')) {
-					const tpsInfo = parseTps(cleaned);
-					if (tpsInfo) {
-						updateServerStats(serverId, { tps: tpsInfo.tps });
-					}
-				}
-			}
 
 			if (isJavaVersionError(cleaned)) {
 				void handleJavaVersionError();
@@ -485,58 +434,76 @@ export const useServerRuntime = ({
 				unlisten();
 			}
 		};
-	}, [
-		appendTerminalLine,
-		handleJavaVersionError,
-		providerCapabilities.kind,
-		server?.java_installation,
-		supportsTelemetry,
-		serverDirectory,
-		serverId,
-		setServerStatus,
-		updateServer,
-		updateServerStats,
-	]);
+	}, [appendTerminalLine, handleJavaVersionError, serverDirectory, serverId]);
 
+	// Authoritative lifecycle state from the backend supervisor.
 	React.useEffect(() => {
-		if (!serverDirectory) return;
-		if (!serverId) return;
-		if (serverStatus !== 'online') return;
+		if (!serverDirectory || !serverId) return;
 
-		void syncTelemetry();
-		const timer = window.setInterval(() => {
-			void syncTelemetry();
-		}, TELEMETRY_POLL_INTERVAL_MS);
+		let unlisten: UnlistenFn | null = null;
+		let active = true;
 
-		return () => {
-			window.clearInterval(timer);
-		};
-	}, [serverDirectory, serverId, serverStatus, syncTelemetry]);
+		listen<ServerRuntimeStateEvent>('server-runtime-state', (event) => {
+			if (!active) return;
+			if (event.payload.directory !== serverDirectory) return;
+			const { state, exitCode, startedAt } = event.payload;
 
-	React.useEffect(() => {
-		if (!serverDirectory) return;
-		if (!serverId) return;
-		if (serverStatus === 'offline') return;
-
-		const timer = window.setInterval(async () => {
-			try {
-				const runtime = await invoke<RuntimeStatusResult>('get_server_runtime_status', {
-					directory: serverDirectory,
-				});
-
-				if (runtime.running) {
-					return;
+			if (state === 'online' || state === 'running-external') {
+				runtimeRef.current.everRunning = true;
+				runtimeRef.current.awaitingReady = false;
+				runtimeRef.current.javaFallbackInProgress = false;
+				runtimeRef.current.javaAttemptMajors = [];
+				runtimeRef.current.isAutoRestarting = false;
+				runtimeRef.current.stopRequested = false;
+				runtimeRef.current.restartRequested = false;
+				runtimeRef.current.manualStopRequested = false;
+				runtimeRef.current.forceKilled = false;
+				if (!runtimeRef.current.startAt) {
+					runtimeRef.current.startAt = startedAt ? new Date(startedAt) : new Date();
 				}
+				setServerStatus(serverId, 'online');
+				updateServerStats(serverId, { online: true, uptime: runtimeRef.current.startAt });
 
+				// The current Java worked. If we stepped down to find it, pin it.
+				if (
+					runtimeRef.current.javaDidFallback &&
+					runtimeRef.current.currentJavaExecutable &&
+					(server?.java_installation ?? '').trim() === ''
+				) {
+					const pinned = runtimeRef.current.currentJavaExecutable;
+					runtimeRef.current.javaDidFallback = false;
+					void setServerJavaInstallation(serverDirectory, pinned)
+						.then(() => {
+							updateServer(serverId, { java_installation: pinned });
+							appendTerminalLine('[system] Saved this Java version for the server.');
+						})
+						.catch(() => {});
+				}
+				return;
+			}
+
+			if (state === 'starting') {
+				if (!runtimeRef.current.startAt) runtimeRef.current.startAt = new Date();
+				setServerStatus(serverId, 'starting');
+				return;
+			}
+
+			if (state === 'stopping') {
+				setServerStatus(serverId, 'closing');
+				return;
+			}
+
+			// offline or crashed.
+			void (async () => {
 				const stopWasRequested = didRequestStop(
 					runtimeRef.current.stopRequested,
 					runtimeRef.current.restartRequested,
 					runtimeRef.current.manualStopRequested,
 				);
-				const closeBackupKey = makeCloseBackupKey(serverId, runtime.exitCode);
+				const closeBackupKey = makeCloseBackupKey(serverId, exitCode);
 
 				if (
-					!stopWasRequested &&
+					!runtimeRef.current.forceKilled &&
 					hasOnCloseBackup &&
 					runtimeRef.current.lastOnCloseBackupKey !== closeBackupKey
 				) {
@@ -558,7 +525,6 @@ export const useServerRuntime = ({
 					runtimeRef.current.isAutoRestarting = true;
 					setStartingState();
 					appendTerminalLine('[system] Server closed. Auto restart is enabled, starting again...');
-
 					try {
 						const resolution = resolveJava();
 						if (resolution.status !== 'resolved') {
@@ -573,12 +539,30 @@ export const useServerRuntime = ({
 					}
 				}
 
+				if (state === 'crashed' && !stopWasRequested) {
+					appendTerminalLine(
+						exitCode != null
+							? `[system] Server crashed (exit code ${exitCode}).`
+							: '[system] Server crashed.',
+					);
+				}
+
+				runtimeRef.current.forceKilled = false;
 				setOfflineState();
-			} catch {}
-		}, 2000);
+			})();
+		})
+			.then((cleanup) => {
+				if (!active) {
+					cleanup();
+					return;
+				}
+				unlisten = cleanup;
+			})
+			.catch(() => {});
 
 		return () => {
-			window.clearInterval(timer);
+			active = false;
+			if (unlisten) unlisten();
 		};
 	}, [
 		appendTerminalLine,
@@ -586,45 +570,47 @@ export const useServerRuntime = ({
 		hasOnCloseBackup,
 		isAutoRestartEnabled,
 		resolveJava,
+		server?.java_installation,
 		serverDirectory,
-		serverStatus,
 		serverId,
 		setOfflineState,
+		setServerStatus,
 		setStartingState,
 		startWithJava,
 		syncServerContents,
+		updateServer,
+		updateServerStats,
 	]);
 
+	// Live telemetry → stats.
 	React.useEffect(() => {
-		if (!serverDirectory) return;
-		if (serverStatus !== 'online') return;
+		if (!serverDirectory || !serverId) return;
 
-		void (async () => {
-			try {
-				if (providerCapabilities.supportsTpsCommand && supportsTelemetry('tps')) {
-					await invoke('send_server_command', {
-						directory: serverDirectory,
-						command: 'tps',
-					});
-				}
-			} catch {}
-		})();
+		let unlisten: UnlistenFn | null = null;
+		let active = true;
 
-		const timer = window.setInterval(async () => {
-			try {
-				if (providerCapabilities.supportsTpsCommand && supportsTelemetry('tps')) {
-					await invoke('send_server_command', {
-						directory: serverDirectory,
-						command: 'tps',
-					});
+		listen<ServerTelemetryEvent>('server-telemetry', (event) => {
+			if (!active) return;
+			if (event.payload.directory !== serverDirectory) return;
+			updateServerStats(
+				serverId,
+				mapSampleToStats(event.payload.sample, { fallbackUptime: runtimeRef.current.startAt }),
+			);
+		})
+			.then((cleanup) => {
+				if (!active) {
+					cleanup();
+					return;
 				}
-			} catch {}
-		}, 15000);
+				unlisten = cleanup;
+			})
+			.catch(() => {});
 
 		return () => {
-			window.clearInterval(timer);
+			active = false;
+			if (unlisten) unlisten();
 		};
-	}, [providerCapabilities.supportsTpsCommand, serverDirectory, serverStatus, supportsTelemetry]);
+	}, [serverDirectory, serverId, updateServerStats]);
 
 	React.useEffect(() => {
 		if (!serverStatus) return;
@@ -662,6 +648,8 @@ export const useServerRuntime = ({
 		runtimeRef.current.manualStopRequested = false;
 		runtimeRef.current.stopRequested = false;
 		runtimeRef.current.restartRequested = false;
+		runtimeRef.current.forceKilled = false;
+		runtimeRef.current.everRunning = false;
 		// Reset automatic-Java fallback state for a fresh start cycle.
 		runtimeRef.current.javaAttemptMajors = [];
 		runtimeRef.current.javaDidFallback = false;
@@ -720,38 +708,23 @@ export const useServerRuntime = ({
 
 		runtimeRef.current.manualStopRequested = true;
 		runtimeRef.current.stopRequested = true;
+		runtimeRef.current.forceKilled = false;
 		setIsBusy(true);
 		setServerStatus(serverId, 'closing');
 		appendTerminalLine('[system] Stopping server...');
 
+		// The supervisor detects the actual exit and emits `offline`, which drives
+		// the on-close backup and final offline state.
 		try {
 			await invoke('stop_server', { directory: serverDirectory });
-			if (hasOnCloseBackup) {
-				await createAutomaticBackup('on_close');
-				runtimeRef.current.lastOnCloseBackupKey = `${serverId}:${Date.now()}`;
-			}
-			setOfflineState();
-			await syncServerContents();
 		} catch (err) {
 			setOfflineState();
 			const message = err instanceof Error ? err.message : 'Failed to stop server.';
 			appendTerminalLine(`[system] ${message}`);
 		} finally {
-			runtimeRef.current.stopRequested = false;
 			setIsBusy(false);
 		}
-	}, [
-		appendTerminalLine,
-		createAutomaticBackup,
-		hasOnCloseBackup,
-		isBusy,
-		serverDirectory,
-		serverId,
-		setIsBusy,
-		setOfflineState,
-		setServerStatus,
-		syncServerContents,
-	]);
+	}, [appendTerminalLine, isBusy, serverDirectory, serverId, setIsBusy, setOfflineState, setServerStatus]);
 
 	const handleRestart = React.useCallback(async () => {
 		if (!serverDirectory) return;
@@ -760,6 +733,8 @@ export const useServerRuntime = ({
 		runtimeRef.current.manualStopRequested = false;
 		runtimeRef.current.restartRequested = true;
 		runtimeRef.current.stopRequested = true;
+		runtimeRef.current.forceKilled = false;
+		runtimeRef.current.everRunning = false;
 		// Reset automatic-Java fallback state for a fresh start cycle.
 		runtimeRef.current.javaAttemptMajors = [];
 		runtimeRef.current.javaDidFallback = false;
@@ -770,16 +745,6 @@ export const useServerRuntime = ({
 		setIsBusy(true);
 		setServerStatus(serverId, 'closing');
 		appendTerminalLine('[system] Restarting server...');
-
-		try {
-			await invoke('stop_server', { directory: serverDirectory });
-			if (hasOnCloseBackup) {
-				await createAutomaticBackup('on_close');
-				runtimeRef.current.lastOnCloseBackupKey = `${serverId}:${Date.now()}`;
-			}
-		} catch {}
-
-		setStartingState();
 
 		try {
 			const resolution = resolveJava();
@@ -799,22 +764,25 @@ export const useServerRuntime = ({
 				major = runtime.majorVersion;
 			}
 
-			await startWithJava(javaExecutable, major);
-			await syncServerContents();
+			runtimeRef.current.currentJavaExecutable = javaExecutable;
+			if (major != null && !runtimeRef.current.javaAttemptMajors.includes(major)) {
+				runtimeRef.current.javaAttemptMajors.push(major);
+			}
+			runtimeRef.current.awaitingReady = true;
+			await appendResolvedStartCommand(javaExecutable);
+			// The backend stops, waits for exit, then starts; events do the rest.
+			await invoke('restart_server', { directory: serverDirectory, javaExecutable });
 		} catch (err) {
 			setOfflineState();
 			const message = showError(err, 'Failed to restart server.');
 			appendTerminalLine(`[system] ${message}`);
 		} finally {
-			runtimeRef.current.restartRequested = false;
-			runtimeRef.current.stopRequested = false;
 			setIsBusy(false);
 		}
 	}, [
+		appendResolvedStartCommand,
 		appendTerminalLine,
-		createAutomaticBackup,
 		ensureJava,
-		hasOnCloseBackup,
 		isBusy,
 		resolveJava,
 		serverDirectory,
@@ -822,10 +790,7 @@ export const useServerRuntime = ({
 		setIsBusy,
 		setOfflineState,
 		setServerStatus,
-		setStartingState,
 		showError,
-		startWithJava,
-		syncServerContents,
 	]);
 
 	const handleForceKill = React.useCallback(async () => {
@@ -835,6 +800,7 @@ export const useServerRuntime = ({
 		runtimeRef.current.manualStopRequested = true;
 		runtimeRef.current.stopRequested = true;
 		runtimeRef.current.restartRequested = false;
+		runtimeRef.current.forceKilled = true;
 		setIsBusy(true);
 		setServerStatus(serverId, 'closing');
 		appendTerminalLine('[system] Force killing server process...');
@@ -842,27 +808,14 @@ export const useServerRuntime = ({
 		try {
 			const message = await invoke<string>('force_kill_server', { directory: serverDirectory });
 			appendTerminalLine(`[system] ${message}`);
-			setOfflineState();
-			await syncServerContents();
 		} catch (err) {
 			setOfflineState();
 			const message = showError(err, 'Failed to force kill server process.');
 			appendTerminalLine(`[system] ${message}`);
 		} finally {
-			runtimeRef.current.stopRequested = false;
 			setIsBusy(false);
 		}
-	}, [
-		appendTerminalLine,
-		isBusy,
-		serverDirectory,
-		serverId,
-		setIsBusy,
-		setOfflineState,
-		setServerStatus,
-		showError,
-		syncServerContents,
-	]);
+	}, [appendTerminalLine, isBusy, serverDirectory, serverId, setIsBusy, setOfflineState, setServerStatus, showError]);
 
 	const handleTerminalCommandSubmit = React.useCallback(
 		async (event: React.FormEvent<HTMLFormElement>) => {
@@ -877,6 +830,8 @@ export const useServerRuntime = ({
 			appendTerminalLine(`> ${command}`);
 
 			if (isStopCommand(command)) {
+				runtimeRef.current.manualStopRequested = true;
+				runtimeRef.current.stopRequested = true;
 				setServerStatus(serverId, 'closing');
 			}
 

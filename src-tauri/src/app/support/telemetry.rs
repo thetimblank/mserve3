@@ -1,14 +1,11 @@
 use super::super::*;
-use super::mserve_config::{
-    default_telemetry_host, detect_default_telemetry_port,
-};
-use super::no_window_command;
+use super::mserve_config::{default_telemetry_host, detect_default_telemetry_port};
+use super::rcon::RconClient;
 use serde_json::Value;
-use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
-use std::sync::{Mutex, OnceLock};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
 
 #[derive(Default)]
 pub(in crate::app) struct StatusPingResult {
@@ -20,20 +17,15 @@ pub(in crate::app) struct StatusPingResult {
 
 #[derive(Default, Clone)]
 pub(in crate::app) struct ProcessMetricsResult {
+    pub ram_bytes: Option<u64>,
     pub ram_used: Option<f64>,
     pub cpu_used: Option<f64>,
 }
 
-struct CachedProcessMetrics {
-    measured_at: Instant,
-    metrics: ProcessMetricsResult,
-}
-
-static PROCESS_METRICS_CACHE: OnceLock<Mutex<HashMap<u32, CachedProcessMetrics>>> = OnceLock::new();
-
-fn process_metrics_cache() -> &'static Mutex<HashMap<u32, CachedProcessMetrics>> {
-    PROCESS_METRICS_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
-}
+// ---------------------------------------------------------------------------
+// Server List Ping (the unauthenticated status protocol every Java server and
+// proxy answers). Universal source for online/players/version.
+// ---------------------------------------------------------------------------
 
 fn encode_varint(value: i32) -> Vec<u8> {
     let mut encoded = Vec::new();
@@ -129,16 +121,6 @@ fn with_packet_length(payload: &[u8]) -> Vec<u8> {
     packet
 }
 
-fn parse_number(value: &str) -> Option<f64> {
-    let normalized = value.trim().replace(',', "");
-    normalized.parse::<f64>().ok()
-}
-
-fn parse_u64(value: &str) -> Option<u64> {
-    let normalized = value.trim().replace(',', "");
-    normalized.parse::<u64>().ok()
-}
-
 fn clamp_percentage(value: f64) -> f64 {
     if !value.is_finite() {
         return 0.0;
@@ -158,7 +140,10 @@ fn ram_percent_from_bytes(memory_bytes: u64, configured_ram_gb: Option<f64>) -> 
     Some(clamp_percentage(percentage))
 }
 
-pub(in crate::app) fn resolve_telemetry_target(config: &RuntimeServerConfig, directory: &std::path::Path) -> (String, u16) {
+pub(in crate::app) fn resolve_telemetry_target(
+    config: &RuntimeServerConfig,
+    directory: &std::path::Path,
+) -> (String, u16) {
     let host = config
         .telemetry_host
         .as_deref()
@@ -175,6 +160,19 @@ pub(in crate::app) fn resolve_telemetry_target(config: &RuntimeServerConfig, dir
     (host, port)
 }
 
+/// Cheap "is the port accepting TCP connections" probe. This is the universal
+/// signal that a server has finished loading and bound its port — it replaces
+/// scraping the console for a provider-specific "Done (..)!" line.
+pub(in crate::app) fn probe_port(host: &str, port: u16, timeout: Duration) -> bool {
+    let Ok(mut addresses) = format!("{host}:{port}").to_socket_addrs() else {
+        return false;
+    };
+    let Some(address) = addresses.next() else {
+        return false;
+    };
+    TcpStream::connect_timeout(&address, timeout).is_ok()
+}
+
 pub(in crate::app) fn collect_status_ping(host: &str, port: u16, timeout: Duration) -> StatusPingResult {
     let query = || -> Result<StatusPingResult, String> {
         let address = format!("{host}:{port}");
@@ -184,7 +182,8 @@ pub(in crate::app) fn collect_status_ping(host: &str, port: u16, timeout: Durati
             .next()
             .ok_or_else(|| "Could not resolve telemetry host.".to_string())?;
 
-        let mut stream = TcpStream::connect_timeout(&socket_address, timeout).map_err(|err| err.to_string())?;
+        let mut stream =
+            TcpStream::connect_timeout(&socket_address, timeout).map_err(|err| err.to_string())?;
         stream
             .set_read_timeout(Some(timeout))
             .map_err(|err| err.to_string())?;
@@ -215,7 +214,8 @@ pub(in crate::app) fn collect_status_ping(host: &str, port: u16, timeout: Durati
             return Err("Status packet was empty.".to_string());
         }
 
-        let packet_length = usize::try_from(packet_length).map_err(|_| "Invalid packet length.".to_string())?;
+        let packet_length =
+            usize::try_from(packet_length).map_err(|_| "Invalid packet length.".to_string())?;
         let mut packet = vec![0_u8; packet_length];
         stream.read_exact(&mut packet).map_err(|err| err.to_string())?;
 
@@ -265,97 +265,143 @@ pub(in crate::app) fn infer_provider_version(config: &RuntimeServerConfig) -> Op
     })
 }
 
-#[cfg(target_os = "windows")]
-fn collect_platform_process_metrics(pid: u32, configured_ram_gb: Option<f64>) -> ProcessMetricsResult {
-    let script = format!(
-        "$p = Get-CimInstance Win32_PerfFormattedData_PerfProc_Process -Filter \"IDProcess = {pid}\"; if ($null -eq $p) {{ exit 1 }}; Write-Output $p.PercentProcessorTime; Write-Output $p.WorkingSet"
-    );
+// ---------------------------------------------------------------------------
+// Process metrics via sysinfo (cross-platform, no shell-out). The caller owns a
+// persistent `System` so CPU% is accurate across refreshes.
+// ---------------------------------------------------------------------------
 
-    let output = match no_window_command("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
-        .output()
-    {
-        Ok(value) => value,
-        Err(_) => return ProcessMetricsResult::default(),
-    };
-
-    if !output.status.success() {
-        return ProcessMetricsResult::default();
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut lines = stdout.lines().map(str::trim).filter(|line| !line.is_empty());
-
-    let cpu_used = lines.next().and_then(parse_number).map(clamp_percentage);
-    let ram_used = lines
-        .next()
-        .and_then(parse_u64)
-        .and_then(|memory_bytes| ram_percent_from_bytes(memory_bytes, configured_ram_gb));
-
-    ProcessMetricsResult { ram_used, cpu_used }
-}
-
-#[cfg(not(target_os = "windows"))]
-fn collect_platform_process_metrics(pid: u32, configured_ram_gb: Option<f64>) -> ProcessMetricsResult {
-    let output = match no_window_command("ps")
-        .args(["-p", &pid.to_string(), "-o", "%cpu=", "-o", "rss="])
-        .output()
-    {
-        Ok(value) => value,
-        Err(_) => return ProcessMetricsResult::default(),
-    };
-
-    if !output.status.success() {
-        return ProcessMetricsResult::default();
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut tokens = stdout.split_whitespace();
-
-    let cpu_used = tokens.next().and_then(parse_number).map(clamp_percentage);
-    let ram_used = tokens
-        .next()
-        .and_then(parse_u64)
-        .map(|rss_kb| rss_kb.saturating_mul(1024))
-        .and_then(|memory_bytes| ram_percent_from_bytes(memory_bytes, configured_ram_gb));
-
-    ProcessMetricsResult { ram_used, cpu_used }
-}
-
-pub(in crate::app) fn collect_process_metrics(pid: u32, configured_ram_gb: Option<f64>) -> ProcessMetricsResult {
-    collect_platform_process_metrics(pid, configured_ram_gb)
-}
-
-pub(in crate::app) fn clear_process_metrics_cache(pid: u32) {
-    if let Ok(mut cache) = process_metrics_cache().lock() {
-        cache.remove(&pid);
-    }
-}
-
-pub(in crate::app) fn collect_process_metrics_cached(
+pub(in crate::app) fn refresh_process_metrics(
+    system: &mut System,
     pid: u32,
     configured_ram_gb: Option<f64>,
-    max_age: Duration,
 ) -> ProcessMetricsResult {
-    if let Ok(cache) = process_metrics_cache().lock() {
-        if let Some(cached) = cache.get(&pid) {
-            if cached.measured_at.elapsed() <= max_age {
-                return cached.metrics.clone();
+    let pid = Pid::from_u32(pid);
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&[pid]),
+        true,
+        ProcessRefreshKind::nothing().with_cpu().with_memory(),
+    );
+
+    let Some(process) = system.process(pid) else {
+        return ProcessMetricsResult::default();
+    };
+
+    let ram_bytes = process.memory();
+    let cpu_used = Some(clamp_percentage(process.cpu_usage() as f64));
+    let ram_used = ram_percent_from_bytes(ram_bytes, configured_ram_gb);
+
+    ProcessMetricsResult {
+        ram_bytes: Some(ram_bytes),
+        ram_used,
+        cpu_used,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// TPS via RCON. There is no external protocol that exposes TPS, so we ask the
+// server itself through a real request/response channel. The exact command
+// differs by server software, so we detect which one works once and cache it.
+// ---------------------------------------------------------------------------
+
+fn strip_minecraft_formatting(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\u{00a7}' {
+            // Section sign: drop it and the following format code.
+            chars.next();
+            continue;
+        }
+        if ch == '\u{001b}' {
+            // ANSI escape: skip until the terminating 'm'.
+            while let Some(next) = chars.next() {
+                if next == 'm' {
+                    break;
+                }
             }
+            continue;
+        }
+        output.push(ch);
+    }
+    output
+}
+
+fn first_float_after(text: &str, needle: &str) -> Option<f64> {
+    let lower = text.to_lowercase();
+    let position = lower.find(&needle.to_lowercase())? + needle.len();
+    let rest = text.get(position..)?;
+
+    let mut number = String::new();
+    let mut started = false;
+    for ch in rest.chars() {
+        if ch.is_ascii_digit() || ch == '.' {
+            number.push(ch);
+            started = true;
+        } else if started {
+            break;
         }
     }
 
-    let metrics = collect_process_metrics(pid, configured_ram_gb);
+    number.parse::<f64>().ok()
+}
 
-    if let Ok(mut cache) = process_metrics_cache().lock() {
-        cache.insert(
-            pid,
-            CachedProcessMetrics {
-                measured_at: Instant::now(),
-                metrics: metrics.clone(),
-            },
-        );
+/// Parses Paper/Spigot/Purpur `tps` output, e.g.
+/// "TPS from last 1m, 5m, 15m: 20.0, 20.0, 19.9". Returns the 1-minute value.
+fn parse_paper_tps(response: &str) -> Option<f64> {
+    let cleaned = strip_minecraft_formatting(response);
+    let value = first_float_after(&cleaned, "from last")?;
+    Some(value.min(20.0))
+}
+
+/// Parses vanilla 1.21+ `tick query` output by deriving TPS from the average
+/// milliseconds-per-tick line: tps = min(20, 1000 / mspt).
+fn parse_tick_query_tps(response: &str) -> Option<f64> {
+    let cleaned = strip_minecraft_formatting(response);
+    let mspt = first_float_after(&cleaned, "Average time per tick:")?;
+    if mspt <= 0.0 {
+        return None;
+    }
+    Some((1000.0 / mspt).min(20.0))
+}
+
+pub(in crate::app) fn collect_tps_via_rcon(
+    host: &str,
+    rcon: &RconConfig,
+    state: &mut TpsCommandState,
+) -> Option<f64> {
+    if matches!(state, TpsCommandState::Unsupported) {
+        return None;
     }
 
-    metrics
+    let mut client =
+        match RconClient::connect(host, rcon.port, &rcon.password, Duration::from_millis(900)) {
+            Ok(client) => client,
+            // Transient connect failure: try again next cycle, don't give up.
+            Err(_) => return None,
+        };
+
+    match *state {
+        TpsCommandState::Paper => client.command("tps").ok().and_then(|r| parse_paper_tps(&r)),
+        TpsCommandState::TickQuery => client
+            .command("tick query")
+            .ok()
+            .and_then(|r| parse_tick_query_tps(&r)),
+        TpsCommandState::Unknown => {
+            if let Some(tps) = client.command("tps").ok().and_then(|r| parse_paper_tps(&r)) {
+                *state = TpsCommandState::Paper;
+                return Some(tps);
+            }
+            if let Some(tps) = client
+                .command("tick query")
+                .ok()
+                .and_then(|r| parse_tick_query_tps(&r))
+            {
+                *state = TpsCommandState::TickQuery;
+                return Some(tps);
+            }
+            *state = TpsCommandState::Unsupported;
+            None
+        }
+        TpsCommandState::Unsupported => None,
+    }
 }

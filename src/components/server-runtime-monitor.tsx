@@ -1,17 +1,15 @@
 /**
  * App-wide runtime monitor for servers that are *not* currently open on their
- * detail page. Without this, starting a server from the dashboard or network
- * view only flipped its status to "online" optimistically and then nothing ever
- * verified the process actually came up (or later died), so a server could read
- * as online while never really starting.
+ * detail page. The backend supervisor is the single source of truth for server
+ * state and telemetry; this component is a pure consumer of its events:
  *
- * This component mirrors the lifecycle parts of {@link useServerRuntime}:
- *  - readiness: a global `server-output` listener flips `starting -> online`
- *    when a server prints its ready line (the only signal proxies expose);
- *  - readiness/stats: telemetry polling flips `starting -> online` for providers
- *    that answer a status ping and keeps dashboard/network stats fresh;
- *  - liveness: runtime-status polling flips a server `offline` once its process
- *    exits, honoring auto-restart.
+ *  - `server-runtime-state`: drives each server's status, handles wrong-Java
+ *    step-down and auto-restart on crash, and pins a working Java once found.
+ *  - `server-telemetry`: keeps dashboard/network stats fresh.
+ *  - `server-output`: only used to flag a wrong-Java error early so the crash
+ *    handler knows why a boot failed.
+ *  - on mount / when servers change: a one-shot `get_server_runtime` snapshot per
+ *    unclaimed server syncs initial state and adopts any already-running server.
  *
  * Servers claimed by an open detail page ({@link isServerRuntimeClaimed}) are
  * skipped here so the two loops never fight over the same server's status.
@@ -19,41 +17,33 @@
 import React from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { toast } from 'sonner';
 
 import { useServers } from '@/data/servers';
 import { useUser } from '@/data/user';
 import { useJavaRuntimes } from '@/data/java-runtimes';
 import { isServerRuntimeClaimed } from '@/lib/server-runtime-registry';
-import { getServerProviderCapabilities } from '@/lib/server-provider-capabilities';
-import { mapTelemetryToStats, providerSupportsOnlinePing } from '@/lib/server-telemetry';
-import { isJavaVersionError, isServerReadyLine, stripAnsi } from '@/lib/utils';
+import { mapRuntimeStateToStatus, mapSampleToStats } from '@/lib/server-telemetry';
+import { isJavaVersionError, stripAnsi } from '@/lib/utils';
 import { planJavaFallback, resolveServerJavaExecutable } from '@/lib/java-resolution';
 import { setServerJavaInstallation, type JavaRuntimeInfo } from '@/lib/java-runtime-service';
 import type {
-	RuntimeStatusResult,
 	ServerOutputEvent,
-	ServerTelemetryResult,
+	ServerRuntimeSnapshot,
+	ServerRuntimeStateEvent,
+	ServerTelemetryEvent,
 } from '@/pages/server/server-types';
 
-const LIVENESS_POLL_INTERVAL_MS = 2500;
-const TELEMETRY_POLL_INTERVAL_MS = 5000;
-// Grace period after a server first appears non-offline before its missing
-// process is treated as "exited". Covers the brief window between optimistically
-// setting `starting` and the backend actually spawning the child.
-const STARTUP_GRACE_MS = 15000;
 // Minimum gap between auto-restart attempts so a server that crashes on boot
 // doesn't spin in a tight restart loop.
 const AUTO_RESTART_COOLDOWN_MS = 15000;
 
-type LivenessEntry = {
-	nonOfflineSince: number;
+// Per-server bookkeeping for the background lifecycle handling.
+type RuntimeEntry = {
 	everRunning: boolean;
 	lastRestartAt: number;
-};
-
-// Per-server start-failure (wrong Java) bookkeeping for background servers.
-type JavaFallbackEntry = {
-	flagged: boolean;
+	// Wrong-Java step-down state.
+	javaErrorFlagged: boolean;
 	attemptedMajors: number[];
 	didFallback: boolean;
 	lastExecutable: string | null;
@@ -75,8 +65,8 @@ export const ServerRuntimeMonitor: React.FC = () => {
 	const { user } = useUser();
 	const { runtimes } = useJavaRuntimes();
 
-	// Latest server list / java default / runtimes kept in refs so the polling
-	// effects don't restart (and reset their intervals) on every stats update.
+	// Latest values kept in refs so the event listeners don't re-subscribe on
+	// every stats update.
 	const serversRef = React.useRef(servers);
 	serversRef.current = servers;
 	const javaDefaultRef = React.useRef(user.java_installation_default);
@@ -84,11 +74,26 @@ export const ServerRuntimeMonitor: React.FC = () => {
 	const runtimesRef = React.useRef<JavaRuntimeInfo[]>(runtimes);
 	runtimesRef.current = runtimes;
 
-	const livenessRef = React.useRef<Map<string, LivenessEntry>>(new Map());
-	const javaFallbackRef = React.useRef<Map<string, JavaFallbackEntry>>(new Map());
+	const entriesRef = React.useRef<Map<string, RuntimeEntry>>(new Map());
+	const syncedRef = React.useRef<Set<string>>(new Set());
 
-	// Readiness via server output. The listener is always mounted, so a ready
-	// line is caught even when the server was started from another page.
+	const getEntry = React.useCallback((id: string): RuntimeEntry => {
+		let entry = entriesRef.current.get(id);
+		if (!entry) {
+			entry = {
+				everRunning: false,
+				lastRestartAt: 0,
+				javaErrorFlagged: false,
+				attemptedMajors: [],
+				didFallback: false,
+				lastExecutable: null,
+			};
+			entriesRef.current.set(id, entry);
+		}
+		return entry;
+	}, []);
+
+	// Flag wrong-Java errors as they stream so the crash handler can step down.
 	React.useEffect(() => {
 		let active = true;
 		let unlisten: UnlistenFn | null = null;
@@ -100,70 +105,17 @@ export const ServerRuntimeMonitor: React.FC = () => {
 			const server = serversRef.current.find((item) => item.directory === event.payload.directory);
 			if (!server) return;
 			if (isServerRuntimeClaimed(server.id)) return;
-			if (server.status === 'offline' || server.status === 'closing') return;
+			// A pinned Java is the user's explicit choice — never auto-step-down.
+			if ((server.java_installation ?? '').trim() !== '') return;
 
-			const cleaned = stripAnsi(event.payload.line);
-
-			// Wrong-Java detection (often on stderr): flag for the liveness loop to
-			// step down. Record the currently-resolved (failing) major so the next
-			// plan excludes it. Only the first error per cycle records/flags.
-			if (isJavaVersionError(cleaned) && (server.java_installation ?? '').trim() === '') {
-				let entry = javaFallbackRef.current.get(server.id);
-				if (!entry) {
-					entry = { flagged: false, attemptedMajors: [], didFallback: false, lastExecutable: null };
-					javaFallbackRef.current.set(server.id, entry);
-				}
-				if (!entry.flagged) {
-					const res = resolveServerJavaExecutable({
-						provider: server.provider,
-						javaInstallation: server.java_installation,
-						globalDefault: javaDefaultRef.current,
-						runtimes: runtimesRef.current,
-						excludeMajors: entry.attemptedMajors,
-					});
-					if (
-						res.status === 'resolved' &&
-						res.majorVersion != null &&
-						!entry.attemptedMajors.includes(res.majorVersion)
-					) {
-						entry.attemptedMajors.push(res.majorVersion);
-					}
-					entry.flagged = true;
-				}
-				return;
-			}
-
-			if (event.payload.stream !== 'stdout') return;
-
-			const kind = getServerProviderCapabilities(server.provider).kind;
-			// Process the ready line even if telemetry already flipped the server
-			// online, so a stepped-down Java still gets pinned for next time.
-			if (isServerReadyLine(cleaned, kind)) {
-				if (server.status !== 'online') {
-					setServerStatus(server.id, 'online');
-					updateServerStats(server.id, {
-						online: true,
-						uptime: server.stats.uptime ?? new Date(),
-					});
-				}
-
-				// If we stepped down to a working Java, pin it for next time.
-				const fb = javaFallbackRef.current.get(server.id);
-				if (fb?.didFallback && fb.lastExecutable && (server.java_installation ?? '').trim() === '') {
-					const pinned = fb.lastExecutable;
-					void setServerJavaInstallation(server.directory, pinned)
-						.then(() => updateServer(server.id, { java_installation: pinned }))
-						.catch(() => {});
-				}
-				javaFallbackRef.current.delete(server.id);
+			if (isJavaVersionError(stripAnsi(event.payload.line))) {
+				const entry = getEntry(server.id);
+				if (!entry.everRunning) entry.javaErrorFlagged = true;
 			}
 		})
 			.then((cleanup) => {
-				if (!active) {
-					cleanup();
-					return;
-				}
-				unlisten = cleanup;
+				if (!active) cleanup();
+				else unlisten = cleanup;
 			})
 			.catch(() => {});
 
@@ -171,221 +123,197 @@ export const ServerRuntimeMonitor: React.FC = () => {
 			active = false;
 			if (unlisten) unlisten();
 		};
-	}, [setServerStatus, updateServer, updateServerStats]);
+	}, [getEntry]);
 
-	// Liveness: detect a server's process exiting and flip it offline (or
-	// auto-restart it).
+	// Authoritative lifecycle state.
 	React.useEffect(() => {
 		let active = true;
-		const inFlight = new Set<string>();
+		let unlisten: UnlistenFn | null = null;
 
-		const poll = async () => {
-			const tracked = serversRef.current.filter(
-				(server) => server.status !== 'offline' && !isServerRuntimeClaimed(server.id),
-			);
-			const trackedIds = new Set(tracked.map((server) => server.id));
-
-			// Drop bookkeeping for servers that are no longer being tracked.
-			for (const id of livenessRef.current.keys()) {
-				if (!trackedIds.has(id)) livenessRef.current.delete(id);
-			}
-			for (const id of javaFallbackRef.current.keys()) {
-				if (!trackedIds.has(id)) javaFallbackRef.current.delete(id);
-			}
-
-			await Promise.all(
-				tracked.map(async (server) => {
-					if (inFlight.has(server.id)) return;
-					inFlight.add(server.id);
-
-					const now = Date.now();
-					let entry = livenessRef.current.get(server.id);
-					if (!entry) {
-						entry = { nonOfflineSince: now, everRunning: false, lastRestartAt: 0 };
-						livenessRef.current.set(server.id, entry);
-					}
-
-					try {
-						const runtime = await invoke<RuntimeStatusResult>('get_server_runtime_status', {
-							directory: server.directory,
-						});
-						if (!active) return;
-
-						if (runtime.running) {
-							entry.everRunning = true;
-							return;
-						}
-
-						const fallback = javaFallbackRef.current.get(server.id);
-						// Only a wrong-Java error *before the server ever ran* is a real
-						// version mismatch; a matching string after it was up is a false
-						// positive from logs.
-						const hadVersionError = (fallback?.flagged ?? false) && !entry.everRunning;
-
-						// Process is not running. Give freshly-started servers a grace
-						// window before declaring them dead — unless a wrong-Java error
-						// already told us exactly why it died.
-						if (!hadVersionError && !entry.everRunning && now - entry.nonOfflineSince < STARTUP_GRACE_MS) {
-							return;
-						}
-
-						// Wrong-Java step-down for automatic servers, independent of the
-						// auto-restart setting (we're finding the right Java, not looping).
-						if (hadVersionError && fallback && (server.java_installation ?? '').trim() === '') {
-							fallback.flagged = false;
-							const plan = planJavaFallback({
-								provider: server.provider,
-								globalDefault: javaDefaultRef.current,
-								runtimes: runtimesRef.current,
-								attemptedMajors: fallback.attemptedMajors,
-							});
-
-							if (plan.kind === 'retry') {
-								fallback.attemptedMajors.push(plan.majorVersion);
-								fallback.didFallback = true;
-								fallback.lastExecutable = plan.executablePath;
-								entry.everRunning = false;
-								entry.nonOfflineSince = now;
-								entry.lastRestartAt = now;
-								setServerStatus(server.id, 'starting');
-								updateServerStats(server.id, { ...offlineStats(), uptime: new Date() });
-								try {
-									await invoke('start_server', {
-										directory: server.directory,
-										javaExecutable: plan.executablePath,
-									});
-								} catch {
-									if (!active) return;
-									setServerStatus(server.id, 'offline');
-									updateServerStats(server.id, offlineStats());
-									livenessRef.current.delete(server.id);
-									javaFallbackRef.current.delete(server.id);
-								}
-								return;
-							}
-
-							// No installed Java worked — the background monitor can't prompt a
-							// download, so go offline (the detail page offers the download).
-							setServerStatus(server.id, 'offline');
-							updateServerStats(server.id, offlineStats());
-							livenessRef.current.delete(server.id);
-							javaFallbackRef.current.delete(server.id);
-							return;
-						}
-
-						const stopInProgress = server.status === 'closing';
-						const canAutoRestart =
-							!stopInProgress &&
-							Boolean(server.auto_restart) &&
-							now - entry.lastRestartAt > AUTO_RESTART_COOLDOWN_MS;
-
-						if (canAutoRestart) {
-							const resolution = resolveServerJavaExecutable({
-								provider: server.provider,
-								javaInstallation: server.java_installation,
-								globalDefault: javaDefaultRef.current,
-								runtimes: runtimesRef.current,
-							});
-
-							if (resolution.status !== 'resolved') {
-								setServerStatus(server.id, 'offline');
-								updateServerStats(server.id, offlineStats());
-								livenessRef.current.delete(server.id);
-								return;
-							}
-
-							entry.lastRestartAt = now;
-							entry.everRunning = false;
-							entry.nonOfflineSince = now;
-							setServerStatus(server.id, 'starting');
-							updateServerStats(server.id, { ...offlineStats(), uptime: new Date() });
-							try {
-								await invoke('start_server', {
-									directory: server.directory,
-									javaExecutable: resolution.executablePath,
-								});
-							} catch {
-								if (!active) return;
-								setServerStatus(server.id, 'offline');
-								updateServerStats(server.id, offlineStats());
-								livenessRef.current.delete(server.id);
-							}
-							return;
-						}
-
-						setServerStatus(server.id, 'offline');
-						updateServerStats(server.id, offlineStats());
-						livenessRef.current.delete(server.id);
-					} catch {
-						// Backend unavailable; try again next tick.
-					} finally {
-						inFlight.delete(server.id);
-					}
-				}),
-			);
+		const startWith = (server: { id: string; directory: string }, javaExecutable: string) => {
+			setServerStatus(server.id, 'starting');
+			updateServerStats(server.id, { ...offlineStats(), uptime: new Date() });
+			void invoke('start_server', { directory: server.directory, javaExecutable }).catch(() => {
+				if (!active) return;
+				setServerStatus(server.id, 'offline');
+				updateServerStats(server.id, offlineStats());
+			});
 		};
 
-		void poll();
-		const interval = window.setInterval(() => void poll(), LIVENESS_POLL_INTERVAL_MS);
+		listen<ServerRuntimeStateEvent>('server-runtime-state', (event) => {
+			if (!active) return;
+			const { directory, state, exitCode } = event.payload;
+			const server = serversRef.current.find((item) => item.directory === directory);
+			if (!server) return;
+			if (isServerRuntimeClaimed(server.id)) return;
+
+			const entry = getEntry(server.id);
+
+			if (state === 'online' || state === 'running-external') {
+				entry.everRunning = true;
+				entry.javaErrorFlagged = false;
+				setServerStatus(server.id, 'online');
+				updateServerStats(server.id, {
+					online: true,
+					uptime: server.stats.uptime ?? new Date(),
+				});
+				// Pin a Java we had to step down to find, so next time is instant.
+				if (entry.didFallback && entry.lastExecutable && (server.java_installation ?? '').trim() === '') {
+					const pinned = entry.lastExecutable;
+					void setServerJavaInstallation(server.directory, pinned)
+						.then(() => updateServer(server.id, { java_installation: pinned }))
+						.catch(() => {});
+				}
+				entry.didFallback = false;
+				entry.lastExecutable = null;
+				entry.attemptedMajors = [];
+				return;
+			}
+
+			if (state === 'starting') {
+				setServerStatus(server.id, 'starting');
+				return;
+			}
+			if (state === 'stopping') {
+				setServerStatus(server.id, 'closing');
+				return;
+			}
+
+			// offline or crashed.
+			const noPinnedJava = (server.java_installation ?? '').trim() === '';
+
+			// Wrong-Java step-down: only when it never came up and we saw the error.
+			if (state === 'crashed' && entry.javaErrorFlagged && !entry.everRunning && noPinnedJava) {
+				entry.javaErrorFlagged = false;
+				const plan = planJavaFallback({
+					provider: server.provider,
+					globalDefault: javaDefaultRef.current,
+					runtimes: runtimesRef.current,
+					attemptedMajors: entry.attemptedMajors,
+				});
+				if (plan.kind === 'retry') {
+					entry.attemptedMajors.push(plan.majorVersion);
+					entry.didFallback = true;
+					entry.lastExecutable = plan.executablePath;
+					entry.lastRestartAt = Date.now();
+					startWith(server, plan.executablePath);
+					return;
+				}
+				// No installed Java worked — the detail page offers a download.
+				setServerStatus(server.id, 'offline');
+				updateServerStats(server.id, offlineStats());
+				entriesRef.current.delete(server.id);
+				toast.error(`${server.name} couldn't start: no compatible Java runtime.`);
+				return;
+			}
+
+			// Auto-restart any unrequested close (crash or in-game stop) when enabled.
+			const now = Date.now();
+			if (
+				server.auto_restart &&
+				server.status !== 'closing' &&
+				now - entry.lastRestartAt > AUTO_RESTART_COOLDOWN_MS
+			) {
+				const resolution = resolveServerJavaExecutable({
+					provider: server.provider,
+					javaInstallation: server.java_installation,
+					globalDefault: javaDefaultRef.current,
+					runtimes: runtimesRef.current,
+				});
+				if (resolution.status === 'resolved') {
+					entry.lastRestartAt = now;
+					entry.everRunning = false;
+					startWith(server, resolution.executablePath);
+					return;
+				}
+			}
+
+			setServerStatus(server.id, 'offline');
+			updateServerStats(server.id, offlineStats());
+			if (state === 'crashed') {
+				toast.error(
+					exitCode != null ? `${server.name} crashed (exit code ${exitCode}).` : `${server.name} crashed.`,
+				);
+			}
+			entriesRef.current.delete(server.id);
+		})
+			.then((cleanup) => {
+				if (!active) cleanup();
+				else unlisten = cleanup;
+			})
+			.catch(() => {});
+
 		return () => {
 			active = false;
-			window.clearInterval(interval);
+			if (unlisten) unlisten();
 		};
-	}, [setServerStatus, updateServerStats]);
+	}, [getEntry, setServerStatus, updateServer, updateServerStats]);
 
-	// Telemetry: flip `starting -> online` for pingable providers and keep stats
-	// fresh for servers shown on the dashboard / network view.
+	// Live telemetry → stats.
 	React.useEffect(() => {
 		let active = true;
-		const inFlight = new Set<string>();
+		let unlisten: UnlistenFn | null = null;
 
-		const poll = async () => {
-			const tracked = serversRef.current.filter(
-				(server) => server.status !== 'offline' && !isServerRuntimeClaimed(server.id),
+		listen<ServerTelemetryEvent>('server-telemetry', (event) => {
+			if (!active) return;
+			const server = serversRef.current.find((item) => item.directory === event.payload.directory);
+			if (!server) return;
+			if (isServerRuntimeClaimed(server.id)) return;
+			updateServerStats(
+				server.id,
+				mapSampleToStats(event.payload.sample, { fallbackUptime: server.stats.uptime }),
 			);
+		})
+			.then((cleanup) => {
+				if (!active) cleanup();
+				else unlisten = cleanup;
+			})
+			.catch(() => {});
 
-			await Promise.all(
-				tracked.map(async (server) => {
-					if (inFlight.has(server.id)) return;
-					inFlight.add(server.id);
-					try {
-						const telemetry = await invoke<ServerTelemetryResult>('get_server_telemetry', {
-							directory: server.directory,
-						});
-						if (!active) return;
+		return () => {
+			active = false;
+			if (unlisten) unlisten();
+		};
+	}, [updateServerStats]);
 
+	// One-shot snapshot per server to sync initial state and adopt any server
+	// already running (e.g. the app was restarted while servers were up).
+	React.useEffect(() => {
+		let active = true;
+
+		void Promise.all(
+			serversRef.current.map(async (server) => {
+				if (isServerRuntimeClaimed(server.id)) return;
+				if (syncedRef.current.has(server.id)) return;
+				syncedRef.current.add(server.id);
+				try {
+					const snapshot = await invoke<ServerRuntimeSnapshot>('get_server_runtime', {
+						directory: server.directory,
+					});
+					if (!active) return;
+					setServerStatus(server.id, mapRuntimeStateToStatus(snapshot.state));
+					if (snapshot.state === 'online' || snapshot.state === 'running-external') {
+						getEntry(server.id).everRunning = true;
+					}
+					if (snapshot.sample) {
 						updateServerStats(
 							server.id,
-							mapTelemetryToStats(server, telemetry, { fallbackUptime: server.stats.uptime }),
+							mapSampleToStats(snapshot.sample, { fallbackUptime: server.stats.uptime }),
 						);
-
-						if (providerSupportsOnlinePing(server) && telemetry.online && server.status === 'starting') {
-							setServerStatus(server.id, 'online');
-						}
-					} catch {
-						if (!active) return;
-						if (providerSupportsOnlinePing(server)) {
-							updateServerStats(server.id, {
-								online: false,
-								players_online: null,
-								players_max: null,
-								server_version: null,
-							});
-						}
-					} finally {
-						inFlight.delete(server.id);
+					} else if (snapshot.state === 'offline') {
+						updateServerStats(server.id, offlineStats());
 					}
-				}),
-			);
-		};
+				} catch {
+					// Backend unavailable; the next servers change retries.
+					syncedRef.current.delete(server.id);
+				}
+			}),
+		);
 
-		void poll();
-		const interval = window.setInterval(() => void poll(), TELEMETRY_POLL_INTERVAL_MS);
 		return () => {
 			active = false;
-			window.clearInterval(interval);
 		};
-	}, [setServerStatus, updateServerStats]);
+	}, [servers, getEntry, setServerStatus, updateServerStats]);
 
 	return null;
 };

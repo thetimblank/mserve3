@@ -29,4 +29,8 @@ trash = "5"
 walkdir = "2"
 zip = { version = "2", default-features = true }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "native-tls"] }
+sysinfo = "0.33"
+rusqlite = { version = "0.32", features = ["bundled"] }
+rand = "0.8"
+dunce = "1"
 

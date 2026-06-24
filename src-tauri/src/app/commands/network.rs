@@ -327,8 +327,7 @@ pub(in crate::app) fn download_server_jar(
 
     emit_progress(downloaded_bytes, true);
 
-    let final_path = destination_path
-        .canonicalize()
+    let final_path = dunce::canonicalize(&destination_path)
         .unwrap_or_else(|_| destination_path.clone());
     let resolved_file_name = final_path
         .file_name()

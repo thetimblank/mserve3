@@ -31,12 +31,18 @@ export type ScanServerContentsResult = {
 	backupsSizeBytes: number;
 };
 
-export type RuntimeStatusResult = {
-	running: boolean;
-	exitCode: number | null;
-};
+/** Backend lifecycle states (mirrors the Rust `LifecycleState`, kebab-case). */
+export type ServerRuntimeState =
+	| 'offline'
+	| 'starting'
+	| 'online'
+	| 'stopping'
+	| 'crashed'
+	| 'running-external';
 
-export type ServerTelemetryResult = {
+/** A single live telemetry reading from the backend supervisor. */
+export type TelemetrySample = {
+	timestamp: number;
 	online: boolean;
 	playersOnline: number | null;
 	playersMax: number | null;
@@ -44,8 +50,46 @@ export type ServerTelemetryResult = {
 	providerVersion: string | null;
 	tps: number | null;
 	ramUsed: number | null;
+	ramBytes: number | null;
 	cpuUsed: number | null;
 	uptime: string | null;
+};
+
+/** Payload of the `server-runtime-state` event. */
+export type ServerRuntimeStateEvent = {
+	directory: string;
+	state: ServerRuntimeState;
+	pid: number | null;
+	startedAt: string | null;
+	exitCode: number | null;
+	stderrTail: string[];
+};
+
+/** Payload of the `server-telemetry` event. */
+export type ServerTelemetryEvent = {
+	directory: string;
+	sample: TelemetrySample;
+};
+
+/** One-shot snapshot returned by the `get_server_runtime` command. */
+export type ServerRuntimeSnapshot = {
+	state: ServerRuntimeState;
+	pid: number | null;
+	startedAt: string | null;
+	exitCode: number | null;
+	stderrTail: string[];
+	sample: TelemetrySample | null;
+};
+
+/** A bucket-averaged history point for the (future) telemetry timeline graph. */
+export type TelemetryHistoryPoint = {
+	timestamp: number;
+	online: boolean;
+	playersOnline: number | null;
+	tps: number | null;
+	ramBytes: number | null;
+	ramUsed: number | null;
+	cpuUsed: number | null;
 };
 
 export type UpdateServerSettingsPayload = {
@@ -72,7 +116,14 @@ export type UpdateServerSettingsResult = {
 	telemetry_port: number;
 };
 
-export type ServerContentTab = 'overview' | 'plugins' | 'worlds' | 'datapacks' | 'backups' | 'settings';
+export type ServerContentTab =
+	| 'overview'
+	| 'statistics'
+	| 'plugins'
+	| 'worlds'
+	| 'datapacks'
+	| 'backups'
+	| 'settings';
 
 export type ServerSettingsForm = {
 	ram: number;

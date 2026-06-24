@@ -68,14 +68,6 @@ pub(in crate::app) fn default_supported_telemetry() -> Vec<String> {
         .collect()
 }
 
-pub(in crate::app) fn provider_supports_telemetry(provider: &MserveProvider, key: &str) -> bool {
-    let normalized_key = key.trim().to_lowercase();
-    provider
-        .supported_telemetry
-        .iter()
-        .any(|entry| entry.trim().eq_ignore_ascii_case(&normalized_key))
-}
-
 fn default_jdk_versions_for_provider(provider_name: &str) -> Vec<u32> {
     match provider_name {
         "velocity" | "bungeecord" => vec![17, 21],

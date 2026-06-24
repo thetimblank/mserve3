@@ -9,8 +9,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
 
 import type { Server, ServerStatus } from '@/data/servers';
-import type { ServerTelemetryResult } from '@/pages/server/server-types';
-import { providerSupportsOnlinePing } from '@/lib/server-telemetry';
+import type { ServerRuntimeSnapshot } from '@/pages/server/server-types';
 
 export type ServerControlContext = {
 	server: Pick<Server, 'id' | 'directory' | 'provider'>;
@@ -105,42 +104,47 @@ export const forceKillServer = async ({
 	}
 };
 
-export const restartServer = async (context: ServerControlContext): Promise<boolean> => {
-	context.setServerStatus(context.server.id, 'closing');
+export const restartServer = async ({
+	server,
+	javaExecutable,
+	setServerStatus,
+}: ServerControlContext): Promise<boolean> => {
+	setServerStatus(server.id, 'closing');
 	try {
-		await invoke('stop_server', { directory: context.server.directory });
-	} catch {
-		// Ignore stop failures on restart; proceed to start.
+		// The backend stops, waits for exit, then starts again; authoritative state
+		// transitions arrive via the `server-runtime-state` event.
+		await invoke('restart_server', { directory: server.directory, javaExecutable });
+		setServerStatus(server.id, 'starting');
+		return true;
+	} catch (err) {
+		setServerStatus(server.id, 'offline');
+		toast.error(err instanceof Error ? err.message : 'Failed to restart server.');
+		return false;
 	}
-	return startServer(context);
 };
 
 /**
- * Resolve once a server is actually reachable (telemetry ping reports online),
- * or after `timeoutMs`. Providers without online-ping support can't be probed,
- * so we just wait a short fixed delay instead.
+ * Resolve once a server actually reaches the backend `online` (or adopted
+ * `running-external`) state, or after `timeoutMs`. This is universal — it works
+ * for every provider, including ones that don't answer a status ping, because it
+ * relies on the supervisor's authoritative port-based detection.
  */
 export const waitForServerReady = async (
-	server: Pick<Server, 'directory' | 'provider'>,
-	options?: { timeoutMs?: number; pollMs?: number; fixedDelayMs?: number },
+	server: Pick<Server, 'directory'>,
+	options?: { timeoutMs?: number; pollMs?: number },
 ): Promise<boolean> => {
-	if (!providerSupportsOnlinePing(server)) {
-		await delay(options?.fixedDelayMs ?? 4000);
-		return true;
-	}
-
 	const timeoutMs = options?.timeoutMs ?? 120_000;
-	const pollMs = options?.pollMs ?? 3000;
+	const pollMs = options?.pollMs ?? 1500;
 	const startedAt = Date.now();
 
 	while (Date.now() - startedAt < timeoutMs) {
 		try {
-			const telemetry = await invoke<ServerTelemetryResult>('get_server_telemetry', {
+			const runtime = await invoke<ServerRuntimeSnapshot>('get_server_runtime', {
 				directory: server.directory,
 			});
-			if (telemetry.online) return true;
+			if (runtime.state === 'online' || runtime.state === 'running-external') return true;
 		} catch {
-			// Server not up yet; keep polling.
+			// Backend not ready yet; keep polling.
 		}
 		await delay(pollMs);
 	}

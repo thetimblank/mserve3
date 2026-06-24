@@ -6,6 +6,7 @@ import {
 	Boxes,
 	CircleCheck,
 	Clock,
+	Coffee,
 	Cpu,
 	Globe,
 	MemoryStick,
@@ -19,13 +20,16 @@ import { Button } from '@/components/ui/button';
 import OpenFolderButton from '@/components/open-folder-button';
 import ServerStatus from '@/components/server-status';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Card, CardContent } from '@/components/ui/card';
 import type { Server } from '@/data/servers';
 import { type JavaRuntimeInfo } from '@/lib/java-runtime-service';
 import { javaResolutionLabel, resolveServerJavaExecutable } from '@/lib/java-resolution';
 import { isProxyProvider } from '@/lib/server-provider';
 import { getPrimaryMinecraftVersion } from '@/lib/utils';
 import { formatBytes, formatUptime } from './server-utils';
-import { Card, CardContent } from '@/components/ui/card';
+import MetricCard from './stats/metric-card';
+import { useServerTelemetryHistory } from './stats/use-server-telemetry-history';
+import { METRIC_COLORS, formatPercent, toChartData } from './stats/stats-utils';
 
 type Props = {
 	server: Server;
@@ -39,8 +43,8 @@ type Props = {
 };
 
 const UPTIME_REFRESH_MS = 1000;
-
-const formatPercent = (value: number) => `${value.toFixed(value < 10 ? 2 : 1)}%`;
+// Short rolling window feeding the overview sparklines.
+const SPARK_WINDOW_MS = 30 * 60 * 1000;
 
 const UptimeText: React.FC<{ uptime: Date }> = React.memo(({ uptime }) => {
 	const [, setTick] = React.useState(0);
@@ -58,7 +62,19 @@ const UptimeText: React.FC<{ uptime: Date }> = React.memo(({ uptime }) => {
 
 UptimeText.displayName = 'UptimeText';
 
-const OverviewSummary: React.FC<Props> = ({
+const DetailItem: React.FC<{ icon: React.ReactNode; label: string; children: React.ReactNode }> = ({
+	icon,
+	label,
+	children,
+}) => (
+	<div className='flex items-center gap-2 text-sm'>
+		<span className='text-muted-foreground [&_svg]:size-4'>{icon}</span>
+		<span className='text-muted-foreground'>{label}</span>
+		<span className='ml-auto truncate font-medium'>{children}</span>
+	</div>
+);
+
+const ServerOverviewPanel: React.FC<Props> = ({
 	server,
 	javaInstallationDefault,
 	javaRuntimes,
@@ -68,6 +84,9 @@ const OverviewSummary: React.FC<Props> = ({
 	onRestart,
 	onForceKill,
 }) => {
+	const isOffline = server.status === 'offline';
+	const isProxy = isProxyProvider(server.provider);
+
 	const createdDateText = React.useMemo(() => {
 		if (!server.created_at) return null;
 		const value = new Date(server.created_at);
@@ -89,34 +108,45 @@ const OverviewSummary: React.FC<Props> = ({
 			runtimes: javaRuntimes,
 		}),
 	);
-	const shouldShowWorldAndBackupSizes = !isProxyProvider(server.provider);
+	const shouldShowWorldAndBackupSizes = !isProxy;
 	const isBackupsNearStorageLimit = server.stats.backups_size_bytes >= Math.floor(storageLimitBytes * 0.9);
 
+	// Recent history drives the metric sparklines; only while the server is up.
+	const { points } = useServerTelemetryHistory(server.id, SPARK_WINDOW_MS, {
+		maxPoints: 40,
+		refreshMs: 10000,
+		enabled: !isOffline,
+	});
+	const sparkData = React.useMemo(() => toChartData(points), [points]);
+
+	const isRunning = server.status === 'online' || server.status === 'starting';
+
 	return (
-		<CardContent>
-			<div className='flex gap-10'>
-				<ServerStatus server={server} size='xl' />
-				<div className='flex flex-col'>
-					<div className='flex gap-2 mb-2 flex-wrap'>
-						{(server.status === 'online' || server.status === 'starting') && (
+		<Card className='rounded-b-none'>
+			<CardContent className='flex flex-col gap-6'>
+				{/* Header: status + lifecycle actions */}
+				<div className='flex flex-wrap items-center gap-x-8 gap-y-4'>
+					<ServerStatus server={server} size='xl' />
+					<div className='flex flex-wrap gap-2'>
+						{isRunning && (
 							<Button onClick={onStop} disabled={isBusy}>
 								<OctagonX />
 								<p>Stop</p>
 							</Button>
 						)}
-						{(server.status === 'online' || server.status === 'starting') && (
+						{isRunning && (
 							<Button variant='secondary' onClick={onRestart} disabled={isBusy}>
 								<RefreshCcw />
 								<p>Restart</p>
 							</Button>
 						)}
-						{server.status === 'offline' && (
+						{isOffline && (
 							<Button onClick={onStart} disabled={isBusy}>
 								<CircleCheck />
 								<p>Serve</p>
 							</Button>
 						)}
-						{server.status !== 'offline' && (
+						{!isOffline && (
 							<Button variant='destructive-secondary' onClick={onForceKill} disabled={isBusy}>
 								<OctagonX />
 								<p>Force Kill</p>
@@ -124,168 +154,140 @@ const OverviewSummary: React.FC<Props> = ({
 						)}
 						<OpenFolderButton directory={server.directory} disabled={isBusy} />
 					</div>
-					<div className='flex items-center gap-2'>
-						{createdDateText && (
-							<div className='flex items-center gap-2'>
-								<Clock className='size-4' />
-								<p>
-									Server was created
-									<span className='font-bold'> {createdDateText}</span>.
-								</p>
-							</div>
-						)}
-					</div>
-					{server.status === 'online' && (
-						<div className='flex items-center gap-2'>
-							<Users className='size-4' />
-							Players: {server.stats.players_online ?? 0}/{server.stats.players_max ?? 0}
-						</div>
+				</div>
+
+				{/* Live metric cards */}
+				<div className='grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5'>
+					<MetricCard
+						icon={<Cpu />}
+						label='CPU'
+						color={METRIC_COLORS.cpu}
+						value={isOffline || server.stats.cpu_used == null ? null : formatPercent(server.stats.cpu_used)}
+						sparkData={sparkData}
+						sparkKey='cpuUsed'
+						sparkDomain={[0, 100]}
+					/>
+					<MetricCard
+						icon={<MemoryStick />}
+						label='RAM'
+						color={METRIC_COLORS.ram}
+						value={isOffline || server.stats.ram_used == null ? null : formatPercent(server.stats.ram_used)}
+						sparkData={sparkData}
+						sparkKey='ramUsed'
+						sparkDomain={[0, 100]}
+					/>
+					<MetricCard
+						icon={<Users />}
+						label='Players'
+						color={METRIC_COLORS.players}
+						value={
+							server.status === 'online'
+								? `${server.stats.players_online ?? 0}/${server.stats.players_max ?? 0}`
+								: null
+						}
+						sparkData={sparkData}
+						sparkKey='playersOnline'
+						sparkDomain={[0, 'auto']}
+					/>
+					{!isProxy && (
+						<MetricCard
+							icon={<Activity />}
+							label='TPS'
+							color={METRIC_COLORS.tps}
+							value={isOffline || server.stats.tps == null ? null : server.stats.tps.toFixed(2)}
+							sparkData={sparkData}
+							sparkKey='tps'
+							sparkDomain={[0, 20]}
+						/>
 					)}
-					{server.status !== 'offline' && server.stats.tps !== null && (
-						<div className='flex items-center gap-2'>
-							<Activity className='size-4' />
-							TPS: <span className='font-bold'>{server.stats.tps.toFixed(2)}</span>
-						</div>
-					)}
-					{server.status !== 'offline' && server.stats.ram_used !== null && (
-						<div className='flex items-center gap-2'>
-							<MemoryStick className='size-4' />
-							RAM usage: <span className='font-bold'>{formatPercent(server.stats.ram_used)}</span>
-						</div>
-					)}
-					{server.status !== 'offline' && server.stats.cpu_used !== null && (
-						<div className='flex items-center gap-2'>
-							<Cpu className='size-4' />
-							CPU usage: <span className='font-bold'>{formatPercent(server.stats.cpu_used)}</span>
-						</div>
-					)}
-					{server.auto_restart && (
-						<div className='flex items-center gap-2'>
-							<RefreshCcw className='size-4' />
-							<p>
-								Server automatically <span className='font-bold'>restarts on shutdown</span>.
-							</p>
-						</div>
-					)}
-					{displayVersion && (
-						<div className='flex items-center gap-2'>
-							<ArrowDownToLine className='size-4' />
-							{(() => {
+					<MetricCard
+						icon={<Clock />}
+						label='Uptime'
+						color={METRIC_COLORS.online}
+						value={
+							server.status === 'online' && server.stats.uptime ? (
+								<UptimeText uptime={server.stats.uptime} />
+							) : null
+						}
+					/>
+				</div>
+
+				{/* Static details */}
+				<div className='space-y-3'>
+					<h3 className='text-xs font-semibold uppercase tracking-wide text-muted-foreground'>Details</h3>
+					<div className='grid gap-x-8 gap-y-2.5 sm:grid-cols-2'>
+						{displayVersion &&
+							(() => {
 								const primary = getPrimaryMinecraftVersion(displayVersion);
-								if (!primary) return <span>{displayVersion}</span>;
 								return (
-									<Tooltip>
-										<TooltipTrigger asChild>
-											<span>
-												Server version is <span className='font-bold'>{primary}</span>.
-											</span>
-										</TooltipTrigger>
-										<TooltipContent className='max-w-40 text-wrap text-white dark:text-black'>
-											{displayVersion}
-										</TooltipContent>
-									</Tooltip>
+									<DetailItem icon={<ArrowDownToLine />} label='Version'>
+										{primary ? (
+											<Tooltip>
+												<TooltipTrigger asChild>
+													<span>{primary}</span>
+												</TooltipTrigger>
+												<TooltipContent className='max-w-40 text-wrap text-white dark:text-black'>
+													{displayVersion}
+												</TooltipContent>
+											</Tooltip>
+										) : (
+											displayVersion
+										)}
+									</DetailItem>
 								);
 							})()}
-						</div>
-					)}
-					{server.ram && (
-						<div className='flex items-center gap-2'>
-							<MemoryStick className='size-4' />
-							<p>
-								Server has <span className='font-bold'>{server.ram}GB</span> of memory.
-							</p>
-						</div>
-					)}
-					{shouldShowWorldAndBackupSizes && (
-						<div className='flex items-center gap-2'>
-							<Globe className='size-4' />
-							<p>
-								Worlds size:{' '}
-								<span className='font-bold'>{formatBytes(server.stats.worlds_size_bytes)}</span>
-							</p>
-						</div>
-					)}
-					{shouldShowWorldAndBackupSizes && (
-						<div className='flex items-center gap-2'>
-							<Archive className='size-4' />
-							<p>
-								Backups size:{' '}
-								<span className='font-bold'>{formatBytes(server.stats.backups_size_bytes)}</span>
-							</p>
-						</div>
-					)}
+						<DetailItem icon={<Package />} label='Provider'>
+							{server.provider.name}
+						</DetailItem>
+						{displayProviderVersion && (
+							<DetailItem icon={<Boxes />} label='Detected runtime'>
+								{displayProviderVersion}
+							</DetailItem>
+						)}
+						<DetailItem icon={<Boxes />} label='Jar file'>
+							{server.file}
+						</DetailItem>
+						{server.ram != null && (
+							<DetailItem icon={<MemoryStick />} label='Allocated RAM'>
+								{server.ram}GB
+							</DetailItem>
+						)}
+						{effectiveJavaRuntimeLabel && (
+							<DetailItem icon={<Coffee />} label='Java runtime'>
+								{effectiveJavaRuntimeLabel}
+							</DetailItem>
+						)}
+						{shouldShowWorldAndBackupSizes && (
+							<DetailItem icon={<Globe />} label='Worlds size'>
+								{formatBytes(server.stats.worlds_size_bytes)}
+							</DetailItem>
+						)}
+						{shouldShowWorldAndBackupSizes && (
+							<DetailItem icon={<Archive />} label='Backups size'>
+								{formatBytes(server.stats.backups_size_bytes)}
+							</DetailItem>
+						)}
+						{createdDateText && (
+							<DetailItem icon={<Clock />} label='Created'>
+								{createdDateText}
+							</DetailItem>
+						)}
+						{server.auto_restart && (
+							<DetailItem icon={<RefreshCcw />} label='Auto-restart'>
+								Enabled
+							</DetailItem>
+						)}
+					</div>
 					{shouldShowWorldAndBackupSizes && isBackupsNearStorageLimit && (
-						<div className='flex items-center gap-2 text-yellow-700 dark:text-yellow-400'>
-							<TriangleAlert className='size-4' />
+						<div className='flex items-center gap-2 text-sm text-yellow-700 dark:text-yellow-400'>
+							<TriangleAlert className='size-4 shrink-0' />
 							<p>
-								Backups are using at least <span className='font-bold'>90%</span> of the storage
-								limit.
+								Backups are using at least <span className='font-bold'>90%</span> of the storage limit.
 							</p>
-						</div>
-					)}
-					<div className='flex items-center gap-2'>
-						<Boxes className='size-4' />
-						<p>
-							Server jar file is <span className='font-bold'>{server.file}</span>.
-						</p>
-					</div>
-					<div className='flex items-center gap-2'>
-						<Package className='size-4' />
-						<p>
-							Server provider is <span className='font-bold'>{server.provider.name}</span>.
-						</p>
-					</div>
-					{effectiveJavaRuntimeLabel && (
-						<div className='flex items-center gap-2'>
-							<MemoryStick className='size-4' />
-							<p>{effectiveJavaRuntimeLabel}</p>
-						</div>
-					)}
-					{displayProviderVersion && (
-						<div className='flex items-center gap-2'>
-							<Package className='size-4' />
-							<p>
-								Detected runtime provider: <span className='font-bold'>{displayProviderVersion}</span>
-								.
-							</p>
-						</div>
-					)}
-					{server.status === 'online' && server.stats.uptime && (
-						<div className='flex items-center gap-2'>
-							<Clock className='size-4' />
-							Uptime: <UptimeText uptime={server.stats.uptime} />
 						</div>
 					)}
 				</div>
-			</div>
-		</CardContent>
-	);
-};
-
-const MemoizedOverviewSummary = React.memo(OverviewSummary);
-
-const ServerOverviewPanel: React.FC<Props> = ({
-	server,
-	javaInstallationDefault,
-	javaRuntimes,
-	isBusy,
-	onStart,
-	onStop,
-	onRestart,
-	onForceKill,
-}) => {
-	return (
-		<Card className='rounded-b-none'>
-			<MemoizedOverviewSummary
-				server={server}
-				javaInstallationDefault={javaInstallationDefault}
-				javaRuntimes={javaRuntimes}
-				isBusy={isBusy}
-				onStart={onStart}
-				onStop={onStop}
-				onRestart={onRestart}
-				onForceKill={onForceKill}
-			/>
+			</CardContent>
 		</Card>
 	);
 };

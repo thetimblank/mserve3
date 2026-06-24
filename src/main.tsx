@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
@@ -22,6 +22,7 @@ import JavaGuide from './pages/JavaGuide';
 import { Toaster } from './components/ui/sonner';
 import Setup from './pages/Setup';
 import MserveRepairDialog from '@/components/mserve-repair-dialog';
+import { CloseWarningDialog } from '@/components/close-warning-dialog';
 import CreateServerPage from './pages/CreateServer';
 import { CreateServerProvider } from './pages/create-server/CreateServerContext';
 
@@ -98,6 +99,7 @@ const RootLayout: React.FC = () => {
 								<JavaDownloadProvider>
 									<ServerRuntimeMonitor />
 									<MserveRepairDialog />
+									<CloseWarningDialog />
 									<Nav />
 									<AppSidebar />
 									<SidebarInset className='h-full min-h-0 overflow-hidden'>

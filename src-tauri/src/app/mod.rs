@@ -2,10 +2,11 @@ mod commands;
 mod support;
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::process::{Child, ChildStdin};
-use std::sync::Mutex;
-use tauri::Manager;
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
+use tauri::{Emitter, Manager};
 
 use commands::*;
 
@@ -158,6 +159,7 @@ struct ExportWorldResult {
 #[derive(Debug, Deserialize, Default)]
 #[serde(default)]
 struct RuntimeServerConfig {
+    id: Option<String>,
     file: String,
     ram: Option<f64>,
     storage_limit: Option<u32>,
@@ -168,16 +170,99 @@ struct RuntimeServerConfig {
     telemetry_port: Option<u16>,
 }
 
-struct RunningServerProcess {
-    child: Child,
-    stdin: ChildStdin,
-    pid: u32,
-    started_at: chrono::DateTime<chrono::Utc>,
+/// The authoritative lifecycle of a server, owned by the backend supervisor and
+/// serialized to the frontend (kebab-case, e.g. "running-external").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum LifecycleState {
+    Offline,
+    Starting,
+    Online,
+    Stopping,
+    Crashed,
+    RunningExternal,
 }
 
-#[derive(Default)]
+/// Loopback RCON credentials, provisioned into server.properties on start.
+#[derive(Debug, Clone)]
+struct RconConfig {
+    port: u16,
+    password: String,
+}
+
+/// Which TPS command this server understands, detected once and cached.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TpsCommandState {
+    Unknown,
+    Paper,
+    TickQuery,
+    Unsupported,
+}
+
+/// A single timestamped telemetry reading. Returned live to the UI and appended
+/// to the SQLite time-series store for the future timeline graph.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TelemetrySample {
+    /// Unix epoch milliseconds.
+    timestamp: i64,
+    online: bool,
+    players_online: Option<u32>,
+    players_max: Option<u32>,
+    server_version: Option<String>,
+    provider_version: Option<String>,
+    tps: Option<f64>,
+    /// Percent of the configured heap.
+    ram_used: Option<f64>,
+    /// Resident set size in bytes (for absolute graphs).
+    ram_bytes: Option<u64>,
+    /// Process CPU percent.
+    cpu_used: Option<f64>,
+    /// RFC3339 process start time.
+    uptime: Option<String>,
+}
+
+/// A bucket-averaged history point from the telemetry store.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TelemetryHistoryPoint {
+    timestamp: i64,
+    online: bool,
+    players_online: Option<u32>,
+    tps: Option<f64>,
+    ram_bytes: Option<u64>,
+    ram_used: Option<f64>,
+    cpu_used: Option<f64>,
+}
+
+/// Everything the backend tracks for one server. `child`/`stdin`/`pid` are
+/// `None` for adopted (externally-started) servers we only observe.
+struct ServerRuntime {
+    directory: String,
+    child: Option<Child>,
+    stdin: Option<ChildStdin>,
+    pid: Option<u32>,
+    started_at: chrono::DateTime<chrono::Utc>,
+    state: LifecycleState,
+    exit_code: Option<i32>,
+    stderr_tail: VecDeque<String>,
+    rcon: Option<RconConfig>,
+    host: String,
+    server_port: u16,
+    is_proxy: bool,
+    server_id: String,
+    configured_ram: Option<f64>,
+    provider_version: Option<String>,
+    tps_state: TpsCommandState,
+    latest_sample: Option<TelemetrySample>,
+    generation: u64,
+    stop_requested: bool,
+    stop_requested_at: Option<Instant>,
+}
+
+#[derive(Default, Clone)]
 struct RuntimeState {
-    processes: Mutex<HashMap<String, RunningServerProcess>>,
+    processes: Arc<Mutex<HashMap<String, ServerRuntime>>>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -188,25 +273,37 @@ struct ServerOutputEvent {
     line: String,
 }
 
-#[derive(Debug, Serialize)]
+/// Emitted whenever a server's lifecycle state changes.
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct RuntimeStatusResult {
-    running: bool,
+struct ServerRuntimeStateEvent {
+    directory: String,
+    state: LifecycleState,
+    pid: Option<u32>,
+    started_at: Option<String>,
     exit_code: Option<i32>,
+    stderr_tail: Vec<String>,
 }
 
+/// Emitted on each telemetry sample for a running server.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ServerTelemetryEvent {
+    directory: String,
+    sample: TelemetrySample,
+}
+
+/// One-shot snapshot returned by `get_server_runtime` so a freshly-mounted UI
+/// can render current state without waiting for the next event.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ServerTelemetryResult {
-    online: bool,
-    players_online: Option<u32>,
-    players_max: Option<u32>,
-    server_version: Option<String>,
-    provider_version: Option<String>,
-    tps: Option<f64>,
-    ram_used: Option<f64>,
-    cpu_used: Option<f64>,
-    uptime: Option<String>,
+struct ServerRuntimeSnapshot {
+    state: LifecycleState,
+    pid: Option<u32>,
+    started_at: Option<String>,
+    exit_code: Option<i32>,
+    stderr_tail: Vec<String>,
+    sample: Option<TelemetrySample>,
 }
 
 #[derive(Debug, Serialize)]
@@ -367,6 +464,17 @@ struct RestoreBackupResult {
     deleted_backups_count: usize,
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AppCloseRequestedPayload {
+    running_server_directories: Vec<String>,
+}
+
+#[tauri::command]
+fn confirm_close(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
 #[tauri::command]
 fn complete_startup(app: tauri::AppHandle) {
     if let Some(main_window) = app.get_webview_window("main") {
@@ -384,10 +492,41 @@ fn complete_startup(app: tauri::AppHandle) {
 pub fn run() {
     tauri::Builder::default()
         .manage(RuntimeState::default())
+        .on_window_event(|window, event| {
+            if window.label() == "main" {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let state: tauri::State<'_, RuntimeState> = window.state();
+                    let running = {
+                        let guard = state.processes.lock().unwrap_or_else(|e| e.into_inner());
+                        guard
+                            .values()
+                            .filter(|r| {
+                                !matches!(r.state, LifecycleState::Offline | LifecycleState::Crashed)
+                            })
+                            .map(|r| r.directory.clone())
+                            .collect::<Vec<_>>()
+                    };
+                    let _ = window.app_handle().emit(
+                        "app-close-requested",
+                        AppCloseRequestedPayload {
+                            running_server_directories: running,
+                        },
+                    );
+                }
+            }
+        })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
+            // Open the telemetry time-series database in the app data dir.
+            if let Ok(data_dir) = app.path().app_data_dir() {
+                if let Err(err) = support::init_telemetry_store(&data_dir.join("telemetry.db")) {
+                    eprintln!("[Telemetry] Failed to open store: {err}");
+                }
+            }
+
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 std::thread::sleep(std::time::Duration::from_secs(8));
@@ -441,14 +580,19 @@ pub fn run() {
             start_server,
             get_server_start_command,
             stop_server,
+            restart_server,
             force_kill_server,
+            force_kill_all_servers,
+            get_running_server_directories,
             send_server_command,
-            get_server_runtime_status,
+            get_server_runtime,
             get_server_telemetry,
+            get_server_telemetry_history,
             scan_server_contents,
             set_server_item_active,
             delete_server,
-            complete_startup
+            complete_startup,
+            confirm_close
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

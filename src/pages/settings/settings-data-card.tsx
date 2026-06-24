@@ -3,7 +3,6 @@ import * as React from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
 import { useUser } from '@/data/user';
@@ -76,12 +75,6 @@ const SettingsDataCard: React.FC<SettingsDataCardProps> = ({ onClearAllData }) =
 		toast.success('Server root path reset to default.');
 	};
 
-	const handleAdvancedModeChange = (checked: boolean | 'indeterminate') => {
-		const enabled = checked === true;
-		updateUserField('advanced_mode', enabled);
-		toast.success(`Advanced mode ${enabled ? 'enabled' : 'disabled'}.`);
-	};
-
 	const isRootPathDefault =
 		Boolean(defaultServersRootPath) && serversRootPath.trim() === defaultServersRootPath.trim();
 
@@ -121,16 +114,6 @@ const SettingsDataCard: React.FC<SettingsDataCardProps> = ({ onClearAllData }) =
 				</div>
 
 				<div className='space-y-2'>
-					<Label className='flex items-center gap-3'>
-						<Checkbox checked={user.advanced_mode} onCheckedChange={handleAdvancedModeChange} />
-						Advanced Mode
-					</Label>
-					<p className='text-sm text-muted-foreground'>
-						Unlocks per-server overrides, sub-gigabyte RAM, and bypasses RAM safety caps.
-					</p>
-				</div>
-
-				<div className='space-y-2'>
 					<p className='font-medium'>Data management</p>
 					<AlertDialog>
 						<AlertDialogTrigger asChild>
@@ -148,7 +131,10 @@ const SettingsDataCard: React.FC<SettingsDataCardProps> = ({ onClearAllData }) =
 							</AlertDialogHeader>
 							<AlertDialogFooter>
 								<AlertDialogCancel>Cancel</AlertDialogCancel>
-								<AlertDialogAction variant='destructive' className='capitalize' onClick={onClearAllData}>
+								<AlertDialogAction
+									variant='destructive'
+									className='capitalize'
+									onClick={onClearAllData}>
 									Clear All Data
 								</AlertDialogAction>
 							</AlertDialogFooter>

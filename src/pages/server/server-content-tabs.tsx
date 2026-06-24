@@ -1,6 +1,6 @@
 import React from 'react';
 import clsx from 'clsx';
-import { Archive, Globe, Home, Package, Plug, Settings } from 'lucide-react';
+import { Archive, ChartColumnIncreasing, Globe, Home, Package, Plug, Settings } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import type { ServerContentTab } from './server-types';
@@ -13,6 +13,7 @@ type ServerContentTabsProps = {
 
 const tabMeta: Record<ServerContentTab, { icon: React.ReactNode; label: string }> = {
 	overview: { icon: <Home />, label: 'Overview' },
+	statistics: { icon: <ChartColumnIncreasing />, label: 'Statistics' },
 	plugins: { icon: <Plug />, label: 'Plugins' },
 	worlds: { icon: <Globe />, label: 'Worlds' },
 	datapacks: { icon: <Package />, label: 'Datapacks' },
@@ -22,6 +23,7 @@ const tabMeta: Record<ServerContentTab, { icon: React.ReactNode; label: string }
 
 export const SERVER_TABS: ServerContentTab[] = [
 	'overview',
+	'statistics',
 	'settings',
 	'plugins',
 	'worlds',
@@ -36,7 +38,7 @@ export const getServerContentTabUrl = (serverId: string, tab: ServerContentTab) 
 	`/servers/${encodeURIComponent(serverId)}/${tab}`;
 
 export const getAvailableServerContentTabs = (providerKind?: string | null): ServerContentTab[] => {
-	const tabs: ServerContentTab[] = ['overview', 'settings'];
+	const tabs: ServerContentTab[] = ['overview', 'statistics', 'settings'];
 
 	if (providerKind !== 'vanilla') {
 		tabs.push('plugins');

@@ -59,7 +59,20 @@ pub(in crate::app) fn update_server_settings(
     {
         let mut processes = state.processes.lock().map_err(|_| "Runtime lock failed.")?;
         if let Some(existing) = processes.get_mut(&key) {
-            if existing.child.try_wait().map_err(|err| err.to_string())?.is_none() {
+            let alive = existing
+                .child
+                .as_mut()
+                .map(|child| matches!(child.try_wait(), Ok(None)))
+                .unwrap_or(false);
+            let active = alive
+                || matches!(
+                    existing.state,
+                    LifecycleState::Starting
+                        | LifecycleState::Online
+                        | LifecycleState::Stopping
+                        | LifecycleState::RunningExternal
+                );
+            if active {
                 return Err("Server must be offline before editing settings.".to_string());
             }
             processes.remove(&key);
