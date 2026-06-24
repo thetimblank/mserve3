@@ -52,6 +52,25 @@ export const parseTps = (line: string) => {
 	};
 };
 
+const JAVA_VERSION_ERROR_PATTERNS: RegExp[] = [
+	/UnsupportedClassVersionError/i,
+	/has been compiled by a more recent version of the Java Runtime/i,
+	/class file version \d+(?:\.\d+)?/i,
+	/requires running the server with Java \d+/i,
+	/requires Java \d+ or (?:higher|newer|above)/i,
+	/java\.lang\.UnsupportedClassVersionError/i,
+];
+
+/**
+ * Detects the family of JVM/Minecraft errors that mean "this server was launched
+ * with the wrong (too old) Java version", which drives the automatic step-down
+ * retry. Deliberately conservative so unrelated stack traces don't trigger it.
+ */
+export const isJavaVersionError = (line: string): boolean => {
+	const cleaned = stripAnsi(line);
+	return JAVA_VERSION_ERROR_PATTERNS.some((pattern) => pattern.test(cleaned));
+};
+
 export const parseVersion = (line: string, providerKind: RuntimeProviderKind = 'unknown') => {
 	const pluginMatch = line.match(/This server is running\s+.+?\s+version\s+(.+)$/i);
 	if (pluginMatch) {

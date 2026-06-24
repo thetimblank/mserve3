@@ -20,11 +20,8 @@ import OpenFolderButton from '@/components/open-folder-button';
 import ServerStatus from '@/components/server-status';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { Server } from '@/data/servers';
-import {
-	findJavaRuntimeByExecutablePath,
-	getJavaRuntimeBadgeLabel,
-	type JavaRuntimeInfo,
-} from '@/lib/java-runtime-service';
+import { type JavaRuntimeInfo } from '@/lib/java-runtime-service';
+import { javaResolutionLabel, resolveServerJavaExecutable } from '@/lib/java-resolution';
 import { isProxyProvider } from '@/lib/server-provider';
 import { getPrimaryMinecraftVersion } from '@/lib/utils';
 import { formatBytes, formatUptime } from './server-utils';
@@ -84,9 +81,14 @@ const OverviewSummary: React.FC<Props> = ({
 	);
 	const displayVersion = server.stats.server_version ?? server.provider.minecraft_version ?? null;
 	const displayProviderVersion = server.stats.provider_version ?? server.provider.provider_version;
-	const effectiveJavaInstallation = server.java_installation?.trim() || javaInstallationDefault.trim();
-	const effectiveJavaRuntime = findJavaRuntimeByExecutablePath(effectiveJavaInstallation, javaRuntimes);
-	const effectiveJavaRuntimeLabel = getJavaRuntimeBadgeLabel(effectiveJavaRuntime);
+	const effectiveJavaRuntimeLabel = javaResolutionLabel(
+		resolveServerJavaExecutable({
+			provider: server.provider,
+			javaInstallation: server.java_installation,
+			globalDefault: javaInstallationDefault,
+			runtimes: javaRuntimes,
+		}),
+	);
 	const shouldShowWorldAndBackupSizes = !isProxyProvider(server.provider);
 	const isBackupsNearStorageLimit = server.stats.backups_size_bytes >= Math.floor(storageLimitBytes * 0.9);
 

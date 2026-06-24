@@ -22,13 +22,8 @@ import {
 	isServerProvider,
 	PROVIDER_NAMES,
 } from '@/lib/server-provider';
-import { resolveJavaRequirement } from '@/lib/java-compatibility';
-import {
-	findJavaRuntimeByExecutablePath,
-	getJavaRuntimeBadgeLabel,
-	resolveJavaRuntimeForRequirement,
-	type JavaRuntimeInfo,
-} from '@/lib/java-runtime-service';
+import { type JavaRuntimeInfo } from '@/lib/java-runtime-service';
+import { javaResolutionLabel, resolveServerJavaExecutable } from '@/lib/java-resolution';
 import { clampRamGb } from '@/lib/ram-utils';
 import { backupChoices } from '@/pages/server/server-constants';
 import {
@@ -328,17 +323,10 @@ export const EditServerSettingsProvider: React.FC<EditServerSettingsProviderProp
 	const handleSaveSettings = React.useCallback(async () => {
 		if (isFormLocked) return;
 
+		// Automatic stays automatic (empty java_installation). The runtime is
+		// resolved at start time from the live compatibility matrix + detected
+		// runtimes, so there's no need to bake a path in here.
 		const payload = buildUpdateServerSettingsPayload(server.directory, settingsForm);
-		if (!payload.java_installation && user.java_installation_default.trim().toLowerCase() === 'java') {
-			const requirement = resolveJavaRequirement(
-				settingsForm.provider.name,
-				settingsForm.provider.minecraft_version,
-			);
-			const suggestedRuntime = resolveJavaRuntimeForRequirement(javaRuntimes, requirement);
-			if (suggestedRuntime) {
-				payload.java_installation = suggestedRuntime.executablePath;
-			}
-		}
 		payload.new_directory = resolveNewDirectory(payload, server.directory);
 
 		setSettingsError(null);
@@ -426,32 +414,28 @@ export const EditServerSettingsProvider: React.FC<EditServerSettingsProviderProp
 		unsavedToastId,
 	]);
 
+	const javaResolution = React.useMemo(
+		() =>
+			resolveServerJavaExecutable({
+				provider: settingsForm.provider,
+				javaInstallation: settingsForm.java_installation,
+				globalDefault: user.java_installation_default,
+				runtimes: javaRuntimes,
+			}),
+		[javaRuntimes, settingsForm.java_installation, settingsForm.provider, user.java_installation_default],
+	);
+	const effectiveJavaRuntimeLabel = javaResolutionLabel(javaResolution);
 	const runCommandPreview = React.useMemo(
 		() =>
 			buildServerRunCommandPreview({
 				ram: settingsForm.ram,
 				file: server.file,
 				custom_flags: settingsForm.custom_flags,
-				java_installation: settingsForm.java_installation,
-				global_java_installation: user.java_installation_default,
+				java_executable:
+					javaResolution.status === 'resolved' ? javaResolution.executablePath : undefined,
 			}),
-		[
-			server.file,
-			settingsForm.custom_flags,
-			settingsForm.java_installation,
-			settingsForm.ram,
-			user.java_installation_default,
-		],
+		[javaResolution, server.file, settingsForm.custom_flags, settingsForm.ram],
 	);
-	const effectiveJavaInstallation = React.useMemo(
-		() => settingsForm.java_installation.trim() || user.java_installation_default.trim(),
-		[settingsForm.java_installation, user.java_installation_default],
-	);
-	const effectiveJavaRuntime = React.useMemo(
-		() => findJavaRuntimeByExecutablePath(effectiveJavaInstallation, javaRuntimes),
-		[effectiveJavaInstallation, javaRuntimes],
-	);
-	const effectiveJavaRuntimeLabel = getJavaRuntimeBadgeLabel(effectiveJavaRuntime);
 
 	const value: EditServerSettingsContextValue = {
 		server,

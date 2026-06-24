@@ -16,6 +16,7 @@ export default function Slide1() {
 		if (source === 'path') return 'PATH';
 		if (source === 'java_home') return 'JAVA_HOME';
 		if (source === 'common_install_dir') return 'Installed JDK folder';
+		if (source === 'managed') return 'Downloaded by mserve';
 		return source;
 	};
 
@@ -71,11 +72,6 @@ export default function Slide1() {
 										{runtime.version.replace(String(runtime.majorVersion), '')}
 									</span>
 								</p>
-								{runtime.vendor !== 'Unknown' && (
-									<span className='text-xs rounded-full bg-accent text-accent-foreground px-2 py-1'>
-										{runtime.vendor}
-									</span>
-								)}
 								<span className='text-xs rounded-full bg-accent text-accent-foreground px-2 py-1'>
 									{sourceLabel(runtime.source)}
 								</span>

@@ -4,10 +4,14 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
 import type { Server, ServerStatus, ServerUpdate } from '@/data/servers';
 import type { TelemetryKey } from '@/lib/mserve-schema';
-import { isServerReadyLine, parseTps, stripAnsi } from '@/lib/utils';
+import { isJavaVersionError, isServerReadyLine, parseTps, stripAnsi } from '@/lib/utils';
 import { getServerProviderCapabilities } from '@/lib/server-provider-capabilities';
 import { mapTelemetryToStats } from '@/lib/server-telemetry';
 import { useUser } from '@/data/user';
+import { useJavaRuntimes } from '@/data/java-runtimes';
+import { useJavaDownload } from '@/data/java-download';
+import { planJavaFallback, resolveServerJavaExecutable } from '@/lib/java-resolution';
+import { setServerJavaInstallation } from '@/lib/java-runtime-service';
 import {
 	type CreateServerBackupResult,
 	type RuntimeStatusResult,
@@ -49,6 +53,14 @@ type RuntimeState = {
 	manualStopRequested: boolean;
 	previousStatus: ServerStatus;
 	isCreatingAutoBackup: boolean;
+	// Automatic Java resolution + start-failure fallback.
+	awaitingReady: boolean;
+	currentJavaExecutable: string | null;
+	javaAttemptMajors: number[];
+	javaDidFallback: boolean;
+	javaFallbackInProgress: boolean;
+	javaDownloadAttempted: boolean;
+	javaGiveUp: boolean;
 };
 
 const initialRuntimeState = (): RuntimeState => ({
@@ -62,6 +74,13 @@ const initialRuntimeState = (): RuntimeState => ({
 	manualStopRequested: false,
 	previousStatus: 'offline',
 	isCreatingAutoBackup: false,
+	awaitingReady: false,
+	currentJavaExecutable: null,
+	javaAttemptMajors: [],
+	javaDidFallback: false,
+	javaFallbackInProgress: false,
+	javaDownloadAttempted: false,
+	javaGiveUp: false,
 });
 
 export const useServerRuntime = ({
@@ -78,6 +97,8 @@ export const useServerRuntime = ({
 	appendTerminalLine,
 }: Args) => {
 	const { user } = useUser();
+	const { runtimes: javaRuntimes } = useJavaRuntimes();
+	const { ensureJava } = useJavaDownload();
 	const runtimeRef = React.useRef<RuntimeState>(initialRuntimeState());
 	const telemetryInFlightRef = React.useRef(false);
 	const serverDirectory = server?.directory;
@@ -112,20 +133,23 @@ export const useServerRuntime = ({
 		[setErrorMessage],
 	);
 
-	const appendResolvedStartCommand = React.useCallback(async () => {
-		if (!serverDirectory) return;
+	const appendResolvedStartCommand = React.useCallback(
+		async (javaExecutable: string) => {
+			if (!serverDirectory) return;
 
-		try {
-			const command = await invoke<string>('get_server_start_command', {
-				directory: serverDirectory,
-				globalJavaInstallation: user.java_installation_default,
-			});
-			appendTerminalLine(`[system] Running: ${command}`);
-		} catch (error) {
-			const message = error instanceof Error ? error.message : 'Failed to resolve start command.';
-			appendTerminalLine(`[system] ${message}`);
-		}
-	}, [appendTerminalLine, serverDirectory, user.java_installation_default]);
+			try {
+				const command = await invoke<string>('get_server_start_command', {
+					directory: serverDirectory,
+					javaExecutable,
+				});
+				appendTerminalLine(`[system] Running: ${command}`);
+			} catch (error) {
+				const message = error instanceof Error ? error.message : 'Failed to resolve start command.';
+				appendTerminalLine(`[system] ${message}`);
+			}
+		},
+		[appendTerminalLine, serverDirectory],
+	);
 
 	const setOfflineState = React.useCallback(() => {
 		setServerStatus(serverId, 'offline');
@@ -157,6 +181,110 @@ export const useServerRuntime = ({
 		setServerStatus(serverId, 'starting');
 	}, [serverId, setServerStatus, updateServerStats]);
 
+	const resolveJava = React.useCallback(
+		(excludeMajors: number[] = []) =>
+			resolveServerJavaExecutable({
+				provider: server?.provider,
+				javaInstallation: server?.java_installation,
+				globalDefault: user.java_installation_default,
+				runtimes: javaRuntimes,
+				excludeMajors,
+			}),
+		[javaRuntimes, server?.java_installation, server?.provider, user.java_installation_default],
+	);
+
+	// Spawns the server with a specific Java executable and records the attempt so
+	// the start-failure fallback can step down through versions.
+	const startWithJava = React.useCallback(
+		async (javaExecutable: string, majorVersion: number | null) => {
+			if (!serverDirectory) return;
+			runtimeRef.current.currentJavaExecutable = javaExecutable;
+			if (majorVersion != null && !runtimeRef.current.javaAttemptMajors.includes(majorVersion)) {
+				runtimeRef.current.javaAttemptMajors.push(majorVersion);
+			}
+			runtimeRef.current.awaitingReady = true;
+			await appendResolvedStartCommand(javaExecutable);
+			await invoke('start_server', { directory: serverDirectory, javaExecutable });
+			runtimeRef.current.javaFallbackInProgress = false;
+		},
+		[appendResolvedStartCommand, serverDirectory],
+	);
+
+	// Reacts to a "wrong Java version" error during start: step down to the next
+	// compatible installed runtime, or download/redirect when none is left.
+	const handleJavaVersionError = React.useCallback(async () => {
+		if (!serverDirectory) return;
+		if (runtimeRef.current.manualStopRequested) return;
+		if (runtimeRef.current.javaFallbackInProgress) return;
+		if (!runtimeRef.current.awaitingReady) return;
+		// Only automatic servers step down; a pinned override surfaces the error.
+		if ((server?.java_installation ?? '').trim() !== '') return;
+
+		runtimeRef.current.javaFallbackInProgress = true;
+		runtimeRef.current.awaitingReady = false;
+
+		// The crashing JVM is exiting anyway — make sure it's gone before retrying.
+		try {
+			await invoke('force_kill_server', { directory: serverDirectory });
+		} catch {}
+
+		const plan = planJavaFallback({
+			provider: server?.provider,
+			globalDefault: user.java_installation_default,
+			runtimes: javaRuntimes,
+			attemptedMajors: runtimeRef.current.javaAttemptMajors,
+		});
+
+		if (plan.kind === 'retry') {
+			runtimeRef.current.javaDidFallback = true;
+			appendTerminalLine(`[system] That Java version was too old. Trying Java ${plan.majorVersion}...`);
+			try {
+				await startWithJava(plan.executablePath, plan.majorVersion);
+			} catch (err) {
+				runtimeRef.current.javaFallbackInProgress = false;
+				setOfflineState();
+				appendTerminalLine(
+					`[system] ${err instanceof Error ? err.message : 'Failed to start with fallback Java.'}`,
+				);
+			}
+			return;
+		}
+
+		// No installed Java worked — offer to download the recommended one (once).
+		if (!runtimeRef.current.javaDownloadAttempted) {
+			runtimeRef.current.javaDownloadAttempted = true;
+			const requiredMajor = plan.requirement.recommendedMajor;
+			appendTerminalLine(`[system] No installed Java worked. Trying to get Java ${requiredMajor}...`);
+			const runtime = await ensureJava(requiredMajor);
+			if (runtime) {
+				runtimeRef.current.javaDidFallback = true;
+				try {
+					await startWithJava(runtime.executablePath, runtime.majorVersion);
+					return;
+				} catch {}
+			}
+		}
+
+		runtimeRef.current.javaFallbackInProgress = false;
+		runtimeRef.current.javaGiveUp = true;
+		setOfflineState();
+		const message = `No compatible Java runtime could start this server (needs Java ${plan.requirement.recommendedMajor}).`;
+		setErrorMessage(message);
+		appendTerminalLine(`[system] ${message}`);
+		toast.error(message);
+	}, [
+		appendTerminalLine,
+		ensureJava,
+		javaRuntimes,
+		server?.java_installation,
+		server?.provider,
+		serverDirectory,
+		setErrorMessage,
+		setOfflineState,
+		startWithJava,
+		user.java_installation_default,
+	]);
+
 	const syncTelemetry = React.useCallback(async () => {
 		if (!serverDirectory || !server) return;
 		if (telemetryInFlightRef.current) return;
@@ -174,6 +302,9 @@ export const useServerRuntime = ({
 
 			if (supportsTelemetry('online') && telemetry.online && serverStatus === 'starting') {
 				setServerStatus(serverId, 'online');
+				// Online via ping (no ready line needed) — stop watching for a startup
+				// Java-version error so later log noise can't trigger a false step-down.
+				runtimeRef.current.awaitingReady = false;
 			}
 		} catch {
 			if (!supportsTelemetry('online')) return;
@@ -298,6 +429,27 @@ export const useServerRuntime = ({
 						online: true,
 						uptime: runtimeRef.current.startAt,
 					});
+
+					// The current Java worked. Clear the start-cycle fallback state and,
+					// if we had to step down to find it, pin it so later starts skip the
+					// trial-and-error.
+					runtimeRef.current.awaitingReady = false;
+					runtimeRef.current.javaFallbackInProgress = false;
+					runtimeRef.current.javaAttemptMajors = [];
+					if (
+						runtimeRef.current.javaDidFallback &&
+						runtimeRef.current.currentJavaExecutable &&
+						(server?.java_installation ?? '').trim() === ''
+					) {
+						const pinned = runtimeRef.current.currentJavaExecutable;
+						runtimeRef.current.javaDidFallback = false;
+						void setServerJavaInstallation(serverDirectory, pinned)
+							.then(() => {
+								updateServer(serverId, { java_installation: pinned });
+								appendTerminalLine('[system] Saved this Java version for the server.');
+							})
+							.catch(() => {});
+					}
 				}
 
 				if (providerCapabilities.supportsTpsCommand && supportsTelemetry('tps')) {
@@ -306,6 +458,10 @@ export const useServerRuntime = ({
 						updateServerStats(serverId, { tps: tpsInfo.tps });
 					}
 				}
+			}
+
+			if (isJavaVersionError(cleaned)) {
+				void handleJavaVersionError();
 			}
 
 			if (!cleaned) {
@@ -331,11 +487,14 @@ export const useServerRuntime = ({
 		};
 	}, [
 		appendTerminalLine,
+		handleJavaVersionError,
 		providerCapabilities.kind,
+		server?.java_installation,
 		supportsTelemetry,
 		serverDirectory,
 		serverId,
 		setServerStatus,
+		updateServer,
 		updateServerStats,
 	]);
 
@@ -385,17 +544,27 @@ export const useServerRuntime = ({
 					await createAutomaticBackup('on_close');
 				}
 
-				if (!stopWasRequested && isAutoRestartEnabled && !runtimeRef.current.isAutoRestarting) {
+				// The version-error fallback owns the restart while it's stepping down.
+				if (runtimeRef.current.javaFallbackInProgress) {
+					return;
+				}
+
+				if (
+					!stopWasRequested &&
+					isAutoRestartEnabled &&
+					!runtimeRef.current.isAutoRestarting &&
+					!runtimeRef.current.javaGiveUp
+				) {
 					runtimeRef.current.isAutoRestarting = true;
 					setStartingState();
 					appendTerminalLine('[system] Server closed. Auto restart is enabled, starting again...');
 
 					try {
-						await appendResolvedStartCommand();
-						await invoke('start_server', {
-							directory: serverDirectory,
-							globalJavaInstallation: user.java_installation_default,
-						});
+						const resolution = resolveJava();
+						if (resolution.status !== 'resolved') {
+							throw new Error('No Java runtime available to auto-restart.');
+						}
+						await startWithJava(resolution.executablePath, resolution.majorVersion);
 						await syncServerContents();
 						runtimeRef.current.isAutoRestarting = false;
 						return;
@@ -412,18 +581,18 @@ export const useServerRuntime = ({
 			window.clearInterval(timer);
 		};
 	}, [
-		appendResolvedStartCommand,
 		appendTerminalLine,
 		createAutomaticBackup,
 		hasOnCloseBackup,
 		isAutoRestartEnabled,
+		resolveJava,
 		serverDirectory,
 		serverStatus,
 		serverId,
 		setOfflineState,
 		setStartingState,
+		startWithJava,
 		syncServerContents,
-		user.java_installation_default,
 	]);
 
 	React.useEffect(() => {
@@ -493,16 +662,36 @@ export const useServerRuntime = ({
 		runtimeRef.current.manualStopRequested = false;
 		runtimeRef.current.stopRequested = false;
 		runtimeRef.current.restartRequested = false;
+		// Reset automatic-Java fallback state for a fresh start cycle.
+		runtimeRef.current.javaAttemptMajors = [];
+		runtimeRef.current.javaDidFallback = false;
+		runtimeRef.current.javaFallbackInProgress = false;
+		runtimeRef.current.javaDownloadAttempted = false;
+		runtimeRef.current.javaGiveUp = false;
+		runtimeRef.current.currentJavaExecutable = null;
 		setIsBusy(true);
 		setStartingState();
 		appendTerminalLine('[system] Starting server...');
 
 		try {
-			await appendResolvedStartCommand();
-			await invoke('start_server', {
-				directory: serverDirectory,
-				globalJavaInstallation: user.java_installation_default,
-			});
+			const resolution = resolveJava();
+			let javaExecutable: string;
+			let major: number | null;
+			if (resolution.status === 'resolved') {
+				javaExecutable = resolution.executablePath;
+				major = resolution.majorVersion;
+			} else {
+				const runtime = await ensureJava(resolution.requirement.recommendedMajor);
+				if (!runtime) {
+					setOfflineState();
+					appendTerminalLine('[system] Start cancelled — no Java runtime available.');
+					return;
+				}
+				javaExecutable = runtime.executablePath;
+				major = runtime.majorVersion;
+			}
+
+			await startWithJava(javaExecutable, major);
 			await syncServerContents();
 		} catch (err) {
 			setOfflineState();
@@ -512,16 +701,17 @@ export const useServerRuntime = ({
 			setIsBusy(false);
 		}
 	}, [
-		appendResolvedStartCommand,
 		appendTerminalLine,
+		ensureJava,
 		isBusy,
+		resolveJava,
 		serverDirectory,
 		setIsBusy,
 		setOfflineState,
 		setStartingState,
 		showError,
+		startWithJava,
 		syncServerContents,
-		user.java_installation_default,
 	]);
 
 	const handleStop = React.useCallback(async () => {
@@ -570,6 +760,13 @@ export const useServerRuntime = ({
 		runtimeRef.current.manualStopRequested = false;
 		runtimeRef.current.restartRequested = true;
 		runtimeRef.current.stopRequested = true;
+		// Reset automatic-Java fallback state for a fresh start cycle.
+		runtimeRef.current.javaAttemptMajors = [];
+		runtimeRef.current.javaDidFallback = false;
+		runtimeRef.current.javaFallbackInProgress = false;
+		runtimeRef.current.javaDownloadAttempted = false;
+		runtimeRef.current.javaGiveUp = false;
+		runtimeRef.current.currentJavaExecutable = null;
 		setIsBusy(true);
 		setServerStatus(serverId, 'closing');
 		appendTerminalLine('[system] Restarting server...');
@@ -585,11 +782,24 @@ export const useServerRuntime = ({
 		setStartingState();
 
 		try {
-			await appendResolvedStartCommand();
-			await invoke('start_server', {
-				directory: serverDirectory,
-				globalJavaInstallation: user.java_installation_default,
-			});
+			const resolution = resolveJava();
+			let javaExecutable: string;
+			let major: number | null;
+			if (resolution.status === 'resolved') {
+				javaExecutable = resolution.executablePath;
+				major = resolution.majorVersion;
+			} else {
+				const runtime = await ensureJava(resolution.requirement.recommendedMajor);
+				if (!runtime) {
+					setOfflineState();
+					appendTerminalLine('[system] Restart cancelled — no Java runtime available.');
+					return;
+				}
+				javaExecutable = runtime.executablePath;
+				major = runtime.majorVersion;
+			}
+
+			await startWithJava(javaExecutable, major);
 			await syncServerContents();
 		} catch (err) {
 			setOfflineState();
@@ -601,11 +811,12 @@ export const useServerRuntime = ({
 			setIsBusy(false);
 		}
 	}, [
-		appendResolvedStartCommand,
 		appendTerminalLine,
 		createAutomaticBackup,
+		ensureJava,
 		hasOnCloseBackup,
 		isBusy,
+		resolveJava,
 		serverDirectory,
 		serverId,
 		setIsBusy,
@@ -613,8 +824,8 @@ export const useServerRuntime = ({
 		setServerStatus,
 		setStartingState,
 		showError,
+		startWithJava,
 		syncServerContents,
-		user.java_installation_default,
 	]);
 
 	const handleForceKill = React.useCallback(async () => {

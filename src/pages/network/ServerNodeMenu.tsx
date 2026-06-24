@@ -6,7 +6,7 @@ import { ArrowUpRight, CircleCheck, Folder, OctagonX, RefreshCcw, Trash2 } from 
 
 import type { Server } from '@/data/servers';
 import { useServers } from '@/data/servers';
-import { useUser } from '@/data/user';
+import { useServerJavaResolver } from '@/data/java-download';
 import {
 	forceKillServer,
 	restartServer,
@@ -43,15 +43,26 @@ interface ServerNodeMenuProps {
 export const ServerNodeMenu: React.FC<ServerNodeMenuProps> = ({ server, role, onRemove, children }) => {
 	const navigate = useNavigate();
 	const { setServerStatus, updateServerStats } = useServers();
-	const { user } = useUser();
+	const resolveServerJava = useServerJavaResolver();
 	const [confirmOpen, setConfirmOpen] = React.useState(false);
 
-	const context = (): ServerControlContext => ({
+	const context = (javaExecutable?: string): ServerControlContext => ({
 		server,
-		javaInstallation: user.java_installation_default,
+		javaExecutable,
 		setServerStatus,
 		updateServerStats,
 	});
+
+	// Start/restart resolve a Java runtime first (prompting to download if missing).
+	const handleStart = async () => {
+		const javaExecutable = await resolveServerJava(server);
+		if (javaExecutable) await startServer(context(javaExecutable));
+	};
+
+	const handleRestart = async () => {
+		const javaExecutable = await resolveServerJava(server);
+		if (javaExecutable) await restartServer(context(javaExecutable));
+	};
 
 	const status = server.status;
 	const canStart = status === 'offline';
@@ -78,12 +89,12 @@ export const ServerNodeMenu: React.FC<ServerNodeMenuProps> = ({ server, role, on
 						<ArrowUpRight /> Go to server
 					</ContextMenuItem>
 					{canStart && (
-						<ContextMenuItem onSelect={() => void startServer(context())}>
+						<ContextMenuItem onSelect={() => void handleStart()}>
 							<CircleCheck /> Start
 						</ContextMenuItem>
 					)}
 					{canRestart && (
-						<ContextMenuItem onSelect={() => void restartServer(context())}>
+						<ContextMenuItem onSelect={() => void handleRestart()}>
 							<RefreshCcw /> Restart
 						</ContextMenuItem>
 					)}

@@ -12,7 +12,7 @@ import { toast } from 'sonner';
 
 import type { Server } from '@/data/servers';
 import { useServers } from '@/data/servers';
-import { useUser } from '@/data/user';
+import { useServerJavaResolver } from '@/data/java-download';
 import { startServer, stopServer, waitForServerReady, type ServerControlContext } from '@/lib/server-controls';
 import type { ManagedNetwork } from '@/lib/network-schema';
 
@@ -27,18 +27,29 @@ export type OrchestrationProgress = {
 
 export const useNetworkOrchestration = (network: ManagedNetwork | null, servers: Server[]) => {
 	const { setServerStatus, updateServerStats } = useServers();
-	const { user } = useUser();
+	const resolveServerJava = useServerJavaResolver();
 	const [busy, setBusy] = React.useState(false);
 	const [progress, setProgress] = React.useState<OrchestrationProgress>(null);
 
 	const context = React.useCallback(
 		(server: Server): ServerControlContext => ({
 			server,
-			javaInstallation: user.java_installation_default,
 			setServerStatus,
 			updateServerStats,
 		}),
-		[user.java_installation_default, setServerStatus, updateServerStats],
+		[setServerStatus, updateServerStats],
+	);
+
+	// Resolve the server's Java (prompting to download if missing) before start.
+	const startOne = React.useCallback(
+		async (server: Server) => {
+			const javaExecutable = await resolveServerJava(server);
+			if (!javaExecutable) {
+				throw new Error(`No Java runtime available for ${server.name}.`);
+			}
+			await startServer({ ...context(server), javaExecutable });
+		},
+		[context, resolveServerJava],
 	);
 
 	const resolveServers = React.useCallback(() => {
@@ -59,22 +70,22 @@ export const useNetworkOrchestration = (network: ManagedNetwork | null, servers:
 			if (mode === 'sequential') {
 				for (const backend of backends) {
 					setProgress({ action, mode, currentServerId: backend.id });
-					await startServer(context(backend));
+					await startOne(backend);
 					await waitForServerReady(backend);
 				}
 			} else {
 				setProgress({ action, mode, currentServerId: null });
-				await Promise.all(backends.map((backend) => startServer(context(backend))));
+				await Promise.all(backends.map((backend) => startOne(backend)));
 				await Promise.all(backends.map((backend) => waitForServerReady(backend)));
 			}
 
 			if (proxy) {
 				setProgress({ action, mode, currentServerId: proxy.id });
-				await startServer(context(proxy));
+				await startOne(proxy);
 				await waitForServerReady(proxy);
 			}
 		},
-		[resolveServers, context],
+		[resolveServers, startOne],
 	);
 
 	const runStop = React.useCallback(

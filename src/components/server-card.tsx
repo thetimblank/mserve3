@@ -25,7 +25,7 @@ import {
 	stopServer,
 	type ServerControlContext,
 } from '@/lib/server-controls';
-import { useUser } from '@/data/user';
+import { useServerJavaResolver } from '@/data/java-download';
 
 interface Props {
 	server: Server;
@@ -34,13 +34,13 @@ interface Props {
 
 const ServerCard: React.FC<Props> = ({ server, delay }) => {
 	const { setServerStatus, updateServerStats } = useServers();
-	const { user } = useUser();
+	const resolveServerJava = useServerJavaResolver();
 	const [isBusy, setIsBusy] = React.useState(false);
 	const displayVersion = server.stats.server_version ?? server.provider.minecraft_version ?? null;
 
-	const controlContext = (): ServerControlContext => ({
+	const controlContext = (javaExecutable?: string): ServerControlContext => ({
 		server,
-		javaInstallation: user.java_installation_default,
+		javaExecutable,
 		setServerStatus,
 		updateServerStats,
 	});
@@ -55,9 +55,22 @@ const ServerCard: React.FC<Props> = ({ server, delay }) => {
 		}
 	};
 
-	const handleStart = () => void runControl(startServer);
+	// Start/restart need a resolved Java runtime (and may prompt to download one).
+	const runStartControl = async (action: (context: ServerControlContext) => Promise<boolean>) => {
+		if (isBusy) return;
+		setIsBusy(true);
+		try {
+			const javaExecutable = await resolveServerJava(server);
+			if (!javaExecutable) return;
+			await action(controlContext(javaExecutable));
+		} finally {
+			setIsBusy(false);
+		}
+	};
+
+	const handleStart = () => void runStartControl(startServer);
 	const handleStop = () => void runControl(stopServer);
-	const handleRestart = () => void runControl(restartServer);
+	const handleRestart = () => void runStartControl(restartServer);
 	const handleForceKill = () => void runControl(forceKillServer);
 
 	return (

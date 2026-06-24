@@ -14,7 +14,8 @@ import { providerSupportsOnlinePing } from '@/lib/server-telemetry';
 
 export type ServerControlContext = {
 	server: Pick<Server, 'id' | 'directory' | 'provider'>;
-	javaInstallation?: string;
+	/** The already-resolved java executable path (from useServerJavaResolver). */
+	javaExecutable?: string;
 	setServerStatus: (id: string, status: ServerStatus) => void;
 	updateServerStats: (id: string, stats: Partial<Server['stats']>) => void;
 };
@@ -43,7 +44,7 @@ const startingStats = (): Partial<Server['stats']> => ({
 
 export const startServer = async ({
 	server,
-	javaInstallation,
+	javaExecutable,
 	setServerStatus,
 	updateServerStats,
 }: ServerControlContext): Promise<boolean> => {
@@ -52,7 +53,7 @@ export const startServer = async ({
 	try {
 		await invoke('start_server', {
 			directory: server.directory,
-			globalJavaInstallation: javaInstallation,
+			javaExecutable,
 		});
 		// Leave the server in `starting`; the app-wide ServerRuntimeMonitor (or the
 		// open server detail page) flips it to `online` once the process actually

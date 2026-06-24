@@ -47,6 +47,12 @@ const normalizePortList = (ports?: number[]) =>
 
 const toTrimmedString = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : '');
 
+const normalizeJavaDefault = (value: unknown): string => {
+	const trimmed = typeof value === 'string' ? value.trim() : '';
+	if (!trimmed) return '';
+	return trimmed.toLowerCase() === 'java' || trimmed.toLowerCase() === 'java.exe' ? '' : trimmed;
+};
+
 export const createDefaultUserData = (): UserData => {
 	const now = new Date();
 	return {
@@ -54,7 +60,7 @@ export const createDefaultUserData = (): UserData => {
 			logo_animation: true,
 			reduced_motion: false,
 		},
-		java_installation_default: 'java',
+		java_installation_default: '',
 		servers_root_path: '',
 		advanced_mode: false,
 		completed_setup_hosting_ports: [],
@@ -71,10 +77,10 @@ export const normalizeUserData = (user: Partial<UserData> | null | undefined): U
 			logo_animation: user?.accessibility?.logo_animation ?? false,
 			reduced_motion: user?.accessibility?.reduced_motion ?? false,
 		},
-		java_installation_default:
-			typeof user?.java_installation_default === 'string' && user.java_installation_default.trim()
-				? user.java_installation_default.trim()
-				: 'java',
+		// '' = Automatic (each server resolves its own runtime). Legacy values of
+		// `java`/`java.exe` were the old "use system PATH" sentinel — migrate them
+		// to Automatic so resolution picks a real, compatible runtime.
+		java_installation_default: normalizeJavaDefault(user?.java_installation_default),
 		servers_root_path: toTrimmedString(user?.servers_root_path),
 		advanced_mode: user?.advanced_mode ?? false,
 		completed_setup_hosting_ports: normalizePortList(user?.completed_setup_hosting_ports),

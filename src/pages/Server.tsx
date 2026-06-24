@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { ArrowLeft, Globe, Package, Plug } from 'lucide-react';
 import ServerItemList from '@/components/server-item-list';
-import { detectJavaRuntimes, type JavaRuntimeInfo } from '@/lib/java-runtime-service';
+import { useJavaRuntimes } from '@/data/java-runtimes';
 
 import ServerTerminalPanel from './server/server-terminal-panel';
 import ServerBackupsTab from './server/server-backups-tab';
@@ -31,7 +31,7 @@ const Server: React.FC = () => {
 	const resolvedServerId = routeServerId ? decodeURIComponent(routeServerId) : undefined;
 	const { user } = useUser();
 	const { servers, isReady, setServerStatus, updateServer, updateServerStats } = useServers();
-	const [javaRuntimes, setJavaRuntimes] = React.useState<JavaRuntimeInfo[]>([]);
+	const { runtimes: javaRuntimes } = useJavaRuntimes();
 	const { isBusy, setIsBusy, errorMessage, setErrorMessage, terminalInput, setTerminalInput } =
 		useServerUiState();
 
@@ -42,23 +42,6 @@ const Server: React.FC = () => {
 
 	const serverId = server?.id ?? '';
 
-	React.useEffect(() => {
-		let cancelled = false;
-
-		void detectJavaRuntimes()
-			.then((result) => {
-				if (cancelled) return;
-				setJavaRuntimes(result.runtimes);
-			})
-			.catch(() => {
-				if (cancelled) return;
-				setJavaRuntimes([]);
-			});
-
-		return () => {
-			cancelled = true;
-		};
-	}, []);
 	const providerCapabilities = React.useMemo(
 		() => getServerProviderCapabilities(server?.provider),
 		[server?.provider],

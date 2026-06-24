@@ -74,12 +74,6 @@ Big
 ⬛ add docs and claude.md file.
 ⬛ onboarding/welcome screen
 
-Small
-⬛ Fix motd not working
-⬛ Smart networking: When start server alone, it will change port. Also display IP. Let users either start just alone or with network when it is within a network.
-⬛ Small bug: Please remove any \\?\s in the project. They show up on a lot of the java.exe paths and jar paths.
-⬛ Add a warning before closing the app that a server is running if any are. Tell the user this will force shutthem down which can be data loss. Add a stop all servers & shutdown button and a cancel button. Also add a button in the global settings to stop this message from popping up.
-
 Supported Providers
 Test & support all providers thoroughly
 🟨 Velocity

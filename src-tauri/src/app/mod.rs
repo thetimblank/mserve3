@@ -283,7 +283,6 @@ struct JavaRuntimeInfo {
     executable_path: String,
     major_version: u32,
     version: String,
-    vendor: String,
     source: String,
 }
 
@@ -411,6 +410,7 @@ pub fn run() {
             get_local_ip,
             get_system_memory_gb,
             detect_java_runtimes,
+            download_java_runtime,
             download_server_jar,
             list_provider_versions,
             resolve_provider_version,
@@ -434,6 +434,7 @@ pub fn run() {
             export_server_world,
             create_server_backup,
             update_server_settings,
+            set_server_java_installation,
             restore_server_backup,
             delete_server_backup,
             upload_server_item,

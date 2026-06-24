@@ -20,7 +20,7 @@ export const formatRamLabel = (gb: number): string => {
 /** Skew exponent (< 1) applied on top of the logarithmic mapping used by the
  *  advanced RAM slider. Lower values give the low end (256/512 MB) more room and
  *  compress the high end harder so it drops off quickly past ~16 GB. */
-const RAM_SLIDER_SKEW = 0.75;
+const RAM_SLIDER_SKEW = 0.99;
 
 /** Maps a RAM value (GB) to a 0..1 fraction along the advanced slider track.
  *  Uses a logarithmic scale (so each doubling gets even spacing) biased by

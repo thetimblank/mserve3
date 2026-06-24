@@ -13,12 +13,14 @@ import { useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useSetup } from './SetupContext';
 import { useUser } from '@/data/user';
+import { useServerJavaResolver } from '@/data/java-download';
 import { toast } from 'sonner';
 
 export default function Slide4() {
 	const { servers, setServerStatus, updateServerStats } = useServers();
 	const { data } = useSetup();
-	const { user, updateUserField } = useUser();
+	const { updateUserField } = useUser();
+	const resolveServerJava = useServerJavaResolver();
 	const [isBusy, setIsBusy] = useState(false);
 	const hasRecordedCompletionRef = useRef(false);
 	const onlineServersCount = servers.filter((server) => server.status === 'online').length;
@@ -37,20 +39,27 @@ export default function Slide4() {
 
 		if (isBusy) return;
 		setIsBusy(true);
-		setServerStatus(serverId, 'starting');
-		updateServerStats(serverId, {
-			online: false,
-			players_online: null,
-			players_max: null,
-			tps: null,
-			ram_used: null,
-			cpu_used: null,
-			uptime: new Date(),
-		});
 		try {
+			const javaExecutable = await resolveServerJava(server);
+			if (!javaExecutable) {
+				setIsBusy(false);
+				return;
+			}
+
+			setServerStatus(serverId, 'starting');
+			updateServerStats(serverId, {
+				online: false,
+				players_online: null,
+				players_max: null,
+				tps: null,
+				ram_used: null,
+				cpu_used: null,
+				uptime: new Date(),
+			});
+
 			await invoke('start_server', {
 				directory: server.directory,
-				globalJavaInstallation: user.java_installation_default,
+				javaExecutable,
 			});
 			setServerStatus(serverId, 'online');
 		} catch (err) {

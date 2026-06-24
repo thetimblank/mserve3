@@ -1,13 +1,12 @@
 import { invoke } from '@tauri-apps/api/core';
 import { chooseBestInstalledJava, type JavaRequirement } from './java-compatibility';
 
-export type JavaRuntimeSource = 'path' | 'java_home' | 'common_install_dir' | string;
+export type JavaRuntimeSource = 'path' | 'java_home' | 'common_install_dir' | 'managed' | string;
 
 export type JavaRuntimeInfo = {
 	executablePath: string;
 	majorVersion: number;
 	version: string;
-	vendor: string;
 	source: JavaRuntimeSource;
 };
 
@@ -53,7 +52,6 @@ export const detectJavaRuntimes = () =>
 				...runtime,
 				executablePath: runtime.executablePath.trim(),
 				version: runtime.version.trim(),
-				vendor: runtime.vendor.trim() || 'Unknown',
 				source: runtime.source,
 			}))
 			.filter((runtime) => runtime.executablePath.length > 0)
@@ -65,3 +63,22 @@ export const detectJavaRuntimes = () =>
 		errors: result.errors,
 		scannedCandidates: Math.max(0, Number(result.scannedCandidates) || 0),
 	}));
+
+export type JavaDownloadProgressEvent = {
+	majorVersion: number;
+	downloadedBytes: number;
+	totalBytes: number | null;
+	progress: number;
+	done: boolean;
+};
+
+/** Downloads + installs an Eclipse Temurin JRE for the given major and returns it. */
+export const downloadJavaRuntime = (majorVersion: number) =>
+	invoke<JavaRuntimeInfo>('download_java_runtime', { majorVersion });
+
+/** Persists (or clears, with '') the per-server Java pin in mserve.json. */
+export const setServerJavaInstallation = (directory: string, javaInstallation: string) =>
+	invoke<void>('set_server_java_installation', {
+		directory,
+		javaInstallation: javaInstallation.trim() || null,
+	});

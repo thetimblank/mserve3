@@ -54,13 +54,12 @@ export const buildServerRunCommandPreview = (config: {
 	ram?: number;
 	file?: string;
 	custom_flags?: string[];
-	java_installation?: string;
-	global_java_installation?: string;
+	/** The already-resolved java executable (from resolveServerJavaExecutable). */
+	java_executable?: string;
 }): string => {
 	const heap = formatHeapSize(config.ram ?? 4);
 	const resolvedFile = config.file?.trim() || 'server.jar';
-	const resolvedJavaInstallation =
-		config.java_installation?.trim() || config.global_java_installation?.trim() || 'java';
+	const resolvedJavaInstallation = config.java_executable?.trim() || '<no Java resolved>';
 	const resolvedCustomFlags = (config.custom_flags ?? []).map((flag) => flag.trim()).filter(Boolean);
 
 	const args = [`-Xms${heap}`, `-Xmx${heap}`, '-jar', resolvedFile, ...resolvedCustomFlags];

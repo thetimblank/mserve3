@@ -525,7 +525,10 @@ pub(in crate::app) fn sanitize_mserve_value_config(
         .get("java_installation")
         .and_then(|value| value.as_str())
         .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty());
+        .filter(|value| !value.is_empty())
+        // A bare `java` is the legacy "use system PATH" sentinel. Treat it as
+        // automatic so the frontend resolves a real, compatible runtime instead.
+        .filter(|value| !value.eq_ignore_ascii_case("java") && !value.eq_ignore_ascii_case("java.exe"));
 
     let normalized_provider = sanitize_provider(object.get("provider"), &normalized_file);
 

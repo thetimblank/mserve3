@@ -20,14 +20,18 @@ import {
 } from '@/lib/java-runtime-service';
 
 // Radix Select reserves the empty string, so the "automatic" choice uses a
-// sentinel that maps back to '' (meaning: defer to the global Java default).
+// sentinel that maps back to '' (meaning: defer to automatic resolution).
 const AUTO_VALUE = '__auto__';
 const CUSTOM_VALUE = '__custom__';
 
 type JavaRuntimeSelectProps = {
-	provider: { name: string; minecraft_version: string };
+	/**
+	 * The server this runtime is for. Omit in global contexts (e.g. app settings)
+	 * where there's no single server requirement — compatibility tags are hidden.
+	 */
+	provider?: { name: string; minecraft_version: string } | null;
 	javaRuntimes: JavaRuntimeInfo[];
-	/** The server's java_installation override; '' means automatic. */
+	/** The selected java_installation override; '' means automatic. */
 	value: string;
 	onChange: (value: string) => void;
 	disabled?: boolean;
@@ -61,17 +65,23 @@ const JavaRuntimeSelect: React.FC<JavaRuntimeSelectProps> = ({
 	id,
 }) => {
 	const requirement = React.useMemo(
-		() => resolveJavaRequirement(provider.name, provider.minecraft_version),
-		[provider.name, provider.minecraft_version],
+		() => (provider ? resolveJavaRequirement(provider.name, provider.minecraft_version) : null),
+		[provider],
 	);
 
 	const recommendedMajor = React.useMemo(
-		() => chooseBestInstalledJava(javaRuntimes.map((runtime) => runtime.majorVersion), requirement),
+		() =>
+			requirement
+				? chooseBestInstalledJava(
+						javaRuntimes.map((runtime) => runtime.majorVersion),
+						requirement,
+				  )
+				: null,
 		[javaRuntimes, requirement],
 	);
 
 	const autoRuntime = React.useMemo(
-		() => resolveJavaRuntimeForRequirement(javaRuntimes, requirement),
+		() => (requirement ? resolveJavaRuntimeForRequirement(javaRuntimes, requirement) : null),
 		[javaRuntimes, requirement],
 	);
 
@@ -88,10 +98,17 @@ const JavaRuntimeSelect: React.FC<JavaRuntimeSelectProps> = ({
 		onChange(next === AUTO_VALUE ? '' : next);
 	};
 
-	const toneFor = (runtime: JavaRuntimeInfo): CompatibilityTone => {
+	const toneFor = (runtime: JavaRuntimeInfo): CompatibilityTone | null => {
+		if (!requirement) return null;
 		if (!isJavaCompatible(runtime.majorVersion, requirement)) return 'incompatible';
 		return runtime.majorVersion === recommendedMajor ? 'recommended' : 'compatible';
 	};
+
+	const autoHint = requirement
+		? autoRuntime
+			? `Recommended · Java ${autoRuntime.majorVersion}`
+			: `Needs Java ${requirement.recommendedMajor}`
+		: 'Each server picks its own version';
 
 	return (
 		<Select value={selectValue} onValueChange={handleValueChange} disabled={disabled}>
@@ -102,25 +119,21 @@ const JavaRuntimeSelect: React.FC<JavaRuntimeSelectProps> = ({
 				<SelectItem value={AUTO_VALUE}>
 					<span className='flex items-center gap-2'>
 						<span>Automatic</span>
-						<span className='text-xs text-muted-foreground'>
-							{autoRuntime
-								? `Recommended · Java ${autoRuntime.majorVersion}`
-								: `Needs Java ${requirement.recommendedMajor}`}
-						</span>
+						<span className='text-xs text-muted-foreground'>{autoHint}</span>
 					</span>
 				</SelectItem>
 
-				{javaRuntimes.map((runtime) => (
-					<SelectItem key={runtime.executablePath} value={runtime.executablePath}>
-						<span className='flex items-center gap-2'>
-							<span>
-								Java {runtime.majorVersion}
-								{runtime.vendor ? ` · ${runtime.vendor}` : ''}
+				{javaRuntimes.map((runtime) => {
+					const tone = toneFor(runtime);
+					return (
+						<SelectItem key={runtime.executablePath} value={runtime.executablePath}>
+							<span className='flex items-center gap-2'>
+								<span>Java {runtime.majorVersion}</span>
+								{tone && <CompatibilityTag tone={tone} />}
 							</span>
-							<CompatibilityTag tone={toneFor(runtime)} />
-						</span>
-					</SelectItem>
-				))}
+						</SelectItem>
+					);
+				})}
 
 				{selectValue === CUSTOM_VALUE && (
 					<SelectItem value={CUSTOM_VALUE}>

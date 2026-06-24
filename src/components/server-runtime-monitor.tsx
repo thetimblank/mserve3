@@ -22,10 +22,13 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 import { useServers } from '@/data/servers';
 import { useUser } from '@/data/user';
+import { useJavaRuntimes } from '@/data/java-runtimes';
 import { isServerRuntimeClaimed } from '@/lib/server-runtime-registry';
 import { getServerProviderCapabilities } from '@/lib/server-provider-capabilities';
 import { mapTelemetryToStats, providerSupportsOnlinePing } from '@/lib/server-telemetry';
-import { isServerReadyLine, stripAnsi } from '@/lib/utils';
+import { isJavaVersionError, isServerReadyLine, stripAnsi } from '@/lib/utils';
+import { planJavaFallback, resolveServerJavaExecutable } from '@/lib/java-resolution';
+import { setServerJavaInstallation, type JavaRuntimeInfo } from '@/lib/java-runtime-service';
 import type {
 	RuntimeStatusResult,
 	ServerOutputEvent,
@@ -48,6 +51,14 @@ type LivenessEntry = {
 	lastRestartAt: number;
 };
 
+// Per-server start-failure (wrong Java) bookkeeping for background servers.
+type JavaFallbackEntry = {
+	flagged: boolean;
+	attemptedMajors: number[];
+	didFallback: boolean;
+	lastExecutable: string | null;
+};
+
 const offlineStats = () => ({
 	online: false,
 	players_online: null,
@@ -60,17 +71,21 @@ const offlineStats = () => ({
 });
 
 export const ServerRuntimeMonitor: React.FC = () => {
-	const { servers, setServerStatus, updateServerStats } = useServers();
+	const { servers, setServerStatus, updateServer, updateServerStats } = useServers();
 	const { user } = useUser();
+	const { runtimes } = useJavaRuntimes();
 
-	// Latest server list / java default kept in refs so the polling effects don't
-	// restart (and reset their intervals) on every stats update.
+	// Latest server list / java default / runtimes kept in refs so the polling
+	// effects don't restart (and reset their intervals) on every stats update.
 	const serversRef = React.useRef(servers);
 	serversRef.current = servers;
 	const javaDefaultRef = React.useRef(user.java_installation_default);
 	javaDefaultRef.current = user.java_installation_default;
+	const runtimesRef = React.useRef<JavaRuntimeInfo[]>(runtimes);
+	runtimesRef.current = runtimes;
 
 	const livenessRef = React.useRef<Map<string, LivenessEntry>>(new Map());
+	const javaFallbackRef = React.useRef<Map<string, JavaFallbackEntry>>(new Map());
 
 	// Readiness via server output. The listener is always mounted, so a ready
 	// line is caught even when the server was started from another page.
@@ -80,21 +95,67 @@ export const ServerRuntimeMonitor: React.FC = () => {
 
 		listen<ServerOutputEvent>('server-output', (event) => {
 			if (!active) return;
-			if (event.payload.stream !== 'stdout') return;
+			if (event.payload.stream !== 'stdout' && event.payload.stream !== 'stderr') return;
 
 			const server = serversRef.current.find((item) => item.directory === event.payload.directory);
 			if (!server) return;
 			if (isServerRuntimeClaimed(server.id)) return;
-			if (server.status === 'offline' || server.status === 'closing' || server.status === 'online') return;
+			if (server.status === 'offline' || server.status === 'closing') return;
 
 			const cleaned = stripAnsi(event.payload.line);
+
+			// Wrong-Java detection (often on stderr): flag for the liveness loop to
+			// step down. Record the currently-resolved (failing) major so the next
+			// plan excludes it. Only the first error per cycle records/flags.
+			if (isJavaVersionError(cleaned) && (server.java_installation ?? '').trim() === '') {
+				let entry = javaFallbackRef.current.get(server.id);
+				if (!entry) {
+					entry = { flagged: false, attemptedMajors: [], didFallback: false, lastExecutable: null };
+					javaFallbackRef.current.set(server.id, entry);
+				}
+				if (!entry.flagged) {
+					const res = resolveServerJavaExecutable({
+						provider: server.provider,
+						javaInstallation: server.java_installation,
+						globalDefault: javaDefaultRef.current,
+						runtimes: runtimesRef.current,
+						excludeMajors: entry.attemptedMajors,
+					});
+					if (
+						res.status === 'resolved' &&
+						res.majorVersion != null &&
+						!entry.attemptedMajors.includes(res.majorVersion)
+					) {
+						entry.attemptedMajors.push(res.majorVersion);
+					}
+					entry.flagged = true;
+				}
+				return;
+			}
+
+			if (event.payload.stream !== 'stdout') return;
+
 			const kind = getServerProviderCapabilities(server.provider).kind;
+			// Process the ready line even if telemetry already flipped the server
+			// online, so a stepped-down Java still gets pinned for next time.
 			if (isServerReadyLine(cleaned, kind)) {
-				setServerStatus(server.id, 'online');
-				updateServerStats(server.id, {
-					online: true,
-					uptime: server.stats.uptime ?? new Date(),
-				});
+				if (server.status !== 'online') {
+					setServerStatus(server.id, 'online');
+					updateServerStats(server.id, {
+						online: true,
+						uptime: server.stats.uptime ?? new Date(),
+					});
+				}
+
+				// If we stepped down to a working Java, pin it for next time.
+				const fb = javaFallbackRef.current.get(server.id);
+				if (fb?.didFallback && fb.lastExecutable && (server.java_installation ?? '').trim() === '') {
+					const pinned = fb.lastExecutable;
+					void setServerJavaInstallation(server.directory, pinned)
+						.then(() => updateServer(server.id, { java_installation: pinned }))
+						.catch(() => {});
+				}
+				javaFallbackRef.current.delete(server.id);
 			}
 		})
 			.then((cleanup) => {
@@ -110,7 +171,7 @@ export const ServerRuntimeMonitor: React.FC = () => {
 			active = false;
 			if (unlisten) unlisten();
 		};
-	}, [setServerStatus, updateServerStats]);
+	}, [setServerStatus, updateServer, updateServerStats]);
 
 	// Liveness: detect a server's process exiting and flip it offline (or
 	// auto-restart it).
@@ -127,6 +188,9 @@ export const ServerRuntimeMonitor: React.FC = () => {
 			// Drop bookkeeping for servers that are no longer being tracked.
 			for (const id of livenessRef.current.keys()) {
 				if (!trackedIds.has(id)) livenessRef.current.delete(id);
+			}
+			for (const id of javaFallbackRef.current.keys()) {
+				if (!trackedIds.has(id)) javaFallbackRef.current.delete(id);
 			}
 
 			await Promise.all(
@@ -152,9 +216,60 @@ export const ServerRuntimeMonitor: React.FC = () => {
 							return;
 						}
 
+						const fallback = javaFallbackRef.current.get(server.id);
+						// Only a wrong-Java error *before the server ever ran* is a real
+						// version mismatch; a matching string after it was up is a false
+						// positive from logs.
+						const hadVersionError = (fallback?.flagged ?? false) && !entry.everRunning;
+
 						// Process is not running. Give freshly-started servers a grace
-						// window before declaring them dead.
-						if (!entry.everRunning && now - entry.nonOfflineSince < STARTUP_GRACE_MS) {
+						// window before declaring them dead — unless a wrong-Java error
+						// already told us exactly why it died.
+						if (!hadVersionError && !entry.everRunning && now - entry.nonOfflineSince < STARTUP_GRACE_MS) {
+							return;
+						}
+
+						// Wrong-Java step-down for automatic servers, independent of the
+						// auto-restart setting (we're finding the right Java, not looping).
+						if (hadVersionError && fallback && (server.java_installation ?? '').trim() === '') {
+							fallback.flagged = false;
+							const plan = planJavaFallback({
+								provider: server.provider,
+								globalDefault: javaDefaultRef.current,
+								runtimes: runtimesRef.current,
+								attemptedMajors: fallback.attemptedMajors,
+							});
+
+							if (plan.kind === 'retry') {
+								fallback.attemptedMajors.push(plan.majorVersion);
+								fallback.didFallback = true;
+								fallback.lastExecutable = plan.executablePath;
+								entry.everRunning = false;
+								entry.nonOfflineSince = now;
+								entry.lastRestartAt = now;
+								setServerStatus(server.id, 'starting');
+								updateServerStats(server.id, { ...offlineStats(), uptime: new Date() });
+								try {
+									await invoke('start_server', {
+										directory: server.directory,
+										javaExecutable: plan.executablePath,
+									});
+								} catch {
+									if (!active) return;
+									setServerStatus(server.id, 'offline');
+									updateServerStats(server.id, offlineStats());
+									livenessRef.current.delete(server.id);
+									javaFallbackRef.current.delete(server.id);
+								}
+								return;
+							}
+
+							// No installed Java worked — the background monitor can't prompt a
+							// download, so go offline (the detail page offers the download).
+							setServerStatus(server.id, 'offline');
+							updateServerStats(server.id, offlineStats());
+							livenessRef.current.delete(server.id);
+							javaFallbackRef.current.delete(server.id);
 							return;
 						}
 
@@ -165,6 +280,20 @@ export const ServerRuntimeMonitor: React.FC = () => {
 							now - entry.lastRestartAt > AUTO_RESTART_COOLDOWN_MS;
 
 						if (canAutoRestart) {
+							const resolution = resolveServerJavaExecutable({
+								provider: server.provider,
+								javaInstallation: server.java_installation,
+								globalDefault: javaDefaultRef.current,
+								runtimes: runtimesRef.current,
+							});
+
+							if (resolution.status !== 'resolved') {
+								setServerStatus(server.id, 'offline');
+								updateServerStats(server.id, offlineStats());
+								livenessRef.current.delete(server.id);
+								return;
+							}
+
 							entry.lastRestartAt = now;
 							entry.everRunning = false;
 							entry.nonOfflineSince = now;
@@ -173,7 +302,7 @@ export const ServerRuntimeMonitor: React.FC = () => {
 							try {
 								await invoke('start_server', {
 									directory: server.directory,
-									globalJavaInstallation: javaDefaultRef.current,
+									javaExecutable: resolution.executablePath,
 								});
 							} catch {
 								if (!active) return;

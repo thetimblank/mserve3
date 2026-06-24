@@ -12,6 +12,8 @@ import { ServersProvider } from './data/servers';
 import { ServerRuntimeMonitor } from './components/server-runtime-monitor';
 import { NetworksProvider } from './data/networks';
 import { UserProvider } from './data/user';
+import { JavaRuntimesProvider } from './data/java-runtimes';
+import { JavaDownloadProvider } from './data/java-download';
 import Home from './pages/Home';
 import Settings from './pages/Settings';
 import Server from './pages/Server';
@@ -89,9 +91,11 @@ const RootLayout: React.FC = () => {
 				<ThemeProvider defaultTheme='dark' storageKey='vite-ui-theme'>
 					<SidebarProvider className='h-svh overflow-hidden pt-10'>
 						<UserProvider>
+							<JavaRuntimesProvider>
 							<ServersProvider>
 								<NetworksProvider>
 								<CreateServerProvider>
+								<JavaDownloadProvider>
 									<ServerRuntimeMonitor />
 									<MserveRepairDialog />
 									<Nav />
@@ -107,9 +111,11 @@ const RootLayout: React.FC = () => {
 											<Route path='/settings' element={<Settings />} />
 										</Routes>
 									</SidebarInset>
+								</JavaDownloadProvider>
 								</CreateServerProvider>
 								</NetworksProvider>
 							</ServersProvider>
+							</JavaRuntimesProvider>
 						</UserProvider>
 					</SidebarProvider>
 				</ThemeProvider>

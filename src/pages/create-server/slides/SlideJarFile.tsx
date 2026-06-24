@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Spinner } from '@/components/ui/spinner';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useUser } from '@/data/user';
-import { resolveJavaRequirement } from '@/lib/java-compatibility';
+import { useJavaRuntimes } from '@/data/java-runtimes';
 import {
 	downloadAndResolveJarRow,
 	fetchJarRows,
@@ -21,11 +21,6 @@ import {
 	type JarTab,
 	type JarVersionRow,
 } from '@/lib/jar-download-service';
-import {
-	detectJavaRuntimes,
-	resolveJavaRuntimeForRequirement,
-	type JavaRuntimeInfo,
-} from '@/lib/java-runtime-service';
 import { inferProviderFromJarPath, inferVersionFromJarPath } from '@/lib/server-provider-capabilities';
 import {
 	createProvider,
@@ -58,8 +53,7 @@ const SlideJarFile: React.FC = () => {
 	const [selectedRow, setSelectedRow] = React.useState<JarVersionRow | null>(null);
 	const [isDownloading, setIsDownloading] = React.useState(false);
 	const [downloadProgress, setDownloadProgress] = React.useState(0);
-	const [runtimes, setRuntimes] = React.useState<JavaRuntimeInfo[]>([]);
-	const [isCheckingJavaCompatibility, setIsCheckingJavaCompatibility] = React.useState(true);
+	const { runtimes, isLoading: isCheckingJavaCompatibility } = useJavaRuntimes();
 
 	const inferredProvider = React.useMemo(() => inferProviderFromJarPath(form.file), [form.file]);
 	const inferredVersion = React.useMemo(() => inferVersionFromJarPath(form.file), [form.file]);
@@ -69,27 +63,6 @@ const SlideJarFile: React.FC = () => {
 	);
 
 	const isAdvancedMode = user.advanced_mode;
-
-	React.useEffect(() => {
-		let cancelled = false;
-		setIsCheckingJavaCompatibility(true);
-		void detectJavaRuntimes()
-			.then((result) => {
-				if (cancelled) return;
-				setRuntimes(result.runtimes);
-			})
-			.catch(() => {
-				if (cancelled) return;
-				setRuntimes([]);
-			})
-			.finally(() => {
-				if (cancelled) return;
-				setIsCheckingJavaCompatibility(false);
-			});
-		return () => {
-			cancelled = true;
-		};
-	}, []);
 
 	React.useEffect(() => {
 		let cancelled = false;
@@ -117,16 +90,6 @@ const SlideJarFile: React.FC = () => {
 		};
 	}, [activeTab, includeUnstable, setError]);
 
-	const maybeApplyJavaOverride = React.useCallback(
-		(providerId: string, version: string) => {
-			const requirement = resolveJavaRequirement(providerId, version);
-			const runtime = resolveJavaRuntimeForRequirement(runtimes, requirement);
-			if (!runtime) return;
-			updateField('java_installation', runtime.executablePath);
-		},
-		[runtimes, updateField],
-	);
-
 	const applyInferredMetadata = React.useCallback(
 		(filePath: string) => {
 			const providerName = inferProviderFromJarPath(filePath);
@@ -148,12 +111,8 @@ const SlideJarFile: React.FC = () => {
 			};
 
 			updateField('provider', nextProvider);
-
-			if (providerName && version) {
-				maybeApplyJavaOverride(providerName, version);
-			}
 		},
-		[form.provider, maybeApplyJavaOverride, updateField],
+		[form.provider, updateField],
 	);
 
 	const onPickServerFile = async () => {
@@ -220,7 +179,6 @@ const SlideJarFile: React.FC = () => {
 					setDownloadProgress(1);
 					updateField('file', result.path);
 					updateField('provider', provider);
-					maybeApplyJavaOverride(selectedRow.providerId, selectedRow.version);
 					clearError();
 					nextSlide();
 					return;

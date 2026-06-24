@@ -36,24 +36,35 @@ fn resolve_server_start_args(config: &RuntimeServerConfig) -> Vec<String> {
     args
 }
 
-fn resolve_java_executable(config: &RuntimeServerConfig, global_java_installation: Option<&str>) -> String {
+const NO_JAVA_ERROR: &str =
+    "No Java runtime is available for this server. Open the Java guide to install Java.";
+
+/// Resolves the Java executable to launch with. The per-server pinned override
+/// (persisted in mserve.json) wins; otherwise the caller passes the runtime it
+/// resolved on the frontend. There is no implicit bare-`java` fallback — an
+/// unspecified runtime is an error so we never silently launch an unsupported
+/// system Java.
+fn resolve_java_executable(
+    config: &RuntimeServerConfig,
+    java_executable: Option<&str>,
+) -> Result<String, String> {
     if let Some(server_java) = config
         .java_installation
         .as_deref()
         .map(|value| value.trim())
         .filter(|value| !value.is_empty())
     {
-        return server_java.to_string();
+        return Ok(server_java.to_string());
     }
 
-    if let Some(global_java) = global_java_installation
+    if let Some(resolved) = java_executable
         .map(|value| value.trim())
         .filter(|value| !value.is_empty())
     {
-        return global_java.to_string();
+        return Ok(resolved.to_string());
     }
 
-    "java".to_string()
+    Err(NO_JAVA_ERROR.to_string())
 }
 
 fn build_server_start_command(config: &RuntimeServerConfig, java_executable: &str) -> String {
@@ -61,10 +72,22 @@ fn build_server_start_command(config: &RuntimeServerConfig, java_executable: &st
     format!("{} {}", java_executable, args.join(" "))
 }
 
+/// Confirms the resolved executable actually exists before we try to spawn it,
+/// turning a cryptic OS spawn error into an actionable message.
+fn ensure_java_executable_exists(java_executable: &str) -> Result<(), String> {
+    if PathBuf::from(java_executable).is_file() {
+        return Ok(());
+    }
+
+    Err(format!(
+        "Java executable was not found at \"{java_executable}\". Re-detect Java or pick another runtime in settings."
+    ))
+}
+
 #[tauri::command]
 pub(in crate::app) fn start_server(
     directory: String,
-    global_java_installation: Option<String>,
+    java_executable: Option<String>,
     state: State<'_, RuntimeState>,
     app: tauri::AppHandle,
 ) -> Result<String, String> {
@@ -93,7 +116,8 @@ pub(in crate::app) fn start_server(
     }
 
     let args = resolve_server_start_args(&config);
-    let java_executable = resolve_java_executable(&config, global_java_installation.as_deref());
+    let java_executable = resolve_java_executable(&config, java_executable.as_deref())?;
+    ensure_java_executable_exists(&java_executable)?;
     let command_str = build_server_start_command(&config, &java_executable);
     eprintln!("[Server] Executing: {}", command_str);
 
@@ -138,7 +162,7 @@ pub(in crate::app) fn start_server(
 #[tauri::command]
 pub(in crate::app) fn get_server_start_command(
     directory: String,
-    global_java_installation: Option<String>,
+    java_executable: Option<String>,
 ) -> Result<String, String> {
     let directory_path = PathBuf::from(directory.trim());
     if !directory_path.exists() || !directory_path.is_dir() {
@@ -146,7 +170,7 @@ pub(in crate::app) fn get_server_start_command(
     }
 
     let config = get_runtime_config(&directory_path)?;
-    let java_executable = resolve_java_executable(&config, global_java_installation.as_deref());
+    let java_executable = resolve_java_executable(&config, java_executable.as_deref())?;
     Ok(build_server_start_command(&config, &java_executable))
 }
 
