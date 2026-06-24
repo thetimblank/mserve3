@@ -139,6 +139,12 @@ fn free_loopback_port() -> u16 {
         .unwrap_or(25575)
 }
 
+/// Updates (or appends) the `server-port` key in `server.properties`.
+pub(in crate::app) fn set_server_port(directory: &Path, port: u16) -> Result<(), String> {
+    let updates = [("server-port", port.to_string())];
+    apply_properties(directory, &updates)
+}
+
 fn generate_password() -> String {
     rand::thread_rng()
         .sample_iter(&rand::distributions::Alphanumeric)

@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::net::{IpAddr, UdpSocket};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 pub(in crate::app) fn to_alpha_prefix(value: &str) -> Option<String> {
     let mut output = String::new();
@@ -75,6 +76,25 @@ pub(in crate::app) fn resolve_local_ip() -> Option<String> {
         IpAddr::V6(ip) if !ip.is_loopback() => Some(ip.to_string()),
         _ => None,
     }
+}
+
+/// Fetches the machine's public (internet-facing) IP from an external service.
+/// Returns `None` if the request fails or the response cannot be parsed.
+pub(in crate::app) fn resolve_public_ip() -> Option<String> {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(6))
+        .build()
+        .ok()?;
+    let response = client.get("https://api.ipify.org").send().ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+    let text = response.text().ok()?;
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(trimmed.to_string())
 }
 
 pub(in crate::app) fn path_size_bytes(path: &Path) -> u64 {

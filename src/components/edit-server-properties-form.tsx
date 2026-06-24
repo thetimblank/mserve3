@@ -25,6 +25,7 @@ import {
 import { type JavaRuntimeInfo } from '@/lib/java-runtime-service';
 import { javaResolutionLabel, resolveServerJavaExecutable } from '@/lib/java-resolution';
 import { clampRamGb } from '@/lib/ram-utils';
+import { getServerNameFromDirectory } from '@/lib/mserve-server-mapper';
 import { backupChoices } from '@/pages/server/server-constants';
 import {
 	buildServerRunCommandPreview,
@@ -342,6 +343,7 @@ export const EditServerSettingsProvider: React.FC<EditServerSettingsProviderProp
 
 			updateServer(serverId, {
 				directory: result.directory,
+				name: getServerNameFromDirectory(result.directory),
 				file: result.file,
 				ram: payload.ram,
 				storage_limit: payload.storage_limit,
@@ -959,6 +961,39 @@ export const ServerJarSettingsSection: React.FC = () => {
 				onOpenChange={setIsJarModalOpen}
 				onDownloaded={handleProviderJarDownloaded}
 			/>
+		</SectionShell>
+	);
+};
+
+export const RenameSettingsSection: React.FC = () => {
+	const { server, settingsForm, updateSettingsField } = useEditServerSettings();
+
+	const currentName = getServerNameFromDirectory(settingsForm.new_directory || server.directory);
+
+	const handleNameChange = (newName: string) => {
+		const base = server.directory;
+		const lastSep = Math.max(base.lastIndexOf('/'), base.lastIndexOf('\\'));
+		const parent = lastSep >= 0 ? base.slice(0, lastSep + 1) : '';
+		updateSettingsField('new_directory', parent + newName);
+	};
+
+	return (
+		<SectionShell>
+			<div className='space-y-2 max-w-lg'>
+				<Label htmlFor='edit-server-name' className='text-xl'>
+					Server Name
+				</Label>
+				<Input
+					id='edit-server-name'
+					placeholder='MyServer'
+					value={currentName}
+					onChange={(event) => handleNameChange(event.target.value)}
+				/>
+				<p className='text-sm text-muted-foreground'>
+					Renaming will also rename the server folder on disk.
+				</p>
+				<SettingsErrorNote />
+			</div>
 		</SectionShell>
 	);
 };

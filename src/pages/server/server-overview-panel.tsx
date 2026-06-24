@@ -8,14 +8,18 @@ import {
 	Clock,
 	Coffee,
 	Cpu,
+	Eye,
+	EyeOff,
 	Globe,
 	MemoryStick,
+	Network,
 	OctagonX,
 	Package,
 	RefreshCcw,
 	TriangleAlert,
 	Users,
 } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
 import { Button } from '@/components/ui/button';
 import OpenFolderButton from '@/components/open-folder-button';
 import ServerStatus from '@/components/server-status';
@@ -87,6 +91,21 @@ const ServerOverviewPanel: React.FC<Props> = ({
 	const isOffline = server.status === 'offline';
 	const isProxy = isProxyProvider(server.provider);
 
+	const [publicIp, setPublicIp] = React.useState<string | null>(null);
+	const [ipHidden, setIpHidden] = React.useState(true);
+
+	React.useEffect(() => {
+		let active = true;
+		invoke<string>('get_public_ip')
+			.then((ip) => {
+				if (active) setPublicIp(ip);
+			})
+			.catch(() => {});
+		return () => {
+			active = false;
+		};
+	}, []);
+
 	const createdDateText = React.useMemo(() => {
 		if (!server.created_at) return null;
 		const value = new Date(server.created_at);
@@ -125,9 +144,11 @@ const ServerOverviewPanel: React.FC<Props> = ({
 		<Card className='rounded-b-none'>
 			<CardContent className='flex flex-col gap-6'>
 				{/* Header: status + lifecycle actions */}
-				<div className='flex flex-wrap items-center gap-x-8 gap-y-4'>
-					<ServerStatus server={server} size='xl' />
-					<div className='flex flex-wrap gap-2'>
+				<div className='flex items-center gap-x-8 gap-y-4'>
+					<div className='flex-1'>
+						<ServerStatus server={server} size='xl' />
+					</div>
+					<div className='flex flex-wrap gap-2 w-full'>
 						{isRunning && (
 							<Button onClick={onStop} disabled={isBusy}>
 								<OctagonX />
@@ -153,6 +174,29 @@ const ServerOverviewPanel: React.FC<Props> = ({
 							</Button>
 						)}
 						<OpenFolderButton directory={server.directory} disabled={isBusy} />
+						{/* Connection address */}
+						<div className='flex items-center gap-2 rounded-lg bg-secondary px-3 py-1 ml-auto text-sm'>
+							<Network className='size-4 shrink-0 text-muted-foreground' />
+							<span className='text-muted-foreground select-none'>Connect:</span>
+							<span className='font-mono'>
+								{publicIp == null ? (
+									<span className='text-muted-foreground italic'>loading…</span>
+								) : ipHidden ? (
+									<span className='blur-sm select-none'>XXX.XXX.X.X</span>
+								) : (
+									publicIp
+								)}
+							</span>
+							<span className='font-mono text-muted-foreground'>:{server.telemetry_port}</span>
+							<Button
+								variant='ghost'
+								size='sm'
+								className='h-6 w-6 p-0 text-muted-foreground hover:text-foreground'
+								onClick={() => setIpHidden((h) => !h)}
+								title={ipHidden ? 'Show IP' : 'Hide IP'}>
+								{ipHidden ? <Eye className='size-3.5' /> : <EyeOff className='size-3.5' />}
+							</Button>
+						</div>
 					</div>
 				</div>
 
@@ -162,7 +206,9 @@ const ServerOverviewPanel: React.FC<Props> = ({
 						icon={<Cpu />}
 						label='CPU'
 						color={METRIC_COLORS.cpu}
-						value={isOffline || server.stats.cpu_used == null ? null : formatPercent(server.stats.cpu_used)}
+						value={
+							isOffline || server.stats.cpu_used == null ? null : formatPercent(server.stats.cpu_used)
+						}
 						sparkData={sparkData}
 						sparkKey='cpuUsed'
 						sparkDomain={[0, 100]}
@@ -171,7 +217,9 @@ const ServerOverviewPanel: React.FC<Props> = ({
 						icon={<MemoryStick />}
 						label='RAM'
 						color={METRIC_COLORS.ram}
-						value={isOffline || server.stats.ram_used == null ? null : formatPercent(server.stats.ram_used)}
+						value={
+							isOffline || server.stats.ram_used == null ? null : formatPercent(server.stats.ram_used)
+						}
 						sparkData={sparkData}
 						sparkKey='ramUsed'
 						sparkDomain={[0, 100]}
@@ -214,7 +262,9 @@ const ServerOverviewPanel: React.FC<Props> = ({
 
 				{/* Static details */}
 				<div className='space-y-3'>
-					<h3 className='text-xs font-semibold uppercase tracking-wide text-muted-foreground'>Details</h3>
+					<h3 className='text-xs font-semibold uppercase tracking-wide text-muted-foreground'>
+						Details
+					</h3>
 					<div className='grid gap-x-8 gap-y-2.5 sm:grid-cols-2'>
 						{displayVersion &&
 							(() => {
@@ -282,7 +332,8 @@ const ServerOverviewPanel: React.FC<Props> = ({
 						<div className='flex items-center gap-2 text-sm text-yellow-700 dark:text-yellow-400'>
 							<TriangleAlert className='size-4 shrink-0' />
 							<p>
-								Backups are using at least <span className='font-bold'>90%</span> of the storage limit.
+								Backups are using at least <span className='font-bold'>90%</span> of the storage
+								limit.
 							</p>
 						</div>
 					)}

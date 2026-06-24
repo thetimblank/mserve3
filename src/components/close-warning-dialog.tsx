@@ -33,8 +33,17 @@ export const CloseWarningDialog: React.FC = () => {
 		listen<AppCloseRequestedPayload>('app-close-requested', (event) => {
 			const directories = event.payload.runningServerDirectories;
 
-			if (directories.length === 0 || suppressRef.current) {
+			if (directories.length === 0) {
 				void invoke('confirm_close');
+				return;
+			}
+
+			if (suppressRef.current) {
+				// Kill running servers even when the dialog is suppressed.
+				void invoke('force_kill_all_servers')
+					.catch(() => {})
+					.then(() => new Promise((res) => setTimeout(res, 500)))
+					.then(() => invoke('confirm_close'));
 				return;
 			}
 
@@ -61,6 +70,8 @@ export const CloseWarningDialog: React.FC = () => {
 		setIsStopping(true);
 		try {
 			await invoke('force_kill_all_servers');
+			// Give the OS a moment to actually terminate the processes before exit.
+			await new Promise((res) => setTimeout(res, 500));
 		} catch {
 			// Proceed even if kill partially fails
 		}

@@ -12,6 +12,7 @@ import {
 	LocationSettingsSection,
 	ProviderTelemetrySettingsSection,
 	RamSettingsSection,
+	RenameSettingsSection,
 	ServerJarSettingsSection,
 	StorageBackupsSettingsSection,
 } from '@/components/edit-server-properties-form';
@@ -54,6 +55,7 @@ type Props = {
 };
 
 type FormSectionId =
+	| 'rename'
 	| 'performance'
 	| 'storage-backups'
 	| 'java'
@@ -80,6 +82,14 @@ type SectionConfig = {
 
 // Granular "General" categories. Each renders a slice of the shared
 // EditServerSettingsProvider so edits + the single save flow are shared.
+const RENAME_SECTION: SectionConfig = {
+	id: 'rename' as SectionId,
+	title: 'General',
+	description: 'Server name.',
+	keywords: ['name', 'rename', 'title', 'general'],
+	render: () => <RenameSettingsSection />,
+};
+
 const PERFORMANCE_SECTION: SectionConfig = {
 	id: 'performance',
 	title: 'Performance',
@@ -247,7 +257,7 @@ export default function ServerSettingsPanel({
 	const { removeServer, updateServer } = useServers();
 	const { user } = useUser();
 	const [query, setQuery] = React.useState('');
-	const [activeSectionId, setActiveSectionId] = React.useState<SectionId>('performance');
+	const [activeSectionId, setActiveSectionId] = React.useState<SectionId>('rename');
 	const cacheKey = React.useMemo(() => server.directory.trim().toLowerCase(), [server.directory]);
 	const [managedConfigFileStatuses, setManagedConfigFileStatuses] = React.useState<ManagedConfigFileStatus[]>(
 		[],
@@ -396,6 +406,7 @@ export default function ServerSettingsPanel({
 
 	const baseSections = React.useMemo(() => {
 		const sections: SectionConfig[] = [
+			RENAME_SECTION,
 			PERFORMANCE_SECTION,
 			STORAGE_BACKUPS_SECTION,
 			JAVA_SECTION,
@@ -457,7 +468,7 @@ export default function ServerSettingsPanel({
 			return;
 		}
 
-		setActiveSectionId(orderedVisibleSections[0]?.id ?? PERFORMANCE_SECTION.id);
+		setActiveSectionId(orderedVisibleSections[0]?.id ?? RENAME_SECTION.id);
 	}, [activeSectionId, orderedVisibleSections]);
 
 	const activeSection = React.useMemo(

@@ -34,7 +34,7 @@ export const SetupProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 	useEffect(() => {
 		const fetchIp = async () => {
 			try {
-				const ip = await invoke<string>('get_local_ip');
+				const ip = await invoke<string>('get_public_ip');
 				updated_ata('ip', ip);
 			} catch (err) {
 				console.error(err);

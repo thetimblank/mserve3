@@ -108,6 +108,37 @@ fn resolve_server_id(config: &RuntimeServerConfig, key: &str) -> String {
 
 type Processes = Arc<Mutex<HashMap<String, ServerRuntime>>>;
 
+const DEFAULT_MC_PORT: u16 = 25565;
+
+/// Returns the lowest port >= `start_port` that is not already in active use by
+/// a managed server in the processes map.
+fn find_next_available_port(processes: &HashMap<String, ServerRuntime>, start_port: u16) -> u16 {
+    let in_use: std::collections::HashSet<u16> = processes
+        .values()
+        .filter(|r| !matches!(r.state, LifecycleState::Offline | LifecycleState::Crashed))
+        .map(|r| r.server_port)
+        .collect();
+
+    let mut port = start_port;
+    while port < u16::MAX && in_use.contains(&port) {
+        port = port.saturating_add(1);
+    }
+    port
+}
+
+/// Patches the `telemetry_port` field in `mserve.json` so subsequent starts
+/// (and the next frontend sync) use the correct port.
+fn patch_mserve_json_port(directory: &std::path::Path, port: u16) -> Result<(), String> {
+    let path = directory.join("mserve.json");
+    let raw = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let mut value: serde_json::Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+    if let Some(obj) = value.as_object_mut() {
+        obj.insert("telemetry_port".to_string(), serde_json::json!(port));
+    }
+    let out = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
+    std::fs::write(&path, out).map_err(|e| e.to_string())
+}
+
 /// Core start routine, shared by the `start_server` command and the restart flow.
 fn start_server_internal(
     directory: String,
@@ -146,7 +177,29 @@ fn start_server_internal(
     eprintln!("[Server] Executing: {}", command_str);
 
     let is_proxy = provider_is_proxy(&config);
-    let (host, server_port) = resolve_telemetry_target(&config, &directory_path);
+    let (host, mut server_port) = resolve_telemetry_target(&config, &directory_path);
+
+    // Sequential port assignment: if the resolved port is already claimed by
+    // another active managed server, step up to the next free port and persist
+    // the change so future starts and the frontend stay in sync.
+    {
+        let guard = processes.lock().map_err(|_| "Runtime lock failed.")?;
+        let port_claimed = guard.values().any(|r| {
+            r.host == host
+                && r.server_port == server_port
+                && !matches!(r.state, LifecycleState::Offline | LifecycleState::Crashed)
+        });
+        if port_claimed {
+            let next_port = find_next_available_port(&guard, DEFAULT_MC_PORT);
+            drop(guard);
+            set_server_port(&directory_path, next_port)
+                .unwrap_or_else(|e| eprintln!("[Server] Could not update server-port: {e}"));
+            patch_mserve_json_port(&directory_path, next_port)
+                .unwrap_or_else(|e| eprintln!("[Server] Could not patch mserve.json port: {e}"));
+            server_port = next_port;
+        }
+    }
+
     // Provision a reliable RCON channel for non-proxy servers.
     let rcon = if is_proxy {
         None
@@ -232,6 +285,7 @@ fn start_server_internal(
             started_at: Some(started_at.to_rfc3339()),
             exit_code: None,
             stderr_tail: Vec::new(),
+            server_port: Some(server_port),
         },
     );
 
@@ -508,6 +562,20 @@ fn register_external(
         if guard.contains_key(&key) {
             return;
         }
+        // Don't adopt a host:port already owned by another managed server (see
+        // the guard in `get_server_runtime`); this also closes the race between
+        // two concurrent adoption probes for sibling servers sharing a port.
+        let claimed = guard.values().any(|existing| {
+            existing.host == runtime.host
+                && existing.server_port == runtime.server_port
+                && !matches!(
+                    existing.state,
+                    LifecycleState::Offline | LifecycleState::Crashed
+                )
+        });
+        if claimed {
+            return;
+        }
         guard.insert(key.clone(), runtime);
     }
     spawn_supervisor(processes, app, key, generation);
@@ -534,6 +602,27 @@ pub(in crate::app) fn get_server_runtime(
     }
     let config = get_runtime_config(&directory_path).unwrap_or_default();
     let (host, server_port) = resolve_telemetry_target(&config, &directory_path);
+
+    // Guard against false adoption: clean-slate servers all default to port
+    // 25565, so a probe of *this* server's port may actually hit a *different*
+    // managed server that is running on the same host:port. If another live
+    // runtime already owns this address, this server is not the one answering —
+    // report it offline rather than adopting another server's identity/stats.
+    {
+        let guard = state.processes.lock().map_err(|_| "Runtime lock failed.")?;
+        let claimed = guard.values().any(|runtime| {
+            runtime.host == host
+                && runtime.server_port == server_port
+                && !matches!(
+                    runtime.state,
+                    LifecycleState::Offline | LifecycleState::Crashed
+                )
+        });
+        if claimed {
+            return Ok(offline_snapshot());
+        }
+    }
+
     if probe_port(&host, server_port, Duration::from_millis(400)) {
         register_external(
             directory,

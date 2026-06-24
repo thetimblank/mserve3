@@ -1,12 +1,25 @@
 import React from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { invoke } from '@tauri-apps/api/core';
 import { useServers } from '@/data/servers';
 import { useUser } from '@/data/user';
+import { useNetworks } from '@/data/networks';
 import { Button } from '@/components/ui/button';
+import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 import { ArrowLeft, Globe, Package, Plug } from 'lucide-react';
 import ServerItemList from '@/components/server-item-list';
 import { useJavaRuntimes } from '@/data/java-runtimes';
+import { resolveServerJavaExecutable } from '@/lib/java-resolution';
 
 import ServerTerminalPanel from './server/server-terminal-panel';
 import ServerBackupsTab from './server/server-backups-tab';
@@ -33,6 +46,7 @@ const Server: React.FC = () => {
 	const { user } = useUser();
 	const { servers, isReady, setServerStatus, updateServer, updateServerStats } = useServers();
 	const { runtimes: javaRuntimes } = useJavaRuntimes();
+	const { networks } = useNetworks();
 	const { isBusy, setIsBusy, errorMessage, setErrorMessage, terminalInput, setTerminalInput } =
 		useServerUiState();
 
@@ -91,6 +105,19 @@ const Server: React.FC = () => {
 		[setErrorMessage],
 	);
 
+	// Network membership for this server (proxy or member role).
+	const serverNetwork = React.useMemo(
+		() =>
+			networks.find(
+				(n) =>
+					n.proxyServerId === server?.id ||
+					n.members.some((m) => m.serverId === server?.id),
+			) ?? null,
+		[networks, server?.id],
+	);
+
+	const [showNetworkDialog, setShowNetworkDialog] = React.useState(false);
+
 	const {
 		syncServerContents,
 		handleItemsChanged,
@@ -129,6 +156,53 @@ const Server: React.FC = () => {
 		showError,
 	});
 
+	// If the server is part of a network, prompt whether to start alone or with
+	// the rest of the network; otherwise start immediately.
+	const handleStartClick = React.useCallback(() => {
+		if (serverNetwork) {
+			setShowNetworkDialog(true);
+		} else {
+			void handleStart();
+		}
+	}, [serverNetwork, handleStart]);
+
+	const handleStartWithNetwork = React.useCallback(async () => {
+		if (!server || !serverNetwork) return;
+
+		const isProxy = serverNetwork.proxyServerId === server.id;
+
+		// Determine which other servers to start alongside this one.
+		const otherServerIds = isProxy
+			? serverNetwork.members.map((m) => m.serverId)
+			: serverNetwork.proxyServerId
+				? [serverNetwork.proxyServerId]
+				: [];
+
+		const otherServers = servers.filter(
+			(s) => otherServerIds.includes(s.id) && s.status === 'offline',
+		);
+
+		for (const other of otherServers) {
+			const resolution = resolveServerJavaExecutable({
+				provider: other.provider,
+				javaInstallation: other.java_installation,
+				globalDefault: user.java_installation_default,
+				runtimes: javaRuntimes,
+			});
+			const javaExecutable = resolution.status === 'resolved' ? resolution.executablePath : null;
+			try {
+				await invoke('start_server', { directory: other.directory, javaExecutable });
+				toast.info(`Starting ${other.name}…`);
+			} catch (err) {
+				toast.error(
+					`${other.name}: ${err instanceof Error ? err.message : 'Failed to start.'}`,
+				);
+			}
+		}
+
+		void handleStart();
+	}, [server, serverNetwork, servers, javaRuntimes, user.java_installation_default, handleStart]);
+
 	if (!isReady) {
 		return <ServerPageSkeleton />;
 	}
@@ -150,6 +224,42 @@ const Server: React.FC = () => {
 
 	return (
 		<main className='w-full h-full relative overflow-y-auto app-scroll-area app-scroll-stable'>
+			{/* Start alone vs. with network dialog */}
+			<AlertDialog open={showNetworkDialog} onOpenChange={setShowNetworkDialog}>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>How do you want to start?</AlertDialogTitle>
+						<AlertDialogDescription>
+							{server?.name} is part of the network{' '}
+							<span className='font-semibold'>{serverNetwork?.name}</span>.{' '}
+							{serverNetwork?.proxyServerId === server?.id
+								? 'Starting with network will also start all offline member servers.'
+								: 'Starting with network will also start the proxy server if it is offline.'}
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel>Cancel</AlertDialogCancel>
+						<AlertDialogAction
+							onClick={() => {
+								setShowNetworkDialog(false);
+								void handleStart();
+							}}
+							className='bg-secondary text-secondary-foreground hover:bg-secondary/80'
+						>
+							Start Alone
+						</AlertDialogAction>
+						<AlertDialogAction
+							onClick={() => {
+								setShowNetworkDialog(false);
+								void handleStartWithNetwork();
+							}}
+						>
+							Start with Network
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
+
 			<div className='min-h-full flex flex-col p-12 w-full'>
 				{errorMessage && (
 					<div className='mb-4 rounded-lg border-2 border-destructive/40 bg-destructive/10 p-3'>
@@ -179,7 +289,7 @@ const Server: React.FC = () => {
 							javaInstallationDefault={user.java_installation_default}
 							javaRuntimes={javaRuntimes}
 							isBusy={isBusy}
-							onStart={handleStart}
+							onStart={handleStartClick}
 							onStop={handleStop}
 							onRestart={handleRestart}
 							onForceKill={handleForceKill}

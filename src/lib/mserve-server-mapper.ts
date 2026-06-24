@@ -1,7 +1,7 @@
 import type { Server } from '@/data/servers';
 import type { ServerSetupFormData, SyncedMserveConfig } from '@/lib/mserve-sync';
 import { DEFAULT_SERVER_PROVIDER } from '@/lib/mserve-consts';
-import { createProvider } from '@/lib/server-provider';
+import { createProvider, isProxyProvider } from '@/lib/server-provider';
 
 type InitServerResult = {
 	id: string;
@@ -64,7 +64,7 @@ export const buildCreatedServer = (form: ServerSetupFormData, result: InitServer
 	auto_backup_interval: Math.max(1, Number(form.auto_backup_interval) || 120),
 	auto_restart: form.auto_restart,
 	java_installation: form.java_installation.trim() || undefined,
-	custom_flags: [],
+	custom_flags: isProxyProvider(form.provider) ? [] : ['--nogui'],
 	provider: createProvider(form.provider ?? DEFAULT_SERVER_PROVIDER, { file: result.file }),
 	telemetry_host: '127.0.0.1',
 	telemetry_port: 25565,

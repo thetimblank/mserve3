@@ -270,24 +270,63 @@ pub(in crate::app) fn infer_provider_version(config: &RuntimeServerConfig) -> Op
 // persistent `System` so CPU% is accurate across refreshes.
 // ---------------------------------------------------------------------------
 
+/// Walks parent links to decide whether `pid` is `root` or a descendant of it.
+/// Capped so a malformed/cyclic parent chain can never loop forever.
+fn is_in_subtree(system: &System, pid: Pid, root: Pid) -> bool {
+    if pid == root {
+        return true;
+    }
+    let mut current = pid;
+    for _ in 0..64 {
+        let Some(process) = system.process(current) else {
+            return false;
+        };
+        let Some(parent) = process.parent() else {
+            return false;
+        };
+        if parent == root {
+            return true;
+        }
+        current = parent;
+    }
+    false
+}
+
 pub(in crate::app) fn refresh_process_metrics(
     system: &mut System,
     pid: u32,
     configured_ram_gb: Option<f64>,
 ) -> ProcessMetricsResult {
-    let pid = Pid::from_u32(pid);
+    let root = Pid::from_u32(pid);
+    // Refresh every process (not just `root`) so we can sum the whole subtree.
+    // Some server jars (modern bundlers/launchers) run as a small bootstrap that
+    // spawns the real JVM as a child, so the heap-holding process is often a
+    // descendant of the PID we spawned, not the PID itself. Summing the subtree
+    // gives the true memory/CPU regardless of how the server chose to launch.
     system.refresh_processes_specifics(
-        ProcessesToUpdate::Some(&[pid]),
+        ProcessesToUpdate::All,
         true,
         ProcessRefreshKind::nothing().with_cpu().with_memory(),
     );
 
-    let Some(process) = system.process(pid) else {
+    if system.process(root).is_none() {
         return ProcessMetricsResult::default();
-    };
+    }
 
-    let ram_bytes = process.memory();
-    let cpu_used = Some(clamp_percentage(process.cpu_usage() as f64));
+    let pids: Vec<Pid> = system.processes().keys().copied().collect();
+    let mut ram_bytes: u64 = 0;
+    let mut cpu_total: f64 = 0.0;
+    for pid in pids {
+        if !is_in_subtree(system, pid, root) {
+            continue;
+        }
+        if let Some(process) = system.process(pid) {
+            ram_bytes = ram_bytes.saturating_add(process.memory());
+            cpu_total += process.cpu_usage() as f64;
+        }
+    }
+
+    let cpu_used = Some(clamp_percentage(cpu_total));
     let ram_used = ram_percent_from_bytes(ram_bytes, configured_ram_gb);
 
     ProcessMetricsResult {
@@ -326,14 +365,11 @@ fn strip_minecraft_formatting(input: &str) -> String {
     output
 }
 
-fn first_float_after(text: &str, needle: &str) -> Option<f64> {
-    let lower = text.to_lowercase();
-    let position = lower.find(&needle.to_lowercase())? + needle.len();
-    let rest = text.get(position..)?;
-
+/// First decimal number appearing in `text` (e.g. "  20.0, 19.9" -> 20.0).
+fn first_float_in(text: &str) -> Option<f64> {
     let mut number = String::new();
     let mut started = false;
-    for ch in rest.chars() {
+    for ch in text.chars() {
         if ch.is_ascii_digit() || ch == '.' {
             number.push(ch);
             started = true;
@@ -341,15 +377,26 @@ fn first_float_after(text: &str, needle: &str) -> Option<f64> {
             break;
         }
     }
-
     number.parse::<f64>().ok()
 }
 
-/// Parses Paper/Spigot/Purpur `tps` output, e.g.
-/// "TPS from last 1m, 5m, 15m: 20.0, 20.0, 19.9". Returns the 1-minute value.
+fn first_float_after(text: &str, needle: &str) -> Option<f64> {
+    let lower = text.to_lowercase();
+    let position = lower.find(&needle.to_lowercase())? + needle.len();
+    first_float_in(text.get(position..)?)
+}
+
+/// Parses Paper/Spigot/Purpur/Folia `tps` output, e.g.
+/// "TPS from last 1m, 5m, 15m: 20.0, 20.0, 19.9". Returns the first (shortest
+/// window) value. The numbers come *after* the colon — we must not read the
+/// interval labels ("1m", "5m") which precede it, or every server reads as 1 TPS.
 fn parse_paper_tps(response: &str) -> Option<f64> {
     let cleaned = strip_minecraft_formatting(response);
-    let value = first_float_after(&cleaned, "from last")?;
+    let lower = cleaned.to_lowercase();
+    let from_last = lower.find("from last")?;
+    let colon_rel = cleaned.get(from_last..)?.find(':')?;
+    let after = cleaned.get(from_last + colon_rel + 1..)?;
+    let value = first_float_in(after)?;
     Some(value.min(20.0))
 }
 
@@ -364,44 +411,80 @@ fn parse_tick_query_tps(response: &str) -> Option<f64> {
     Some((1000.0 / mspt).min(20.0))
 }
 
+const RCON_TIMEOUT: Duration = Duration::from_millis(900);
+
+/// Runs `command` on the persistent RCON client, lazily (re)connecting. If the
+/// connection is missing or the server closed it after a previous command (some
+/// servers do this), it reconnects once and retries. Returns `None` only on a
+/// genuine connection failure — never conflate "can't reach RCON right now" with
+/// "this command is unsupported", or detection will give up prematurely.
+fn rcon_run(
+    host: &str,
+    rcon: &RconConfig,
+    client_slot: &mut Option<RconClient>,
+    command: &str,
+) -> Option<String> {
+    for _ in 0..2 {
+        if client_slot.is_none() {
+            match RconClient::connect(host, rcon.port, &rcon.password, RCON_TIMEOUT) {
+                Ok(client) => *client_slot = Some(client),
+                Err(_) => return None,
+            }
+        }
+        match client_slot.as_mut().and_then(|client| client.command(command).ok()) {
+            Some(response) => return Some(response),
+            // Connection went away mid-command: drop it and retry once fresh.
+            None => *client_slot = None,
+        }
+    }
+    None
+}
+
+/// Retrieves TPS over RCON, reusing a persistent connection (`client_slot`) to
+/// avoid reconnecting every poll. The command differs by server software, so we
+/// detect which one works once and cache it. Each detection probe uses
+/// `rcon_run`'s reconnect-once behavior so a server that closes the socket after
+/// the first command can't make us wrongly conclude TPS is unsupported.
 pub(in crate::app) fn collect_tps_via_rcon(
     host: &str,
     rcon: &RconConfig,
     state: &mut TpsCommandState,
+    client_slot: &mut Option<RconClient>,
 ) -> Option<f64> {
-    if matches!(state, TpsCommandState::Unsupported) {
-        return None;
-    }
-
-    let mut client =
-        match RconClient::connect(host, rcon.port, &rcon.password, Duration::from_millis(900)) {
-            Ok(client) => client,
-            // Transient connect failure: try again next cycle, don't give up.
-            Err(_) => return None,
-        };
-
     match *state {
-        TpsCommandState::Paper => client.command("tps").ok().and_then(|r| parse_paper_tps(&r)),
-        TpsCommandState::TickQuery => client
-            .command("tick query")
-            .ok()
-            .and_then(|r| parse_tick_query_tps(&r)),
+        TpsCommandState::Unsupported => None,
+        TpsCommandState::Paper => {
+            rcon_run(host, rcon, client_slot, "tps").and_then(|r| parse_paper_tps(&r))
+        }
+        TpsCommandState::TickQuery => {
+            rcon_run(host, rcon, client_slot, "tick query").and_then(|r| parse_tick_query_tps(&r))
+        }
         TpsCommandState::Unknown => {
-            if let Some(tps) = client.command("tps").ok().and_then(|r| parse_paper_tps(&r)) {
-                *state = TpsCommandState::Paper;
-                return Some(tps);
+            // Paper/Spigot/Folia style first.
+            match rcon_run(host, rcon, client_slot, "tps") {
+                // Couldn't reach RCON — stay Unknown and retry next cycle.
+                None => return None,
+                Some(response) => {
+                    if let Some(tps) = parse_paper_tps(&response) {
+                        *state = TpsCommandState::Paper;
+                        return Some(tps);
+                    }
+                }
             }
-            if let Some(tps) = client
-                .command("tick query")
-                .ok()
-                .and_then(|r| parse_tick_query_tps(&r))
-            {
-                *state = TpsCommandState::TickQuery;
-                return Some(tps);
+            // Vanilla 1.21+ `tick query` style next.
+            match rcon_run(host, rcon, client_slot, "tick query") {
+                None => return None,
+                Some(response) => {
+                    if let Some(tps) = parse_tick_query_tps(&response) {
+                        *state = TpsCommandState::TickQuery;
+                        return Some(tps);
+                    }
+                }
             }
+            // Both commands reached the server and neither yields TPS (e.g. old
+            // vanilla, which has no TPS command at all).
             *state = TpsCommandState::Unsupported;
             None
         }
-        TpsCommandState::Unsupported => None,
     }
 }

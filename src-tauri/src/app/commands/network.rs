@@ -220,6 +220,11 @@ pub(in crate::app) fn get_local_ip() -> Result<String, String> {
 }
 
 #[tauri::command]
+pub(in crate::app) fn get_public_ip() -> Result<String, String> {
+    resolve_public_ip().ok_or_else(|| "Unable to determine public IP address. Check your internet connection.".to_string())
+}
+
+#[tauri::command]
 pub(in crate::app) fn download_server_jar(
     app: tauri::AppHandle,
     payload: DownloadServerJarPayload,

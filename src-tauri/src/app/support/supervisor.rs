@@ -11,6 +11,7 @@
 //! The frontend is a pure consumer of these events plus a one-shot snapshot.
 
 use super::super::*;
+use super::rcon::RconClient;
 use super::telemetry::{
     collect_status_ping, collect_tps_via_rcon, probe_port, refresh_process_metrics, StatusPingResult,
 };
@@ -70,6 +71,7 @@ fn state_event(runtime: &ServerRuntime) -> ServerRuntimeStateEvent {
         started_at: Some(runtime.started_at.to_rfc3339()),
         exit_code: runtime.exit_code,
         stderr_tail: runtime.stderr_tail.iter().cloned().collect(),
+        server_port: None,
     }
 }
 
@@ -82,6 +84,9 @@ pub(in crate::app) fn spawn_supervisor(
     std::thread::spawn(move || {
         let mut system = System::new();
         let mut external_miss_streak: u32 = 0;
+        // Persistent RCON connection for TPS, reused across polls so we don't
+        // reconnect (and spam the server log with connect/disconnect) every cycle.
+        let mut rcon_client: Option<RconClient> = None;
 
         loop {
             // ---- Phase 1: brief lock — read a snapshot and detect process exit.
@@ -195,7 +200,12 @@ pub(in crate::app) fn spawn_supervisor(
                     None
                 } else {
                     snapshot.rcon.as_ref().and_then(|rcon| {
-                        collect_tps_via_rcon(&snapshot.host, rcon, &mut local_tps_state)
+                        collect_tps_via_rcon(
+                            &snapshot.host,
+                            rcon,
+                            &mut local_tps_state,
+                            &mut rcon_client,
+                        )
                     })
                 };
 

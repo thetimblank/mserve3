@@ -283,6 +283,10 @@ struct ServerRuntimeStateEvent {
     started_at: Option<String>,
     exit_code: Option<i32>,
     stderr_tail: Vec<String>,
+    /// The actual port the server is bound to. Set on the `starting` event so
+    /// the frontend can update its view immediately (e.g. when we reassigned a
+    /// conflicting port before spawn).
+    server_port: Option<u16>,
 }
 
 /// Emitted on each telemetry sample for a running server.
@@ -471,8 +475,10 @@ struct AppCloseRequestedPayload {
 }
 
 #[tauri::command]
-fn confirm_close(app: tauri::AppHandle) {
-    app.exit(0);
+fn confirm_close(_app: tauri::AppHandle) {
+    // std::process::exit avoids the "Failed to unregister class Chrome_WidgetWin_0"
+    // error that occurs when Tauri's webview cleanup races with window destruction.
+    std::process::exit(0);
 }
 
 #[tauri::command]
@@ -519,6 +525,14 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(
+            tauri_plugin_window_state::Builder::new()
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::SIZE
+                        | tauri_plugin_window_state::StateFlags::POSITION,
+                )
+                .build(),
+        )
         .setup(|app| {
             // Open the telemetry time-series database in the app data dir.
             if let Ok(data_dir) = app.path().app_data_dir() {
@@ -547,6 +561,7 @@ pub fn run() {
             forward_port_windows_firewall,
             validate_path,
             get_local_ip,
+            get_public_ip,
             get_system_memory_gb,
             detect_java_runtimes,
             download_java_runtime,
