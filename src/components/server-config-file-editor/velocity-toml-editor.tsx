@@ -7,11 +7,7 @@ import { AdvancedPropertiesSection } from './advanced-properties-section';
 import { FeaturedPropertyFields } from './featured-property-fields';
 import { getManagedConfigToastId, readManagedConfigFile, writeManagedConfigFile } from './file-operations';
 import { AdvancedModeDisclaimer, EditorError, EditorHeader, NetworkingDisclaimer } from './layout';
-import {
-	createVelocityTomlContent,
-	inferTomlValueKind,
-	parseVelocityEditorState,
-} from './toml-config';
+import { createVelocityTomlContent, inferTomlValueKind, parseVelocityEditorState } from './toml-config';
 import type { PropertyValues, ServerConfigFileEditorProps, TomlRoot } from './types';
 import { useUnsavedChangesToast } from './use-unsaved-changes-toast';
 import { sameStringRecord, toErrorMessage } from './utils';
@@ -101,11 +97,7 @@ const VelocityTomlEditor: React.FC<ServerConfigFileEditorProps> = ({
 				featuredKeySet,
 				definition,
 			});
-			const result = await writeManagedConfigFile(
-				serverDirectory,
-				definition.fileName,
-				normalizedContent,
-			);
+			const result = await writeManagedConfigFile(serverDirectory, definition.fileName, normalizedContent);
 
 			applyContent(result.content);
 			toast.success(`${definition.title} saved.`);
@@ -160,7 +152,6 @@ const VelocityTomlEditor: React.FC<ServerConfigFileEditorProps> = ({
 					keys={advancedTomlKeys}
 					values={values}
 					description='All non-featured server.properties entries stay editable here when advanced mode is on.'
-					entryDescription='Advanced Velocity configuration entry.'
 					disabled={isLocked}
 					getKind={(key) => inferTomlValueKind(root[key])}
 					onChange={updateValue}

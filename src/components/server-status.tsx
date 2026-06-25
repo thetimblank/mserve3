@@ -49,7 +49,7 @@ const ServerStatus: React.FC<Props> = ({ server, size = 'md' }) => {
 			visual: 'size-30',
 			ring: 'size-30',
 			icon: 'size-16',
-			tps: 'max-w-30 max-h-30 text-xl',
+			tps: 'max-w-30 max-h-30 text-2xl',
 			status: 'text-xl uppercase',
 		},
 	} as const;

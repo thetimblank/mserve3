@@ -58,37 +58,48 @@ e.g. v4.0.12pre0
 ### Checklist
 
 (May not be up-to-date)
-**v3**
-🟨 setup networks and server groups
 
-1. Automatically total max players of the children and set this as the max players of the proxy
-
-⬛ Fix motd not working.
-
-1. Users Cannot save file once the MOTD is changed.
-2. ⬛ Improve MOTD editor.
+### v3
 
 Supported Providers
-Test & support all providers thoroughly
-🟨 Velocity
-🟨 Paper
-🟨 Folia
-🟨 Vanilla
 
-**v4**
-⬛ linux support!!!
-⬛ more help pages and explanations
-⬛ onboarding if needed. (advanced/beginner, theme, etc)
-⬛ major cleanup of backend (rust & typescript hidden logic/sturcture) code/performance optimizations, simple and reusable, delete uneeded normalizations, etc.
-⬛ add tab completion to terminal
-⬛ rehaul UI
-⬛ advanced statistics systems (plugins, etc to track stats instead of v3 system)
+- Velocity
+- Paper
+- Folia
+- Vanilla
+
+### v4
+
+- backup rework
+- rework MC settings for non-advanced users
+- let others connect to your mserve
+- add tunneling instead of just port forwarding
+- linux support!!!
+- sleep mode
+- error reporting and feedback
+- more help pages and explanations
+- onboarding if needed. (advanced/beginner, theme, etc)
+- major cleanup of backend (rust & typescript hidden logic/sturcture) code/performance optimizations, simple and reusable, delete uneeded normalizations, etc.
+- add tab completion to terminal
+- rehaul UI
+- server logs
+- server crashed state
+- advanced statistics systems (plugins, etc to track stats instead of v3 system)
+- remote start (SSH?)
+- minimize to background (minimal footprint)
+- in-app plugin and modpack browser
+- setup networks and server groups
 
 Supported Providers
-⬛ Modded servers
-⬛ Spigot
-⬛ Bungee
 
-**Future**
-⬛ change plugin settings?
-⬛ accounts and remote start on website?
+- Modded servers
+- Spigot
+- Bungee
+
+---
+
+### Future
+
+- change plugin settings?
+- accounts?
+- webapp?

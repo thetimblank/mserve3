@@ -16,6 +16,7 @@ import { UserProvider } from './data/user';
 import { JavaRuntimesProvider } from './data/java-runtimes';
 import { JavaDownloadProvider } from './data/java-download';
 import Home from './pages/Home';
+import AllServers from './pages/Servers';
 import Settings from './pages/Settings';
 import Server from './pages/Server';
 import NetworkPage from './pages/Network';
@@ -49,15 +50,17 @@ class AppErrorBoundary extends React.Component<{ children: React.ReactNode }, { 
 		return (
 			<div className='flex h-svh w-full items-center justify-center bg-background px-6 text-foreground'>
 				<div className='w-full max-w-xl rounded-3xl border bg-card p-8 shadow-2xl'>
-					<p className='text-sm font-medium uppercase tracking-[0.3em] text-muted-foreground'>
-						Application error
+					<p className='text-sm font-bold text-muted-foreground uppercase'>
+						mserve could not finish loading
 					</p>
-					<h1 className='mt-3 text-3xl font-semibold'>MSERVE could not finish loading</h1>
+					<h1 className='mt-3 text-3xl font-semibold'>Sorry, this one's on us.</h1>
 					<p className='mt-3 text-sm text-muted-foreground'>
 						A rendering error occurred before the interface could open. This is usually caused by a
 						browser-side module issue or incompatible local data.
+						<br />
+						If this issue persists, please create an issue at https://github.com/thetimblank/mserve3
 					</p>
-					<pre className='mt-4 max-h-56 overflow-auto rounded-2xl border bg-muted/50 p-4 text-xs text-destructive'>
+					<pre className='mt-4 max-h-56 overflow-auto rounded-md border bg-muted/50 p-4 text-xs text-destructive'>
 						{this.state.error.message}
 					</pre>
 					<div className='mt-6 flex flex-wrap gap-3'>
@@ -94,32 +97,33 @@ const RootLayout: React.FC = () => {
 					<SidebarProvider className='h-svh overflow-hidden pt-10'>
 						<UserProvider>
 							<JavaRuntimesProvider>
-							<ServersProvider>
-								<ServerUpdatesProvider>
-								<NetworksProvider>
-								<CreateServerProvider>
-								<JavaDownloadProvider>
-									<ServerRuntimeMonitor />
-									<MserveRepairDialog />
-									<CloseWarningDialog />
-									<Nav />
-									<AppSidebar />
-									<SidebarInset className='h-full min-h-0 overflow-hidden'>
-										<Routes>
-											<Route path='/' element={<Home />} />
-											<Route path='/setup' element={<Setup />} />
-											<Route path='/java-guide' element={<JavaGuide />} />
-											<Route path='/network' element={<NetworkPage />} />
-											<Route path='/servers/new' element={<CreateServerPage />} />
-											<Route path='/servers/:serverId/:tab?' element={<Server />} />
-											<Route path='/settings' element={<Settings />} />
-										</Routes>
-									</SidebarInset>
-								</JavaDownloadProvider>
-								</CreateServerProvider>
-								</NetworksProvider>
-								</ServerUpdatesProvider>
-							</ServersProvider>
+								<ServersProvider>
+									<ServerUpdatesProvider>
+										<NetworksProvider>
+											<CreateServerProvider>
+												<JavaDownloadProvider>
+													<ServerRuntimeMonitor />
+													<MserveRepairDialog />
+													<CloseWarningDialog />
+													<Nav />
+													<AppSidebar />
+													<SidebarInset className='h-full min-h-0 overflow-hidden'>
+														<Routes>
+															<Route path='/' element={<Home />} />
+															<Route path='/servers' element={<AllServers />} />
+															<Route path='/setup' element={<Setup />} />
+															<Route path='/java-guide' element={<JavaGuide />} />
+															<Route path='/network' element={<NetworkPage />} />
+															<Route path='/servers/new' element={<CreateServerPage />} />
+															<Route path='/servers/:serverId/:tab?' element={<Server />} />
+															<Route path='/settings' element={<Settings />} />
+														</Routes>
+													</SidebarInset>
+												</JavaDownloadProvider>
+											</CreateServerProvider>
+										</NetworksProvider>
+									</ServerUpdatesProvider>
+								</ServersProvider>
 							</JavaRuntimesProvider>
 						</UserProvider>
 					</SidebarProvider>

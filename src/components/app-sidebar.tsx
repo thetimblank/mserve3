@@ -1,6 +1,8 @@
-import { Coffee, Home, Network, Plus, Server, Settings, Wifi } from 'lucide-react';
+import { Coffee, Home, LayoutGrid, Network, Server, Settings, Wifi } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import clsx from 'clsx';
+import CreateServer from '@/components/create-server';
+import ImportServer from '@/components/import-server';
 
 import {
 	Sidebar,
@@ -16,22 +18,18 @@ import { useServers } from '@/data/servers';
 import { getAvailableServerContentTabs, getServerContentTabUrl } from '@/pages/server/server-content-tabs';
 import { getServerProviderCapabilities } from '@/lib/server-provider-capabilities';
 
-const items = [
+const main = [
 	{
 		title: 'Dashboard',
 		url: '/',
 		icon: Home,
 	},
 	{
-		title: 'Setup Hosting',
-		url: '/setup',
-		icon: Wifi,
+		title: 'All Servers',
+		url: '/servers',
+		icon: LayoutGrid,
 	},
-	{
-		title: 'Java Guide',
-		url: '/java-guide',
-		icon: Coffee,
-	},
+
 	{
 		title: 'Server Network',
 		url: '/network',
@@ -45,6 +43,19 @@ const items = [
 	},
 ];
 
+const help = [
+	{
+		title: 'Setup Hosting',
+		url: '/setup',
+		icon: Wifi,
+	},
+	{
+		title: 'Java Guide',
+		url: '/java-guide',
+		icon: Coffee,
+	},
+];
+
 export function AppSidebar() {
 	const { servers } = useServers();
 	const location = useLocation();
@@ -53,11 +64,29 @@ export function AppSidebar() {
 		<Sidebar className='pt-10'>
 			<SidebarContent className='p-2'>
 				<SidebarGroup>
-					<SidebarGroupLabel>Application</SidebarGroupLabel>
 					<SidebarGroupContent>
 						<SidebarMenu>
-							{items
+							{main
 								.filter((item) => !item.bottom)
+								.map((item) => (
+									<SidebarMenuItem key={item.title}>
+										<SidebarMenuButton asChild>
+											<Link to={item.url}>
+												<item.icon />
+												<span>{item.title}</span>
+											</Link>
+										</SidebarMenuButton>
+									</SidebarMenuItem>
+								))}
+						</SidebarMenu>
+					</SidebarGroupContent>
+				</SidebarGroup>
+				<SidebarGroup>
+					<SidebarGroupLabel>Help Pages</SidebarGroupLabel>
+					<SidebarGroupContent>
+						<SidebarMenu>
+							{help
+								// .filter((item) => !item.bottom)
 								.map((item) => (
 									<SidebarMenuItem key={item.title}>
 										<SidebarMenuButton asChild>
@@ -76,12 +105,10 @@ export function AppSidebar() {
 					<SidebarGroupContent>
 						<SidebarMenu>
 							<SidebarMenuItem>
-								<SidebarMenuButton asChild>
-									<Link to='/servers/new'>
-										<Plus />
-										<span>Create Server</span>
-									</Link>
-								</SidebarMenuButton>
+								<CreateServer />
+							</SidebarMenuItem>
+							<SidebarMenuItem>
+								<ImportServer />
 							</SidebarMenuItem>
 							{servers.length === 0 && (
 								<SidebarMenuItem>
@@ -141,10 +168,9 @@ export function AppSidebar() {
 				</SidebarGroup>
 
 				<SidebarGroup className='mt-auto'>
-					<SidebarGroupLabel>Extra</SidebarGroupLabel>
 					<SidebarGroupContent>
 						<SidebarMenu>
-							{items
+							{main
 								.filter((item) => item.bottom)
 								.map((item) => (
 									<SidebarMenuItem key={item.title}>

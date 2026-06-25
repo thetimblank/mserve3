@@ -590,6 +590,7 @@ pub fn run() {
             export_server_world,
             create_server_backup,
             update_server_settings,
+            update_server_backup_settings,
             set_server_java_installation,
             restore_server_backup,
             delete_server_backup,

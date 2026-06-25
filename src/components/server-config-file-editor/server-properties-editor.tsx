@@ -7,10 +7,7 @@ import { AdvancedPropertiesSection } from './advanced-properties-section';
 import { FeaturedPropertyFields } from './featured-property-fields';
 import { getManagedConfigToastId, readManagedConfigFile, writeManagedConfigFile } from './file-operations';
 import { AdvancedModeDisclaimer, EditorError, EditorHeader, NetworkingDisclaimer } from './layout';
-import {
-	createServerPropertiesContent,
-	parseServerPropertiesEditorState,
-} from './properties-config';
+import { createServerPropertiesContent, parseServerPropertiesEditorState } from './properties-config';
 import type { PropertyValues, ServerConfigFileEditorProps } from './types';
 import { useUnsavedChangesToast } from './use-unsaved-changes-toast';
 import { sameStringRecord, toErrorMessage } from './utils';
@@ -94,11 +91,7 @@ const ServerPropertiesFileEditor: React.FC<ServerConfigFileEditorProps> = ({
 		setIsSaving(true);
 		try {
 			const normalizedContent = createServerPropertiesContent(sourceValues, values, definition);
-			const result = await writeManagedConfigFile(
-				serverDirectory,
-				definition.fileName,
-				normalizedContent,
-			);
+			const result = await writeManagedConfigFile(serverDirectory, definition.fileName, normalizedContent);
 
 			applyContent(result.content);
 			toast.success(`${definition.title} saved.`);
@@ -143,11 +136,8 @@ const ServerPropertiesFileEditor: React.FC<ServerConfigFileEditorProps> = ({
 					keys={advancedPropertyKeys}
 					values={values}
 					description='All non-featured server.properties entries stay editable here when advanced mode is on.'
-					entryDescription='Advanced server.properties entry.'
 					disabled={isLocked}
-					getKind={(_, value) =>
-						value.includes('\n') || value.length > 120 ? 'multiline' : 'string'
-					}
+					getKind={(_, value) => (value.includes('\n') || value.length > 120 ? 'multiline' : 'string')}
 					onChange={updateValue}
 				/>
 			)}

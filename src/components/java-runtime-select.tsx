@@ -1,18 +1,8 @@
 import * as React from 'react';
 import { Check, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from '@/components/ui/select';
-import {
-	chooseBestInstalledJava,
-	isJavaCompatible,
-	resolveJavaRequirement,
-} from '@/lib/java-compatibility';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { chooseBestInstalledJava, isJavaCompatible, resolveJavaRequirement } from '@/lib/java-compatibility';
 import {
 	findJavaRuntimeByExecutablePath,
 	resolveJavaRuntimeForRequirement,
@@ -45,12 +35,12 @@ const CompatibilityTag: React.FC<{ tone: CompatibilityTone }> = ({ tone }) => {
 	return (
 		<span
 			className={cn(
-				'inline-flex w-fit items-center gap-1 rounded-md px-2 py-0.5 text-xs',
+				'inline-flex w-fit items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold',
 				compatible
 					? 'bg-green-600/10 text-green-600 dark:bg-green-900/50 dark:text-green-400'
-					: 'bg-destructive/15 text-destructive',
+					: 'bg-red-500/15 text-red-500',
 			)}>
-			{compatible ? <Check className='size-3' /> : <X className='size-3' />}
+			{compatible ? <Check className='size-3 text-green-500' /> : <X className='size-3 text-red-500' />}
 			{tone === 'recommended' ? 'Recommended' : tone === 'compatible' ? 'Compatible' : 'Too old'}
 		</span>
 	);
@@ -75,7 +65,7 @@ const JavaRuntimeSelect: React.FC<JavaRuntimeSelectProps> = ({
 				? chooseBestInstalledJava(
 						javaRuntimes.map((runtime) => runtime.majorVersion),
 						requirement,
-				  )
+					)
 				: null,
 		[javaRuntimes, requirement],
 	);
@@ -91,7 +81,8 @@ const JavaRuntimeSelect: React.FC<JavaRuntimeSelectProps> = ({
 		[javaRuntimes, trimmed],
 	);
 
-	const selectValue = trimmed === '' ? AUTO_VALUE : matchedRuntime ? matchedRuntime.executablePath : CUSTOM_VALUE;
+	const selectValue =
+		trimmed === '' ? AUTO_VALUE : matchedRuntime ? matchedRuntime.executablePath : CUSTOM_VALUE;
 
 	const handleValueChange = (next: string) => {
 		if (next === CUSTOM_VALUE) return;

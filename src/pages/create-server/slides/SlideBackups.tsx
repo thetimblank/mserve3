@@ -83,9 +83,11 @@ const SlideBackups: React.FC = () => {
 											Gigabytes
 										</InputGroupAddon>
 									</InputGroup>
-									<p className='text-sm text-muted-foreground flex gap-2 items-center'>
-										<TriangleAlert className='size-4 shrink-0' />
-										Backups can grow quickly. Set a limit to avoid filling the disk.
+									<p className='text-sm text-muted-foreground'>
+										<TriangleAlert className='size-4 inline-flex mr-1 mb-0.5' />
+										Backups can grow quickly. Set a limit to avoid filling the disk. The oldest
+										backup(s) will be deleted once the limit is reached to make space for the new
+										one.
 									</p>
 								</Field>
 							</m.div>

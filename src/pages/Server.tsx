@@ -273,7 +273,7 @@ const Server: React.FC = () => {
 				)}
 				<div className='space-y-4 mb-6'>
 					<div className='flex gap-2 items-center'>
-						<Link to='/'>
+						<Link to='/servers'>
 							<ArrowLeft className='size-8 transition-transform hover:-translate-x-0.5' />
 						</Link>
 

@@ -24,8 +24,7 @@ export default function Slide2() {
 				<p className='mb-4'>
 					You may have to enable port forwarding on your network. <br /> Please login to your network
 					dashboard and forward {data.port}.
-					<br />{' '}
-					<span className='text-sm text-muted-foreground'>Dont worry, this is the hardest step.</span>
+					<br /> <span className='text-sm text-muted-foreground'>This is the hardest step.</span>
 				</p>
 				<Accordion type='single' collapsible className='w-[50vw]'>
 					<AccordionItem value='1'>

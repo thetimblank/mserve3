@@ -6,6 +6,8 @@ import {
 	ArrowUpCircle,
 	Boxes,
 	CircleCheck,
+	Clipboard,
+	ClipboardCheck,
 	Clock,
 	Coffee,
 	Cpu,
@@ -106,6 +108,15 @@ const ServerOverviewPanel: React.FC<Props> = ({
 
 	const [publicIp, setPublicIp] = React.useState<string | null>(null);
 	const [ipHidden, setIpHidden] = React.useState(true);
+	const [copied, setCopied] = React.useState(false);
+
+	const copyToClipboard = React.useCallback((text: string | null) => {
+		if (text == null) return;
+		navigator.clipboard.writeText(text).then(() => {
+			setCopied(true);
+			setTimeout(() => setCopied(false), 2000);
+		});
+	}, []);
 
 	React.useEffect(() => {
 		let active = true;
@@ -196,26 +207,64 @@ const ServerOverviewPanel: React.FC<Props> = ({
 							<OpenFolderButton directory={server.directory} disabled={isBusy} />
 							{/* Connection address */}
 							<div className='flex items-center gap-2 rounded-md bg-card dark:bg-secondary/50 border-2 dark:border-none px-3 py-1 text-sm'>
-								<Wifi className='size-4 shrink-0 text-muted-foreground' />
-								<span className='text-muted-foreground select-none'>Connect:</span>
-								<span className='font-mono'>
-									{publicIp == null ? (
-										<span className='blur-sm select-none text-muted-foreground'>Loading</span>
-									) : ipHidden ? (
-										<span className='blur-sm select-none'>XXX.XXX.X.X</span>
-									) : (
-										publicIp
+								<Wifi className='size-4 shrink-0 text-sky-500' />
+								<p className='text-muted-foreground select-none'>Connect:</p>
+								<p>
+									<span className='font-mono text-sky-500'>
+										{publicIp == null ? (
+											<span className='blur-sm select-none text-muted-foreground'>
+												Loading....
+											</span>
+										) : ipHidden ? (
+											<span className='blur-sm select-none'>XXX.XXX.X.X</span>
+										) : (
+											publicIp
+										)}
+									</span>
+									{server.telemetry_port != 25565 && (
+										<span className='font-mono text-sky-500'>:{server.telemetry_port}</span>
 									)}
-								</span>
-								<span className='font-mono text-muted-foreground'>:{server.telemetry_port}</span>
-								<Button
-									variant='ghost'
-									size='sm'
-									className='h-6 w-6 p-0 text-muted-foreground hover:text-foreground'
-									onClick={() => setIpHidden((h) => !h)}
-									title={ipHidden ? 'Show IP' : 'Hide IP'}>
-									{ipHidden ? <Eye className='size-3.5' /> : <EyeOff className='size-3.5' />}
-								</Button>
+								</p>
+								<div className='flex'>
+									<Tooltip>
+										<TooltipTrigger asChild>
+											<Button
+												variant='ghost'
+												size='sm'
+												className='h-6 w-6 p-0 text-muted-foreground hover:text-foreground'
+												onClick={() => setIpHidden((h) => !h)}>
+												{ipHidden ? (
+													<Eye className='size-3.5' />
+												) : (
+													<EyeOff className='size-3.5' />
+												)}
+											</Button>
+										</TooltipTrigger>
+										<TooltipContent>{ipHidden ? 'Show IP' : 'Hide IP'}</TooltipContent>
+									</Tooltip>
+									<Tooltip>
+										<TooltipTrigger asChild>
+											<Button
+												variant='ghost'
+												size='sm'
+												className='h-6 w-6 p-0 text-muted-foreground hover:text-foreground'
+												onClick={() =>
+													copyToClipboard(
+														server.telemetry_port === 25565
+															? publicIp
+															: publicIp + ':' + server.telemetry_port,
+													)
+												}>
+												{copied ? (
+													<ClipboardCheck className='size-3.5' />
+												) : (
+													<Clipboard className='size-3.5' />
+												)}
+											</Button>
+										</TooltipTrigger>
+										<TooltipContent>{copied ? 'Copied IP' : 'Copy IP'}</TooltipContent>
+									</Tooltip>
+								</div>
 							</div>
 						</div>
 						{/* Live metric cards */}

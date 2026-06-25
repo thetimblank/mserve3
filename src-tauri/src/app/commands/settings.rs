@@ -13,6 +13,44 @@ pub(in crate::app) fn get_default_servers_root_path() -> Result<String, String> 
         .to_string())
 }
 
+/// Updates only the backup-related fields in mserve.json (storage_limit,
+/// auto_backup, auto_backup_interval, auto_restart). Does not require the server
+/// to be offline so these settings can be changed while the server is running.
+#[tauri::command]
+pub(in crate::app) fn update_server_backup_settings(
+    directory: String,
+    storage_limit: u32,
+    auto_backup: Vec<String>,
+    auto_backup_interval: u32,
+    auto_restart: bool,
+) -> Result<(), String> {
+    let directory_path = PathBuf::from(directory.trim());
+    if !directory_path.exists() || !directory_path.is_dir() {
+        return Err("Server directory does not exist.".to_string());
+    }
+
+    let mserve_path = directory_path.join("mserve.json");
+    if !mserve_path.exists() {
+        return Err("mserve.json not found in server directory.".to_string());
+    }
+
+    let config_text = fs::read_to_string(&mserve_path).map_err(|err| err.to_string())?;
+    let object = parse_mserve_top_level_object(&config_text)
+        .map_err(|_| "Invalid mserve.json format.".to_string())?;
+
+    let mut config = sanitize_mserve_value_config(&directory_path, &object);
+    config.storage_limit = storage_limit.max(1);
+    config.auto_backup = auto_backup
+        .into_iter()
+        .filter(|value| matches!(value.as_str(), "interval" | "on_close" | "on_start"))
+        .collect();
+    config.auto_backup_interval = auto_backup_interval.max(1);
+    config.auto_restart = auto_restart;
+
+    write_synced_mserve_json(&directory_path, &config)?;
+    Ok(())
+}
+
 /// Persists just the per-server Java pin in mserve.json without touching any
 /// other settings. Used by the automatic start-failure fallback to remember the
 /// Java version that actually worked, and to clear the pin back to automatic.

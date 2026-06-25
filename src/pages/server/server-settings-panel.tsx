@@ -11,9 +11,7 @@ import {
 	JavaSettingsSection,
 	LocationSettingsSection,
 	ProviderTelemetrySettingsSection,
-	RamSettingsSection,
-	RenameSettingsSection,
-	ServerJarSettingsSection,
+	GeneralSettingsSection,
 	StorageBackupsSettingsSection,
 } from '@/components/edit-server-properties-form';
 import ServerConfigFileEditor from '@/components/server-config-file-editor';
@@ -82,36 +80,42 @@ type SectionConfig = {
 
 // Granular "General" categories. Each renders a slice of the shared
 // EditServerSettingsProvider so edits + the single save flow are shared.
-const RENAME_SECTION: SectionConfig = {
+const GENERAL_SECTION: SectionConfig = {
 	id: 'rename' as SectionId,
 	title: 'General',
 	description: 'Server name.',
-	keywords: ['name', 'rename', 'title', 'general'],
-	render: () => <RenameSettingsSection />,
-};
-
-const PERFORMANCE_SECTION: SectionConfig = {
-	id: 'performance',
-	title: 'Performance',
-	description: 'Memory allocated to the server.',
-	keywords: ['ram', 'memory', 'xmx', 'xms', 'performance', 'heap'],
-	render: () => <RamSettingsSection />,
-};
-
-const STORAGE_BACKUPS_SECTION: SectionConfig = {
-	id: 'storage-backups',
-	title: 'Storage & Backups',
-	description: 'Backup storage limit, auto-backups, and auto-restart.',
-	keywords: ['storage', 'backup', 'backups', 'interval', 'auto restart', 'restart', 'gigabytes'],
-	render: () => <StorageBackupsSettingsSection />,
+	keywords: ['name', 'rename', 'title', 'general', 'ram', 'memory', 'xmx', 'xms', 'performance', 'heap'],
+	render: () => <GeneralSettingsSection />,
 };
 
 const JAVA_SECTION: SectionConfig = {
 	id: 'java',
 	title: 'Java',
 	description: 'Choose the JDK and Java flags for this server.',
-	keywords: ['java', 'jdk', 'runtime', 'flags', 'nogui', 'installation'],
+	keywords: [
+		'java',
+		'jdk',
+		'runtime',
+		'flags',
+		'nogui',
+		'installation',
+		'jar',
+		'sync',
+		'mserve.json',
+		'download',
+		'swap',
+		'update',
+		'build',
+	],
 	render: () => <JavaSettingsSection />,
+};
+
+const STORAGE_BACKUPS_SECTION: SectionConfig = {
+	id: 'storage-backups',
+	title: 'Backups',
+	description: 'Backup storage limit, auto-backups, and auto-restart.',
+	keywords: ['storage', 'backup', 'backups', 'interval', 'auto restart', 'restart', 'gigabytes'],
+	render: () => <StorageBackupsSettingsSection />,
 };
 
 const PROVIDER_TELEMETRY_SECTION: SectionConfig = {
@@ -120,14 +124,6 @@ const PROVIDER_TELEMETRY_SECTION: SectionConfig = {
 	description: 'Provider metadata and telemetry options.',
 	keywords: ['provider', 'telemetry', 'tps', 'version', 'host', 'port', 'metadata'],
 	render: () => <ProviderTelemetrySettingsSection />,
-};
-
-const SERVER_JAR_SECTION: SectionConfig = {
-	id: 'server-jar',
-	title: 'Server Jar',
-	description: 'Sync mserve.json and update or swap the server jar.',
-	keywords: ['jar', 'sync', 'mserve.json', 'download', 'swap', 'update', 'build'],
-	render: () => <ServerJarSettingsSection />,
 };
 
 const LOCATION_SECTION: SectionConfig = {
@@ -146,6 +142,21 @@ const DANGER_ZONE_SECTION: SectionConfig = {
 	render: (props) => <DangerZoneSection {...props} />,
 };
 
+// Sections that must be locked while the server is not offline. Config file sections
+// not listed here (ops.json, whitelist.json, ban lists, help.yml, commands.yml) are
+// intentionally editable while the server is running.
+const LOCKED_SECTION_IDS = new Set<SectionId>([
+	'rename',
+	'java',
+	'provider-telemetry',
+	'location',
+	'server-properties',
+	'bukkit-yml',
+	'spigot-yml',
+	'velocity-toml',
+	'danger-zone',
+]);
+
 const getConfigFileSection = (definition: ManagedServerConfigFileDefinition): SectionConfig => ({
 	id: definition.kind,
 	title: definition.title,
@@ -155,7 +166,7 @@ const getConfigFileSection = (definition: ManagedServerConfigFileDefinition): Se
 		<ServerConfigFileEditor
 			serverDirectory={props.server.directory}
 			definition={definition}
-			disabled={props.isLocked}
+			disabled={props.isLocked && LOCKED_SECTION_IDS.has(definition.kind)}
 			onSaved={props.onConfigFilesChanged}
 		/>
 	),
@@ -200,14 +211,17 @@ const DangerZoneSection: React.FC<SectionProps> = ({ server, isBusy, onRemoveSer
 							<AlertDialogHeader>
 								<AlertDialogTitle>Are you sure?</AlertDialogTitle>
 								<AlertDialogDescription>
-									This will remove the server from the MSERVE app. It will lose the data associated with
-									the app. However, it will NOT delete any files and it will NOT remove mserve.json. You
-									can always import the server again.
+									This will remove the server from the MSERVE app. It will lose the data associated
+									with the app. However, it will NOT delete any files and it will NOT remove
+									mserve.json. You can always import the server again.
 								</AlertDialogDescription>
 							</AlertDialogHeader>
 							<AlertDialogFooter>
 								<AlertDialogCancel>Cancel</AlertDialogCancel>
-								<AlertDialogAction variant='destructive' onClick={onRemoveServer} className='capitalize'>
+								<AlertDialogAction
+									variant='destructive'
+									onClick={onRemoveServer}
+									className='capitalize'>
 									Remove Server
 								</AlertDialogAction>
 							</AlertDialogFooter>
@@ -262,9 +276,9 @@ export default function ServerSettingsPanel({
 		() => (hash.slice(1) as SectionId) || 'rename',
 	);
 	const cacheKey = React.useMemo(() => server.directory.trim().toLowerCase(), [server.directory]);
-	const [managedConfigFileStatuses, setManagedConfigFileStatuses] = React.useState<ManagedConfigFileStatus[]>(
-		[],
-	);
+	const [managedConfigFileStatuses, setManagedConfigFileStatuses] = React.useState<
+		ManagedConfigFileStatus[]
+	>([]);
 	const [isScanningConfigFiles, setIsScanningConfigFiles] = React.useState(false);
 	const providerKind = React.useMemo(
 		() => getServerProviderCapabilities(server.provider).kind,
@@ -409,12 +423,10 @@ export default function ServerSettingsPanel({
 
 	const baseSections = React.useMemo(() => {
 		const sections: SectionConfig[] = [
-			RENAME_SECTION,
-			PERFORMANCE_SECTION,
+			GENERAL_SECTION,
 			STORAGE_BACKUPS_SECTION,
 			JAVA_SECTION,
 			PROVIDER_TELEMETRY_SECTION,
-			SERVER_JAR_SECTION,
 		];
 		if (user.advanced_mode) {
 			sections.push(LOCATION_SECTION);
@@ -471,11 +483,11 @@ export default function ServerSettingsPanel({
 			return;
 		}
 
-		setActiveSectionId(orderedVisibleSections[0]?.id ?? RENAME_SECTION.id);
+		setActiveSectionId(orderedVisibleSections[0]?.id ?? GENERAL_SECTION.id);
 	}, [activeSectionId, orderedVisibleSections]);
 
 	const activeSection = React.useMemo(
-		() => allSections.find((section) => section.id === activeSectionId) ?? PERFORMANCE_SECTION,
+		() => allSections.find((section) => section.id === activeSectionId) ?? GENERAL_SECTION,
 		[activeSectionId, allSections],
 	);
 	const isNavigationLocked = isBusy;
@@ -592,16 +604,16 @@ export default function ServerSettingsPanel({
 					)}
 				</EditServerSettingsProvider>
 
-				{sectionProps.isLocked && (
-					<div className='absolute top-0 z-10 flex items-center justify-center bg-background/70 p-6 text-center w-full'>
+				{sectionProps.isLocked && LOCKED_SECTION_IDS.has(activeSectionId) && (
+					<div className='absolute top-0 z-10 flex items-center justify-center p-6 text-center w-full'>
 						<div className='flex flex-col items-center text-center max-w-lg'>
 							<Lock className='size-20 mb-6' />
 							<p className='text-2xl font-bold flex gap-5 items-center mb-2 w-fit backdrop-blur-[1px]'>
 								Server must be offline to modify settings.
 							</p>
 							<p className='text-sm text-muted-foreground backdrop-blur-[2px]'>
-								You can still inspect categories, but editing is disabled while the server is online or
-								busy.
+								You can still inspect categories, but editing is disabled while the server is online
+								or busy.
 							</p>
 						</div>
 					</div>

@@ -114,6 +114,7 @@ type EditServerSettingsContextValue = {
 	isSaving: boolean;
 	isOffline: boolean;
 	onManualSync?: () => void;
+	handleSaveBackupSettings: () => Promise<void>;
 };
 
 const EditServerSettingsContext = React.createContext<EditServerSettingsContextValue | null>(null);
@@ -150,7 +151,9 @@ export const EditServerSettingsProvider: React.FC<EditServerSettingsProviderProp
 	const [customFlagsDraft, setCustomFlagsDraft] = React.useState('');
 	const [jdkVersionsDraft, setJdkVersionsDraft] = React.useState('21');
 	const [isJarModalOpen, setIsJarModalOpen] = React.useState(false);
-	const [settingsForm, setSettingsForm] = React.useState<ServerSettingsForm>(() => buildFormFromServer(server));
+	const [settingsForm, setSettingsForm] = React.useState<ServerSettingsForm>(() =>
+		buildFormFromServer(server),
+	);
 
 	const serverId = server.id;
 	const unsavedToastId = React.useMemo(() => `server-settings-unsaved-${serverId}`, [serverId]);
@@ -162,6 +165,9 @@ export const EditServerSettingsProvider: React.FC<EditServerSettingsProviderProp
 	const isOffline = server.status === 'offline';
 
 	const hasUnsavedChanges = React.useMemo(() => {
+		// When online, backup settings are saved via their own inline button — the
+		// global unsaved-changes toast only applies to offline-only settings.
+		if (server.status !== 'offline') return false;
 		if (settingsForm.ram !== clampRamGb(server.ram)) return true;
 		if (settingsForm.storage_limit !== Math.max(1, Number(server.storage_limit) || 200)) return true;
 		if (settingsForm.auto_backup_interval !== Math.max(1, server.auto_backup_interval)) return true;
@@ -187,6 +193,7 @@ export const EditServerSettingsProvider: React.FC<EditServerSettingsProviderProp
 		server.java_installation,
 		server.provider,
 		server.ram,
+		server.status,
 		server.storage_limit,
 		server.telemetry_host,
 		server.telemetry_port,
@@ -383,6 +390,41 @@ export const EditServerSettingsProvider: React.FC<EditServerSettingsProviderProp
 		user.java_installation_default,
 	]);
 
+	const handleSaveBackupSettings = React.useCallback(async () => {
+		if (isSaving) return;
+		setIsSaving(true);
+		try {
+			await invoke('update_server_backup_settings', {
+				directory: server.directory,
+				storageLimit: settingsForm.storage_limit,
+				autoBackup: settingsForm.auto_backup,
+				autoBackupInterval: settingsForm.auto_backup_interval,
+				autoRestart: settingsForm.auto_restart,
+			});
+			updateServer(serverId, {
+				storage_limit: settingsForm.storage_limit,
+				auto_backup: settingsForm.auto_backup,
+				auto_backup_interval: settingsForm.auto_backup_interval,
+				auto_restart: settingsForm.auto_restart,
+			});
+			toast.success('Backup settings saved.');
+		} catch (err) {
+			const message = err instanceof Error ? err.message : 'Failed to save backup settings.';
+			toast.error(message);
+		} finally {
+			setIsSaving(false);
+		}
+	}, [
+		isSaving,
+		server.directory,
+		serverId,
+		settingsForm.auto_backup,
+		settingsForm.auto_backup_interval,
+		settingsForm.auto_restart,
+		settingsForm.storage_limit,
+		updateServer,
+	]);
+
 	React.useEffect(() => {
 		if (isFormLocked || !hasUnsavedChanges) {
 			toast.dismiss(unsavedToastId);
@@ -434,8 +476,7 @@ export const EditServerSettingsProvider: React.FC<EditServerSettingsProviderProp
 				ram: settingsForm.ram,
 				file: server.file,
 				custom_flags: settingsForm.custom_flags,
-				java_executable:
-					javaResolution.status === 'resolved' ? javaResolution.executablePath : undefined,
+				java_executable: javaResolution.status === 'resolved' ? javaResolution.executablePath : undefined,
 			}),
 		[javaResolution, server.file, settingsForm.custom_flags, settingsForm.ram],
 	);
@@ -467,11 +508,10 @@ export const EditServerSettingsProvider: React.FC<EditServerSettingsProviderProp
 		isSaving,
 		isOffline,
 		onManualSync,
+		handleSaveBackupSettings,
 	};
 
-	return (
-		<EditServerSettingsContext.Provider value={value}>{children}</EditServerSettingsContext.Provider>
-	);
+	return <EditServerSettingsContext.Provider value={value}>{children}</EditServerSettingsContext.Provider>;
 };
 
 const SectionShell: React.FC<{ children: React.ReactNode; className?: string }> = ({
@@ -494,10 +534,39 @@ const SettingsErrorNote: React.FC = () => {
 	return <p className='text-sm text-destructive'>{settingsError}</p>;
 };
 
-export const RamSettingsSection: React.FC = () => {
-	const { settingsForm, updateSettingsField } = useEditServerSettings();
+export const GeneralSettingsSection: React.FC = () => {
+	const { server, settingsForm, updateSettingsField, onManualSync, isFormLocked, isOffline } =
+		useEditServerSettings();
+	const { user } = useUser();
+
+	const currentName = getServerNameFromDirectory(settingsForm.new_directory || server.directory);
+
+	const handleNameChange = (newName: string) => {
+		const base = server.directory;
+		const lastSep = Math.max(base.lastIndexOf('/'), base.lastIndexOf('\\'));
+		const parent = lastSep >= 0 ? base.slice(0, lastSep + 1) : '';
+		updateSettingsField('new_directory', parent + newName);
+	};
+
 	return (
-		<SectionShell>
+		<SectionShell className='space-y-12'>
+			<div className='space-y-2 max-w-lg'>
+				<Label htmlFor='edit-server-name' className='text-xl'>
+					Server Name
+				</Label>
+				<Input
+					id='edit-server-name'
+					placeholder='MyServer'
+					value={currentName}
+					onChange={(event) => handleNameChange(event.target.value)}
+				/>
+				{user.advanced_mode && (
+					<p className='text-sm text-muted-foreground'>
+						Renaming will also rename the server folder on disk.
+					</p>
+				)}
+				<SettingsErrorNote />
+			</div>
 			<div className='space-y-2 max-w-lg'>
 				<p className='text-xl'>RAM</p>
 				<RamSelector
@@ -507,79 +576,22 @@ export const RamSettingsSection: React.FC = () => {
 					className='max-w-lg'
 				/>
 			</div>
-		</SectionShell>
-	);
-};
-
-export const StorageBackupsSettingsSection: React.FC = () => {
-	const { settingsForm, updateSettingsField, toggleSettingsBackupMode } = useEditServerSettings();
-	// Proxy servers (e.g. Velocity) have no world data, so backups don't apply.
-	const supportsBackups = !isProxyProvider(settingsForm.provider);
-	return (
-		<SectionShell className='space-y-12'>
-			{supportsBackups && (
 			<div className='space-y-2 max-w-lg'>
-				<Label htmlFor='edit-storage-limit' className='text-xl'>
-					Backup storage limit
-				</Label>
-				<InputGroup>
-					<InputGroupInput
-						id='edit-storage-limit'
-						type='number'
-						min={1}
-						value={settingsForm.storage_limit}
-						onChange={(event) => updateSettingsField('storage_limit', Number(event.target.value))}
-					/>
-					<InputGroupAddon className='font-mono font-bold uppercase text-xs' align='inline-end'>
-						Gigabytes
-					</InputGroupAddon>
-				</InputGroup>
-			</div>
-			)}
-
-			{supportsBackups && (
-			<div className='space-y-4 max-w-lg'>
-				<div className='space-y-2'>
-					<p className='text-xl'>Auto backup modes</p>
-					<div className='space-y-2'>
-						{backupChoices.map((choice) => (
-							<Label key={choice.value} className='flex items-center gap-3'>
-								<Checkbox
-									checked={settingsForm.auto_backup.includes(choice.value)}
-									onCheckedChange={(checked) =>
-										toggleSettingsBackupMode(
-											choice.value,
-											typeof checked === 'boolean' ? checked : false,
-										)
-									}
-								/>
-								{choice.label}
-							</Label>
-						))}
-					</div>
+				<div className='space-y-1'>
+					<p className='text-xl'>Sync mserve.json</p>
+					<p className='text-sm text-muted-foreground'>
+						Refresh the stored configuration and rebuild it if the file is missing.
+					</p>
 				</div>
-
-				{settingsForm.auto_backup.includes('interval') && (
-					<div className='space-y-2 max-w-lg'>
-						<Label htmlFor='edit-backup-interval'>Backup interval</Label>
-						<InputGroup>
-							<InputGroupInput
-								id='edit-backup-interval'
-								type='number'
-								min={1}
-								value={settingsForm.auto_backup_interval}
-								onChange={(event) =>
-									updateSettingsField('auto_backup_interval', Number(event.target.value))
-								}
-							/>
-							<InputGroupAddon className='font-mono font-bold uppercase text-xs' align='inline-end'>
-								Minutes
-							</InputGroupAddon>
-						</InputGroup>
-					</div>
-				)}
+				<Button
+					variant='secondary'
+					className='w-fit'
+					onClick={onManualSync}
+					disabled={isFormLocked || !isOffline}>
+					<RefreshCcw />
+					<span>Sync mserve.json</span>
+				</Button>
 			</div>
-			)}
 
 			<div className='space-y-2 max-w-lg'>
 				<p className='text-xl'>Auto Restart</p>
@@ -597,17 +609,114 @@ export const StorageBackupsSettingsSection: React.FC = () => {
 	);
 };
 
+export const StorageBackupsSettingsSection: React.FC = () => {
+	const {
+		settingsForm,
+		updateSettingsField,
+		toggleSettingsBackupMode,
+		server,
+		isSaving,
+		handleSaveBackupSettings,
+	} = useEditServerSettings();
+	// Proxy servers (e.g. Velocity) have no world data, so backups don't apply.
+	const supportsBackups = !isProxyProvider(settingsForm.provider);
+	const isOnline = server.status !== 'offline';
+	return (
+		<div className='space-y-12'>
+			{supportsBackups && (
+				<div className='space-y-2 max-w-lg'>
+					<Label htmlFor='edit-storage-limit' className='text-xl'>
+						Backup storage limit
+					</Label>
+					<InputGroup>
+						<InputGroupInput
+							id='edit-storage-limit'
+							type='number'
+							min={1}
+							value={settingsForm.storage_limit}
+							onChange={(event) => updateSettingsField('storage_limit', Number(event.target.value))}
+						/>
+						<InputGroupAddon className='font-mono font-bold uppercase text-xs' align='inline-end'>
+							Gigabytes
+						</InputGroupAddon>
+					</InputGroup>
+				</div>
+			)}
+
+			{supportsBackups && (
+				<div className='space-y-4 max-w-lg'>
+					<div className='space-y-2'>
+						<p className='text-xl'>Auto backup modes</p>
+						<div className='space-y-2'>
+							{backupChoices.map((choice) => (
+								<Label key={choice.value} className='flex items-center gap-3'>
+									<Checkbox
+										checked={settingsForm.auto_backup.includes(choice.value)}
+										onCheckedChange={(checked) =>
+											toggleSettingsBackupMode(
+												choice.value,
+												typeof checked === 'boolean' ? checked : false,
+											)
+										}
+									/>
+									{choice.label}
+								</Label>
+							))}
+						</div>
+					</div>
+
+					{settingsForm.auto_backup.includes('interval') && (
+						<div className='space-y-2 max-w-lg'>
+							<Label htmlFor='edit-backup-interval'>Backup interval</Label>
+							<InputGroup>
+								<InputGroupInput
+									id='edit-backup-interval'
+									type='number'
+									min={1}
+									value={settingsForm.auto_backup_interval}
+									onChange={(event) =>
+										updateSettingsField('auto_backup_interval', Number(event.target.value))
+									}
+								/>
+								<InputGroupAddon className='font-mono font-bold uppercase text-xs' align='inline-end'>
+									Minutes
+								</InputGroupAddon>
+							</InputGroup>
+						</div>
+					)}
+				</div>
+			)}
+
+			{isOnline && (
+				<div className='flex justify-end'>
+					<Button type='button' onClick={handleSaveBackupSettings} disabled={isSaving}>
+						{isSaving ? <Loader className='animate-spin size-4' /> : <Save className='size-4' />}
+						{isSaving ? 'Saving...' : 'Save'}
+					</Button>
+				</div>
+			)}
+		</div>
+	);
+};
+
 export const JavaSettingsSection: React.FC = () => {
 	const {
-		advancedMode,
+		server,
 		globalJavaDefault,
-		settingsForm,
 		javaRuntimes,
-		updateSettingsField,
 		effectiveJavaRuntimeLabel,
 		customFlagsDraft,
 		setCustomFlagsDraft,
 		runCommandPreview,
+		advancedMode,
+		settingsForm,
+		updateSettingsField,
+		isFormLocked,
+		isOffline,
+		isJarModalOpen,
+		setIsJarModalOpen,
+		handleProviderJarDownloaded,
+		pickSwapJarFile,
 	} = useEditServerSettings();
 
 	return (
@@ -635,6 +744,53 @@ export const JavaSettingsSection: React.FC = () => {
 					onChange={(next) => updateSettingsField('java_installation', next)}
 				/>
 			</div>
+
+			<ServerJarUpdateSection server={server} disabled={isFormLocked || !isOffline} />
+
+			<div className='space-y-2 max-w-lg'>
+				<Label htmlFor='edit-jar-swap' className='text-xl'>
+					Swap Server Jar
+				</Label>
+				<p className='text-sm text-muted-foreground'>
+					Download a newer build straight from the provider, or point to a jar file on disk. The jar is
+					swapped in when you save.
+				</p>
+				<div className='flex gap-2'>
+					<Button
+						type='button'
+						variant='outline'
+						onClick={() => setIsJarModalOpen(true)}
+						disabled={isFormLocked}>
+						<Download /> Download from provider
+					</Button>
+					{advancedMode && (
+						<Button type='button' variant='outline' onClick={pickSwapJarFile} disabled={isFormLocked}>
+							<FolderOpen /> Browse files
+						</Button>
+					)}
+				</div>
+				{advancedMode && (
+					<Input
+						id='edit-jar-swap'
+						placeholder='C:\path\to\another-server.jar'
+						value={settingsForm.jar_swap_path}
+						onChange={(event) => updateSettingsField('jar_swap_path', event.target.value)}
+					/>
+				)}
+				{settingsForm.jar_swap_path.trim().length > 0 && (
+					<p className='text-sm text-muted-foreground break-all'>
+						Pending jar: {settingsForm.jar_swap_path}
+					</p>
+				)}
+			</div>
+
+			<SettingsErrorNote />
+
+			<JarDownloadModal
+				open={isJarModalOpen}
+				onOpenChange={setIsJarModalOpen}
+				onDownloaded={handleProviderJarDownloaded}
+			/>
 
 			{advancedMode && (
 				<div className='space-y-2 max-w-lg'>
@@ -794,7 +950,9 @@ export const ProviderTelemetrySettingsSection: React.FC = () => {
 						</div>
 
 						<div className='space-y-2'>
-							<Label htmlFor='edit-provider-jdk-versions'>Supported JDK versions (comma separated)</Label>
+							<Label htmlFor='edit-provider-jdk-versions'>
+								Supported JDK versions (comma separated)
+							</Label>
 							<Input
 								id='edit-provider-jdk-versions'
 								placeholder='17, 21'
@@ -833,7 +991,7 @@ export const ProviderTelemetrySettingsSection: React.FC = () => {
 				<p className='text-sm text-muted-foreground -mt-2 mb-4'>
 					Toggles control which telemetry checks are allowed for this server provider.
 				</p>
-				<div className='grid md:grid-cols-2 gap-2'>
+				<div className='flex flex-col gap-2'>
 					{TELEMETRY_POLLING.map((telemetryKey) => {
 						const checked = settingsForm.provider.supported_telemetry.includes(telemetryKey);
 						const disabled =
@@ -845,7 +1003,10 @@ export const ProviderTelemetrySettingsSection: React.FC = () => {
 									checked={checked}
 									disabled={disabled}
 									onCheckedChange={(value) =>
-										toggleSupportedTelemetry(telemetryKey, typeof value === 'boolean' ? value : false)
+										toggleSupportedTelemetry(
+											telemetryKey,
+											typeof value === 'boolean' ? value : false,
+										)
 									}
 								/>
 								{TELEMETRY_LABELS[telemetryKey]}
@@ -881,123 +1042,6 @@ export const ProviderTelemetrySettingsSection: React.FC = () => {
 					</div>
 				</div>
 			)}
-		</SectionShell>
-	);
-};
-
-export const ServerJarSettingsSection: React.FC = () => {
-	const {
-		advancedMode,
-		server,
-		settingsForm,
-		updateSettingsField,
-		isFormLocked,
-		isOffline,
-		onManualSync,
-		isJarModalOpen,
-		setIsJarModalOpen,
-		handleProviderJarDownloaded,
-		pickSwapJarFile,
-	} = useEditServerSettings();
-
-	return (
-		<SectionShell className='space-y-12'>
-			<ServerJarUpdateSection server={server} disabled={isFormLocked || !isOffline} />
-
-			<section className='space-y-3 max-w-lg'>
-				<div className='space-y-1'>
-					<p className='text-xl'>Sync mserve.json</p>
-					<p className='text-sm text-muted-foreground'>
-						Refresh the stored configuration and rebuild it if the file is missing.
-					</p>
-				</div>
-				<Button
-					variant='secondary'
-					className='w-fit'
-					onClick={onManualSync}
-					disabled={isFormLocked || !isOffline}>
-					<RefreshCcw />
-					<span>Sync mserve.json</span>
-				</Button>
-			</section>
-
-			<div className='space-y-2 max-w-lg'>
-				<Label htmlFor='edit-jar-swap' className='text-xl'>
-					Update or swap the server jar
-				</Label>
-				<p className='text-sm text-muted-foreground'>
-					Download a newer build straight from the provider, or point to a jar file on disk. The jar is
-					swapped in when you save.
-				</p>
-				<div className='flex gap-2'>
-					<Button
-						type='button'
-						variant='outline'
-						onClick={() => setIsJarModalOpen(true)}
-						disabled={isFormLocked}>
-						<Download /> Download from provider
-					</Button>
-					{advancedMode && (
-						<Button type='button' variant='outline' onClick={pickSwapJarFile} disabled={isFormLocked}>
-							<FolderOpen /> Browse files
-						</Button>
-					)}
-				</div>
-				{advancedMode && (
-					<Input
-						id='edit-jar-swap'
-						placeholder='C:\path\to\another-server.jar'
-						value={settingsForm.jar_swap_path}
-						onChange={(event) => updateSettingsField('jar_swap_path', event.target.value)}
-					/>
-				)}
-				{settingsForm.jar_swap_path.trim().length > 0 && (
-					<p className='text-sm text-muted-foreground break-all'>
-						Pending jar: {settingsForm.jar_swap_path}
-					</p>
-				)}
-			</div>
-
-			<SettingsErrorNote />
-
-			<JarDownloadModal
-				open={isJarModalOpen}
-				onOpenChange={setIsJarModalOpen}
-				onDownloaded={handleProviderJarDownloaded}
-			/>
-		</SectionShell>
-	);
-};
-
-export const RenameSettingsSection: React.FC = () => {
-	const { server, settingsForm, updateSettingsField } = useEditServerSettings();
-
-	const currentName = getServerNameFromDirectory(settingsForm.new_directory || server.directory);
-
-	const handleNameChange = (newName: string) => {
-		const base = server.directory;
-		const lastSep = Math.max(base.lastIndexOf('/'), base.lastIndexOf('\\'));
-		const parent = lastSep >= 0 ? base.slice(0, lastSep + 1) : '';
-		updateSettingsField('new_directory', parent + newName);
-	};
-
-	return (
-		<SectionShell>
-			<div className='space-y-2 max-w-lg'>
-				<Label htmlFor='edit-server-name' className='text-xl'>
-					Server Name
-				</Label>
-				<Input
-					id='edit-server-name'
-					placeholder='MyServer'
-					value={currentName}
-					onChange={(event) => handleNameChange(event.target.value)}
-				/>
-				<p className='text-sm text-muted-foreground'>
-					Renaming will also rename the server folder on disk.
-				</p>
-				<SettingsErrorNote />
-			</div>
 		</SectionShell>
 	);
 };

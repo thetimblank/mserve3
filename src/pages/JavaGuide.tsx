@@ -5,11 +5,12 @@ import Slide0 from './java-guide/Slide0';
 import Slide1 from './java-guide/Slide1';
 import Slide2 from './java-guide/Slide2';
 import Slide3 from './java-guide/Slide3';
+import Slide4 from './java-guide/Slide4';
 
 const JavaGuideContent: React.FC = () => {
 	const { slide, prevSlide } = useSlide();
 
-	let slides = [<Slide0 />, <Slide1 />, <Slide2 />, <Slide3 />];
+	let slides = [<Slide0 />, <Slide1 />, <Slide2 />, <Slide3 />, <Slide4 />];
 
 	return (
 		<main className='w-full h-full relative overflow-hidden'>

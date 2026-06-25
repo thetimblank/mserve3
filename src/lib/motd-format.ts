@@ -33,7 +33,45 @@ export type MotdPreviewRun = {
 export type MotdPreviewLine = MotdPreviewRun[];
 
 export const MOTD_MAX_LINES = 2;
-export const MOTD_VISUAL_LINE_WIDTH = 59;
+export const MOTD_VISUAL_LINE_WIDTH = 44;
+export const MOTD_VISUAL_LINE_WIDTH_BOLD = 38;
+
+// Minecraft's default font is not monospace and the server-list MOTD area is a
+// fixed pixel width. A normal glyph advances 6px, a space 4px, and bold adds 1px
+// per glyph. That budget is what lets 44 normal chars, 38 bold chars, or 66
+// spaces each fill exactly one line — so we measure widths instead of counting
+// characters when clamping, aligning, and reporting line lengths.
+const MOTD_CHAR_ADVANCE = 6;
+const MOTD_SPACE_ADVANCE = 4;
+const MOTD_BOLD_EXTRA_ADVANCE = 1;
+export const MOTD_LINE_PIXEL_BUDGET = MOTD_VISUAL_LINE_WIDTH * MOTD_CHAR_ADVANCE; // 264
+
+export const motdCharAdvance = (char: string, bold = false) => {
+	const base = char === ' ' ? MOTD_SPACE_ADVANCE : MOTD_CHAR_ADVANCE;
+	return bold ? base + MOTD_BOLD_EXTRA_ADVANCE : base;
+};
+
+export const measureMotdWidth = (text: string, bold = false) => {
+	let width = 0;
+	for (const char of text) {
+		width += motdCharAdvance(char, bold);
+	}
+	return width;
+};
+
+export const measureMotdRunsWidth = (runs: MotdPreviewRun[]) =>
+	runs.reduce((width, run) => width + measureMotdWidth(run.text, Boolean(run.style.bold)), 0);
+
+// Java `.properties` strips leading whitespace from a value, so a centered or
+// right-aligned first line must be protected with a leading backslash. That
+// backslash is part of the stored (and source-editor) representation but is
+// hidden from the visual editor.
+export const stripMotdAlignmentEscape = (line: string) =>
+	line.startsWith('\\') && (line.length === 1 || line[1] === ' ' || line[1] === '\t')
+		? line.slice(1)
+		: line;
+
+export const applyMotdAlignmentEscape = (line: string) => (/^[ \t]/.test(line) ? `\\${line}` : line);
 
 export const MOTD_COLOR_OPTIONS = [
 	{ label: 'Black', legacyCode: '0', miniMessageTag: 'black', hex: '#000000' },
@@ -58,7 +96,12 @@ export const MOTD_DECORATION_OPTIONS = [
 	{ label: 'Bold', legacyCode: 'l', miniMessageTag: 'bold', key: 'bold' as const },
 	{ label: 'Italic', legacyCode: 'o', miniMessageTag: 'italic', key: 'italic' as const },
 	{ label: 'Underline', legacyCode: 'n', miniMessageTag: 'underlined', key: 'underlined' as const },
-	{ label: 'Strikethrough', legacyCode: 'm', miniMessageTag: 'strikethrough', key: 'strikethrough' as const },
+	{
+		label: 'Strikethrough',
+		legacyCode: 'm',
+		miniMessageTag: 'strikethrough',
+		key: 'strikethrough' as const,
+	},
 	{ label: 'Obfuscated', legacyCode: 'k', miniMessageTag: 'obfuscated', key: 'obfuscated' as const },
 ] as const;
 
@@ -223,17 +266,32 @@ export const decodeLegacyMotdText = (value: string) => normalizeLineBreaks(value
 export const encodeLegacyMotdText = (value: string) => decodeLegacyMotdText(value).replace(/§/g, '\\u00A7');
 
 export const clampMotdLines = (value: string, maxLines = MOTD_MAX_LINES) =>
-	normalizeLineBreaks(value)
-		.split('\n')
-		.slice(0, maxLines)
-		.join('\n');
+	normalizeLineBreaks(value).split('\n').slice(0, maxLines).join('\n');
 
-export const getEditableMotdValue = (value: string, format: MotdFormat) =>
-	clampMotdLines(format === 'legacy' ? decodeLegacyMotdText(value) : normalizeLineBreaks(value));
+export const getEditableMotdValue = (value: string, format: MotdFormat) => {
+	if (format !== 'legacy') {
+		// TOML/MiniMessage round-trips newlines and whitespace through its serializer.
+		return clampMotdLines(normalizeLineBreaks(value));
+	}
+
+	// server.properties stores both MOTD lines on a single physical line joined by
+	// a literal `\n` escape; turn that back into a real newline for editing. The
+	// leading alignment backslash is preserved so the source editor can show it.
+	const withNewlines = decodeLegacyMotdText(value).replace(/\\n/g, '\n');
+	return clampMotdLines(withNewlines);
+};
 
 export const getStoredMotdValue = (value: string, format: MotdFormat) => {
 	const clamped = clampMotdLines(normalizeLineBreaks(value));
-	return format === 'legacy' ? encodeLegacyMotdText(clamped) : clamped;
+	if (format !== 'legacy') {
+		return clamped;
+	}
+
+	// Never write a real newline into server.properties — collapse the two lines
+	// onto one physical line with a literal `\n`, and protect leading whitespace on
+	// the first line with a backslash so the properties parser keeps it.
+	const encoded = encodeLegacyMotdText(clamped).replace(/\n/g, '\\n');
+	return applyMotdAlignmentEscape(encoded);
 };
 
 const parseLegacyPreviewLine = (line: string): MotdPreviewLine => {
@@ -535,10 +593,17 @@ const parseMiniMessagePreviewLine = (line: string): MotdPreviewLine => {
 
 export const parseMotdPreviewLines = (value: string, format: MotdFormat): MotdPreviewLine[] => {
 	const normalized = format === 'legacy' ? decodeLegacyMotdText(value) : value;
-	const previewValue = format === 'minimessage' ? normalized.replace(/<\s*(?:newline|br)\s*>/gi, '\n') : normalized;
+	const previewValue =
+		format === 'minimessage' ? normalized.replace(/<\s*(?:newline|br)\s*>/gi, '\n') : normalized;
 	return clampMotdLines(previewValue)
 		.split('\n')
-		.map((line) => (format === 'legacy' ? parseLegacyPreviewLine(line) : parseMiniMessagePreviewLine(line)));
+		.map((line, index) => {
+			// The first line's alignment backslash is an escape, not visible content.
+			const visibleLine = format === 'legacy' && index === 0 ? stripMotdAlignmentEscape(line) : line;
+			return format === 'legacy'
+				? parseLegacyPreviewLine(visibleLine)
+				: parseMiniMessagePreviewLine(visibleLine);
+		});
 };
 
 export const stripMotdFormatting = (value: string, format: MotdFormat) =>
@@ -554,14 +619,20 @@ export const getMotdVisibleLineLengths = (value: string, format: MotdFormat) =>
 export const applyMotdAlignment = (value: string, format: MotdFormat, alignment: MotdAlignment) =>
 	clampMotdLines(value)
 		.split('\n')
-		.map((line) => {
-			const trimmedLine = line.replace(/^\s+/, '');
+		.map((line, index) => {
+			const isFirstLegacyLine = format === 'legacy' && index === 0;
+			const unescaped = isFirstLegacyLine ? stripMotdAlignmentEscape(line) : line;
+			const trimmedLine = unescaped.replace(/^[ \t]+/, '');
 			if (!trimmedLine) return '';
 
-			const visibleLength = stripMotdFormatting(trimmedLine, format).length;
-			const padding = Math.max(0, MOTD_VISUAL_LINE_WIDTH - visibleLength);
-			const prefixSpaces =
-				alignment === 'center' ? Math.floor(padding / 2) : alignment === 'right' ? padding : 0;
-			return `${' '.repeat(prefixSpaces)}${trimmedLine}`;
+			// Pad with spaces by pixel width, not character count, so short text can be
+			// pushed all the way right (≈66 spaces) and centering stays even.
+			const visibleWidth = measureMotdRunsWidth(parseMotdPreviewLines(trimmedLine, format)[0] ?? []);
+			const padding = Math.max(0, MOTD_LINE_PIXEL_BUDGET - visibleWidth);
+			const paddingWidth = alignment === 'center' ? padding / 2 : alignment === 'right' ? padding : 0;
+			const spaceCount = Math.floor(paddingWidth / MOTD_SPACE_ADVANCE);
+			const prefixed = `${' '.repeat(spaceCount)}${trimmedLine}`;
+
+			return isFirstLegacyLine ? applyMotdAlignmentEscape(prefixed) : prefixed;
 		})
 		.join('\n');

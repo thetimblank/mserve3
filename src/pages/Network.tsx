@@ -1,4 +1,5 @@
 import React from 'react';
+import { useLocation } from 'react-router-dom';
 import { m } from 'motion/react';
 import { ChevronDown, Loader2, Play, Plus, RotateCcw, Network, Square, UploadCloud } from 'lucide-react';
 import clsx from 'clsx';
@@ -69,9 +70,21 @@ const NetworkPage: React.FC = () => {
 	const { servers, isReady: serversReady, updateServerStats } = useServers();
 	const { networks, isReady: networksReady, createNetwork, updateNetwork, removeNetwork } = useNetworks();
 
-	const [activeNetworkId, setActiveNetworkId] = React.useState<string | null>(null);
+	// A dashboard network shortcut passes the target network id via router state.
+	const location = useLocation();
+	const requestedNetworkId =
+		(location.state as { networkId?: string } | null)?.networkId ?? null;
+
+	const [activeNetworkId, setActiveNetworkId] = React.useState<string | null>(requestedNetworkId);
 	const [selectedServerId, setSelectedServerId] = React.useState<string | null>(null);
 	const [applyOpen, setApplyOpen] = React.useState(false);
+
+	// Honor a network id requested via navigation (dashboard shortcut) once it loads.
+	React.useEffect(() => {
+		if (requestedNetworkId && networks.some((network) => network.id === requestedNetworkId)) {
+			setActiveNetworkId(requestedNetworkId);
+		}
+	}, [requestedNetworkId, networks]);
 
 	// Keep an active network selected as the list changes.
 	React.useEffect(() => {
@@ -182,7 +195,7 @@ const NetworkPage: React.FC = () => {
 						transition={{ type: 'spring', duration: 0.5, bounce: 0 }}
 						className='flex items-center gap-3 text-3xl font-black'>
 						<Network className='size-8 text-primary' />
-						Server Network
+						Server Network <span className='text-mserve-accent'>(BETA)</span>
 					</m.h1>
 					<p className='mt-1 text-sm text-muted-foreground'>
 						Connect backend servers to a Velocity proxy. mserve assigns ports and wires modern
@@ -261,7 +274,10 @@ const NetworkPage: React.FC = () => {
 						<h1 className='text-3xl font-bold flex gap-5 items-center mb-2 w-fit'>
 							Create your first network
 						</h1>
-						<p className='mb-4'>Group servers behind a Proxy to build a multi-server network.</p>
+						<p className='mb-2'>Group servers behind a Proxy to build a multi-server network.</p>
+						<p className='text-mserve-accent mb-4'>
+							Please note this is a beta feature and may not work as intended.
+						</p>
 
 						<Button onClick={handleCreateNetwork}>
 							<Plus /> New network

@@ -84,7 +84,7 @@ const PROVIDER_DESCRIPTORS: ProviderDescriptor[] = [
 		stable_name: 'Release',
 		unstable_name: 'Snapshot',
 		supports_list_command: true,
-		supports_tps_command: false,
+		supports_tps_command: true,
 		supports_version_command: true,
 		default_jdk_versions: [21],
 	},

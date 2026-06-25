@@ -1,61 +1,23 @@
-import * as React from 'react';
 import { m } from 'motion/react';
-import { useLocation } from 'react-router-dom';
-import { toast } from 'sonner';
-import { Button } from '@/components/ui/button';
-import { openUrl } from '@tauri-apps/plugin-opener';
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { Download, ExternalLink } from 'lucide-react';
-import { useSlide } from './SlideContext';
-import { Container } from '@/components/ui/container';
 import { Spinner } from '@/components/ui/spinner';
-import { downloadJavaRuntime } from '@/lib/java-runtime-service';
-import { useJavaRuntimes } from '@/data/java-runtimes';
-
-// Eclipse Temurin is OpenJDK under GPLv2 + Classpath Exception and is freely
-// redistributable, so mserve can fetch it directly.
-const DOWNLOADABLE_MAJORS: { major: number; label: string }[] = [
-	{ major: 25, label: 'Latest (Minecraft 26+)' },
-	{ major: 21, label: 'Recommended (1.20.5 - 1.21+)' },
-	{ major: 17, label: '1.18 - 1.20.4' },
-	{ major: 8, label: 'Legacy (1.16.5 and older)' },
-];
-
-const INSTALL_LINKS = [
-	{
-		label: 'Microsoft Build of OpenJDK',
-		url: 'https://learn.microsoft.com/java/openjdk/download',
-		description: 'Good option if you prefer Microsoft-managed builds.',
-	},
-	{
-		label: 'Oracle JDK',
-		url: 'https://www.oracle.com/java/technologies/downloads/',
-		description: 'Available with Oracle licensing terms.',
-	},
-];
+import { useSlide } from './SlideContext';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Button } from '@/components/ui/button';
+import { Container } from '@/components/ui/container';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { AlertTriangle } from 'lucide-react';
+import { useUser } from '@/data/user';
 
 export default function Slide2() {
-	const { nextSlide } = useSlide();
-	const { rescan } = useJavaRuntimes();
-	const location = useLocation();
-	const requiredMajor = (location.state as { requiredMajor?: number } | null)?.requiredMajor ?? null;
-	const [downloadingMajor, setDownloadingMajor] = React.useState<number | null>(null);
+	const { nextSlide, runtime, state } = useSlide();
+	const { user } = useUser();
 
-	const handleDownload = async (major: number) => {
-		if (downloadingMajor !== null) return;
-		setDownloadingMajor(major);
-		const toastId = toast.loading(`Downloading Java ${major} (Eclipse Temurin)…`);
-		try {
-			await downloadJavaRuntime(major);
-			await rescan();
-			toast.success(`Java ${major} installed.`, { id: toastId });
-		} catch (err) {
-			toast.error(err instanceof Error ? err.message : `Failed to download Java ${major}.`, {
-				id: toastId,
-			});
-		} finally {
-			setDownloadingMajor(null);
-		}
+	const sourceLabel = (source: string) => {
+		if (source === 'path') return 'PATH';
+		if (source === 'java_home') return 'JAVA_HOME';
+		if (source === 'common_install_dir') return 'Installed JDK folder';
+		if (source === 'managed') return 'Downloaded by mserve';
+		return source;
 	};
 
 	return (
@@ -63,72 +25,98 @@ export default function Slide2() {
 			initial={{ scale: 0.75, y: 10, opacity: 0 }}
 			whileInView={{ scale: 1, y: 0, opacity: 1 }}
 			transition={{ type: 'spring', duration: 0.5, bounce: 0 }}
-			className='flex flex-col items-center'>
-			<p className='text-3xl text-center font-bold flex gap-5 items-center mb-2 w-fit'>Install Java</p>
-			<p className='mb-12 text-center max-w-lg'>
-				mserve can download Eclipse Temurin (OpenJDK) for you, or you can install another build manually.
-				{requiredMajor ? ` This server needs Java ${requiredMajor}.` : ''}
+			className='flex flex-col items-center max-w-lg'>
+			<p className='text-center text-3xl font-bold flex gap-5 items-center mb-2 w-fit'>
+				Detected Java Runtimes
 			</p>
+			<p className='mb-20 text-center'>
+				Found{' '}
+				{runtime && (
+					<span>
+						{runtime.scannedCandidates} Java executable{runtime.scannedCandidates != 1 && 's'}
+					</span>
+				)}
+				{user.advanced_mode ? ' from PATH, JAVA_HOME, and common install folders.' : '.'}
+			</p>
+			<div className='flex flex-col items-center'>
+				{state.is_loading && (
+					<div className='rounded-lg border-2 p-6 flex items-center gap-3'>
+						<Spinner />
+						<p>Scanning your system for Java runtimes...</p>
+					</div>
+				)}
 
-			<div className='flex flex-col items-stretch gap-6 w-full max-w-2xl'>
-				<Container>
-					<p className='font-semibold mb-1'>Download with mserve (recommended)</p>
-					<p className='text-sm text-muted-foreground mb-3'>
-						One click — installed Temurin builds show up automatically in your Java picker.
-					</p>
-					<div className='grid gap-2 sm:grid-cols-2'>
-						{DOWNLOADABLE_MAJORS.map(({ major, label }) => (
-							<Button
-								key={major}
-								variant={requiredMajor === major ? 'default' : 'secondary'}
-								className='justify-between'
-								disabled={downloadingMajor !== null}
-								onClick={() => void handleDownload(major)}>
-								<span>
-									Java {major}
-									<span className='ml-2 text-xs opacity-70'>{label}</span>
+				{!state.is_loading && state.error && (
+					<div className='rounded-lg border-2 border-destructive/60 p-4 text-destructive'>
+						<p className='font-semibold'>Failed to detect Java runtimes</p>
+						<p className='text-sm mt-1'>{state.error}</p>
+					</div>
+				)}
+
+				{!state.is_loading && !state.error && runtime && runtime.runtimes.length === 0 && (
+					<div className='rounded-lg border-2 border-yellow-500/60 p-4'>
+						<p className='font-semibold text-yellow-600 dark:text-yellow-400'>No Java runtime found</p>
+						<p className='text-sm mt-1'>Install Java first, then click Rescan Java.</p>
+					</div>
+				)}
+
+				{!state.is_loading &&
+					!state.error &&
+					runtime &&
+					runtime.runtimes.map((runtime) => (
+						<Container key={runtime.executablePath} className='space-y-1 p-4 mb-2 w-full'>
+							<div className='flex flex-wrap items-center gap-2'>
+								<p className='font-semibold'>
+									Java {runtime.majorVersion}
+									<span className='text-muted-foreground'>
+										{runtime.version.replace(String(runtime.majorVersion), '')}
+									</span>
+								</p>
+								<span className='text-xs rounded-full bg-accent text-accent-foreground px-2 py-1'>
+									{sourceLabel(runtime.source)}
 								</span>
-								{downloadingMajor === major ? <Spinner className='size-4' /> : <Download className='size-4' />}
-							</Button>
-						))}
-					</div>
-				</Container>
-
-				<Container>
-					<p className='font-semibold mb-2'>Install manually</p>
-					<div className='grid gap-3 md:grid-cols-2'>
-						{INSTALL_LINKS.map((link) => (
-							<div key={link.url}>
-								<p className='font-medium'>{link.label}</p>
-								<p className='text-sm text-muted-foreground mt-1'>{link.description}</p>
-								<Button variant='outline' className='mt-3' onClick={() => openUrl(link.url)}>
-									Open download page
-									<ExternalLink className='size-4' />
-								</Button>
 							</div>
-						))}
-					</div>
-				</Container>
+							<p className='text-sm text-muted-foreground break-all'>{runtime.executablePath}</p>
+						</Container>
+					))}
 
-				<Accordion type='single' collapsible>
-					<AccordionItem value='install-notes'>
-						<AccordionTrigger>Important things to know</AccordionTrigger>
-						<AccordionContent className='space-y-2 text-sm'>
-							<p>- Automatic downloads use 64-bit Eclipse Temurin builds.</p>
-							<p>
-								- If a server needs a specific Java executable, set a per-server Java override in server
-								settings (advanced mode).
-							</p>
-							<p>- Very old server builds may require Java 8 and can fail on newer Java releases.</p>
-							<p>
-								- If a manually installed Java isn't detected, restart the app so PATH/JAVA_HOME changes
-								are picked up.
-							</p>
-						</AccordionContent>
-					</AccordionItem>
-				</Accordion>
+				{runtime && runtime.runtimes.length === 0 && !state.is_loading && !state.error && (
+					<m.section
+						initial={{ scale: 0.75, y: 10, opacity: 0 }}
+						whileInView={{ scale: 1, y: 0, opacity: 1 }}
+						transition={{ type: 'spring', duration: 0.5, bounce: 0 }}>
+						<Card className='border-red-500/60 bg-red-500/5'>
+							<CardHeader>
+								<CardTitle className='flex items-center gap-2'>
+									<AlertTriangle className='size-5 text-red-500' />
+									No Java detected
+								</CardTitle>
+								<CardDescription>Install Java before starting servers in mserve.</CardDescription>
+							</CardHeader>
+							<CardContent className='space-y-2 text-sm'>
+								<p>1. Install Java</p>
+								<p>2. Restart mserve</p>
+								<p>3. Verify each that your sever can run that JDK</p>
+							</CardContent>
+						</Card>
+					</m.section>
+				)}
 
-				<Button className='ml-auto' onClick={nextSlide}>
+				{runtime && runtime.errors.length > 0 && (
+					<Accordion type='single' collapsible>
+						<AccordionItem value='java-errors'>
+							<AccordionTrigger>Detection warnings ({runtime.errors.length})</AccordionTrigger>
+							<AccordionContent className='space-y-1'>
+								{runtime.errors.map((error) => (
+									<p key={error} className='text-sm text-muted-foreground'>
+										- {error}
+									</p>
+								))}
+							</AccordionContent>
+						</AccordionItem>
+					</Accordion>
+				)}
+				<Button className='mt-4 ml-auto' onClick={nextSlide}>
 					Continue
 				</Button>
 			</div>

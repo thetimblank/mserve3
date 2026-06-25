@@ -16,7 +16,6 @@ export const AdvancedPropertiesSection = ({
 	keys,
 	values,
 	description,
-	entryDescription,
 	disabled,
 	getKind,
 	onChange,
@@ -25,7 +24,6 @@ export const AdvancedPropertiesSection = ({
 	keys: string[];
 	values: PropertyValues;
 	description: string;
-	entryDescription: string;
 	disabled: boolean;
 	getKind: (key: string, value: string) => AdvancedPropertyKind;
 	onChange: (key: string, nextValue: string) => void;
@@ -50,7 +48,6 @@ export const AdvancedPropertiesSection = ({
 							<Label htmlFor={fieldId} className='text-xl'>
 								{prettifyKey(key)}
 							</Label>
-							<p className='text-sm text-muted-foreground'>{entryDescription}</p>
 							{kind === 'boolean' ? (
 								<Label className='flex items-center gap-3'>
 									<Checkbox

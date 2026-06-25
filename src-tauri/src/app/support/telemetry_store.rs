@@ -8,6 +8,7 @@
 
 use super::super::*;
 use rusqlite::{Connection, params};
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 
@@ -95,7 +96,25 @@ fn write_sample(connection: &Connection, server_id: &str, sample: &TelemetrySamp
     );
 }
 
+/// Returns the earliest sample timestamp recorded for `server_id`, or `None`
+/// if the server has no samples yet.
+fn first_sample_ts(connection: &Connection, server_id: &str) -> Option<i64> {
+    connection
+        .query_row(
+            "SELECT MIN(ts) FROM telemetry_samples WHERE server_id = ?1",
+            params![server_id],
+            |row| row.get::<_, Option<i64>>(0),
+        )
+        .ok()
+        .flatten()
+}
+
 /// Bucket-averaged history points over `[from_ts, to_ts]` from `connection`.
+///
+/// Every bucket slot between the server's first known sample and `to_ts` is
+/// represented in the output. Slots with no recorded samples are synthesized
+/// as `online: false` so the availability chart shows downtime gaps instead of
+/// simply omitting them.
 fn read_range(
     connection: &Connection,
     server_id: &str,
@@ -124,25 +143,58 @@ fn read_range(
         Err(_) => return Vec::new(),
     };
 
-    let rows = statement.query_map(params![bucket_size, server_id, from_ts, to_ts], |row| {
-        let online_avg: f64 = row.get::<_, Option<f64>>(1)?.unwrap_or(0.0);
-        Ok(TelemetryHistoryPoint {
-            timestamp: row.get::<_, i64>(0)?,
-            online: online_avg >= 0.5,
-            players_online: row
-                .get::<_, Option<f64>>(2)?
-                .map(|value| value.round() as u32),
-            tps: row.get::<_, Option<f64>>(3)?,
-            ram_bytes: row.get::<_, Option<f64>>(4)?.map(|value| value as u64),
-            ram_used: row.get::<_, Option<f64>>(5)?,
-            cpu_used: row.get::<_, Option<f64>>(6)?,
-        })
-    });
+    let real_points: HashMap<i64, TelemetryHistoryPoint> = match statement.query_map(
+        params![bucket_size, server_id, from_ts, to_ts],
+        |row| {
+            let online_avg: f64 = row.get::<_, Option<f64>>(1)?.unwrap_or(0.0);
+            Ok(TelemetryHistoryPoint {
+                timestamp: row.get::<_, i64>(0)?,
+                online: online_avg >= 0.5,
+                players_online: row
+                    .get::<_, Option<f64>>(2)?
+                    .map(|value| value.round() as u32),
+                tps: row.get::<_, Option<f64>>(3)?,
+                ram_bytes: row.get::<_, Option<f64>>(4)?.map(|value| value as u64),
+                ram_used: row.get::<_, Option<f64>>(5)?,
+                cpu_used: row.get::<_, Option<f64>>(6)?,
+            })
+        },
+    ) {
+        Ok(iterator) => iterator
+            .filter_map(Result::ok)
+            .map(|p| (p.timestamp, p))
+            .collect(),
+        Err(_) => return Vec::new(),
+    };
 
-    match rows {
-        Ok(iterator) => iterator.filter_map(Result::ok).collect(),
-        Err(_) => Vec::new(),
+    // Don't synthesize offline buckets for time before mserve first saw this
+    // server. If that predates the query window we fill from `from_ts`.
+    let Some(first_ts) = first_sample_ts(connection, server_id) else {
+        return Vec::new();
+    };
+    let fill_from = first_ts.max(from_ts);
+    let fill_start = (fill_from / bucket_size) * bucket_size;
+
+    let mut result = Vec::new();
+    let mut bucket = fill_start;
+    while bucket < to_ts {
+        if let Some(point) = real_points.get(&bucket) {
+            result.push(point.clone());
+        } else {
+            result.push(TelemetryHistoryPoint {
+                timestamp: bucket,
+                online: false,
+                players_online: None,
+                tps: None,
+                ram_bytes: None,
+                ram_used: None,
+                cpu_used: None,
+            });
+        }
+        bucket += bucket_size;
     }
+
+    result
 }
 
 /// Appends one sample for a server. No-ops silently if the store is unavailable
@@ -219,12 +271,18 @@ mod tests {
     fn separate_buckets_are_returned_in_order() {
         let db = in_memory();
         write_sample(&db, "srv", &sample(0, true, Some(5), Some(20.0)));
-        write_sample(&db, "srv", &sample(10_000, true, Some(7), Some(19.0)));
+        // Use 9_000 (not 10_000) so neither sample sits exactly on the to_ts boundary.
+        write_sample(&db, "srv", &sample(9_000, true, Some(7), Some(19.0)));
 
-        // Wide span + several buckets keeps the two far-apart samples distinct.
+        // Wide span + several buckets; gap-filling fills the offline slots in between.
         let points = read_range(&db, "srv", 0, 10_000, 10);
-        assert_eq!(points.len(), 2);
-        assert!(points[0].timestamp < points[1].timestamp);
+        // 10 buckets total (0..9000 step 1000); first and last are real.
+        assert_eq!(points.len(), 10);
+        for w in points.windows(2) {
+            assert!(w[0].timestamp < w[1].timestamp);
+        }
+        assert!(points.first().unwrap().online);
+        assert!(points.last().unwrap().online);
     }
 
     #[test]
@@ -245,7 +303,9 @@ mod tests {
         write_sample(&db, "a", &sample(1, true, Some(1), None));
         write_sample(&db, "b", &sample(2, true, Some(99), None));
         let points = read_range(&db, "a", 0, 100, 10);
-        assert_eq!(points.len(), 1);
+        // Gap-filling produces multiple buckets; none should carry server "b"'s data.
+        assert!(!points.is_empty());
+        assert!(!points.iter().any(|p| p.players_online == Some(99)));
         assert_eq!(points[0].players_online, Some(1));
     }
 
@@ -256,13 +316,60 @@ mod tests {
         write_sample(&db, "srv", &sample(5_000, true, None, None));
         prune_older_than(&db, 1_000);
         let points = read_range(&db, "srv", 0, 10_000, 10);
-        assert_eq!(points.len(), 1);
-        assert_eq!(points[0].timestamp, 5_000);
+        // After pruning, first_ts = 5_000. Gap-filling starts there and runs to
+        // to_ts=10_000, producing several buckets. The pruned row must not appear.
+        assert!(!points.is_empty());
+        assert!(!points.iter().any(|p| p.timestamp < 5_000));
+        let first = &points[0];
+        assert_eq!(first.timestamp, 5_000);
+        assert!(first.online);
     }
 
     #[test]
     fn empty_range_yields_no_points() {
         let db = in_memory();
         assert!(read_range(&db, "srv", 0, 1000, 10).is_empty());
+    }
+
+    #[test]
+    fn gaps_after_first_sample_are_synthesized_offline() {
+        let db = in_memory();
+        // One online sample at t=0, nothing after. Querying [0, 20_000] with 2
+        // buckets (size 10_000) should return: bucket 0 = online, bucket 10_000 = offline.
+        write_sample(&db, "srv", &sample(0, true, Some(5), Some(20.0)));
+
+        let points = read_range(&db, "srv", 0, 20_000, 2);
+        assert_eq!(points.len(), 2);
+        assert!(points[0].online);
+        assert!(!points[1].online);
+        assert_eq!(points[1].players_online, None);
+    }
+
+    #[test]
+    fn gaps_before_first_sample_are_not_synthesized() {
+        let db = in_memory();
+        // First sample at t=10_000. Querying [0, 20_000] with 2 buckets (size 10_000).
+        // Only bucket 10_000 (real data) should be returned — bucket 0 predates the
+        // server's first sample and must not appear as a synthetic offline point.
+        write_sample(&db, "srv", &sample(10_000, true, Some(3), None));
+
+        let points = read_range(&db, "srv", 0, 20_000, 2);
+        assert_eq!(points.len(), 1);
+        assert_eq!(points[0].timestamp, 10_000);
+        assert!(points[0].online);
+    }
+
+    #[test]
+    fn gap_in_middle_is_synthesized_offline() {
+        let db = in_memory();
+        // Online at t=0, offline gap at t=10_000, back online at t=20_000.
+        write_sample(&db, "srv", &sample(0, true, Some(1), None));
+        write_sample(&db, "srv", &sample(20_000, true, Some(2), None));
+
+        let points = read_range(&db, "srv", 0, 30_000, 3);
+        assert_eq!(points.len(), 3);
+        assert!(points[0].online);
+        assert!(!points[1].online); // synthesized gap
+        assert!(points[2].online);
     }
 }

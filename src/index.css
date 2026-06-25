@@ -268,3 +268,35 @@ body {
 .app-scroll-stable {
 	scrollbar-gutter: stable;
 }
+
+/* MOTD obfuscated (§k / <obfuscated>) indicator. Minecraft scrambles this text
+   into random glyphs in-game; the editor keeps it readable for editing but marks
+   it with an animated "static" hatch so it's obvious which runs are obfuscated. */
+@keyframes motd-obfuscate-scan {
+	from {
+		background-position: 0 0;
+	}
+	to {
+		background-position: 8px 0;
+	}
+}
+
+.motd-obfuscated {
+	border-radius: 2px;
+	padding: 0 1px;
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 35%, transparent);
+	background-image: repeating-linear-gradient(
+		-45deg,
+		color-mix(in srgb, currentColor 22%, transparent) 0,
+		color-mix(in srgb, currentColor 22%, transparent) 1px,
+		transparent 1px,
+		transparent 4px
+	);
+	animation: motd-obfuscate-scan 0.7s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.motd-obfuscated {
+		animation: none;
+	}
+}
