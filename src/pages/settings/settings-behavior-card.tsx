@@ -21,6 +21,12 @@ const SettingsBehaviorCard: React.FC = () => {
 		toast.success(`Advanced mode ${enabled ? 'enabled' : 'disabled'}.`);
 	};
 
+	const handleAutoCheckServerUpdatesChange = (checked: boolean | 'indeterminate') => {
+		const enabled = checked === true;
+		updateUserField('auto_check_server_updates', enabled);
+		toast.success(`Automatic server update checks ${enabled ? 'enabled' : 'disabled'}.`);
+	};
+
 	return (
 		<Card>
 			<CardHeader>
@@ -51,6 +57,19 @@ const SettingsBehaviorCard: React.FC = () => {
 					</Label>
 					<p className='text-sm text-muted-foreground'>
 						Unlocks per-server overrides, sub-gigabyte RAM, and bypasses RAM safety caps.
+					</p>
+				</div>
+				<div className='space-y-2'>
+					<Label className='flex items-center gap-3'>
+						<Checkbox
+							checked={user.auto_check_server_updates}
+							onCheckedChange={handleAutoCheckServerUpdatesChange}
+						/>
+						Check servers for updates on startup
+					</Label>
+					<p className='text-sm text-muted-foreground'>
+						When enabled, MSERVE checks each server's provider for a newer jar build when the app loads and
+						flags it in the server's jar settings. No update is ever installed automatically.
 					</p>
 				</div>
 			</CardContent>

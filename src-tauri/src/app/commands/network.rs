@@ -176,7 +176,9 @@ pub(in crate::app) fn forward_port_windows_firewall(port: u16) -> Result<Vec<Str
     #[cfg(not(target_os = "windows"))]
     {
         let _ = port;
-        return Err("Windows Defender Firewall forwarding is only supported on Windows.".to_string());
+        return Err(
+            "Windows Defender Firewall forwarding is only supported on Windows.".to_string(),
+        );
     }
 
     #[cfg(target_os = "windows")]
@@ -221,7 +223,9 @@ pub(in crate::app) fn get_local_ip() -> Result<String, String> {
 
 #[tauri::command]
 pub(in crate::app) fn get_public_ip() -> Result<String, String> {
-    resolve_public_ip().ok_or_else(|| "Unable to determine public IP address. Check your internet connection.".to_string())
+    resolve_public_ip().ok_or_else(|| {
+        "Unable to determine public IP address. Check your internet connection.".to_string()
+    })
 }
 
 #[tauri::command]
@@ -332,8 +336,8 @@ pub(in crate::app) fn download_server_jar(
 
     emit_progress(downloaded_bytes, true);
 
-    let final_path = dunce::canonicalize(&destination_path)
-        .unwrap_or_else(|_| destination_path.clone());
+    let final_path =
+        dunce::canonicalize(&destination_path).unwrap_or_else(|_| destination_path.clone());
     let resolved_file_name = final_path
         .file_name()
         .and_then(|value| value.to_str())
@@ -346,4 +350,3 @@ pub(in crate::app) fn download_server_jar(
         size_bytes: downloaded_bytes,
     })
 }
-

@@ -1,5 +1,5 @@
-use super::*;
 use super::super::*;
+use super::*;
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
@@ -91,7 +91,9 @@ fn list_backups_oldest_first(directory: &Path) -> Vec<PathBuf> {
 
 fn resolve_storage_limit_bytes(directory: &Path) -> Result<u64, String> {
     let config = get_runtime_config(directory)?;
-    let limit_gb = config.storage_limit.unwrap_or(STORAGE_LIMIT_DEFAULT_GB as u32) as u64;
+    let limit_gb = config
+        .storage_limit
+        .unwrap_or(STORAGE_LIMIT_DEFAULT_GB as u32) as u64;
     Ok(limit_gb
         .max(STORAGE_LIMIT_MIN_GB)
         .saturating_mul(BYTES_PER_GB))
@@ -106,7 +108,9 @@ fn delete_cap_exceeded_error() -> String {
 pub(in crate::app) fn calculate_active_worlds_size_bytes(directory: &Path) -> u64 {
     backup_world_paths(directory)
         .into_iter()
-        .fold(0_u64, |total, world| total.saturating_add(path_size_bytes(&world)))
+        .fold(0_u64, |total, world| {
+            total.saturating_add(path_size_bytes(&world))
+        })
 }
 
 pub(in crate::app) fn calculate_total_backups_size_bytes(directory: &Path) -> u64 {
@@ -162,7 +166,11 @@ pub(in crate::app) fn enforce_backup_storage_limit(
     for backup_path in oldest_backups {
         let should_keep = canonicalized_path(&backup_path)
             .as_ref()
-            .map(|candidate| protected_canonical.iter().any(|protected| protected == candidate))
+            .map(|candidate| {
+                protected_canonical
+                    .iter()
+                    .any(|protected| protected == candidate)
+            })
             .unwrap_or(false);
         if should_keep {
             continue;
@@ -260,7 +268,9 @@ pub(in crate::app) fn copy_dir_filtered(source: &Path, destination: &Path) -> Re
 
     for entry in WalkDir::new(source).into_iter().flatten() {
         let entry_path = entry.path();
-        let relative = entry_path.strip_prefix(source).map_err(|err| err.to_string())?;
+        let relative = entry_path
+            .strip_prefix(source)
+            .map_err(|err| err.to_string())?;
         if relative.as_os_str().is_empty() {
             continue;
         }
@@ -365,13 +375,18 @@ pub(in crate::app) fn swap_files(path_a: &Path, path_b: &Path) -> Result<(), Str
     }
 
     if let Err(err) = move_file_with_fallback(&temp_path, path_a) {
-        return Err(format!("Swap completed partially. Manual fix may be required: {err}"));
+        return Err(format!(
+            "Swap completed partially. Manual fix may be required: {err}"
+        ));
     }
 
     Ok(())
 }
 
-pub(in crate::app) fn extract_zip_to_directory(zip_path: &Path, destination: &Path) -> Result<(), String> {
+pub(in crate::app) fn extract_zip_to_directory(
+    zip_path: &Path,
+    destination: &Path,
+) -> Result<(), String> {
     let zip_file = fs::File::open(zip_path).map_err(|err| err.to_string())?;
     let mut archive = zip::ZipArchive::new(zip_file).map_err(|err| err.to_string())?;
 
@@ -401,7 +416,6 @@ pub(in crate::app) fn extract_zip_to_directory(zip_path: &Path, destination: &Pa
     Ok(())
 }
 
-
 pub(in crate::app) fn add_path_to_zip<W: Write + io::Seek>(
     writer: &mut zip::ZipWriter<W>,
     root: &Path,
@@ -430,8 +444,8 @@ pub(in crate::app) fn add_path_to_zip<W: Write + io::Seek>(
         .map_err(|err| err.to_string())?;
     let mut file = fs::File::open(path).map_err(|err| err.to_string())?;
     let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer).map_err(|err| err.to_string())?;
+    file.read_to_end(&mut buffer)
+        .map_err(|err| err.to_string())?;
     writer.write_all(&buffer).map_err(|err| err.to_string())?;
     Ok(())
 }
-

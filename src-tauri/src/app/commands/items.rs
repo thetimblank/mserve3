@@ -3,8 +3,8 @@ use super::super::*;
 use std::fs;
 use std::path::PathBuf;
 use walkdir::WalkDir;
-use zip::write::SimpleFileOptions;
 use zip::CompressionMethod;
+use zip::write::SimpleFileOptions;
 
 #[tauri::command]
 pub(in crate::app) fn delete_server_item(payload: ItemActionPayload) -> Result<(), String> {
@@ -21,7 +21,9 @@ pub(in crate::app) fn uninstall_server_item(payload: ItemActionPayload) -> Resul
 }
 
 #[tauri::command]
-pub(in crate::app) fn export_server_world(payload: ItemActionPayload) -> Result<ExportWorldResult, String> {
+pub(in crate::app) fn export_server_world(
+    payload: ItemActionPayload,
+) -> Result<ExportWorldResult, String> {
     if payload.item_type != "world" {
         return Err("Export is only supported for worlds.".to_string());
     }
@@ -69,7 +71,6 @@ pub(in crate::app) fn export_server_world(payload: ItemActionPayload) -> Result<
     })
 }
 
-
 #[tauri::command]
 pub(in crate::app) fn upload_server_item(payload: UploadItemPayload) -> Result<(), String> {
     let server_directory = PathBuf::from(payload.directory.trim());
@@ -114,7 +115,6 @@ pub(in crate::app) fn upload_server_item(payload: UploadItemPayload) -> Result<(
     Ok(())
 }
 
-
 #[tauri::command]
 pub(in crate::app) fn scan_server_contents(directory: String) -> Result<ServerScanResult, String> {
     let directory_path = PathBuf::from(directory.trim());
@@ -128,7 +128,9 @@ pub(in crate::app) fn scan_server_contents(directory: String) -> Result<ServerSc
     let worlds_size_bytes = worlds
         .iter()
         .filter(|world| world.activated)
-        .fold(0_u64, |total, world| total.saturating_add(world.size.unwrap_or(0)));
+        .fold(0_u64, |total, world| {
+            total.saturating_add(world.size.unwrap_or(0))
+        });
     let backups_size_bytes = backups
         .iter()
         .fold(0_u64, |total, backup| total.saturating_add(backup.size));
@@ -147,4 +149,3 @@ pub(in crate::app) fn scan_server_contents(directory: String) -> Result<ServerSc
 pub(in crate::app) fn set_server_item_active(payload: ToggleItemPayload) -> Result<(), String> {
     toggle_item_activation(payload)
 }
-

@@ -102,7 +102,10 @@ fn push_java_under(
 /// Root directory where mserve stores Java runtimes it downloaded itself.
 /// Shared with the download command so detection always surfaces them.
 pub(in crate::app) fn managed_java_root(app: &tauri::AppHandle) -> Option<PathBuf> {
-    app.path().app_local_data_dir().ok().map(|dir| dir.join("java"))
+    app.path()
+        .app_local_data_dir()
+        .ok()
+        .map(|dir| dir.join("java"))
 }
 
 fn collect_managed_candidates(
@@ -166,7 +169,9 @@ fn collect_path_candidates(
     let result = match output {
         Ok(value) => value,
         Err(err) => {
-            errors.push(format!("Could not inspect PATH for Java executables: {err}"));
+            errors.push(format!(
+                "Could not inspect PATH for Java executables: {err}"
+            ));
             return;
         }
     };
@@ -187,7 +192,10 @@ fn collect_path_candidates(
 }
 
 #[cfg(target_os = "windows")]
-fn collect_windows_common_candidates(candidates: &mut Vec<JavaCandidate>, seen: &mut HashSet<String>) {
+fn collect_windows_common_candidates(
+    candidates: &mut Vec<JavaCandidate>,
+    seen: &mut HashSet<String>,
+) {
     const VENDOR_ROOTS: [&str; 11] = [
         "Java",
         "Eclipse Adoptium",
@@ -229,7 +237,13 @@ fn collect_windows_common_candidates(candidates: &mut Vec<JavaCandidate>, seen: 
         for vendor in VENDOR_ROOTS {
             // <ProgramFiles>/<vendor>/bin/java.exe and two levels of nested JDK
             // folders below it (e.g. .../Eclipse Adoptium/jdk-21.../bin/java.exe).
-            push_java_under(&base_dir.join(vendor), 1, candidates, seen, "common_install_dir");
+            push_java_under(
+                &base_dir.join(vendor),
+                1,
+                candidates,
+                seen,
+                "common_install_dir",
+            );
         }
     }
 }

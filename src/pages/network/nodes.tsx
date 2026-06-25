@@ -1,5 +1,5 @@
 import { Handle, Position, type NodeProps } from '@xyflow/react';
-import { AlertTriangle, Boxes, Clock, Cpu, Gauge, MemoryStick, Users, Waypoints } from 'lucide-react';
+import { AlertTriangle, Boxes, Clock, Cpu, Gauge, MemoryStick, Users, Network } from 'lucide-react';
 import clsx from 'clsx';
 
 import type { Server, ServerStatus } from '@/data/servers';
@@ -107,7 +107,7 @@ export const ProxyNode = ({ data }: NodeProps) => {
 				)}>
 				<div className='flex items-center gap-2'>
 					<span className='flex size-9 items-center justify-center rounded-xl bg-primary/15 text-primary'>
-						<Waypoints className='size-5' />
+						<Network className='size-5' />
 					</span>
 					<div className='min-w-0 flex-1'>
 						<p className='truncate font-bold leading-tight'>{server.name}</p>

@@ -1,5 +1,5 @@
-mod config_files;
 mod backups;
+mod config_files;
 mod items;
 mod java;
 mod java_download;
@@ -12,8 +12,8 @@ mod settings;
 mod setup;
 mod telemetry;
 
-pub(super) use config_files::*;
 pub(super) use backups::*;
+pub(super) use config_files::*;
 pub(super) use items::*;
 pub(super) use java::*;
 pub(super) use java_download::*;

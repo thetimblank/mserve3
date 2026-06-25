@@ -137,6 +137,11 @@ export type JavaFallbackPlan =
  * Picks the next Java to try after a server failed to start with a version
  * error. Only meaningful in automatic mode — a per-server pin should surface the
  * error instead of being silently overridden.
+ *
+ * Sweep order: compatible versions *above* the last attempt (lowest-first, i.e.
+ * closest first) → compatible versions *below* (highest-first) → incompatible
+ * versions (highest-first, last resort). This ensures that when the automatic
+ * selection picks a mid-range version we still try higher ones before giving up.
  */
 export const planJavaFallback = (args: {
 	provider?: JavaProviderRef | null;
@@ -144,25 +149,43 @@ export const planJavaFallback = (args: {
 	runtimes: JavaRuntimeInfo[];
 	attemptedMajors: number[];
 }): JavaFallbackPlan => {
-	const resolution = resolveServerJavaExecutable({
-		provider: args.provider,
-		javaInstallation: '',
-		globalDefault: args.globalDefault,
-		runtimes: args.runtimes,
-		excludeMajors: args.attemptedMajors,
-	});
+	const requirement = resolveJavaRequirement(args.provider?.name, args.provider?.minecraft_version);
+	const attempted = new Set(args.attemptedMajors);
+	const lastAttempted = args.attemptedMajors[args.attemptedMajors.length - 1] ?? 0;
 
-	if (resolution.status === 'missing') {
-		return { kind: 'missing', requirement: resolution.requirement };
+	// One candidate per major version; skip already-attempted ones.
+	const seenMajors = new Set<number>();
+	const candidates: JavaRuntimeInfo[] = [];
+	for (const runtime of args.runtimes) {
+		if (attempted.has(runtime.majorVersion) || seenMajors.has(runtime.majorVersion)) continue;
+		seenMajors.add(runtime.majorVersion);
+		candidates.push(runtime);
 	}
 
-	if (resolution.majorVersion != null && args.attemptedMajors.includes(resolution.majorVersion)) {
-		return { kind: 'exhausted', requirement: resolution.requirement };
+	if (candidates.length === 0) {
+		return { kind: 'missing', requirement };
 	}
 
-	return {
-		kind: 'retry',
-		executablePath: resolution.executablePath,
-		majorVersion: resolution.majorVersion ?? 0,
-	};
+	// 1. Compatible versions above the last attempt (closest first).
+	const aboveCompatible = candidates
+		.filter((r) => r.majorVersion > lastAttempted && r.majorVersion >= requirement.minimumMajor)
+		.sort((a, b) => a.majorVersion - b.majorVersion);
+
+	// 2. Compatible versions at or below the last attempt (closest first).
+	const belowCompatible = candidates
+		.filter((r) => r.majorVersion <= lastAttempted && r.majorVersion >= requirement.minimumMajor)
+		.sort((a, b) => b.majorVersion - a.majorVersion);
+
+	// 3. Incompatible versions as a last resort (closest to minimum first).
+	const fallbackIncompatible = candidates
+		.filter((r) => r.majorVersion < requirement.minimumMajor)
+		.sort((a, b) => b.majorVersion - a.majorVersion);
+
+	const next = aboveCompatible[0] ?? belowCompatible[0] ?? fallbackIncompatible[0];
+
+	if (!next) {
+		return { kind: 'missing', requirement };
+	}
+
+	return { kind: 'retry', executablePath: next.executablePath, majorVersion: next.majorVersion };
 };

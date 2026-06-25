@@ -82,8 +82,9 @@ pub(in crate::app) fn download_java_runtime(
         "https://api.adoptium.net/v3/binary/latest/{major_version}/ga/{os}/{arch}/jre/hotspot/normal/eclipse"
     );
 
-    let managed_root = managed_java_root(&app)
-        .ok_or_else(|| "Could not resolve the app data directory for Java downloads.".to_string())?;
+    let managed_root = managed_java_root(&app).ok_or_else(|| {
+        "Could not resolve the app data directory for Java downloads.".to_string()
+    })?;
     let install_dir = managed_root.join(format!("temurin-{major_version}"));
 
     let download_dir = std::env::temp_dir().join("mserve").join("java-downloads");

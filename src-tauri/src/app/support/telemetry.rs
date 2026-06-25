@@ -59,7 +59,9 @@ fn read_varint_from_stream(stream: &mut TcpStream) -> Result<i32, String> {
         }
 
         let mut byte = [0_u8; 1];
-        stream.read_exact(&mut byte).map_err(|err| err.to_string())?;
+        stream
+            .read_exact(&mut byte)
+            .map_err(|err| err.to_string())?;
 
         let value = i32::from(byte[0]);
         result |= (value & 0x7F) << (7 * bytes_read);
@@ -173,7 +175,11 @@ pub(in crate::app) fn probe_port(host: &str, port: u16, timeout: Duration) -> bo
     TcpStream::connect_timeout(&address, timeout).is_ok()
 }
 
-pub(in crate::app) fn collect_status_ping(host: &str, port: u16, timeout: Duration) -> StatusPingResult {
+pub(in crate::app) fn collect_status_ping(
+    host: &str,
+    port: u16,
+    timeout: Duration,
+) -> StatusPingResult {
     let query = || -> Result<StatusPingResult, String> {
         let address = format!("{host}:{port}");
         let socket_address = address
@@ -217,7 +223,9 @@ pub(in crate::app) fn collect_status_ping(host: &str, port: u16, timeout: Durati
         let packet_length =
             usize::try_from(packet_length).map_err(|_| "Invalid packet length.".to_string())?;
         let mut packet = vec![0_u8; packet_length];
-        stream.read_exact(&mut packet).map_err(|err| err.to_string())?;
+        stream
+            .read_exact(&mut packet)
+            .map_err(|err| err.to_string())?;
 
         let mut cursor = 0_usize;
         let packet_id = read_varint_from_slice(&packet, &mut cursor)?;
@@ -431,7 +439,10 @@ fn rcon_run(
                 Err(_) => return None,
             }
         }
-        match client_slot.as_mut().and_then(|client| client.command(command).ok()) {
+        match client_slot
+            .as_mut()
+            .and_then(|client| client.command(command).ok())
+        {
             Some(response) => return Some(response),
             // Connection went away mid-command: drop it and retry once fresh.
             None => *client_slot = None,
@@ -486,5 +497,290 @@ pub(in crate::app) fn collect_tps_via_rcon(
             *state = TpsCommandState::Unsupported;
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- VarInt codec (Minecraft's variable-length integers) ---
+
+    #[test]
+    fn varint_roundtrips_known_values() {
+        // Reference encodings from the Minecraft protocol spec.
+        assert_eq!(encode_varint(0), vec![0x00]);
+        assert_eq!(encode_varint(1), vec![0x01]);
+        assert_eq!(encode_varint(127), vec![0x7f]);
+        assert_eq!(encode_varint(128), vec![0x80, 0x01]);
+        assert_eq!(encode_varint(255), vec![0xff, 0x01]);
+        assert_eq!(encode_varint(25565), vec![0xdd, 0xc7, 0x01]);
+    }
+
+    #[test]
+    fn varint_decodes_what_it_encodes() {
+        for value in [0, 1, 127, 128, 300, 25565, 2_097_151, i32::MAX] {
+            let encoded = encode_varint(value);
+            let mut cursor = 0usize;
+            assert_eq!(
+                read_varint_from_slice(&encoded, &mut cursor).unwrap(),
+                value
+            );
+            assert_eq!(cursor, encoded.len());
+        }
+    }
+
+    #[test]
+    fn varint_rejects_overlong_sequence() {
+        // Five continuation bytes with the high bit always set is too long.
+        let data = [0x80, 0x80, 0x80, 0x80, 0x80, 0x01];
+        let mut cursor = 0usize;
+        assert!(read_varint_from_slice(&data, &mut cursor).is_err());
+    }
+
+    #[test]
+    fn varint_errors_on_truncated_input() {
+        let data = [0x80]; // continuation bit set but no following byte
+        let mut cursor = 0usize;
+        assert!(read_varint_from_slice(&data, &mut cursor).is_err());
+    }
+
+    // --- length-prefixed strings ---
+
+    #[test]
+    fn reads_length_prefixed_string() {
+        let mut data = encode_varint("hi".len() as i32);
+        data.extend_from_slice(b"hi");
+        let mut cursor = 0usize;
+        assert_eq!(read_string_from_slice(&data, &mut cursor).unwrap(), "hi");
+        assert_eq!(cursor, data.len());
+    }
+
+    #[test]
+    fn string_read_errors_when_body_truncated() {
+        let mut data = encode_varint(10); // claims 10 bytes...
+        data.extend_from_slice(b"abc"); // ...but only 3 follow
+        let mut cursor = 0usize;
+        assert!(read_string_from_slice(&data, &mut cursor).is_err());
+    }
+
+    // --- Minecraft formatting stripping ---
+
+    #[test]
+    fn strips_section_sign_codes() {
+        assert_eq!(
+            strip_minecraft_formatting("\u{00a7}aGreen\u{00a7}r"),
+            "Green"
+        );
+    }
+
+    #[test]
+    fn strips_ansi_escape_sequences() {
+        assert_eq!(
+            strip_minecraft_formatting("\u{001b}[32mTPS\u{001b}[0m"),
+            "TPS"
+        );
+    }
+
+    // --- float extraction ---
+
+    #[test]
+    fn first_float_in_reads_leading_number() {
+        assert_eq!(first_float_in("  20.0, 19.9"), Some(20.0));
+        assert_eq!(first_float_in("abc 5.5"), Some(5.5));
+        assert_eq!(first_float_in("no number"), None);
+    }
+
+    #[test]
+    fn first_float_after_needle() {
+        assert_eq!(first_float_after("foo: 12.3 bar", "foo:"), Some(12.3));
+        assert_eq!(first_float_after("nothing here", "missing"), None);
+    }
+
+    // --- TPS parsing (the bug-prone bit: must read AFTER the colon) ---
+
+    #[test]
+    fn parses_paper_tps_first_window() {
+        let response = "TPS from last 1m, 5m, 15m: 20.0, 20.0, 19.9";
+        assert_eq!(parse_paper_tps(response), Some(20.0));
+    }
+
+    #[test]
+    fn paper_tps_ignores_interval_labels_before_colon() {
+        // Regression guard: the "1m, 5m, 15m" labels precede the colon. Reading a
+        // number before the colon would make every server report ~1 TPS.
+        let response = "§6TPS from last 1m, 5m, 15m:§a 19.5, 20.0, 20.0";
+        assert_eq!(parse_paper_tps(response), Some(19.5));
+    }
+
+    #[test]
+    fn paper_tps_is_clamped_to_20() {
+        // Some forks momentarily report >20; we cap it.
+        let response = "TPS from last 1m: 21.4";
+        assert_eq!(parse_paper_tps(response), Some(20.0));
+    }
+
+    #[test]
+    fn paper_tps_returns_none_without_marker() {
+        assert_eq!(parse_paper_tps("Unknown command"), None);
+    }
+
+    #[test]
+    fn parses_tick_query_tps_from_mspt() {
+        // 50 ms/tick -> 1000/50 = 20 TPS.
+        let response = "Target tick rate: 20.0 per second.\nAverage time per tick: 50.0 ms";
+        assert_eq!(parse_tick_query_tps(response), Some(20.0));
+    }
+
+    #[test]
+    fn tick_query_tps_derived_below_20_when_slow() {
+        // 100 ms/tick -> 10 TPS.
+        let response = "Average time per tick: 100.0 ms";
+        assert_eq!(parse_tick_query_tps(response), Some(10.0));
+    }
+
+    #[test]
+    fn tick_query_tps_handles_zero_mspt() {
+        let response = "Average time per tick: 0.0 ms";
+        assert_eq!(parse_tick_query_tps(response), None);
+    }
+
+    // --- RAM percentage ---
+
+    #[test]
+    fn ram_percent_of_configured_heap() {
+        // 1 GiB used of a 2 GiB heap -> 50%.
+        let one_gib = 1024u64 * 1024 * 1024;
+        let pct = ram_percent_from_bytes(one_gib, Some(2.0)).unwrap();
+        assert!((pct - 50.0).abs() < 0.01, "got {pct}");
+    }
+
+    #[test]
+    fn ram_percent_clamps_and_guards_bad_limits() {
+        // Over the limit clamps to 100.
+        let huge = 100u64 * 1024 * 1024 * 1024;
+        assert_eq!(ram_percent_from_bytes(huge, Some(1.0)), Some(100.0));
+        // Non-positive / missing limits yield None rather than dividing by zero.
+        assert_eq!(ram_percent_from_bytes(1024, Some(0.0)), None);
+        assert_eq!(ram_percent_from_bytes(1024, None), None);
+    }
+
+    // --- SLP status JSON parsing (via collect_status_ping's parser) ---
+    // The JSON-shape parsing is exercised end-to-end through the fake server in
+    // the integration tests below.
+}
+
+/// L3 integration: the telemetry pipeline (probe → SLP → RCON TPS) driven against
+/// the in-process fake Minecraft server. No JVM, deterministic, runs in ms.
+#[cfg(test)]
+mod pipeline_tests {
+    use super::{collect_status_ping, collect_tps_via_rcon, probe_port};
+    use crate::app::RconConfig;
+    use crate::app::TpsCommandState;
+    use crate::app::support::testkit::{FakeMinecraftServer, FakeServerConfig};
+    use std::net::TcpListener;
+    use std::time::Duration;
+
+    const TIMEOUT: Duration = Duration::from_millis(800);
+
+    #[test]
+    fn probe_detects_a_listening_port() {
+        let server = FakeMinecraftServer::start(FakeServerConfig::default());
+        assert!(probe_port(&server.host, server.game_port, TIMEOUT));
+    }
+
+    #[test]
+    fn probe_is_false_for_a_closed_port() {
+        // Bind then immediately drop to obtain a port nothing is listening on.
+        let port = TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        assert!(!probe_port("127.0.0.1", port, Duration::from_millis(300)));
+    }
+
+    #[test]
+    fn slp_reports_players_and_version() {
+        let server = FakeMinecraftServer::start(FakeServerConfig {
+            players_online: 3,
+            players_max: 20,
+            version: "1.21.1".to_string(),
+            ..FakeServerConfig::default()
+        });
+        let status = collect_status_ping(&server.host, server.game_port, TIMEOUT);
+        assert!(status.online);
+        assert_eq!(status.players_online, Some(3));
+        assert_eq!(status.players_max, Some(20));
+        assert_eq!(status.server_version.as_deref(), Some("1.21.1"));
+    }
+
+    #[test]
+    fn slp_against_dead_port_is_offline_default() {
+        let port = TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let status = collect_status_ping("127.0.0.1", port, Duration::from_millis(300));
+        assert!(!status.online);
+        assert_eq!(status.players_online, None);
+    }
+
+    #[test]
+    fn tps_via_rcon_paper_path_and_caches_state() {
+        let server = FakeMinecraftServer::start(FakeServerConfig {
+            tps_response: Some("TPS from last 1m, 5m, 15m: 19.5, 20.0, 20.0".to_string()),
+            ..FakeServerConfig::default()
+        });
+        let rcon = RconConfig {
+            port: server.rcon_port.unwrap(),
+            password: "secret".to_string(),
+        };
+        let mut state = TpsCommandState::Unknown;
+        let mut client = None;
+
+        let tps = collect_tps_via_rcon(&server.host, &rcon, &mut state, &mut client);
+        assert_eq!(tps, Some(19.5));
+        // Detection is cached after the first success.
+        assert_eq!(state, TpsCommandState::Paper);
+    }
+
+    #[test]
+    fn tps_via_rcon_falls_through_to_tick_query() {
+        let server = FakeMinecraftServer::start(FakeServerConfig {
+            tps_response: None, // no Paper `tps` command
+            tick_query_response: Some("Average time per tick: 50.0 ms".to_string()),
+            ..FakeServerConfig::default()
+        });
+        let rcon = RconConfig {
+            port: server.rcon_port.unwrap(),
+            password: "secret".to_string(),
+        };
+        let mut state = TpsCommandState::Unknown;
+        let mut client = None;
+
+        let tps = collect_tps_via_rcon(&server.host, &rcon, &mut state, &mut client);
+        assert_eq!(tps, Some(20.0));
+        assert_eq!(state, TpsCommandState::TickQuery);
+    }
+
+    #[test]
+    fn tps_via_rcon_marks_unsupported_when_no_command_works() {
+        let server = FakeMinecraftServer::start(FakeServerConfig {
+            tps_response: None,
+            tick_query_response: None,
+            ..FakeServerConfig::default()
+        });
+        let rcon = RconConfig {
+            port: server.rcon_port.unwrap(),
+            password: "secret".to_string(),
+        };
+        let mut state = TpsCommandState::Unknown;
+        let mut client = None;
+
+        let tps = collect_tps_via_rcon(&server.host, &rcon, &mut state, &mut client);
+        assert_eq!(tps, None);
+        assert_eq!(state, TpsCommandState::Unsupported);
     }
 }

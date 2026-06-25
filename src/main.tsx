@@ -9,6 +9,7 @@ import { ThemeProvider } from '@/components/theme-provider';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { AppSidebar } from '@/components/app-sidebar';
 import { ServersProvider } from './data/servers';
+import { ServerUpdatesProvider } from './data/server-updates';
 import { ServerRuntimeMonitor } from './components/server-runtime-monitor';
 import { NetworksProvider } from './data/networks';
 import { UserProvider } from './data/user';
@@ -94,6 +95,7 @@ const RootLayout: React.FC = () => {
 						<UserProvider>
 							<JavaRuntimesProvider>
 							<ServersProvider>
+								<ServerUpdatesProvider>
 								<NetworksProvider>
 								<CreateServerProvider>
 								<JavaDownloadProvider>
@@ -116,6 +118,7 @@ const RootLayout: React.FC = () => {
 								</JavaDownloadProvider>
 								</CreateServerProvider>
 								</NetworksProvider>
+								</ServerUpdatesProvider>
 							</ServersProvider>
 							</JavaRuntimesProvider>
 						</UserProvider>

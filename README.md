@@ -60,33 +60,13 @@ e.g. v4.0.12pre0
 (May not be up-to-date)
 **v3**
 🟨 setup networks and server groups
-🟨 add graphs & data on players, uptime %, ram usage, cpu usage
-⬛ Please add a complete and thourough system to test.
-Testing should cover all types of starting, stopping, different versions, custom jars, modded servers, telementry, etc. Think about what else testing should cover.
 
-It should be robust and actually valuable to catch bugs from and run before prod after each change, it should be scalable.
+1. Automatically total max players of the children and set this as the max players of the proxy
 
-You may use any packages that could assist with this.
+⬛ Fix motd not working.
 
-Help me out here, because i am not too familiar with testing, so what is good here? Ask questions as needed.
-⬛ Your task is to implement a full server updating system.
-
-1. Please add a update server that will automatically also check if there is an update available for servers. 2. Add an option to disable this in global settings.
-2. It should check for updates on each server when mserve loads, do not notify the user, simply add an update available text in each server's jar section and a check for updates button.
-3. Use the same/similar UI to the apps overall updater.
-4. If it changes a major MC version, please warn the user before updating (after clicking the update button) that this may have unwanted effects that include data loss or corruption via a modal, add a cancel button, proceed button, and a backup & proceed button.
-
-Think of anything else that could be good here. Ask questions as needed.
-
-🚩 When java version is set as automatic, and the java version isnt detected
-🚩 Fix motd not working. Users Cannot save file once the MOTD is changed.
-⬛ Increase base sizing of console (when window's height is not enough, it disappears)
-🚩 Revamp Overview UI
-⬛ hide loading... in the blurred IP address behind the blur
-⬛ In /server/[slug]/overview:
-
-1. Remove the cards where ther is no data available (E.g. TPS card on servers that dont support TPS). (Keep all cards in /server/[slug]/statistics)
-2. when advanced mode is ON, display ram as "XX.X% ...mb/...mb" rather than just the "XX.X%" on cards (both /overview & /statistics)
+1. Users Cannot save file once the MOTD is changed.
+2. ⬛ Improve MOTD editor.
 
 Supported Providers
 Test & support all providers thoroughly
@@ -97,8 +77,9 @@ Test & support all providers thoroughly
 
 **v4**
 ⬛ linux support!!!
+⬛ more help pages and explanations
 ⬛ onboarding if needed. (advanced/beginner, theme, etc)
-⬛ major cleanup of backend (rust & typescript) code/performance optimizations, simple and reusable, delete uneeded normalizations, etc.
+⬛ major cleanup of backend (rust & typescript hidden logic/sturcture) code/performance optimizations, simple and reusable, delete uneeded normalizations, etc.
 ⬛ add tab completion to terminal
 ⬛ rehaul UI
 ⬛ advanced statistics systems (plugins, etc to track stats instead of v3 system)

@@ -13,7 +13,8 @@
 use super::super::*;
 use super::rcon::RconClient;
 use super::telemetry::{
-    collect_status_ping, collect_tps_via_rcon, probe_port, refresh_process_metrics, StatusPingResult,
+    StatusPingResult, collect_status_ping, collect_tps_via_rcon, probe_port,
+    refresh_process_metrics,
 };
 use super::telemetry_store;
 use std::collections::HashMap;
@@ -72,6 +73,68 @@ fn state_event(runtime: &ServerRuntime) -> ServerRuntimeStateEvent {
         exit_code: runtime.exit_code,
         stderr_tail: runtime.stderr_tail.iter().cloned().collect(),
         server_port: None,
+    }
+}
+
+/// Outcome of deciding the next lifecycle state for one poll cycle.
+struct StateDecision {
+    state: LifecycleState,
+    /// The running streak of failed probes for an adopted server (0 once it is
+    /// confirmed up by either an owned child or an accepting port).
+    miss_streak: u32,
+    /// True when an adopted server has missed enough probes to be declared off,
+    /// at which point the supervisor should exit.
+    external_terminal: bool,
+}
+
+/// Pure lifecycle transition for one poll cycle. Given the previous state,
+/// whether we own the child process, whether the port is accepting, and the
+/// running streak of failed probes for an adopted server, decide the next state.
+///
+/// Extracted from the supervisor loop so every transition is unit-testable
+/// without spawning threads or sockets. The supervisor loop is a thin driver
+/// around this function plus I/O.
+fn next_state(
+    prev: LifecycleState,
+    has_child: bool,
+    accepting: bool,
+    external_miss_streak: u32,
+) -> StateDecision {
+    if has_child {
+        // We own the process, so up/down comes from the child, not the port.
+        // The only port-driven transition is starting -> online once it binds.
+        let state = match prev {
+            LifecycleState::Starting if accepting => LifecycleState::Online,
+            other => other,
+        };
+        StateDecision {
+            state,
+            miss_streak: 0,
+            external_terminal: false,
+        }
+    } else if accepting {
+        // No owned child but the port answers: an externally-started server.
+        StateDecision {
+            state: LifecycleState::RunningExternal,
+            miss_streak: 0,
+            external_terminal: false,
+        }
+    } else {
+        // Adopted server not answering: count the miss and give up after a streak.
+        let miss_streak = external_miss_streak + 1;
+        if miss_streak >= EXTERNAL_OFFLINE_STREAK {
+            StateDecision {
+                state: LifecycleState::Offline,
+                miss_streak,
+                external_terminal: true,
+            }
+        } else {
+            StateDecision {
+                state: prev,
+                miss_streak,
+                external_terminal: false,
+            }
+        }
     }
 }
 
@@ -171,28 +234,20 @@ pub(in crate::app) fn spawn_supervisor(
                 StatusPingResult::default()
             };
 
-            let mut external_terminal = false;
-            let new_state = if snapshot.has_child {
-                external_miss_streak = 0;
-                match snapshot.state {
-                    LifecycleState::Starting if accepting => LifecycleState::Online,
-                    other => other,
-                }
-            } else if accepting {
-                external_miss_streak = 0;
-                LifecycleState::RunningExternal
-            } else {
-                external_miss_streak += 1;
-                if external_miss_streak >= EXTERNAL_OFFLINE_STREAK {
-                    external_terminal = true;
-                    LifecycleState::Offline
-                } else {
-                    snapshot.state
-                }
-            };
+            let decision = next_state(
+                snapshot.state,
+                snapshot.has_child,
+                accepting,
+                external_miss_streak,
+            );
+            external_miss_streak = decision.miss_streak;
+            let new_state = decision.state;
+            let external_terminal = decision.external_terminal;
 
-            let online_now =
-                matches!(new_state, LifecycleState::Online | LifecycleState::RunningExternal);
+            let online_now = matches!(
+                new_state,
+                LifecycleState::Online | LifecycleState::RunningExternal
+            );
 
             let mut local_tps_state = snapshot.tps_state;
             let sample = if online_now {
@@ -280,4 +335,65 @@ pub(in crate::app) fn spawn_supervisor(
             });
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn owned_starting_goes_online_when_port_accepts() {
+        let d = next_state(LifecycleState::Starting, true, true, 0);
+        assert_eq!(d.state, LifecycleState::Online);
+        assert_eq!(d.miss_streak, 0);
+        assert!(!d.external_terminal);
+    }
+
+    #[test]
+    fn owned_starting_stays_starting_until_port_accepts() {
+        let d = next_state(LifecycleState::Starting, true, false, 0);
+        assert_eq!(d.state, LifecycleState::Starting);
+        assert!(!d.external_terminal);
+    }
+
+    #[test]
+    fn owned_online_stays_online_even_if_probe_misses() {
+        // With an owned child, up/down is the child's job, not the port probe — a
+        // transient probe miss must not knock a running server offline.
+        let d = next_state(LifecycleState::Online, true, false, 0);
+        assert_eq!(d.state, LifecycleState::Online);
+        assert!(!d.external_terminal);
+    }
+
+    #[test]
+    fn no_child_accepting_is_adopted_as_external() {
+        let d = next_state(LifecycleState::Offline, false, true, 2);
+        assert_eq!(d.state, LifecycleState::RunningExternal);
+        // A successful probe resets the miss streak.
+        assert_eq!(d.miss_streak, 0);
+        assert!(!d.external_terminal);
+    }
+
+    #[test]
+    fn external_miss_streak_counts_up_without_giving_up_early() {
+        let d = next_state(LifecycleState::RunningExternal, false, false, 0);
+        assert_eq!(d.state, LifecycleState::RunningExternal);
+        assert_eq!(d.miss_streak, 1);
+        assert!(!d.external_terminal);
+    }
+
+    #[test]
+    fn external_goes_offline_and_terminal_after_streak() {
+        // EXTERNAL_OFFLINE_STREAK consecutive misses declares the adopted server
+        // off and signals the supervisor to exit.
+        let d = next_state(
+            LifecycleState::RunningExternal,
+            false,
+            false,
+            EXTERNAL_OFFLINE_STREAK - 1,
+        );
+        assert_eq!(d.state, LifecycleState::Offline);
+        assert_eq!(d.miss_streak, EXTERNAL_OFFLINE_STREAK);
+        assert!(d.external_terminal);
+    }
 }

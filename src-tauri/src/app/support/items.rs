@@ -6,17 +6,27 @@ pub(in crate::app) fn is_simple_relative_name(name: &str) -> bool {
     !name.is_empty() && !name.contains('/') && !name.contains('\\') && !name.contains("..")
 }
 
-pub(in crate::app) fn item_roots(directory: &Path, item_type: &str) -> Result<(PathBuf, PathBuf), String> {
+pub(in crate::app) fn item_roots(
+    directory: &Path,
+    item_type: &str,
+) -> Result<(PathBuf, PathBuf), String> {
     let inactive_root = directory.join("inactive");
     match item_type {
         "plugin" => Ok((directory.join("plugins"), inactive_root.join("plugins"))),
         "world" => Ok((directory.to_path_buf(), inactive_root.join("worlds"))),
-        "datapack" => Ok((directory.join("world").join("datapacks"), inactive_root.join("datapacks"))),
+        "datapack" => Ok((
+            directory.join("world").join("datapacks"),
+            inactive_root.join("datapacks"),
+        )),
         _ => Err("Unsupported item type.".to_string()),
     }
 }
 
-pub(in crate::app) fn resolve_item_locations(directory: &Path, item_type: &str, file: &str) -> Result<(PathBuf, PathBuf), String> {
+pub(in crate::app) fn resolve_item_locations(
+    directory: &Path,
+    item_type: &str,
+    file: &str,
+) -> Result<(PathBuf, PathBuf), String> {
     let (active_parent, inactive_parent) = item_roots(directory, item_type)?;
     Ok((active_parent.join(file), inactive_parent.join(file)))
 }
@@ -32,7 +42,8 @@ pub(in crate::app) fn remove_item_to_trash(payload: &ItemActionPayload) -> Resul
         return Err("Invalid item path.".to_string());
     }
 
-    let (active_path, inactive_path) = resolve_item_locations(&directory, payload.item_type.as_str(), file)?;
+    let (active_path, inactive_path) =
+        resolve_item_locations(&directory, payload.item_type.as_str(), file)?;
     let target = if active_path.exists() {
         active_path
     } else if inactive_path.exists() {
@@ -44,7 +55,6 @@ pub(in crate::app) fn remove_item_to_trash(payload: &ItemActionPayload) -> Resul
     trash::delete(&target).map_err(|err| err.to_string())?;
     Ok(())
 }
-
 
 pub(in crate::app) fn toggle_item_activation(payload: ToggleItemPayload) -> Result<(), String> {
     let directory = PathBuf::from(payload.directory.trim());

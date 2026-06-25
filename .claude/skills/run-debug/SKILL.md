@@ -58,3 +58,7 @@ console (right-click → Inspect in the Tauri dev window).
 ## Before calling it done
 - `npm run build` (typecheck) and, for backend changes, `cargo check` +
   `cargo clippy` (in `src-tauri/`) are clean.
+- Fast tests pass: `npm run test:run` (frontend) and `cargo test` (in `src-tauri/`).
+  These are the same layers the `pre-push` hook and CI gate run. See
+  [docs/testing.md](../../../docs/testing.md). For a real start→online→stop sweep
+  across providers, the gated `cargo test --test e2e -- --ignored` matrix exists.

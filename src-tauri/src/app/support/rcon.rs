@@ -30,7 +30,8 @@ impl RconClient {
             .next()
             .ok_or_else(|| "Could not resolve RCON host.".to_string())?;
 
-        let stream = TcpStream::connect_timeout(&address, timeout).map_err(|err| err.to_string())?;
+        let stream =
+            TcpStream::connect_timeout(&address, timeout).map_err(|err| err.to_string())?;
         stream
             .set_read_timeout(Some(timeout))
             .map_err(|err| err.to_string())?;
@@ -116,5 +117,43 @@ impl RconClient {
         let body = String::from_utf8_lossy(body_bytes).to_string();
 
         Ok((id, packet_type, body))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::support::testkit::{FakeMinecraftServer, FakeServerConfig};
+
+    const TIMEOUT: Duration = Duration::from_millis(800);
+
+    #[test]
+    fn authenticates_and_runs_a_command() {
+        let server = FakeMinecraftServer::start(FakeServerConfig {
+            tps_response: Some("pong-from-fake".to_string()),
+            ..FakeServerConfig::default()
+        });
+        let mut client =
+            RconClient::connect(&server.host, server.rcon_port.unwrap(), "secret", TIMEOUT)
+                .unwrap();
+        let response = client.command("tps").unwrap();
+        assert_eq!(response, "pong-from-fake");
+    }
+
+    #[test]
+    fn rejects_a_bad_password() {
+        let server = FakeMinecraftServer::start(FakeServerConfig::default());
+        let result = RconClient::connect(&server.host, server.rcon_port.unwrap(), "wrong", TIMEOUT);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn unknown_command_yields_empty_body() {
+        let server = FakeMinecraftServer::start(FakeServerConfig::default());
+        let mut client =
+            RconClient::connect(&server.host, server.rcon_port.unwrap(), "secret", TIMEOUT)
+                .unwrap();
+        // The fake server only knows `tps`; anything else returns an empty body.
+        assert_eq!(client.command("seed").unwrap(), "");
     }
 }

@@ -49,28 +49,23 @@ const ServerTerminalPanel: React.FC<ServerTerminalPanelProps> = ({
 
 	if (!isVisible) return null;
 
-	const terminalHeight = isFullscreen ? 'calc(100% - 41px)' : 'auto';
-
 	return (
 		<m.div
-			initial={{ height: 0, opacity: 0 }}
-			animate={{ height: 'auto', opacity: 1 }}
+			initial={{ opacity: 0 }}
+			animate={{ opacity: 1 }}
 			transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
 			className={clsx(
-				'bg-black text-white w-full flex font-mono flex-col overflow-hidden',
-				isFullscreen ? 'absolute inset-0 z-40 rounded-b-none' : 'rounded-b-xl',
+				'bg-black text-white w-full flex font-mono flex-col overflow-hidden flex-1 min-h-50',
+				isFullscreen ? 'absolute inset-0 z-40 rounded-b-none' : 'rounded-b-xl max-h-185',
 			)}>
-			<m.div
-				initial={{ height: 0 }}
-				animate={{ height: terminalHeight }}
-				transition={{ type: 'spring', bounce: 0, duration: 0.3 }}
+			<div
 				ref={terminalOutputRef}
-				className='relative overflow-y-auto app-scroll-area px-4 py-2 text-sm gap-0 flex flex-col-reverse'>
+				className='relative overflow-y-auto app-scroll-area px-4 py-2 text-sm gap-0 flex flex-col-reverse flex-1 min-h-40'>
 				<div className='flex flex-col'>
 					<pre className='whitespace-pre-wrap break-all'>{terminalText}</pre>
 				</div>
-			</m.div>
-			<form onSubmit={onSubmit} className='flex-1 flex border-t-2 border-[#fff5]'>
+			</div>
+			<form onSubmit={onSubmit} className='shrink-0 flex border-t-2 border-[#fff5]'>
 				<input
 					className='text-white w-full outline-none px-4 py-2 h-10'
 					placeholder='> '

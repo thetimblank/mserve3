@@ -30,8 +30,15 @@ config** — don't invent `npm test`/`npm run lint`; they don't exist yet.
 | Release build (signed installers) | `npm run release:build` |
 | Backend compile check | `cargo check` *(run inside `src-tauri/`)* |
 | Backend lint / format | `cargo clippy` / `cargo fmt` *(inside `src-tauri/`)* |
+| Frontend tests (Vitest) | `npm run test:run` (watch: `npm run test`) |
+| Backend tests (unit + fake-server integration) | `cargo test` *(inside `src-tauri/`)* |
+| Real-server E2E matrix (slow, gated) | `cargo test --test e2e -- --ignored` *(inside `src-tauri/`)* |
 
-For verifying a runtime change end-to-end, see the **run-debug** skill.
+There **is** now a layered test suite (Vitest for the frontend, `cargo test` for the
+backend, plus a gated real-server E2E matrix). See [docs/testing.md](docs/testing.md)
+for the full picture. A local `pre-push` git hook and the `CI` GitHub Action run the
+fast layers on every change. For verifying a runtime change end-to-end by hand, see
+the **run-debug** skill.
 
 ## Repo map
 

@@ -493,7 +493,6 @@ fn complete_startup(app: tauri::AppHandle) {
     }
 }
 
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -508,7 +507,10 @@ pub fn run() {
                         guard
                             .values()
                             .filter(|r| {
-                                !matches!(r.state, LifecycleState::Offline | LifecycleState::Crashed)
+                                !matches!(
+                                    r.state,
+                                    LifecycleState::Offline | LifecycleState::Crashed
+                                )
                             })
                             .map(|r| r.directory.clone())
                             .collect::<Vec<_>>()

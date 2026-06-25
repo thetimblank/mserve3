@@ -1,0 +1,17 @@
+#!/bin/sh
+# mserve pre-push gate: run the fast test suite (frontend + Rust unit/integration)
+# before anything reaches the remote. Mirrors the CI `ci.yml` fast job.
+#
+# Bypass in an emergency with:  git push --no-verify
+set -e
+
+echo "[pre-push] frontend typecheck + build (tsc && vite build)"
+npm run build
+
+echo "[pre-push] frontend tests (vitest run)"
+npm run test:run
+
+echo "[pre-push] rust unit + integration tests (cargo test)"
+( cd src-tauri && cargo test )
+
+echo "[pre-push] all fast checks passed"

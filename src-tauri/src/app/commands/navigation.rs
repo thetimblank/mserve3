@@ -30,4 +30,3 @@ pub(in crate::app) fn open_server_path(path: String) -> Result<(), String> {
 
     open_path_in_file_manager(&open_target)
 }
-

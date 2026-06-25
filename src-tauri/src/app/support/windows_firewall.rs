@@ -1,6 +1,10 @@
 use super::no_window_command;
 
-pub(in crate::app) fn add_windows_firewall_rule(port: u16, protocol: &str, direction: &str) -> Result<String, String> {
+pub(in crate::app) fn add_windows_firewall_rule(
+    port: u16,
+    protocol: &str,
+    direction: &str,
+) -> Result<String, String> {
     let way = if direction.eq_ignore_ascii_case("in") {
         "Inbound"
     } else {
@@ -86,12 +90,16 @@ pub(in crate::app) fn is_windows_admin() -> Result<bool, String> {
         });
     }
 
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_ascii_lowercase();
+    let stdout = String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .to_ascii_lowercase();
     Ok(stdout == "true")
 }
 
 #[cfg(target_os = "windows")]
-pub(in crate::app) fn forward_port_windows_firewall_elevated(port: u16) -> Result<Vec<String>, String> {
+pub(in crate::app) fn forward_port_windows_firewall_elevated(
+    port: u16,
+) -> Result<Vec<String>, String> {
     let mut rule_names = Vec::with_capacity(4);
     let mut cmd_parts: Vec<String> = Vec::with_capacity(8);
 
@@ -146,4 +154,3 @@ pub(in crate::app) fn forward_port_windows_firewall_elevated(port: u16) -> Resul
 
     Ok(rule_names)
 }
-

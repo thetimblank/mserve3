@@ -165,4 +165,3 @@ pub(in crate::app) fn update_server_settings(
         telemetry_port: config.telemetry_port,
     })
 }
-

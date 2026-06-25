@@ -4,7 +4,9 @@ use std::fs;
 use std::path::PathBuf;
 
 #[tauri::command]
-pub(in crate::app) fn initialize_server(payload: InitServerPayload) -> Result<InitServerResult, String> {
+pub(in crate::app) fn initialize_server(
+    payload: InitServerPayload,
+) -> Result<InitServerResult, String> {
     let directory_str = payload.directory.trim();
     if directory_str.is_empty() {
         return Ok(InitServerResult {
@@ -49,7 +51,8 @@ pub(in crate::app) fn initialize_server(payload: InitServerPayload) -> Result<In
         .collect();
 
     // Copy the jar file to the server directory
-    let (resolved_file, copy_message) = copy_jar_to_server_directory(&directory, payload.file.trim())?;
+    let (resolved_file, copy_message) =
+        copy_jar_to_server_directory(&directory, payload.file.trim())?;
     let server_id = generate_server_id();
     let provider = payload
         .provider
@@ -222,9 +225,7 @@ pub(in crate::app) fn inspect_server_directory(
             has_server_properties,
             has_eula_txt,
             first_jar_file,
-            message:
-                "Existing server files detected."
-                    .to_string(),
+            message: "Existing server files detected.".to_string(),
         });
     }
 
@@ -271,7 +272,7 @@ pub(in crate::app) fn import_server(directory: String) -> Result<InitServerResul
     }
 
     let directory_path = PathBuf::from(directory_str);
-    
+
     if !directory_path.exists() {
         return Ok(InitServerResult {
             ok: false,
@@ -281,7 +282,7 @@ pub(in crate::app) fn import_server(directory: String) -> Result<InitServerResul
             directory: directory_str.to_string(),
         });
     }
-    
+
     if !directory_path.is_dir() {
         return Ok(InitServerResult {
             ok: false,
@@ -327,7 +328,9 @@ pub(in crate::app) fn import_server(directory: String) -> Result<InitServerResul
         if found_jar.is_empty() {
             return Ok(InitServerResult {
                 ok: false,
-                message: "No jar file found in server directory. Please add a server.jar file first.".to_string(),
+                message:
+                    "No jar file found in server directory. Please add a server.jar file first."
+                        .to_string(),
                 id: String::new(),
                 file: String::new(),
                 directory: directory_str.to_string(),
@@ -357,7 +360,10 @@ pub(in crate::app) fn import_server(directory: String) -> Result<InitServerResul
         (
             server_id,
             found_jar.clone(),
-            format!("Created mserve.json with default settings. Found jar file: {}", found_jar),
+            format!(
+                "Created mserve.json with default settings. Found jar file: {}",
+                found_jar
+            ),
         )
     };
 
@@ -371,7 +377,9 @@ pub(in crate::app) fn import_server(directory: String) -> Result<InitServerResul
 }
 
 #[tauri::command]
-pub(in crate::app) fn sync_server_mserve_json(directory: String) -> Result<SyncMserveJsonResult, String> {
+pub(in crate::app) fn sync_server_mserve_json(
+    directory: String,
+) -> Result<SyncMserveJsonResult, String> {
     let directory_str = directory.trim();
     if directory_str.is_empty() {
         return Err("Server directory is required.".to_string());
@@ -417,7 +425,8 @@ pub(in crate::app) fn sync_server_mserve_json(directory: String) -> Result<SyncM
     if !has_required_mserve_json_fields(&object) {
         return Ok(SyncMserveJsonResult {
             status: "needs_setup".to_string(),
-            message: "Required mserve.json fields are missing. Please rebuild mserve.json.".to_string(),
+            message: "Required mserve.json fields are missing. Please rebuild mserve.json."
+                .to_string(),
             config: Some(default_synced_config(&directory_path)),
             updated: false,
         });
@@ -447,7 +456,9 @@ pub(in crate::app) fn sync_server_mserve_json(directory: String) -> Result<SyncM
 }
 
 #[tauri::command]
-pub(in crate::app) fn repair_server_mserve_json(payload: RepairMserveJsonPayload) -> Result<SyncMserveJsonResult, String> {
+pub(in crate::app) fn repair_server_mserve_json(
+    payload: RepairMserveJsonPayload,
+) -> Result<SyncMserveJsonResult, String> {
     let directory_str = payload.directory.trim();
     if directory_str.is_empty() {
         return Err("Server directory is required.".to_string());
@@ -522,4 +533,3 @@ pub(in crate::app) fn repair_server_mserve_json(payload: RepairMserveJsonPayload
         updated: true,
     })
 }
-

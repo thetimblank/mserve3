@@ -1,7 +1,7 @@
 use super::super::*;
 use super::*;
-use serde::de::{self, MapAccess, Visitor};
 use serde::Deserialize;
+use serde::de::{self, MapAccess, Visitor};
 use serde_json::{Map, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -43,15 +43,8 @@ impl<'de> Deserialize<'de> for TopLevelObject {
     }
 }
 
-const ALL_SUPPORTED_TELEMETRY: [&str; 7] = [
-    "list",
-    "tps",
-    "version",
-    "online",
-    "ram",
-    "cpu",
-    "provider",
-];
+const ALL_SUPPORTED_TELEMETRY: [&str; 7] =
+    ["list", "tps", "version", "online", "ram", "cpu", "provider"];
 
 pub(in crate::app) fn default_auto_backup() -> Vec<String> {
     vec![]
@@ -93,7 +86,10 @@ fn normalize_provider_name(raw: &str) -> Option<String> {
     if normalized.contains("velocity") {
         return Some("velocity".to_string());
     }
-    if normalized.contains("bungeecord") || normalized.contains("bungee") || normalized.contains("waterfall") {
+    if normalized.contains("bungeecord")
+        || normalized.contains("bungee")
+        || normalized.contains("waterfall")
+    {
         return Some("bungeecord".to_string());
     }
     if normalized.contains("vanilla")
@@ -135,7 +131,8 @@ pub(in crate::app) fn infer_version_from_jar_file(file_name: &str) -> Option<Str
 }
 
 pub(in crate::app) fn default_provider_for_file(file_name: &str) -> MserveProvider {
-    let provider_name = infer_provider_from_jar_file(file_name).unwrap_or_else(|| "vanilla".to_string());
+    let provider_name =
+        infer_provider_from_jar_file(file_name).unwrap_or_else(|| "vanilla".to_string());
     let inferred_version = infer_version_from_jar_file(file_name).unwrap_or_default();
     let minecraft_version = if provider_name == "velocity" || provider_name == "bungeecord" {
         if inferred_version.is_empty() {
@@ -159,7 +156,10 @@ pub(in crate::app) fn default_provider_for_file(file_name: &str) -> MserveProvid
     }
 }
 
-pub(in crate::app) fn normalize_provider(provider: &MserveProvider, fallback_file: &str) -> MserveProvider {
+pub(in crate::app) fn normalize_provider(
+    provider: &MserveProvider,
+    fallback_file: &str,
+) -> MserveProvider {
     let fallback = default_provider_for_file(fallback_file);
     let name = normalize_provider_name(&provider.name).unwrap_or_else(|| fallback.name.clone());
 
@@ -259,7 +259,10 @@ pub(in crate::app) fn sanitize_telemetry_host(raw: Option<&serde_json::Value>) -
         .unwrap_or_else(default_telemetry_host)
 }
 
-pub(in crate::app) fn sanitize_telemetry_port(directory: &Path, raw: Option<&serde_json::Value>) -> u16 {
+pub(in crate::app) fn sanitize_telemetry_port(
+    directory: &Path,
+    raw: Option<&serde_json::Value>,
+) -> u16 {
     let parsed = raw
         .and_then(|value| value.as_u64())
         .and_then(|value| u16::try_from(value).ok())
@@ -366,7 +369,8 @@ fn sanitize_provider(raw: Option<&serde_json::Value>, fallback_file: &str) -> Ms
 }
 
 pub(in crate::app) fn default_synced_config(directory: &Path) -> SyncedMserveConfig {
-    let fallback_file = find_first_jar_file_name(directory).unwrap_or_else(|| "server.jar".to_string());
+    let fallback_file =
+        find_first_jar_file_name(directory).unwrap_or_else(|| "server.jar".to_string());
     SyncedMserveConfig {
         id: generate_server_id(),
         file: fallback_file.clone(),
@@ -403,7 +407,9 @@ pub(in crate::app) fn find_first_jar_file_name(directory: &Path) -> Option<Strin
     None
 }
 
-pub(in crate::app) fn normalize_auto_backup(raw: Option<&serde_json::Value>) -> Option<Vec<String>> {
+pub(in crate::app) fn normalize_auto_backup(
+    raw: Option<&serde_json::Value>,
+) -> Option<Vec<String>> {
     let Some(value) = raw else {
         return Some(default_auto_backup());
     };
@@ -427,7 +433,9 @@ pub(in crate::app) fn normalize_auto_backup(raw: Option<&serde_json::Value>) -> 
     Some(output)
 }
 
-pub(in crate::app) fn normalize_custom_flags(flags: impl IntoIterator<Item = String>) -> Vec<String> {
+pub(in crate::app) fn normalize_custom_flags(
+    flags: impl IntoIterator<Item = String>,
+) -> Vec<String> {
     let mut output = Vec::new();
 
     for flag in flags {
@@ -498,7 +506,8 @@ pub(in crate::app) fn sanitize_mserve_value_config(
         .map(|value| value.max(1) as u32)
         .unwrap_or(200);
 
-    let normalized_auto_backup = normalize_auto_backup(object.get("auto_backup")).unwrap_or_else(default_auto_backup);
+    let normalized_auto_backup =
+        normalize_auto_backup(object.get("auto_backup")).unwrap_or_else(default_auto_backup);
 
     let normalized_interval = object
         .get("auto_backup_interval")
@@ -520,13 +529,16 @@ pub(in crate::app) fn sanitize_mserve_value_config(
         .filter(|value| !value.is_empty())
         // A bare `java` is the legacy "use system PATH" sentinel. Treat it as
         // automatic so the frontend resolves a real, compatible runtime instead.
-        .filter(|value| !value.eq_ignore_ascii_case("java") && !value.eq_ignore_ascii_case("java.exe"));
+        .filter(|value| {
+            !value.eq_ignore_ascii_case("java") && !value.eq_ignore_ascii_case("java.exe")
+        });
 
     let normalized_provider = sanitize_provider(object.get("provider"), &normalized_file);
 
     let normalized_telemetry_host = sanitize_telemetry_host(object.get("telemetry_host"));
 
-    let normalized_telemetry_port = sanitize_telemetry_port(directory, object.get("telemetry_port"));
+    let normalized_telemetry_port =
+        sanitize_telemetry_port(directory, object.get("telemetry_port"));
 
     let normalized_created_at = object
         .get("created_at")
@@ -571,14 +583,20 @@ pub(in crate::app) fn synced_mserve_json_value(config: &SyncedMserveConfig) -> s
     })
 }
 
-pub(in crate::app) fn synced_mserve_json_string(config: &SyncedMserveConfig) -> Result<String, String> {
+pub(in crate::app) fn synced_mserve_json_string(
+    config: &SyncedMserveConfig,
+) -> Result<String, String> {
     serde_json::to_string_pretty(&synced_mserve_json_value(config)).map_err(|err| err.to_string())
 }
 
-pub(in crate::app) fn write_synced_mserve_json(directory: &Path, config: &SyncedMserveConfig) -> Result<(), String> {
+pub(in crate::app) fn write_synced_mserve_json(
+    directory: &Path,
+    config: &SyncedMserveConfig,
+) -> Result<(), String> {
     fs::write(
         directory.join("mserve.json"),
-        serde_json::to_vec_pretty(&synced_mserve_json_value(config)).map_err(|err| err.to_string())?,
+        serde_json::to_vec_pretty(&synced_mserve_json_value(config))
+            .map_err(|err| err.to_string())?,
     )
     .map_err(|err| err.to_string())
 }
@@ -636,11 +654,19 @@ pub(in crate::app) fn has_required_mserve_json_fields(
         return false;
     }
 
-    if object.get("storage_limit").and_then(|value| value.as_u64()).is_none() {
+    if object
+        .get("storage_limit")
+        .and_then(|value| value.as_u64())
+        .is_none()
+    {
         return false;
     }
 
-    if object.get("auto_backup").and_then(|value| value.as_array()).is_none() {
+    if object
+        .get("auto_backup")
+        .and_then(|value| value.as_array())
+        .is_none()
+    {
         return false;
     }
 
@@ -652,11 +678,19 @@ pub(in crate::app) fn has_required_mserve_json_fields(
         return false;
     }
 
-    if object.get("auto_restart").and_then(|value| value.as_bool()).is_none() {
+    if object
+        .get("auto_restart")
+        .and_then(|value| value.as_bool())
+        .is_none()
+    {
         return false;
     }
 
-    if object.get("provider").and_then(|value| value.as_object()).is_none() {
+    if object
+        .get("provider")
+        .and_then(|value| value.as_object())
+        .is_none()
+    {
         return false;
     }
 
@@ -667,12 +701,17 @@ pub(in crate::app) fn has_required_mserve_json_fields(
         == Some(true)
 }
 
-pub(in crate::app) fn parse_mserve_top_level_object(raw: &str) -> Result<Map<String, Value>, String> {
+pub(in crate::app) fn parse_mserve_top_level_object(
+    raw: &str,
+) -> Result<Map<String, Value>, String> {
     let parsed: TopLevelObject = serde_json::from_str(raw).map_err(|err| err.to_string())?;
     Ok(parsed.0)
 }
 
-pub(in crate::app) fn resolve_repair_file(directory: &Path, raw_file: &str) -> Result<String, String> {
+pub(in crate::app) fn resolve_repair_file(
+    directory: &Path,
+    raw_file: &str,
+) -> Result<String, String> {
     let trimmed = raw_file.trim();
     if trimmed.is_empty() {
         return Ok(find_first_jar_file_name(directory).unwrap_or_else(|| "server.jar".to_string()));
@@ -743,5 +782,109 @@ mod tests {
     fn sanitize_custom_flags_preserves_explicit_empty_array() {
         let value = json!([]);
         assert!(sanitize_custom_flags(Some(&value)).is_empty());
+    }
+
+    // --- provider name inference / normalization ---
+
+    #[test]
+    fn infers_provider_from_jar_filename() {
+        assert_eq!(
+            infer_provider_from_jar_file("paper-1.20.1-196.jar").as_deref(),
+            Some("paper")
+        );
+        assert_eq!(
+            infer_provider_from_jar_file("folia-1.20.4-15.jar").as_deref(),
+            Some("folia")
+        );
+        assert_eq!(
+            infer_provider_from_jar_file("velocity-3.3.0-SNAPSHOT.jar").as_deref(),
+            Some("velocity")
+        );
+        assert_eq!(
+            infer_provider_from_jar_file("spigot-1.19.4.jar").as_deref(),
+            Some("spigot")
+        );
+        assert_eq!(
+            infer_provider_from_jar_file("waterfall-1.20.jar").as_deref(),
+            Some("bungeecord")
+        );
+        assert_eq!(
+            infer_provider_from_jar_file("minecraft_server.1.21.jar").as_deref(),
+            Some("vanilla")
+        );
+    }
+
+    #[test]
+    fn unknown_jar_has_no_inferred_provider() {
+        // A custom/modded jar (e.g. Fabric) isn't one of the known names.
+        assert_eq!(
+            infer_provider_from_jar_file("fabric-server-launch.jar"),
+            None
+        );
+        assert_eq!(infer_provider_from_jar_file("server.jar"), None);
+        assert_eq!(infer_provider_from_jar_file("   "), None);
+    }
+
+    #[test]
+    fn infers_version_token_from_jar_filename() {
+        // Works when the version sits in its own token (space/underscore-delimited)
+        // and starts with a digit.
+        assert_eq!(
+            infer_version_from_jar_file("fabric 1.20.1 server.jar").as_deref(),
+            Some("1.20.1")
+        );
+        // No dotted numeric token -> None.
+        assert_eq!(infer_version_from_jar_file("server.jar"), None);
+    }
+
+    #[test]
+    fn hyphenated_version_is_not_extracted_known_limitation() {
+        // KNOWN LIMITATION (documented by this test): the tokenizer keeps `-` and
+        // `.` inside a token, so a typical provider filename is one token starting
+        // with a letter and no version is inferred. See the note in docs/testing.md.
+        assert_eq!(infer_version_from_jar_file("paper-1.20.1-196.jar"), None);
+        assert_eq!(
+            infer_version_from_jar_file("minecraft_server.1.21.jar"),
+            None
+        );
+    }
+
+    #[test]
+    fn default_provider_for_unknown_file_is_vanilla() {
+        let provider = default_provider_for_file("fabric-server-launch.jar");
+        assert_eq!(provider.name, "vanilla");
+        assert_eq!(provider.file, "fabric-server-launch.jar");
+        assert!(provider.stable);
+    }
+
+    #[test]
+    fn proxy_provider_without_version_gets_proxy_marker() {
+        let provider = default_provider_for_file("velocity.jar");
+        assert_eq!(provider.name, "velocity");
+        assert_eq!(provider.minecraft_version, "proxy");
+        // Velocity/BungeeCord get the 17 + 21 JDK set.
+        assert_eq!(provider.jdk_versions, vec![17, 21]);
+    }
+
+    #[test]
+    fn normalize_provider_dedupes_and_sorts_jdks() {
+        let raw = MserveProvider {
+            name: "PaperMC".to_string(),
+            file: "./paper-1.20.1-196.jar".to_string(),
+            download_url: None,
+            provider_version: " 196 ".to_string(),
+            minecraft_version: " 1.20.1 ".to_string(),
+            jdk_versions: vec![21, 0, 17, 21, 16],
+            supported_telemetry: vec![],
+            stable: true,
+        };
+        let normalized = normalize_provider(&raw, "paper-1.20.1-196.jar");
+        assert_eq!(normalized.name, "paper");
+        // `./` prefix stripped, fields trimmed.
+        assert_eq!(normalized.file, "paper-1.20.1-196.jar");
+        assert_eq!(normalized.provider_version, "196");
+        assert_eq!(normalized.minecraft_version, "1.20.1");
+        // Zero filtered out, sorted, de-duped.
+        assert_eq!(normalized.jdk_versions, vec![16, 17, 21]);
     }
 }

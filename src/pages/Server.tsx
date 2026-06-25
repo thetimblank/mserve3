@@ -282,8 +282,8 @@ const Server: React.FC = () => {
 					<ServerContentTabs activeTab={activeTab} serverId={server.id} availableTabs={availableTabs} />
 				</div>
 
-				{activeTab === 'overview' && ( // 200px is a rough estimate of the nav & padding above
-					<div className='max-h-[calc(100vh-200px)] flex flex-col'>
+				{activeTab === 'overview' && (
+					<div className='flex flex-col flex-1'>
 						<ServerOverviewPanel
 							server={server}
 							javaInstallationDefault={user.java_installation_default}

@@ -73,10 +73,8 @@ pub(in crate::app) fn ensure_rcon_enabled(directory: &Path) -> Result<RconConfig
     let port = existing_port.unwrap_or_else(free_loopback_port);
     let password = existing_password.clone().unwrap_or_else(generate_password);
 
-    let needs_write = !enabled
-        || existing_port.is_none()
-        || existing_password.is_none()
-        || !broadcast_silenced;
+    let needs_write =
+        !enabled || existing_port.is_none() || existing_password.is_none() || !broadcast_silenced;
 
     if needs_write {
         let updates = [
@@ -107,8 +105,7 @@ fn apply_properties(directory: &Path, updates: &[(&str, String)]) -> Result<(), 
             continue;
         }
         let key = trimmed.split('=').next().unwrap_or("").trim();
-        if let Some((update_key, value)) =
-            updates.iter().find(|(k, _)| k.eq_ignore_ascii_case(key))
+        if let Some((update_key, value)) = updates.iter().find(|(k, _)| k.eq_ignore_ascii_case(key))
         {
             out_lines.push(format!("{update_key}={value}"));
             seen.insert(update_key.to_lowercase());

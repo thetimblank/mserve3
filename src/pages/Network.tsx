@@ -1,7 +1,6 @@
 import React from 'react';
 import { m } from 'motion/react';
-import { Link } from 'react-router-dom';
-import { ChevronDown, Loader2, Play, Plus, RotateCcw, Share2, Square, UploadCloud, Waypoints } from 'lucide-react';
+import { ChevronDown, Loader2, Play, Plus, RotateCcw, Network, Square, UploadCloud } from 'lucide-react';
 import clsx from 'clsx';
 
 import { useServers } from '@/data/servers';
@@ -35,8 +34,12 @@ const RunSubmenu: React.FC<{
 			{icon} {label}
 		</DropdownMenuSubTrigger>
 		<DropdownMenuSubContent>
-			<DropdownMenuItem onSelect={() => onSelect('sequential')}>Sequential (one at a time)</DropdownMenuItem>
-			<DropdownMenuItem onSelect={() => onSelect('staged')}>Staged (backends, then proxy)</DropdownMenuItem>
+			<DropdownMenuItem onSelect={() => onSelect('sequential')}>
+				Sequential (one at a time)
+			</DropdownMenuItem>
+			<DropdownMenuItem onSelect={() => onSelect('staged')}>
+				Staged (backends, then proxy)
+			</DropdownMenuItem>
 		</DropdownMenuSubContent>
 	</DropdownMenuSub>
 );
@@ -121,7 +124,9 @@ const NetworkPage: React.FC = () => {
 		[activeNetwork],
 	);
 	const onlineCount = React.useMemo(
-		() => servers.filter((server) => networkServerIds.includes(server.id) && server.status === 'online').length,
+		() =>
+			servers.filter((server) => networkServerIds.includes(server.id) && server.status === 'online')
+				.length,
 		[servers, networkServerIds],
 	);
 	const progressServerName = progress?.currentServerId
@@ -176,12 +181,12 @@ const NetworkPage: React.FC = () => {
 						animate={{ y: 0, opacity: 1 }}
 						transition={{ type: 'spring', duration: 0.5, bounce: 0 }}
 						className='flex items-center gap-3 text-3xl font-black'>
-						<Waypoints className='size-8 text-primary' />
+						<Network className='size-8 text-primary' />
 						Server Network
 					</m.h1>
 					<p className='mt-1 text-sm text-muted-foreground'>
-						Connect backend servers to a Velocity proxy. mserve assigns ports and wires modern forwarding
-						automatically.
+						Connect backend servers to a Velocity proxy. mserve assigns ports and wires modern
+						forwarding automatically.
 					</p>
 				</div>
 
@@ -247,23 +252,21 @@ const NetworkPage: React.FC = () => {
 				</div>
 			) : networks.length === 0 ? (
 				<div className='flex flex-1 items-center justify-center'>
-					<div className='max-w-md rounded-3xl border bg-card p-8 text-center'>
-						<span className='mx-auto flex size-14 items-center justify-center rounded-2xl bg-primary/15 text-primary'>
-							<Share2 className='size-7' />
-						</span>
-						<h2 className='mt-4 text-xl font-bold'>Create your first network</h2>
-						<p className='mt-2 text-sm text-muted-foreground'>
-							Group servers behind a Velocity proxy to build a multi-server network. You can create proxy
-							and backend servers from the{' '}
-							<Link to='/servers/new' className='text-primary underline-offset-2 hover:underline'>
-								Create Server
-							</Link>{' '}
-							flow.
-						</p>
-						<Button className='mt-5' onClick={handleCreateNetwork}>
+					<m.div
+						initial={{ scale: 0.75, y: 10, opacity: 0 }}
+						whileInView={{ scale: 1, y: 0, opacity: 1 }}
+						transition={{ type: 'spring', duration: 0.5, bounce: 0 }}
+						className='flex flex-col items-center text-center'>
+						<Network className='size-20 mb-6' />
+						<h1 className='text-3xl font-bold flex gap-5 items-center mb-2 w-fit'>
+							Create your first network
+						</h1>
+						<p className='mb-4'>Group servers behind a Proxy to build a multi-server network.</p>
+
+						<Button onClick={handleCreateNetwork}>
 							<Plus /> New network
 						</Button>
-					</div>
+					</m.div>
 				</div>
 			) : activeNetwork ? (
 				<div className='mt-4 flex min-h-0 flex-1 gap-4'>
@@ -279,7 +282,7 @@ const NetworkPage: React.FC = () => {
 							onRemoveProxy={handleRemoveProxy}
 						/>
 					</div>
-					<aside className='flex w-[360px] shrink-0 flex-col overflow-hidden rounded-2xl border bg-background p-3'>
+					<aside className='flex w-90 shrink-0 flex-col overflow-hidden rounded-2xl border bg-background p-3'>
 						<NetworkInspector
 							network={activeNetwork}
 							servers={servers}

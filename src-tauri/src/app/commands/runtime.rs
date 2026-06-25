@@ -330,7 +330,10 @@ pub(in crate::app) fn stop_server(
 
     runtime.stop_requested = true;
     runtime.stop_requested_at = Some(Instant::now());
-    if !matches!(runtime.state, LifecycleState::Offline | LifecycleState::Crashed) {
+    if !matches!(
+        runtime.state,
+        LifecycleState::Offline | LifecycleState::Crashed
+    ) {
         runtime.state = LifecycleState::Stopping;
     }
 
@@ -437,9 +440,7 @@ pub(in crate::app) fn get_running_server_directories(
 }
 
 #[tauri::command]
-pub(in crate::app) fn force_kill_all_servers(
-    state: State<'_, RuntimeState>,
-) -> Result<(), String> {
+pub(in crate::app) fn force_kill_all_servers(state: State<'_, RuntimeState>) -> Result<(), String> {
     let mut guard = state.processes.lock().map_err(|_| "Runtime lock failed.")?;
     for runtime in guard.values_mut() {
         runtime.stop_requested = true;

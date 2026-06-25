@@ -158,9 +158,19 @@ struct FillChecksums {
 /// A version string is treated as unstable when it carries a pre-release marker.
 fn version_is_unstable(version: &str) -> bool {
     let lowered = version.to_lowercase();
-    ["snapshot", "-rc", "rc-", "-pre", "pre-", "-exp", "experimental", "beta", "alpha"]
-        .iter()
-        .any(|marker| lowered.contains(marker))
+    [
+        "snapshot",
+        "-rc",
+        "rc-",
+        "-pre",
+        "pre-",
+        "-exp",
+        "experimental",
+        "beta",
+        "alpha",
+    ]
+    .iter()
+    .any(|marker| lowered.contains(marker))
 }
 
 fn fill_list_entries(
@@ -175,7 +185,8 @@ fn fill_list_entries(
         &format!("{project}.json"),
         LIST_CACHE_TTL_SECS,
     )?;
-    let response: FillProjectResponse = serde_json::from_str(&text).map_err(|err| err.to_string())?;
+    let response: FillProjectResponse =
+        serde_json::from_str(&text).map_err(|err| err.to_string())?;
 
     let mut entries = Vec::new();
     for (_family, versions) in response.versions.0 {
@@ -343,7 +354,10 @@ fn resolve_one_vanilla(
             has_jar: true,
             url: Some(server.url),
             size: server.size,
-            java_major: detail.java_version.map(|java| java.major_version).unwrap_or(0),
+            java_major: detail
+                .java_version
+                .map(|java| java.major_version)
+                .unwrap_or(0),
             kind: version.kind.clone(),
         },
         None => VanillaResolved {
@@ -366,27 +380,31 @@ fn resolve_many_vanilla(
 
     let queue = Arc::new(Mutex::new(items));
     let results = Arc::new(Mutex::new(Vec::new()));
-    let worker_count = MAX_RESOLVE_WORKERS.min(queue.lock().map(|q| q.len()).unwrap_or(1)).max(1);
+    let worker_count = MAX_RESOLVE_WORKERS
+        .min(queue.lock().map(|q| q.len()).unwrap_or(1))
+        .max(1);
 
     let mut handles = Vec::with_capacity(worker_count);
     for _ in 0..worker_count {
         let queue = Arc::clone(&queue);
         let results = Arc::clone(&results);
         let client = client.clone();
-        handles.push(std::thread::spawn(move || loop {
-            let next = {
-                let mut guard = match queue.lock() {
-                    Ok(guard) => guard,
-                    Err(_) => break,
+        handles.push(std::thread::spawn(move || {
+            loop {
+                let next = {
+                    let mut guard = match queue.lock() {
+                        Ok(guard) => guard,
+                        Err(_) => break,
+                    };
+                    guard.pop()
                 };
-                guard.pop()
-            };
-            let Some(version) = next else {
-                break;
-            };
-            if let Some(resolved) = resolve_one_vanilla(&client, &version) {
-                if let Ok(mut guard) = results.lock() {
-                    guard.push((version.id.clone(), resolved));
+                let Some(version) = next else {
+                    break;
+                };
+                if let Some(resolved) = resolve_one_vanilla(&client, &version) {
+                    if let Ok(mut guard) = results.lock() {
+                        guard.push((version.id.clone(), resolved));
+                    }
                 }
             }
         }));
@@ -412,7 +430,8 @@ fn vanilla_list_entries(
         "vanilla-manifest.json",
         LIST_CACHE_TTL_SECS,
     )?;
-    let manifest: MojangManifest = serde_json::from_str(&manifest_text).map_err(|err| err.to_string())?;
+    let manifest: MojangManifest =
+        serde_json::from_str(&manifest_text).map_err(|err| err.to_string())?;
 
     // Releases by default; snapshots only when explicitly requested (their
     // per-version resolution is the expensive part).
@@ -490,7 +509,9 @@ fn resolve_vanilla(
     };
 
     if !entry.has_jar {
-        return Err(format!("Minecraft {version} has no downloadable server jar."));
+        return Err(format!(
+            "Minecraft {version} has no downloadable server jar."
+        ));
     }
 
     let download_url = entry
@@ -529,7 +550,12 @@ pub(in crate::app) fn list_provider_versions(
     match payload.tab.trim().to_lowercase().as_str() {
         "plugin" => {
             let mut entries = fill_list_entries(&client, "paper", "plugin", include_unstable)?;
-            entries.extend(fill_list_entries(&client, "folia", "plugin", include_unstable)?);
+            entries.extend(fill_list_entries(
+                &client,
+                "folia",
+                "plugin",
+                include_unstable,
+            )?);
             Ok(entries)
         }
         "proxies" => fill_list_entries(&client, "velocity", "proxies", include_unstable),
@@ -555,5 +581,88 @@ pub(in crate::app) fn resolve_provider_version(
         }
         "vanilla" => resolve_vanilla(&client, version),
         other => Err(format!("Unsupported provider: {other}.")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn flags_prerelease_markers_as_unstable() {
+        for v in [
+            "1.21-pre1",
+            "1.20.5-rc1",
+            "23w13a-snapshot",
+            "1.0-experimental",
+            "2.0-beta",
+            "1.0-alpha",
+        ] {
+            assert!(version_is_unstable(v), "{v} should be unstable");
+        }
+    }
+
+    #[test]
+    fn release_versions_are_stable() {
+        for v in ["1.21", "1.20.1", "1.19.4", "1.8.8"] {
+            assert!(!version_is_unstable(v), "{v} should be stable");
+        }
+    }
+
+    #[test]
+    fn fill_versions_object_preserves_document_order() {
+        // serde_json would re-sort a BTreeMap; the custom deserializer must keep
+        // the server's newest-first family order so the picker shows latest first.
+        let json = r#"{"versions": {"1.21": ["1.21.1", "1.21"], "1.20": ["1.20.6"]}}"#;
+        let parsed: FillProjectResponse = serde_json::from_str(json).unwrap();
+        let families: Vec<&str> = parsed.versions.0.iter().map(|(f, _)| f.as_str()).collect();
+        assert_eq!(families, vec!["1.21", "1.20"]);
+        assert_eq!(parsed.versions.0[0].1, vec!["1.21.1", "1.21"]);
+    }
+
+    #[test]
+    fn pick_download_prefers_server_default() {
+        let json = r#"{
+            "id": 196,
+            "channel": "STABLE",
+            "downloads": {
+                "server:default": {"name": "paper-1.20.1-196.jar", "url": "https://x/paper.jar", "size": 123, "checksums": {"sha256": "abc"}},
+                "mojang-mappings": {"name": "mappings.txt", "url": "https://x/m.txt"}
+            }
+        }"#;
+        let build: FillBuild = serde_json::from_str(json).unwrap();
+        let download = pick_download(&build).unwrap();
+        assert_eq!(download.name, "paper-1.20.1-196.jar");
+        assert_eq!(download.size, Some(123));
+        assert_eq!(download.checksums.as_ref().unwrap().sha256, "abc");
+    }
+
+    #[test]
+    fn pick_download_falls_back_to_any_artifact() {
+        let json = r#"{
+            "id": 5,
+            "channel": "STABLE",
+            "downloads": {"only-one": {"name": "thing.jar", "url": "https://x/thing.jar"}}
+        }"#;
+        let build: FillBuild = serde_json::from_str(json).unwrap();
+        assert_eq!(pick_download(&build).unwrap().name, "thing.jar");
+    }
+
+    #[test]
+    fn pick_download_errors_when_no_artifacts() {
+        let json = r#"{"id": 1, "channel": "STABLE", "downloads": {}}"#;
+        let build: FillBuild = serde_json::from_str(json).unwrap();
+        assert!(pick_download(&build).is_err());
+    }
+
+    #[test]
+    fn mojang_manifest_deserializes() {
+        let json = r#"{"latest":{"release":"1.21"},"versions":[
+            {"id":"1.21","type":"release","url":"https://x/1.21.json"},
+            {"id":"23w13a","type":"snapshot","url":"https://x/snap.json"}
+        ]}"#;
+        let manifest: MojangManifest = serde_json::from_str(json).unwrap();
+        assert_eq!(manifest.versions.len(), 2);
+        assert_eq!(manifest.versions[0].id, "1.21");
     }
 }

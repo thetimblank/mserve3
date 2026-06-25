@@ -3,6 +3,7 @@ import {
 	Activity,
 	Archive,
 	ArrowDownToLine,
+	ArrowUpCircle,
 	Boxes,
 	CircleCheck,
 	Clock,
@@ -12,13 +13,14 @@ import {
 	EyeOff,
 	Globe,
 	MemoryStick,
-	Network,
 	OctagonX,
 	Package,
 	RefreshCcw,
 	TriangleAlert,
 	Users,
+	Wifi,
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { invoke } from '@tauri-apps/api/core';
 import { Button } from '@/components/ui/button';
 import OpenFolderButton from '@/components/open-folder-button';
@@ -26,9 +28,12 @@ import ServerStatus from '@/components/server-status';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Card, CardContent } from '@/components/ui/card';
 import type { Server } from '@/data/servers';
+import { useUser } from '@/data/user';
+import { useServerUpdates } from '@/data/server-updates';
 import { type JavaRuntimeInfo } from '@/lib/java-runtime-service';
 import { javaResolutionLabel, resolveServerJavaExecutable } from '@/lib/java-resolution';
 import { isProxyProvider } from '@/lib/server-provider';
+import { getServerProviderCapabilities } from '@/lib/server-provider-capabilities';
 import { getPrimaryMinecraftVersion } from '@/lib/utils';
 import { formatBytes, formatUptime } from './server-utils';
 import MetricCard from './stats/metric-card';
@@ -90,6 +95,14 @@ const ServerOverviewPanel: React.FC<Props> = ({
 }) => {
 	const isOffline = server.status === 'offline';
 	const isProxy = isProxyProvider(server.provider);
+	const capabilities = getServerProviderCapabilities(server.provider);
+	const { user } = useUser();
+	const { getEntry: getUpdateEntry } = useServerUpdates();
+	const updateEntry = getUpdateEntry(server.id);
+	const availableUpdate =
+		updateEntry.status === 'result' && updateEntry.check.status === 'update-available'
+			? updateEntry.check
+			: null;
 
 	const [publicIp, setPublicIp] = React.useState<string | null>(null);
 	const [ipHidden, setIpHidden] = React.useState(true);
@@ -138,6 +151,14 @@ const ServerOverviewPanel: React.FC<Props> = ({
 	});
 	const sparkData = React.useMemo(() => toChartData(points), [points]);
 
+	const latestRamBytes = React.useMemo(() => {
+		for (let i = sparkData.length - 1; i >= 0; i--) {
+			const b = sparkData[i].ramBytes;
+			if (b != null) return b;
+		}
+		return null;
+	}, [sparkData]);
+
 	const isRunning = server.status === 'online' || server.status === 'starting';
 
 	return (
@@ -145,119 +166,130 @@ const ServerOverviewPanel: React.FC<Props> = ({
 			<CardContent className='flex flex-col gap-6'>
 				{/* Header: status + lifecycle actions */}
 				<div className='flex items-center gap-x-8 gap-y-4'>
-					<div className='flex-1'>
-						<ServerStatus server={server} size='xl' />
-					</div>
-					<div className='flex flex-wrap gap-2 w-full'>
-						{isRunning && (
-							<Button onClick={onStop} disabled={isBusy}>
-								<OctagonX />
-								<p>Stop</p>
-							</Button>
-						)}
-						{isRunning && (
-							<Button variant='secondary' onClick={onRestart} disabled={isBusy}>
-								<RefreshCcw />
-								<p>Restart</p>
-							</Button>
-						)}
-						{isOffline && (
-							<Button onClick={onStart} disabled={isBusy}>
-								<CircleCheck />
-								<p>Serve</p>
-							</Button>
-						)}
-						{!isOffline && (
-							<Button variant='destructive-secondary' onClick={onForceKill} disabled={isBusy}>
-								<OctagonX />
-								<p>Force Kill</p>
-							</Button>
-						)}
-						<OpenFolderButton directory={server.directory} disabled={isBusy} />
-						{/* Connection address */}
-						<div className='flex items-center gap-2 rounded-lg bg-secondary px-3 py-1 ml-auto text-sm'>
-							<Network className='size-4 shrink-0 text-muted-foreground' />
-							<span className='text-muted-foreground select-none'>Connect:</span>
-							<span className='font-mono'>
-								{publicIp == null ? (
-									<span className='text-muted-foreground italic'>loading…</span>
-								) : ipHidden ? (
-									<span className='blur-sm select-none'>XXX.XXX.X.X</span>
-								) : (
-									publicIp
-								)}
-							</span>
-							<span className='font-mono text-muted-foreground'>:{server.telemetry_port}</span>
-							<Button
-								variant='ghost'
-								size='sm'
-								className='h-6 w-6 p-0 text-muted-foreground hover:text-foreground'
-								onClick={() => setIpHidden((h) => !h)}
-								title={ipHidden ? 'Show IP' : 'Hide IP'}>
-								{ipHidden ? <Eye className='size-3.5' /> : <EyeOff className='size-3.5' />}
-							</Button>
+					<ServerStatus server={server} size='xl' />
+					<div className='flex flex-col gap-2 flex-1 w-full'>
+						<div className='flex flex-wrap gap-2 w-full'>
+							{isRunning && (
+								<Button onClick={onStop} disabled={isBusy}>
+									<OctagonX />
+									<p>Stop</p>
+								</Button>
+							)}
+							{isRunning && (
+								<Button variant='secondary' onClick={onRestart} disabled={isBusy}>
+									<RefreshCcw />
+									<p>Restart</p>
+								</Button>
+							)}
+							{isOffline && (
+								<Button onClick={onStart} disabled={isBusy}>
+									<CircleCheck />
+									<p>Serve</p>
+								</Button>
+							)}
+							{!isOffline && (
+								<Button variant='destructive-secondary' onClick={onForceKill} disabled={isBusy}>
+									<OctagonX />
+									<p>Force Kill</p>
+								</Button>
+							)}
+							<OpenFolderButton directory={server.directory} disabled={isBusy} />
+							{/* Connection address */}
+							<div className='flex items-center gap-2 rounded-md bg-card dark:bg-secondary/50 border-2 dark:border-none px-3 py-1 text-sm'>
+								<Wifi className='size-4 shrink-0 text-muted-foreground' />
+								<span className='text-muted-foreground select-none'>Connect:</span>
+								<span className='font-mono'>
+									{publicIp == null ? (
+										<span className='blur-sm select-none text-muted-foreground'>Loading</span>
+									) : ipHidden ? (
+										<span className='blur-sm select-none'>XXX.XXX.X.X</span>
+									) : (
+										publicIp
+									)}
+								</span>
+								<span className='font-mono text-muted-foreground'>:{server.telemetry_port}</span>
+								<Button
+									variant='ghost'
+									size='sm'
+									className='h-6 w-6 p-0 text-muted-foreground hover:text-foreground'
+									onClick={() => setIpHidden((h) => !h)}
+									title={ipHidden ? 'Show IP' : 'Hide IP'}>
+									{ipHidden ? <Eye className='size-3.5' /> : <EyeOff className='size-3.5' />}
+								</Button>
+							</div>
+						</div>
+						{/* Live metric cards */}
+						<div className='grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5'>
+							<MetricCard
+								icon={<Cpu />}
+								label='CPU'
+								color={METRIC_COLORS.cpu}
+								value={
+									isOffline || server.stats.cpu_used == null
+										? null
+										: formatPercent(server.stats.cpu_used)
+								}
+								sparkData={sparkData}
+								sparkKey='cpuUsed'
+								sparkDomain={[0, 100]}
+							/>
+							<MetricCard
+								icon={<MemoryStick />}
+								label='RAM'
+								color={METRIC_COLORS.ram}
+								value={
+									isOffline || server.stats.ram_used == null ? null : user.advanced_mode &&
+									  latestRamBytes != null ? (
+										<>
+											{formatPercent(server.stats.ram_used)}
+											<div className='text-xs font-normal text-muted-foreground mt-0.5 leading-none'>
+												{Math.round(latestRamBytes / 1048576)}mb / {server.ram * 1024}mb
+											</div>
+										</>
+									) : (
+										formatPercent(server.stats.ram_used)
+									)
+								}
+								sparkData={sparkData}
+								sparkKey='ramUsed'
+								sparkDomain={[0, 100]}
+							/>
+							<MetricCard
+								icon={<Users />}
+								label='Players'
+								color={METRIC_COLORS.players}
+								value={
+									server.status === 'online'
+										? `${server.stats.players_online ?? 0}/${server.stats.players_max ?? 0}`
+										: null
+								}
+								sparkData={sparkData}
+								sparkKey='playersOnline'
+								sparkDomain={[0, 'auto']}
+							/>
+							{capabilities.supportsTpsCommand && (
+								<MetricCard
+									icon={<Activity />}
+									label='TPS'
+									color={METRIC_COLORS.tps}
+									value={isOffline || server.stats.tps == null ? null : server.stats.tps.toFixed(2)}
+									sparkData={sparkData}
+									sparkKey='tps'
+									sparkDomain={[0, 20]}
+								/>
+							)}
+							<MetricCard
+								icon={<Clock />}
+								label='Uptime'
+								color={METRIC_COLORS.online}
+								value={
+									server.status === 'online' && server.stats.uptime ? (
+										<UptimeText uptime={server.stats.uptime} />
+									) : null
+								}
+							/>
 						</div>
 					</div>
-				</div>
-
-				{/* Live metric cards */}
-				<div className='grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5'>
-					<MetricCard
-						icon={<Cpu />}
-						label='CPU'
-						color={METRIC_COLORS.cpu}
-						value={
-							isOffline || server.stats.cpu_used == null ? null : formatPercent(server.stats.cpu_used)
-						}
-						sparkData={sparkData}
-						sparkKey='cpuUsed'
-						sparkDomain={[0, 100]}
-					/>
-					<MetricCard
-						icon={<MemoryStick />}
-						label='RAM'
-						color={METRIC_COLORS.ram}
-						value={
-							isOffline || server.stats.ram_used == null ? null : formatPercent(server.stats.ram_used)
-						}
-						sparkData={sparkData}
-						sparkKey='ramUsed'
-						sparkDomain={[0, 100]}
-					/>
-					<MetricCard
-						icon={<Users />}
-						label='Players'
-						color={METRIC_COLORS.players}
-						value={
-							server.status === 'online'
-								? `${server.stats.players_online ?? 0}/${server.stats.players_max ?? 0}`
-								: null
-						}
-						sparkData={sparkData}
-						sparkKey='playersOnline'
-						sparkDomain={[0, 'auto']}
-					/>
-					{!isProxy && (
-						<MetricCard
-							icon={<Activity />}
-							label='TPS'
-							color={METRIC_COLORS.tps}
-							value={isOffline || server.stats.tps == null ? null : server.stats.tps.toFixed(2)}
-							sparkData={sparkData}
-							sparkKey='tps'
-							sparkDomain={[0, 20]}
-						/>
-					)}
-					<MetricCard
-						icon={<Clock />}
-						label='Uptime'
-						color={METRIC_COLORS.online}
-						value={
-							server.status === 'online' && server.stats.uptime ? (
-								<UptimeText uptime={server.stats.uptime} />
-							) : null
-						}
-					/>
 				</div>
 
 				{/* Static details */}
@@ -297,6 +329,16 @@ const ServerOverviewPanel: React.FC<Props> = ({
 						<DetailItem icon={<Boxes />} label='Jar file'>
 							{server.file}
 						</DetailItem>
+						{availableUpdate && (
+							<DetailItem icon={<ArrowUpCircle />} label='Update'>
+								<Link
+									to={`/servers/${server.id}/settings#server-jar`}
+									className='inline-flex items-center gap-1.5 rounded-full bg-accent px-2 py-0.5 text-xs font-medium text-accent-foreground hover:opacity-80'>
+									<ArrowUpCircle className='size-3.5' />
+									{availableUpdate.latestLabel} available
+								</Link>
+							</DetailItem>
+						)}
 						{server.ram != null && (
 							<DetailItem icon={<MemoryStick />} label='Allocated RAM'>
 								{server.ram}GB

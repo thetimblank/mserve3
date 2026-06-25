@@ -9,6 +9,7 @@ import { Activity, Cpu, MemoryStick, Power, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
 import type { Server } from '@/data/servers';
+import { useUser } from '@/data/user';
 import { isProxyProvider } from '@/lib/server-provider';
 import { cn } from '@/lib/utils';
 
@@ -60,11 +61,29 @@ const ServerStatisticsTab: React.FC<Props> = ({ server }) => {
 
 	const range = getTimeRange(rangeKey);
 	const isProxy = isProxyProvider(server.provider);
+	const { user } = useUser();
 
 	const { points, isLoading, updatedAt } = useServerTelemetryHistory(server.id, range.ms, {
 		maxPoints: maxPointsForRange(range.ms),
 	});
 	const data = React.useMemo(() => toChartData(points), [points]);
+
+	const ramBadge = React.useMemo(() => {
+		if (user.advanced_mode) {
+			const pct = latestBadge(data, 'ramUsed', pctTick);
+			if (!pct) return undefined;
+			let bytesVal: number | null = null;
+			for (let i = data.length - 1; i >= 0; i--) {
+				const b = data[i].ramBytes;
+				if (b != null) { bytesVal = b; break; }
+			}
+			if (bytesVal == null) return pct;
+			return `${pct} ${Math.round(bytesVal / 1048576)}mb/${server.ram * 1024}mb`;
+		}
+		return ramUnit === 'pct'
+			? latestBadge(data, 'ramUsed', pctTick)
+			: latestBadge(data, 'ramBytes', formatBytes);
+	}, [user.advanced_mode, data, ramUnit, server.ram]);
 
 	return (
 		<div className='h-[calc(100vh-200px)] overflow-y-auto app-scroll-area app-scroll-stable pb-4'>
@@ -142,11 +161,7 @@ const ServerStatisticsTab: React.FC<Props> = ({ server }) => {
 				<TelemetryAreaChart
 					title='Memory usage'
 					icon={<MemoryStick className='size-4' />}
-					badge={
-						ramUnit === 'pct'
-							? latestBadge(data, 'ramUsed', pctTick)
-							: latestBadge(data, 'ramBytes', formatBytes)
-					}
+					badge={ramBadge}
 					config={ramUnit === 'pct' ? ramPctChartConfig : ramBytesChartConfig}
 					data={data}
 					dataKey={ramUnit === 'pct' ? 'ramUsed' : 'ramBytes'}

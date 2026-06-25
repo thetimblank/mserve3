@@ -9,6 +9,7 @@ export interface UserData {
 	servers_root_path: string;
 	advanced_mode: boolean;
 	suppress_close_warning: boolean;
+	auto_check_server_updates: boolean;
 	completed_setup_hosting_ports: number[];
 	initial_setup_hosting_tutorial_completed: boolean;
 	created_at: Date;
@@ -65,6 +66,7 @@ export const createDefaultUserData = (): UserData => {
 		servers_root_path: '',
 		advanced_mode: false,
 		suppress_close_warning: false,
+		auto_check_server_updates: true,
 		completed_setup_hosting_ports: [],
 		initial_setup_hosting_tutorial_completed: false,
 		created_at: now,
@@ -86,6 +88,7 @@ export const normalizeUserData = (user: Partial<UserData> | null | undefined): U
 		servers_root_path: toTrimmedString(user?.servers_root_path),
 		advanced_mode: user?.advanced_mode ?? false,
 		suppress_close_warning: user?.suppress_close_warning ?? false,
+		auto_check_server_updates: user?.auto_check_server_updates ?? true,
 		completed_setup_hosting_ports: normalizePortList(user?.completed_setup_hosting_ports),
 		initial_setup_hosting_tutorial_completed: user?.initial_setup_hosting_tutorial_completed ?? false,
 		created_at: toDate(user?.created_at ?? fallback.created_at),

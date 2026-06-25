@@ -34,7 +34,7 @@ const ServerStatus: React.FC<Props> = ({ server, size = 'md' }) => {
 			ring: 'size-16',
 			icon: 'size-10',
 			tps: 'max-w-16 max-h-16 text-base',
-			status: 'text-base',
+			status: 'text-base uppercase',
 		},
 		lg: {
 			container: 'gap-2 relative',
@@ -42,15 +42,15 @@ const ServerStatus: React.FC<Props> = ({ server, size = 'md' }) => {
 			ring: 'size-20',
 			icon: 'size-12',
 			tps: 'max-w-20 max-h-20 text-lg',
-			status: 'text-lg',
+			status: 'text-lg uppercase',
 		},
 		xl: {
 			container: 'gap-2 relative',
-			visual: 'size-24',
-			ring: 'size-24',
-			icon: 'size-14',
-			tps: 'max-w-24 max-h-24 text-xl',
-			status: 'text-xl',
+			visual: 'size-30',
+			ring: 'size-30',
+			icon: 'size-16',
+			tps: 'max-w-30 max-h-30 text-xl',
+			status: 'text-xl uppercase',
 		},
 	} as const;
 

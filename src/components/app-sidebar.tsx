@@ -1,4 +1,4 @@
-import { Coffee, Home, Network, Plus, Server, Settings, Waypoints } from 'lucide-react';
+import { Coffee, Home, Network, Plus, Server, Settings, Wifi } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import clsx from 'clsx';
 
@@ -25,7 +25,7 @@ const items = [
 	{
 		title: 'Setup Hosting',
 		url: '/setup',
-		icon: Network,
+		icon: Wifi,
 	},
 	{
 		title: 'Java Guide',
@@ -35,7 +35,7 @@ const items = [
 	{
 		title: 'Server Network',
 		url: '/network',
-		icon: Waypoints,
+		icon: Network,
 	},
 	{
 		title: 'Settings',
@@ -119,6 +119,7 @@ export function AppSidebar() {
 												<div className='ml-4 flex flex-col'>
 													{availableTabs.map((tab) => (
 														<Link
+															key={tab}
 															className={clsx(
 																'border-l-2 py-1 capitalize pl-4 rounded-r-lg font-semibold',
 																location.pathname === getServerContentTabUrl(server.id, tab)

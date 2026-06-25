@@ -157,7 +157,11 @@ pub(in crate::app) fn list_plugins(directory: &Path, explicit: bool) -> Vec<Scan
     };
 
     read_plugins(directory.join("plugins"), true, &mut plugins);
-    read_plugins(directory.join("inactive").join("plugins"), false, &mut plugins);
+    read_plugins(
+        directory.join("inactive").join("plugins"),
+        false,
+        &mut plugins,
+    );
 
     let mut deduped: HashMap<String, ScannedPlugin> = HashMap::new();
     for plugin in plugins {
@@ -274,7 +278,11 @@ pub(in crate::app) fn list_datapacks(directory: &Path, explicit: bool) -> Vec<Sc
         }
     };
 
-    read_datapacks(directory.join("world").join("datapacks"), true, &mut datapacks);
+    read_datapacks(
+        directory.join("world").join("datapacks"),
+        true,
+        &mut datapacks,
+    );
     read_datapacks(
         directory.join("inactive").join("datapacks"),
         false,
@@ -296,4 +304,3 @@ pub(in crate::app) fn list_datapacks(directory: &Path, explicit: bool) -> Vec<Sc
     result.sort_by(|a, b| a.file.to_lowercase().cmp(&b.file.to_lowercase()));
     result
 }
-

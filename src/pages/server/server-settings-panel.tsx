@@ -1,6 +1,6 @@
 import React from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import { Link2Off, Loader2, Lock, Search, Trash } from 'lucide-react';
 import { AnimatePresence, m } from 'motion/react';
@@ -254,10 +254,13 @@ export default function ServerSettingsPanel({
 	syncServerContents,
 }: Props) {
 	const navigate = useNavigate();
+	const { hash } = useLocation();
 	const { removeServer, updateServer } = useServers();
 	const { user } = useUser();
 	const [query, setQuery] = React.useState('');
-	const [activeSectionId, setActiveSectionId] = React.useState<SectionId>('rename');
+	const [activeSectionId, setActiveSectionId] = React.useState<SectionId>(
+		() => (hash.slice(1) as SectionId) || 'rename',
+	);
 	const cacheKey = React.useMemo(() => server.directory.trim().toLowerCase(), [server.directory]);
 	const [managedConfigFileStatuses, setManagedConfigFileStatuses] = React.useState<ManagedConfigFileStatus[]>(
 		[],

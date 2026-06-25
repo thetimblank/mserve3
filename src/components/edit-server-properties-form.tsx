@@ -43,6 +43,7 @@ import JavaRuntimeSelect from './java-runtime-select';
 import JarDownloadModal, {
 	type DownloadedJarSelection,
 } from '@/pages/create-server/slides/components/JarDownloadModal';
+import ServerJarUpdateSection from '@/components/server-jar-update-section';
 
 const TELEMETRY_LABELS: Record<TelemetryKey, string> = {
 	list: 'Players list polling',
@@ -887,6 +888,7 @@ export const ProviderTelemetrySettingsSection: React.FC = () => {
 export const ServerJarSettingsSection: React.FC = () => {
 	const {
 		advancedMode,
+		server,
 		settingsForm,
 		updateSettingsField,
 		isFormLocked,
@@ -900,6 +902,8 @@ export const ServerJarSettingsSection: React.FC = () => {
 
 	return (
 		<SectionShell className='space-y-12'>
+			<ServerJarUpdateSection server={server} disabled={isFormLocked || !isOffline} />
+
 			<section className='space-y-3 max-w-lg'>
 				<div className='space-y-1'>
 					<p className='text-xl'>Sync mserve.json</p>

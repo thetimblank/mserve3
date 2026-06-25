@@ -2,8 +2,8 @@ use super::super::support::*;
 use super::super::*;
 use std::path::PathBuf;
 use std::time::Duration;
-use tauri::async_runtime::spawn_blocking;
 use tauri::State;
+use tauri::async_runtime::spawn_blocking;
 
 /// Returns the latest telemetry sample for a server. The supervisor keeps this
 /// fresh while a server runs; if there is no live sample we fall back to a
