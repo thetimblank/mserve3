@@ -421,9 +421,11 @@ pub(in crate::app) fn normalize_auto_backup(
         let Some(mode) = item.as_str() else {
             continue;
         };
-        if matches!(mode, "interval" | "on_close" | "on_start") && !output.iter().any(|existing| existing == mode) {
-                output.push(mode.to_string());
-            }
+        if matches!(mode, "interval" | "on_close" | "on_start")
+            && !output.iter().any(|existing| existing == mode)
+        {
+            output.push(mode.to_string());
+        }
     }
 
     Some(output)

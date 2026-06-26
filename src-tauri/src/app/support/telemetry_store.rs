@@ -143,9 +143,8 @@ fn read_range(
         Err(_) => return Vec::new(),
     };
 
-    let real_points: HashMap<i64, TelemetryHistoryPoint> = match statement.query_map(
-        params![bucket_size, server_id, from_ts, to_ts],
-        |row| {
+    let real_points: HashMap<i64, TelemetryHistoryPoint> =
+        match statement.query_map(params![bucket_size, server_id, from_ts, to_ts], |row| {
             let online_avg: f64 = row.get::<_, Option<f64>>(1)?.unwrap_or(0.0);
             Ok(TelemetryHistoryPoint {
                 timestamp: row.get::<_, i64>(0)?,
@@ -158,14 +157,13 @@ fn read_range(
                 ram_used: row.get::<_, Option<f64>>(5)?,
                 cpu_used: row.get::<_, Option<f64>>(6)?,
             })
-        },
-    ) {
-        Ok(iterator) => iterator
-            .filter_map(Result::ok)
-            .map(|p| (p.timestamp, p))
-            .collect(),
-        Err(_) => return Vec::new(),
-    };
+        }) {
+            Ok(iterator) => iterator
+                .filter_map(Result::ok)
+                .map(|p| (p.timestamp, p))
+                .collect(),
+            Err(_) => return Vec::new(),
+        };
 
     // Don't synthesize offline buckets for time before mserve first saw this
     // server. If that predates the query window we fill from `from_ts`.

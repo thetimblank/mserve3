@@ -366,15 +366,16 @@ pub(in crate::app) fn restart_server(
     {
         let mut guard = processes.lock().map_err(|_| "Runtime lock failed.")?;
         if let Some(runtime) = guard.get_mut(&key)
-            && runtime.child.is_some() {
-                runtime.stop_requested = true;
-                runtime.stop_requested_at = Some(Instant::now());
-                runtime.state = LifecycleState::Stopping;
-                if let Some(stdin) = runtime.stdin.as_mut() {
-                    let _ = writeln!(stdin, "stop");
-                    let _ = stdin.flush();
-                }
+            && runtime.child.is_some()
+        {
+            runtime.stop_requested = true;
+            runtime.stop_requested_at = Some(Instant::now());
+            runtime.state = LifecycleState::Stopping;
+            if let Some(stdin) = runtime.stdin.as_mut() {
+                let _ = writeln!(stdin, "stop");
+                let _ = stdin.flush();
             }
+        }
     }
 
     // Wait for the old process to exit (supervisor escalates to a kill at grace),

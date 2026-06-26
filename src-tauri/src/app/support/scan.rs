@@ -167,9 +167,10 @@ pub(in crate::app) fn list_plugins(directory: &Path, explicit: bool) -> Vec<Scan
     for plugin in plugins {
         let key = plugin.file.to_lowercase();
         if let Some(existing) = deduped.get(&key)
-            && existing.activated {
-                continue;
-            }
+            && existing.activated
+        {
+            continue;
+        }
         deduped.insert(key, plugin);
     }
 
@@ -235,9 +236,10 @@ pub(in crate::app) fn list_worlds(directory: &Path) -> Vec<ScannedWorld> {
     for world in worlds {
         let key = world.file.to_lowercase();
         if let Some(existing) = deduped.get(&key)
-            && existing.activated {
-                continue;
-            }
+            && existing.activated
+        {
+            continue;
+        }
         deduped.insert(key, world);
     }
 
@@ -291,9 +293,10 @@ pub(in crate::app) fn list_datapacks(directory: &Path, explicit: bool) -> Vec<Sc
     for datapack in datapacks {
         let key = datapack.file.to_lowercase();
         if let Some(existing) = deduped.get(&key)
-            && existing.activated {
-                continue;
-            }
+            && existing.activated
+        {
+            continue;
+        }
         deduped.insert(key, datapack);
     }
 

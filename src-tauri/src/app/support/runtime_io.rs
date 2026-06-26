@@ -26,12 +26,13 @@ pub(in crate::app) fn emit_output_reader<R: std::io::Read + Send + 'static>(
         for line in buffered.lines().map_while(Result::ok) {
             if stream == "stderr"
                 && let Ok(mut guard) = processes.lock()
-                    && let Some(runtime) = guard.get_mut(&key) {
-                        runtime.stderr_tail.push_back(line.clone());
-                        while runtime.stderr_tail.len() > STDERR_TAIL_LIMIT {
-                            runtime.stderr_tail.pop_front();
-                        }
-                    }
+                && let Some(runtime) = guard.get_mut(&key)
+            {
+                runtime.stderr_tail.push_back(line.clone());
+                while runtime.stderr_tail.len() > STDERR_TAIL_LIMIT {
+                    runtime.stderr_tail.pop_front();
+                }
+            }
 
             let _ = app.emit(
                 "server-output",

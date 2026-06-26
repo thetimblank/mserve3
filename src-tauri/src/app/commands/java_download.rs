@@ -53,10 +53,10 @@ fn find_java_executable(root: &Path, depth: u32) -> Option<PathBuf> {
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir()
-            && let Some(found) = find_java_executable(&path, depth - 1) {
-                return Some(found);
-            }
-        
+            && let Some(found) = find_java_executable(&path, depth - 1)
+        {
+            return Some(found);
+        }
     }
 
     None

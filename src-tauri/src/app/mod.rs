@@ -499,29 +499,27 @@ pub fn run() {
         .manage(RuntimeState::default())
         .on_window_event(|window, event| {
             if window.label() == "main"
-                && let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                    api.prevent_close();
-                    let state: tauri::State<'_, RuntimeState> = window.state();
-                    let running = {
-                        let guard = state.processes.lock().unwrap_or_else(|e| e.into_inner());
-                        guard
-                            .values()
-                            .filter(|r| {
-                                !matches!(
-                                    r.state,
-                                    LifecycleState::Offline | LifecycleState::Crashed
-                                )
-                            })
-                            .map(|r| r.directory.clone())
-                            .collect::<Vec<_>>()
-                    };
-                    let _ = window.app_handle().emit(
-                        "app-close-requested",
-                        AppCloseRequestedPayload {
-                            running_server_directories: running,
-                        },
-                    );
-                }
+                && let tauri::WindowEvent::CloseRequested { api, .. } = event
+            {
+                api.prevent_close();
+                let state: tauri::State<'_, RuntimeState> = window.state();
+                let running = {
+                    let guard = state.processes.lock().unwrap_or_else(|e| e.into_inner());
+                    guard
+                        .values()
+                        .filter(|r| {
+                            !matches!(r.state, LifecycleState::Offline | LifecycleState::Crashed)
+                        })
+                        .map(|r| r.directory.clone())
+                        .collect::<Vec<_>>()
+                };
+                let _ = window.app_handle().emit(
+                    "app-close-requested",
+                    AppCloseRequestedPayload {
+                        running_server_directories: running,
+                    },
+                );
+            }
         })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -537,9 +535,10 @@ pub fn run() {
         .setup(|app| {
             // Open the telemetry time-series database in the app data dir.
             if let Ok(data_dir) = app.path().app_data_dir()
-                && let Err(err) = support::init_telemetry_store(&data_dir.join("telemetry.db")) {
-                    eprintln!("[Telemetry] Failed to open store: {err}");
-                }
+                && let Err(err) = support::init_telemetry_store(&data_dir.join("telemetry.db"))
+            {
+                eprintln!("[Telemetry] Failed to open store: {err}");
+            }
 
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {

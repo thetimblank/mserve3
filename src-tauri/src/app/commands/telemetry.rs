@@ -17,9 +17,10 @@ pub(in crate::app) async fn get_server_telemetry(
     {
         let guard = state.processes.lock().map_err(|_| "Runtime lock failed.")?;
         if let Some(runtime) = guard.get(&key)
-            && let Some(sample) = runtime.latest_sample.clone() {
-                return Ok(sample);
-            }
+            && let Some(sample) = runtime.latest_sample.clone()
+        {
+            return Ok(sample);
+        }
     }
 
     let directory_path = PathBuf::from(directory.trim());
