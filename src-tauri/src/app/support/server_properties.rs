@@ -25,14 +25,13 @@ pub(in crate::app) fn read_property(directory: &Path, key: &str) -> Option<Strin
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }
-        if let Some((found_key, value)) = trimmed.split_once('=') {
-            if found_key.trim().eq_ignore_ascii_case(key) {
+        if let Some((found_key, value)) = trimmed.split_once('=')
+            && found_key.trim().eq_ignore_ascii_case(key) {
                 let value = value.trim();
                 if !value.is_empty() {
                     return Some(value.to_string());
                 }
             }
-        }
     }
     None
 }

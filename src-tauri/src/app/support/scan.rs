@@ -166,11 +166,10 @@ pub(in crate::app) fn list_plugins(directory: &Path, explicit: bool) -> Vec<Scan
     let mut deduped: HashMap<String, ScannedPlugin> = HashMap::new();
     for plugin in plugins {
         let key = plugin.file.to_lowercase();
-        if let Some(existing) = deduped.get(&key) {
-            if existing.activated {
+        if let Some(existing) = deduped.get(&key)
+            && existing.activated {
                 continue;
             }
-        }
         deduped.insert(key, plugin);
     }
 
@@ -235,11 +234,10 @@ pub(in crate::app) fn list_worlds(directory: &Path) -> Vec<ScannedWorld> {
     let mut deduped: HashMap<String, ScannedWorld> = HashMap::new();
     for world in worlds {
         let key = world.file.to_lowercase();
-        if let Some(existing) = deduped.get(&key) {
-            if existing.activated {
+        if let Some(existing) = deduped.get(&key)
+            && existing.activated {
                 continue;
             }
-        }
         deduped.insert(key, world);
     }
 
@@ -292,11 +290,10 @@ pub(in crate::app) fn list_datapacks(directory: &Path, explicit: bool) -> Vec<Sc
     let mut deduped: HashMap<String, ScannedDatapack> = HashMap::new();
     for datapack in datapacks {
         let key = datapack.file.to_lowercase();
-        if let Some(existing) = deduped.get(&key) {
-            if existing.activated {
+        if let Some(existing) = deduped.get(&key)
+            && existing.activated {
                 continue;
             }
-        }
         deduped.insert(key, datapack);
     }
 

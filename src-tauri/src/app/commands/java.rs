@@ -28,7 +28,7 @@ fn candidate_key(path: &Path) -> String {
 
     #[cfg(target_os = "windows")]
     {
-        return value.to_lowercase();
+        value.to_lowercase()
     }
 
     #[cfg(not(target_os = "windows"))]

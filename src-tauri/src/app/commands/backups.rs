@@ -44,7 +44,7 @@ pub(in crate::app) fn restore_server_backup(
     }
 
     let deleted_backups_count =
-        enforce_backup_storage_limit(&server_directory, &[selected_backup_canonical.clone()])?;
+        enforce_backup_storage_limit(&server_directory, std::slice::from_ref(&selected_backup_canonical))?;
     create_backup_snapshot(&server_directory)?;
 
     let backup_worlds = list_backup_worlds(&selected_backup_canonical);

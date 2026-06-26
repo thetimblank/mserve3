@@ -414,20 +414,16 @@ pub(in crate::app) fn normalize_auto_backup(
         return Some(default_auto_backup());
     };
 
-    let Some(items) = value.as_array() else {
-        return None;
-    };
+    let items = value.as_array()?;
 
     let mut output = Vec::new();
     for item in items {
         let Some(mode) = item.as_str() else {
             continue;
         };
-        if matches!(mode, "interval" | "on_close" | "on_start") {
-            if !output.iter().any(|existing| existing == mode) {
+        if matches!(mode, "interval" | "on_close" | "on_start") && !output.iter().any(|existing| existing == mode) {
                 output.push(mode.to_string());
             }
-        }
     }
 
     Some(output)

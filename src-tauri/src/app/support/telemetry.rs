@@ -128,7 +128,7 @@ fn clamp_percentage(value: f64) -> f64 {
         return 0.0;
     }
 
-    value.max(0.0).min(100.0)
+    value.clamp(0.0, 100.0)
 }
 
 fn ram_percent_from_bytes(memory_bytes: u64, configured_ram_gb: Option<f64>) -> Option<f64> {
@@ -361,7 +361,7 @@ fn strip_minecraft_formatting(input: &str) -> String {
         }
         if ch == '\u{001b}' {
             // ANSI escape: skip until the terminating 'm'.
-            while let Some(next) = chars.next() {
+            for next in chars.by_ref() {
                 if next == 'm' {
                     break;
                 }

@@ -1,6 +1,6 @@
 [package]
 name = "MSERVE"
-version = "3.5.0"
+version = "3.5.1"
 description = "A minecraft server management tool"
 authors = ["thetimblank"]
 edition = "2024"

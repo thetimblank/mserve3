@@ -111,7 +111,7 @@ fn system_memory_bytes() -> Result<u64, String> {
             .parse::<u64>()
             .map_err(|err| format!("Failed to parse system memory bytes: {err}"))?;
 
-        return Ok(bytes);
+        Ok(bytes)
     }
 
     #[cfg(target_os = "macos")]

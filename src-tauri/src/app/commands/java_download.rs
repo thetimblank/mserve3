@@ -52,11 +52,11 @@ fn find_java_executable(root: &Path, depth: u32) -> Option<PathBuf> {
     let entries = fs::read_dir(root).ok()?;
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.is_dir() {
-            if let Some(found) = find_java_executable(&path, depth - 1) {
+        if path.is_dir()
+            && let Some(found) = find_java_executable(&path, depth - 1) {
                 return Some(found);
             }
-        }
+        
     }
 
     None

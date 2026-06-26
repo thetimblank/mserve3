@@ -314,14 +314,12 @@ pub(in crate::app) fn import_server(directory: String) -> Result<InitServerResul
         if let Ok(entries) = fs::read_dir(&directory_path) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.is_file() {
-                    if let Some(filename) = path.file_name().and_then(|name| name.to_str()) {
-                        if filename.to_lowercase().ends_with(".jar") {
+                if path.is_file()
+                    && let Some(filename) = path.file_name().and_then(|name| name.to_str())
+                        && filename.to_lowercase().ends_with(".jar") {
                             found_jar = filename.to_string();
                             break;
                         }
-                    }
-                }
             }
         }
 

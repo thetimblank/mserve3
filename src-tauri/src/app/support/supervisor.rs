@@ -192,11 +192,9 @@ pub(in crate::app) fn spawn_supervisor(
                                     .stop_requested_at
                                     .map(|at| at.elapsed() >= STOP_GRACE)
                                     .unwrap_or(false)
-                            {
-                                if let Some(child) = runtime.child.as_mut() {
+                                && let Some(child) = runtime.child.as_mut() {
                                     let _ = child.kill();
                                 }
-                            }
                             Phase1::Continue(Snapshot {
                                 directory: runtime.directory.clone(),
                                 state: runtime.state,

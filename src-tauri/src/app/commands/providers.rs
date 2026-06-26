@@ -401,11 +401,11 @@ fn resolve_many_vanilla(
                 let Some(version) = next else {
                     break;
                 };
-                if let Some(resolved) = resolve_one_vanilla(&client, &version) {
-                    if let Ok(mut guard) = results.lock() {
+                if let Some(resolved) = resolve_one_vanilla(&client, &version)
+                    && let Ok(mut guard) = results.lock() {
                         guard.push((version.id.clone(), resolved));
                     }
-                }
+                
             }
         }));
     }

@@ -13,7 +13,7 @@ use tauri::{Emitter, State};
 /// values like 0.5 GB are emitted as `512M` (the JVM rejects fractional `G`).
 fn format_heap_size(ram_gb: f64) -> String {
     let megabytes = (ram_gb.max(0.25) * 1024.0).round() as u64;
-    if megabytes % 1024 == 0 {
+    if megabytes.is_multiple_of(1024) {
         format!("{}G", megabytes / 1024)
     } else {
         format!("{}M", megabytes)
@@ -365,8 +365,8 @@ pub(in crate::app) fn restart_server(
     // Signal a graceful stop on the running process (if any).
     {
         let mut guard = processes.lock().map_err(|_| "Runtime lock failed.")?;
-        if let Some(runtime) = guard.get_mut(&key) {
-            if runtime.child.is_some() {
+        if let Some(runtime) = guard.get_mut(&key)
+            && runtime.child.is_some() {
                 runtime.stop_requested = true;
                 runtime.stop_requested_at = Some(Instant::now());
                 runtime.state = LifecycleState::Stopping;
@@ -375,7 +375,6 @@ pub(in crate::app) fn restart_server(
                     let _ = stdin.flush();
                 }
             }
-        }
     }
 
     // Wait for the old process to exit (supervisor escalates to a kill at grace),
