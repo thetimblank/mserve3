@@ -120,190 +120,150 @@ pub(in crate::app) fn path_size_bytes(path: &Path) -> u64 {
     total
 }
 
+/// Walks `dir`, handing each entry's path + file name to `make`. `make` returns
+/// `Some(item)` to keep the entry (applying its own type-specific filter) or
+/// `None` to skip it. Missing/non-directory paths are silently ignored.
+fn read_dir_items<T>(
+    dir: &Path,
+    activated: bool,
+    into: &mut Vec<T>,
+    mut make: impl FnMut(&Path, &str, bool) -> Option<T>,
+) {
+    if !dir.is_dir() {
+        return;
+    }
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if let Some(item) = make(&path, file_name, activated) {
+            into.push(item);
+        }
+    }
+}
+
+/// De-duplicates scanned items by lowercased file name (preferring an activated
+/// copy over an inactive one) and returns them sorted by that key.
+fn dedup_by_file<T>(
+    items: Vec<T>,
+    file_of: impl Fn(&T) -> &str,
+    is_activated: impl Fn(&T) -> bool,
+) -> Vec<T> {
+    let mut deduped: HashMap<String, T> = HashMap::new();
+    for item in items {
+        let key = file_of(&item).to_lowercase();
+        if deduped.get(&key).is_some_and(&is_activated) {
+            continue;
+        }
+        deduped.insert(key, item);
+    }
+
+    let mut result: Vec<T> = deduped.into_values().collect();
+    result.sort_by_key(|item| file_of(item).to_lowercase());
+    result
+}
+
 pub(in crate::app) fn list_plugins(directory: &Path, explicit: bool) -> Vec<ScannedPlugin> {
     let mut plugins = vec![];
-
-    let read_plugins = |dir: PathBuf, activated: bool, into: &mut Vec<ScannedPlugin>| {
-        if !dir.exists() || !dir.is_dir() {
-            return;
-        }
-
-        if let Ok(entries) = fs::read_dir(&dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if !path.is_file() {
-                    continue;
-                }
-
-                let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
-                    continue;
-                };
-
-                if !std::path::Path::new(file_name)
+    let read = |dir: PathBuf, activated: bool, into: &mut Vec<ScannedPlugin>| {
+        read_dir_items(&dir, activated, into, |path, file_name, activated| {
+            if !path.is_file()
+                || !Path::new(file_name)
                     .extension()
                     .is_some_and(|ext| ext.eq_ignore_ascii_case("jar"))
-                {
-                    continue;
-                }
-
-                let size = fs::metadata(&path).ok().map(|metadata| metadata.len());
-
-                into.push(ScannedPlugin {
-                    name: infer_plugin_name(file_name, explicit),
-                    file: file_name.to_string(),
-                    url: None,
-                    size,
-                    activated,
-                });
+            {
+                return None;
             }
-        }
+            Some(ScannedPlugin {
+                name: infer_plugin_name(file_name, explicit),
+                file: file_name.to_string(),
+                url: None,
+                size: fs::metadata(path).ok().map(|metadata| metadata.len()),
+                activated,
+            })
+        });
     };
 
-    read_plugins(directory.join("plugins"), true, &mut plugins);
-    read_plugins(
+    read(directory.join("plugins"), true, &mut plugins);
+    read(
         directory.join("inactive").join("plugins"),
         false,
         &mut plugins,
     );
 
-    let mut deduped: HashMap<String, ScannedPlugin> = HashMap::new();
-    for plugin in plugins {
-        let key = plugin.file.to_lowercase();
-        if let Some(existing) = deduped.get(&key)
-            && existing.activated
-        {
-            continue;
-        }
-        deduped.insert(key, plugin);
-    }
-
-    let mut result: Vec<ScannedPlugin> = deduped.into_values().collect();
-    result.sort_by_key(|a| a.file.to_lowercase());
-    result
+    dedup_by_file(plugins, |plugin| &plugin.file, |plugin| plugin.activated)
 }
 
 pub(in crate::app) fn list_worlds(directory: &Path) -> Vec<ScannedWorld> {
     let mut worlds = vec![];
-
-    let read_worlds = |dir: PathBuf,
-                       activated: bool,
-                       use_active_detection: bool,
-                       into: &mut Vec<ScannedWorld>| {
-        if !dir.exists() || !dir.is_dir() {
-            return;
-        }
-
-        if let Ok(entries) = fs::read_dir(&dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
+    let read =
+        |dir: PathBuf, activated: bool, use_detection: bool, into: &mut Vec<ScannedWorld>| {
+            read_dir_items(&dir, activated, into, |path, name, activated| {
                 if !path.is_dir() {
-                    continue;
+                    return None;
                 }
-
-                let Some(name) = path.file_name().and_then(|file_name| file_name.to_str()) else {
-                    continue;
-                };
-
-                let looks_like_world = if use_active_detection {
-                    name.eq_ignore_ascii_case("world")
-                        || name.eq_ignore_ascii_case("world_nether")
-                        || name.eq_ignore_ascii_case("world_the_end")
-                        || path.join("level.dat").exists()
-                } else {
-                    true
-                };
-
+                let looks_like_world = !use_detection
+                    || name.eq_ignore_ascii_case("world")
+                    || name.eq_ignore_ascii_case("world_nether")
+                    || name.eq_ignore_ascii_case("world_the_end")
+                    || path.join("level.dat").exists();
                 if !looks_like_world {
-                    continue;
+                    return None;
                 }
-
-                into.push(ScannedWorld {
+                Some(ScannedWorld {
                     name: Some(name.to_string()),
                     file: name.to_string(),
-                    size: Some(path_size_bytes(&path)),
+                    size: Some(path_size_bytes(path)),
                     activated,
-                });
-            }
-        }
-    };
+                })
+            });
+        };
 
-    read_worlds(directory.to_path_buf(), true, true, &mut worlds);
-    read_worlds(
+    read(directory.to_path_buf(), true, true, &mut worlds);
+    read(
         directory.join("inactive").join("worlds"),
         false,
         false,
         &mut worlds,
     );
 
-    let mut deduped: HashMap<String, ScannedWorld> = HashMap::new();
-    for world in worlds {
-        let key = world.file.to_lowercase();
-        if let Some(existing) = deduped.get(&key)
-            && existing.activated
-        {
-            continue;
-        }
-        deduped.insert(key, world);
-    }
-
-    let mut result: Vec<ScannedWorld> = deduped.into_values().collect();
-    result.sort_by_key(|a| a.file.to_lowercase());
-    result
+    dedup_by_file(worlds, |world| &world.file, |world| world.activated)
 }
 
 pub(in crate::app) fn list_datapacks(directory: &Path, explicit: bool) -> Vec<ScannedDatapack> {
     let mut datapacks = vec![];
-
-    let read_datapacks = |dir: PathBuf, activated: bool, into: &mut Vec<ScannedDatapack>| {
-        if !dir.exists() || !dir.is_dir() {
-            return;
-        }
-
-        if let Ok(entries) = fs::read_dir(&dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                let is_zip = path.extension().and_then(|ext| ext.to_str()) == Some("zip");
-
-                if !(path.is_dir() || is_zip) {
-                    continue;
-                }
-
-                let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
-                    continue;
-                };
-
-                into.push(ScannedDatapack {
-                    name: infer_datapack_name(file_name, explicit),
-                    file: file_name.to_string(),
-                    activated,
-                });
+    let read = |dir: PathBuf, activated: bool, into: &mut Vec<ScannedDatapack>| {
+        read_dir_items(&dir, activated, into, |path, file_name, activated| {
+            let is_zip = path.extension().and_then(|ext| ext.to_str()) == Some("zip");
+            if !(path.is_dir() || is_zip) {
+                return None;
             }
-        }
+            Some(ScannedDatapack {
+                name: infer_datapack_name(file_name, explicit),
+                file: file_name.to_string(),
+                activated,
+            })
+        });
     };
 
-    read_datapacks(
+    read(
         directory.join("world").join("datapacks"),
         true,
         &mut datapacks,
     );
-    read_datapacks(
+    read(
         directory.join("inactive").join("datapacks"),
         false,
         &mut datapacks,
     );
 
-    let mut deduped: HashMap<String, ScannedDatapack> = HashMap::new();
-    for datapack in datapacks {
-        let key = datapack.file.to_lowercase();
-        if let Some(existing) = deduped.get(&key)
-            && existing.activated
-        {
-            continue;
-        }
-        deduped.insert(key, datapack);
-    }
-
-    let mut result: Vec<ScannedDatapack> = deduped.into_values().collect();
-    result.sort_by_key(|a| a.file.to_lowercase());
-    result
+    dedup_by_file(
+        datapacks,
+        |datapack| &datapack.file,
+        |datapack| datapack.activated,
+    )
 }

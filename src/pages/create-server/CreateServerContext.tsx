@@ -6,7 +6,12 @@ import { useServers } from '@/data/servers';
 import { useUser } from '@/data/user';
 import { buildCreatedServer } from '@/lib/mserve-server-mapper';
 import type { Provider } from '@/lib/mserve-schema';
-import { createDefaultServerSetupForm, type ServerSetupFormData } from '@/lib/mserve-sync';
+import {
+	createDefaultServerSetupForm,
+	type InitServerPayload,
+	type InitServerResult,
+	type ServerSetupFormData,
+} from '@/lib/mserve-sync';
 import { clampRamGb } from '@/lib/ram-utils';
 import { isProxyProvider } from '@/lib/server-provider';
 import { getDefaultServersRootPath } from '@/lib/server-root-path';
@@ -18,29 +23,6 @@ import {
 	getCreateServerStepSlides,
 	getCreateServerVisibleSlide,
 } from './create-server-flow';
-
-type InitServerPayload = {
-	directory: string;
-	create_directory_if_missing: boolean;
-	file: string;
-	ram: number;
-	storage_limit: number;
-	auto_restart: boolean;
-	auto_backup: string[];
-	auto_backup_interval: number;
-	auto_agree_eula: boolean;
-	java_installation: string;
-	custom_flags: string[];
-	provider: Provider;
-};
-
-type InitServerResult = {
-	ok: boolean;
-	message: string;
-	id: string;
-	file: string;
-	directory: string;
-};
 
 export type PathValidationResult = {
 	exists: boolean;

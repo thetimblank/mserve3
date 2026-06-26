@@ -1,13 +1,7 @@
 import type { Server } from '@/data/servers';
-import type { ServerSetupFormData, SyncedMserveConfig } from '@/lib/mserve-sync';
+import type { InitServerResult, ServerSetupFormData, SyncedMserveConfig } from '@/lib/mserve-sync';
 import { DEFAULT_SERVER_PROVIDER } from '@/lib/mserve-consts';
 import { createProvider, isProxyProvider } from '@/lib/server-provider';
-
-type InitServerResult = {
-	id: string;
-	file: string;
-	directory: string;
-};
 
 export const getServerNameFromDirectory = (directory: string) => {
 	const segments = directory.split(/[\\/]/).filter(Boolean);
@@ -54,7 +48,17 @@ const buildServerShell = (
 	},
 });
 
-export const buildCreatedServer = (form: ServerSetupFormData, result: InitServerResult): Server => ({
+// These build the optimistic Server shown immediately after create/import. The
+// authoritative, sanitized values land via the disk-sync effect in
+// `data/servers.tsx` (which reads the Rust-written mserve.json). `buildCreated`
+// shapes the raw create form (the only frontend entry point not already
+// backend-sanitized), so it keeps light guards; `buildImported` copies its
+// already-sanitized config straight through.
+
+/** Only the identity fields of the IPC result are needed to build a Server. */
+type InitServerIdentity = Pick<InitServerResult, 'id' | 'file' | 'directory'>;
+
+export const buildCreatedServer = (form: ServerSetupFormData, result: InitServerIdentity): Server => ({
 	...buildServerShell(result.directory),
 	id: result.id,
 	file: result.file,
@@ -71,12 +75,12 @@ export const buildCreatedServer = (form: ServerSetupFormData, result: InitServer
 	created_at: new Date().toISOString(),
 });
 
-export const buildImportedServer = (result: InitServerResult, config: SyncedMserveConfig): Server => ({
+export const buildImportedServer = (result: InitServerIdentity, config: SyncedMserveConfig): Server => ({
 	...buildServerShell(result.directory),
 	id: config.id,
 	file: config.file,
 	ram: config.ram,
-	storage_limit: Math.max(1, Number(config.storage_limit) || 200),
+	storage_limit: config.storage_limit,
 	auto_backup: config.auto_backup,
 	auto_backup_interval: config.auto_backup_interval,
 	auto_restart: config.auto_restart,

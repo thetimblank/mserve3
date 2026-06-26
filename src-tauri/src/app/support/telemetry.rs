@@ -49,7 +49,10 @@ fn encode_varint(value: i32) -> Vec<u8> {
     encoded
 }
 
-fn read_varint_from_stream(stream: &mut TcpStream) -> Result<i32, String> {
+/// Decodes a Minecraft protocol VarInt by pulling one byte at a time from
+/// `next_byte`, so the same logic serves both the live TCP stream and an
+/// in-memory packet slice.
+fn read_varint(mut next_byte: impl FnMut() -> Result<u8, String>) -> Result<i32, String> {
     let mut result = 0_i32;
     let mut bytes_read = 0;
 
@@ -58,12 +61,7 @@ fn read_varint_from_stream(stream: &mut TcpStream) -> Result<i32, String> {
             return Err("VarInt is too big.".to_string());
         }
 
-        let mut byte = [0_u8; 1];
-        stream
-            .read_exact(&mut byte)
-            .map_err(|err| err.to_string())?;
-
-        let value = i32::from(byte[0]);
+        let value = i32::from(next_byte()?);
         result |= (value & 0x7F) << (7 * bytes_read);
         bytes_read += 1;
 
@@ -75,30 +73,24 @@ fn read_varint_from_stream(stream: &mut TcpStream) -> Result<i32, String> {
     Ok(result)
 }
 
+fn read_varint_from_stream(stream: &mut TcpStream) -> Result<i32, String> {
+    read_varint(|| {
+        let mut byte = [0_u8; 1];
+        stream
+            .read_exact(&mut byte)
+            .map_err(|err| err.to_string())?;
+        Ok(byte[0])
+    })
+}
+
 fn read_varint_from_slice(data: &[u8], cursor: &mut usize) -> Result<i32, String> {
-    let mut result = 0_i32;
-    let mut bytes_read = 0;
-
-    loop {
-        if bytes_read >= 5 {
-            return Err("VarInt is too big.".to_string());
-        }
-
+    read_varint(|| {
         let byte = *data
             .get(*cursor)
             .ok_or_else(|| "Unexpected end of packet while reading VarInt.".to_string())?;
         *cursor += 1;
-
-        let value = i32::from(byte);
-        result |= (value & 0x7F) << (7 * bytes_read);
-        bytes_read += 1;
-
-        if (value & 0x80) == 0 {
-            break;
-        }
-    }
-
-    Ok(result)
+        Ok(byte)
+    })
 }
 
 fn read_string_from_slice(data: &[u8], cursor: &mut usize) -> Result<String, String> {
@@ -470,23 +462,28 @@ pub(in crate::app) fn collect_tps_via_rcon(
             rcon_run(host, rcon, client_slot, "tick query").and_then(|r| parse_tick_query_tps(&r))
         }
         TpsCommandState::Unknown => {
-            // Paper/Spigot/Folia style first.
-            {
-                let response = rcon_run(host, rcon, client_slot, "tps")?;
-                if let Some(tps) = parse_paper_tps(&response) {
-                    *state = TpsCommandState::Paper;
+            // Probe each known command in order; the first that reaches the server
+            // and parses out a TPS value pins the cached state. Paper/Spigot/Folia
+            // `tps` first, then vanilla 1.21+ `tick query`.
+            type TpsParse = fn(&str) -> Option<f64>;
+            const PROBES: [(&str, TpsParse, TpsCommandState); 2] = [
+                ("tps", parse_paper_tps, TpsCommandState::Paper),
+                (
+                    "tick query",
+                    parse_tick_query_tps,
+                    TpsCommandState::TickQuery,
+                ),
+            ];
+
+            for (command, parse, detected) in PROBES {
+                let response = rcon_run(host, rcon, client_slot, command)?;
+                if let Some(tps) = parse(&response) {
+                    *state = detected;
                     return Some(tps);
                 }
             }
-            // Vanilla 1.21+ `tick query` style next.
-            {
-                let response = rcon_run(host, rcon, client_slot, "tick query")?;
-                if let Some(tps) = parse_tick_query_tps(&response) {
-                    *state = TpsCommandState::TickQuery;
-                    return Some(tps);
-                }
-            }
-            // Both commands reached the server and neither yields TPS (e.g. old
+
+            // Every command reached the server and none yields TPS (e.g. old
             // vanilla, which has no TPS command at all).
             *state = TpsCommandState::Unsupported;
             None

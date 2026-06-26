@@ -13,6 +13,7 @@ import {
 	isRecord,
 	parseLineList,
 	parsePropertyNumber,
+	stringifyStructuredValue,
 } from './utils';
 
 export const parseTomlValue = (templateValue: unknown, value: string): unknown => {
@@ -52,16 +53,6 @@ export const inferTomlValueKind = (value: unknown): TomlValueKind => {
 	if (Array.isArray(value)) return 'list';
 	if (isRecord(value)) return 'json';
 	return 'string';
-};
-
-export const tomlValueToString = (value: unknown): string => {
-	if (value === undefined || value === null) return '';
-	if (typeof value === 'string') return value;
-	if (typeof value === 'number') return String(value);
-	if (typeof value === 'boolean') return value ? 'true' : 'false';
-	if (Array.isArray(value)) return value.map((entry) => tomlValueToString(entry)).join('\n');
-	if (isRecord(value)) return JSON.stringify(value, null, 2);
-	return String(value);
 };
 
 const parseJsonTextarea = (property: ManagedConfigPropertyDefinition, input: string) => {
@@ -117,7 +108,7 @@ export const parseVelocityEditorState = (
 
 	for (const key of nextRootKeys) {
 		if (featuredKeySet.has(key)) continue;
-		nextValues[key] = tomlValueToString(parsedRoot[key]);
+		nextValues[key] = stringifyStructuredValue(parsedRoot[key]);
 	}
 
 	return { root: parsedRoot, values: nextValues };

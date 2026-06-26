@@ -75,9 +75,6 @@ const toDate = (value?: string | Date): Date => {
 
 const toIsoDateString = (value?: string | Date): string => toDate(value).toISOString();
 
-const toUniqueList = (items?: string[]) =>
-	Array.from(new Set((items ?? []).map((item) => item.trim()).filter(Boolean)));
-
 const sameStringList = (left?: string[], right?: string[]) => {
 	const a = left ?? [];
 	const b = right ?? [];
@@ -86,13 +83,8 @@ const sameStringList = (left?: string[], right?: string[]) => {
 };
 
 const normalizeProvider = (provider: unknown, file: string): Provider => {
-	if (provider && typeof provider === 'object') {
-		const candidate = provider as Partial<Provider>;
-		if (typeof candidate.name === 'string') {
-			return createProvider(candidate as Provider, {
-				file: candidate.file || file,
-			});
-		}
+	if (provider && typeof provider === 'object' && typeof (provider as Partial<Provider>).name === 'string') {
+		return createProvider(provider as Provider, { file });
 	}
 
 	return createProvider('vanilla', { file });
@@ -224,7 +216,7 @@ export const normalizeServer = (server: Server): Server => {
 		capacity?: number;
 	};
 	const resolvedFile = server.file?.trim() || 'server.jar';
-	const normalizedProvider = normalizeProvider(server.provider, resolvedFile);
+	const provider = normalizeProvider(server.provider, resolvedFile);
 	const playersOnline = toNullableNumber(rawStats.players_online ?? rawStats.players);
 	const playersMax = toNullableNumber(rawStats.players_max ?? rawStats.capacity);
 	const tps = toNullableNumber(rawStats.tps);
@@ -235,22 +227,24 @@ export const normalizeServer = (server: Server): Server => {
 
 	return {
 		id: server.id?.trim() || generateServerId(),
-		storage_limit: Math.max(1, Number(server.storage_limit) || 200),
 		name: server.name,
 		directory: server.directory,
 		status: server.status ?? 'offline',
+		// Client-owned scan data (worlds/plugins/datapacks/backups) is merged into
+		// state from filesystem scans, so it's deduped here.
 		backups: toUniqueBackups(server.backups),
 		datapacks: toUniqueToggleFileList(server.datapacks),
 		worlds: toUniqueToggleFileList(server.worlds),
 		plugins: toUniqueToggleFileList(server.plugins),
+		// Stats are live, UI-only runtime state — shaped/defaulted here.
 		stats: {
 			online,
 			players_online: playersOnline,
 			players_max: playersMax,
 			server_version:
-				toNullableString(rawStats.server_version) ?? toNullableString(normalizedProvider.minecraft_version),
+				toNullableString(rawStats.server_version) ?? toNullableString(provider.minecraft_version),
 			provider_version:
-				toNullableString(rawStats.provider_version) ?? toNullableString(normalizedProvider.provider_version),
+				toNullableString(rawStats.provider_version) ?? toNullableString(provider.provider_version),
 			tps,
 			ram_used: toNullableNumber(rawStats.ram_used),
 			cpu_used: toNullableNumber(rawStats.cpu_used),
@@ -259,15 +253,20 @@ export const normalizeServer = (server: Server): Server => {
 			backups_size_bytes: Math.max(0, Number(rawStats.backups_size_bytes) || 0),
 		},
 		file: resolvedFile,
-		provider: createProvider(normalizedProvider, { file: resolvedFile }),
-		telemetry_host: normalizeTelemetryHost(server.telemetry_host),
-		telemetry_port: normalizeTelemetryPort(server.telemetry_port),
-		ram: Math.max(1, Number(server.ram) || 3),
-		auto_backup: Array.from(new Set(server.auto_backup)),
-		auto_backup_interval: Math.max(1, Number(server.auto_backup_interval) || 120),
-		auto_restart: Boolean(server.auto_restart),
+		provider,
+		// Config fields below are authored by the Rust backend
+		// (sanitize_mserve_value_config) or the create form, then persisted — they
+		// arrive already sanitized, so they're trusted and copied verbatim rather
+		// than re-clamped/re-deduped on every render.
+		telemetry_host: server.telemetry_host,
+		telemetry_port: server.telemetry_port,
+		ram: server.ram,
+		storage_limit: server.storage_limit,
+		auto_backup: server.auto_backup,
+		auto_backup_interval: server.auto_backup_interval,
+		auto_restart: server.auto_restart,
 		java_installation: server.java_installation?.trim() || undefined,
-		custom_flags: toUniqueList(server.custom_flags),
+		custom_flags: server.custom_flags,
 		created_at: toIsoDateString(server.created_at),
 	};
 };

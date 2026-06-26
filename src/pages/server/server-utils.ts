@@ -1,5 +1,6 @@
 import type { AutoBackupMode } from '@/data/servers';
 import { clampRamGb, formatHeapSize } from '@/lib/ram-utils';
+import { getDurationParts } from '@/lib/utils';
 import type { ScannedBackupEntry, ServerSettingsForm, UpdateServerSettingsPayload } from './server-types';
 
 export const toggleBackupMode = (
@@ -105,12 +106,8 @@ export const formatBytes = (bytes?: number) => {
 };
 
 export const formatUptime = (uptime: Date) => {
-	const now = new Date();
-	const diff = now.getTime() - uptime.getTime();
-	const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-	const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
-	const minutes = Math.floor((diff / (1000 * 60)) % 60);
-	const seconds = Math.floor((diff / 1000) % 60);
+	const diff = Date.now() - uptime.getTime();
+	const { days, hours, minutes, seconds } = getDurationParts(diff);
 
 	if (days > 0) return `${days}d ${hours}h ${seconds}s`;
 	if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;

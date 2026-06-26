@@ -63,14 +63,20 @@ export const getPrimaryMinecraftVersion = (versionText: string) => {
 	return match ? match[0] : null;
 };
 
+/** Splits a millisecond duration into whole day/hour/minute/second components. */
+export const getDurationParts = (ms: number) => ({
+	days: Math.floor(ms / (1000 * 60 * 60 * 24)),
+	hours: Math.floor((ms / (1000 * 60 * 60)) % 24),
+	minutes: Math.floor((ms / (1000 * 60)) % 60),
+	seconds: Math.floor((ms / 1000) % 60),
+});
+
 /** Compact uptime label (e.g. "3d 4h", "2h 15m", "5m", "Now") from a start date. */
 export const formatUptime = (since: Date | null | undefined): string | null => {
 	if (!since) return null;
 	const diff = Date.now() - since.getTime();
 	if (diff < 0) return 'Now';
-	const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-	const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
-	const minutes = Math.floor((diff / (1000 * 60)) % 60);
+	const { days, hours, minutes } = getDurationParts(diff);
 	if (days > 0) return `${days}d ${hours}h`;
 	if (hours > 0) return `${hours}h ${minutes}m`;
 	if (minutes < 1) return 'Now';

@@ -17,7 +17,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useServers } from '@/data/servers';
 import { buildImportedServer, getServerNameFromDirectory } from '@/lib/mserve-server-mapper';
-import { repairServerMserveJson, syncServerMserveJson } from '@/lib/mserve-sync';
+import { type InitServerResult, repairServerMserveJson, syncServerMserveJson } from '@/lib/mserve-sync';
 import { requestMserveRepair } from '@/lib/mserve-repair-controller';
 import { createProvider } from '@/lib/server-provider';
 import { FolderOpen, Plus } from 'lucide-react';
@@ -26,14 +26,6 @@ import { useNavigate } from 'react-router-dom';
 
 const defaultData = {
 	directory: '',
-};
-
-type InitServerResult = {
-	ok: boolean;
-	message: string;
-	id: string;
-	file: string;
-	directory: string;
 };
 
 const normalizeDirectoryPath = (value: string) =>

@@ -27,6 +27,25 @@ pub(in crate::app) fn no_window_command<S: AsRef<OsStr>>(program: S) -> Command 
     command
 }
 
+/// Reads a UTF-8 file, returning `Ok(None)` when it doesn't exist (so a missing
+/// optional config isn't an error). Other I/O failures propagate as strings.
+pub(in crate::app) fn read_optional_file(path: &Path) -> Result<Option<String>, String> {
+    if !path.exists() {
+        return Ok(None);
+    }
+    fs::read_to_string(path)
+        .map(Some)
+        .map_err(|err| err.to_string())
+}
+
+/// Writes `content` to `path`, creating any missing parent directories first.
+pub(in crate::app) fn write_file_creating_dirs(path: &Path, content: &str) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+    fs::write(path, content.as_bytes()).map_err(|err| err.to_string())
+}
+
 pub(in crate::app) fn home_dir() -> PathBuf {
     if let Some(home) = env::var_os("HOME") {
         return PathBuf::from(home);

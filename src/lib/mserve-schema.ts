@@ -7,6 +7,12 @@ export type TelemetryPolling = TelemetryKey[];
 export type ProviderKind = 'plugin' | 'vanilla' | 'proxy' | 'unknown';
 export type ProviderTab = 'plugin' | 'vanilla' | 'proxies';
 
+/**
+ * The provider data that lives in `mserve.json` — version-specific, per-server
+ * state. Descriptive, version-independent metadata (kind, tab, command support,
+ * channel labels) is NOT stored here; look it up from the catalog via
+ * {@link file://./server-provider.ts}'s `getProviderDescriptor(name)`.
+ */
 export interface Provider {
 	name: ProviderName;
 	file: string;
@@ -19,15 +25,6 @@ export interface Provider {
 	jdk_versions: number[];
 	supported_telemetry: TelemetryPolling;
 	stable: boolean;
-	aliases?: string[];
-	description?: string;
-	kind?: ProviderKind;
-	tab?: ProviderTab;
-	stable_name?: string;
-	unstable_name?: string;
-	supports_list_command?: boolean;
-	supports_tps_command?: boolean;
-	supports_version_command?: boolean;
 }
 
 export const createDefaultProviderChecks = (): TelemetryPolling => [...TELEMETRY_POLLING];
@@ -97,22 +94,6 @@ export type MserveRepairPayload = Pick<
 	provider: Provider;
 	telemetry_host?: string;
 	telemetry_port?: number;
-};
-
-export type MserveUpdateSettingsPayload = {
-	directory: string;
-	ram: number;
-	storage_limit: number;
-	auto_backup: AutoBackupMode[];
-	auto_backup_interval: number;
-	auto_restart: boolean;
-	custom_flags: string[];
-	java_installation?: string;
-	provider: Provider;
-	telemetry_host?: string;
-	telemetry_port?: number;
-	jar_swap_path?: string;
-	new_directory?: string;
 };
 
 export const createDefaultMserveForm = (): MserveJsonFormProps => ({

@@ -259,8 +259,6 @@ export const resolveJarRow = async (row: JarVersionRow): Promise<{ provider: Pro
 		payload: { provider: row.providerId, version: row.version, stability: row.stability },
 	});
 
-	const descriptor = getProviderDescriptor(resolved.name) ?? getProviderDescriptor(row.providerId);
-
 	// Vanilla carries an exact JDK from Mojang's metadata; other providers use
 	// the per-version heuristic in java-compatibility.
 	const jdkVersions =
@@ -277,15 +275,6 @@ export const resolveJarRow = async (row: JarVersionRow): Promise<{ provider: Pro
 		jdk_versions: jdkVersions,
 		supported_telemetry: createDefaultProviderChecks(),
 		stable: resolved.stable,
-		aliases: descriptor?.aliases,
-		description: descriptor?.description,
-		kind: descriptor?.kind,
-		tab: descriptor?.tab,
-		stable_name: descriptor?.stable_name,
-		unstable_name: descriptor?.unstable_name,
-		supports_list_command: descriptor?.supports_list_command,
-		supports_tps_command: descriptor?.supports_tps_command,
-		supports_version_command: descriptor?.supports_version_command,
 	};
 
 	return { provider, downloadUrl: resolved.downloadUrl };

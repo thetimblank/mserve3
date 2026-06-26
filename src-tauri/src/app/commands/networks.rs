@@ -1,5 +1,5 @@
+use super::super::support::{read_optional_file, write_file_creating_dirs};
 use super::super::{Deserialize, Serialize};
-use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 const NETWORKS_CONFIG_FILE_NAME: &str = "networks.json";
@@ -106,13 +106,8 @@ pub(in crate::app) fn read_networks_config(
     payload: NetworksConfigReadPayload,
 ) -> Result<NetworksConfigContent, String> {
     let path = resolve_networks_config_path(&payload.root_path)?;
-    if !path.exists() {
-        return Ok(NetworksConfigContent { content: None });
-    }
-
-    let content = fs::read_to_string(&path).map_err(|err| err.to_string())?;
     Ok(NetworksConfigContent {
-        content: Some(content),
+        content: read_optional_file(&path)?,
     })
 }
 
@@ -121,11 +116,7 @@ pub(in crate::app) fn write_networks_config(
     payload: NetworksConfigWritePayload,
 ) -> Result<NetworksConfigContent, String> {
     let path = resolve_networks_config_path(&payload.root_path)?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
-    }
-
-    fs::write(&path, payload.content.as_bytes()).map_err(|err| err.to_string())?;
+    write_file_creating_dirs(&path, &payload.content)?;
     Ok(NetworksConfigContent {
         content: Some(payload.content),
     })
@@ -138,19 +129,11 @@ pub(in crate::app) fn read_server_network_file(
     let (file_path, relative) =
         resolve_server_network_file_path(&payload.directory, &payload.relative)?;
 
-    if !file_path.exists() {
-        return Ok(ServerNetworkFileContent {
-            relative: relative.to_string(),
-            exists: false,
-            content: None,
-        });
-    }
-
-    let content = fs::read_to_string(&file_path).map_err(|err| err.to_string())?;
+    let content = read_optional_file(&file_path)?;
     Ok(ServerNetworkFileContent {
         relative: relative.to_string(),
-        exists: true,
-        content: Some(content),
+        exists: content.is_some(),
+        content,
     })
 }
 
@@ -161,11 +144,7 @@ pub(in crate::app) fn write_server_network_file(
     let (file_path, relative) =
         resolve_server_network_file_path(&payload.directory, &payload.relative)?;
 
-    if let Some(parent) = file_path.parent() {
-        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
-    }
-
-    fs::write(&file_path, payload.content.as_bytes()).map_err(|err| err.to_string())?;
+    write_file_creating_dirs(&file_path, &payload.content)?;
     Ok(ServerNetworkFileContent {
         relative: relative.to_string(),
         exists: true,

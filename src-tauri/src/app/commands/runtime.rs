@@ -323,6 +323,19 @@ pub(in crate::app) fn get_server_start_command(
     Ok(build_server_start_command(&config, &java_executable))
 }
 
+/// Flags a runtime as gracefully stopping (idempotent). Already-terminal
+/// (offline/crashed) runtimes are left as-is so their state isn't resurrected.
+fn mark_stopping(runtime: &mut ServerRuntime) {
+    runtime.stop_requested = true;
+    runtime.stop_requested_at = Some(Instant::now());
+    if !matches!(
+        runtime.state,
+        LifecycleState::Offline | LifecycleState::Crashed
+    ) {
+        runtime.state = LifecycleState::Stopping;
+    }
+}
+
 #[tauri::command]
 pub(in crate::app) fn stop_server(
     directory: String,
@@ -334,14 +347,7 @@ pub(in crate::app) fn stop_server(
         .get_mut(&key)
         .ok_or_else(|| "Server is not running.".to_string())?;
 
-    runtime.stop_requested = true;
-    runtime.stop_requested_at = Some(Instant::now());
-    if !matches!(
-        runtime.state,
-        LifecycleState::Offline | LifecycleState::Crashed
-    ) {
-        runtime.state = LifecycleState::Stopping;
-    }
+    mark_stopping(runtime);
 
     // Prefer stdin for owned servers (output shows in the terminal); fall back to
     // RCON for adopted servers. The supervisor detects exit and emits `offline`.
@@ -374,9 +380,7 @@ pub(in crate::app) fn restart_server(
         if let Some(runtime) = guard.get_mut(&key)
             && runtime.child.is_some()
         {
-            runtime.stop_requested = true;
-            runtime.stop_requested_at = Some(Instant::now());
-            runtime.state = LifecycleState::Stopping;
+            mark_stopping(runtime);
             if let Some(stdin) = runtime.stdin.as_mut() {
                 let _ = writeln!(stdin, "stop");
                 let _ = stdin.flush();
@@ -415,11 +419,7 @@ pub(in crate::app) fn force_kill_server(
         return Ok("No running server process found.".to_string());
     };
 
-    runtime.stop_requested = true;
-    runtime.stop_requested_at = Some(Instant::now());
-    if runtime.state != LifecycleState::Offline {
-        runtime.state = LifecycleState::Stopping;
-    }
+    mark_stopping(runtime);
 
     match runtime.child.as_mut() {
         Some(child) => {
@@ -449,11 +449,7 @@ pub(in crate::app) fn get_running_server_directories(
 pub(in crate::app) fn force_kill_all_servers(state: State<'_, RuntimeState>) -> Result<(), String> {
     let mut guard = state.processes.lock().map_err(|_| "Runtime lock failed.")?;
     for runtime in guard.values_mut() {
-        runtime.stop_requested = true;
-        runtime.stop_requested_at = Some(Instant::now());
-        if runtime.state != LifecycleState::Offline {
-            runtime.state = LifecycleState::Stopping;
-        }
+        mark_stopping(runtime);
         if let Some(child) = runtime.child.as_mut() {
             let _ = child.kill();
         }

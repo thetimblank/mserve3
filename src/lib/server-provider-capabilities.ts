@@ -1,6 +1,6 @@
 import { DEFAULT_SERVER_PROVIDER } from './mserve-consts';
 import { type Provider, type ProviderKind, type ProviderName, type TelemetryKey } from './mserve-schema';
-import { createProvider, getProviderByName, PROVIDERS, resolveProvider } from './server-provider';
+import { createProvider, getProviderDescriptor, getProviderDescriptors, resolveProvider } from './server-provider';
 
 export type ServerProviderCapabilities = {
 	kind: ProviderKind;
@@ -28,8 +28,8 @@ export const resolveProviderKind = (
 export const getDefaultProviderCommandSupport = (
 	provider: ProviderName = DEFAULT_SERVER_PROVIDER,
 ): ProviderCommandSupport => {
-	const resolved = getProviderByName(provider) ?? getProviderByName(DEFAULT_SERVER_PROVIDER);
-	if (!resolved) {
+	const descriptor = getProviderDescriptor(provider) ?? getProviderDescriptor(DEFAULT_SERVER_PROVIDER);
+	if (!descriptor) {
 		return {
 			supportsListCommand: true,
 			supportsTpsCommand: false,
@@ -38,16 +38,16 @@ export const getDefaultProviderCommandSupport = (
 	}
 
 	return {
-		supportsListCommand: resolved.supports_list_command,
-		supportsTpsCommand: resolved.supports_tps_command,
-		supportsVersionCommand: resolved.supports_version_command,
+		supportsListCommand: descriptor.supports_list_command,
+		supportsTpsCommand: descriptor.supports_tps_command,
+		supportsVersionCommand: descriptor.supports_version_command,
 	};
 };
 
 export const getServerProviderCapabilities = (
 	provider?: Provider | ProviderName | string | null,
 ): ServerProviderCapabilities => {
-	const resolvedCatalog = resolveProvider(provider ?? null) ?? getProviderByName(DEFAULT_SERVER_PROVIDER);
+	const resolvedCatalog = resolveProvider(provider ?? null) ?? getProviderDescriptor(DEFAULT_SERVER_PROVIDER);
 	if (!resolvedCatalog) {
 		return {
 			kind: 'unknown',
@@ -79,7 +79,7 @@ export const inferProviderFromJarPath = (jarPath?: string | null): ProviderName 
 	const normalized = jarPath?.trim().toLowerCase();
 	if (!normalized) return null;
 
-	for (const candidate of PROVIDERS) {
+	for (const candidate of getProviderDescriptors()) {
 		if (
 			[candidate.name, ...candidate.aliases].some((hint) => {
 				const token = hint.trim().toLowerCase();

@@ -20,6 +20,14 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group';
 import { Container } from '@/components/ui/container';
 
+/** Toggles a filter id in a multi-select set, always keeping at least one selected. */
+const toggleFilterId = <T,>(current: T[], filterId: T, checked: boolean): T[] => {
+	if (checked) {
+		return current.includes(filterId) ? current : [...current, filterId];
+	}
+	return current.length === 1 ? current : current.filter((id) => id !== filterId);
+};
+
 type JarVersionSelectorPaneProps = {
 	tab: JarTab;
 	rows: JarVersionRow[];
@@ -121,18 +129,7 @@ const JarVersionSelectorPane: React.FC<JarVersionSelectorPaneProps> = ({
 	}, [onSelectRow, selectedRowId, visibleRows]);
 
 	const toggleProviderFilter = (filterId: JarProviderFilterId, checked: boolean) => {
-		setActiveProviderFilterIds((prev) => {
-			if (checked) {
-				if (prev.includes(filterId)) return prev;
-				return [...prev, filterId];
-			}
-
-			if (prev.length === 1) {
-				return prev;
-			}
-
-			return prev.filter((id) => id !== filterId);
-		});
+		setActiveProviderFilterIds((prev) => toggleFilterId(prev, filterId, checked));
 	};
 
 	const toggleStabilityFilter = (filterId: JarStabilityFilterId, checked: boolean) => {
@@ -142,18 +139,7 @@ const JarVersionSelectorPane: React.FC<JarVersionSelectorPaneProps> = ({
 			onRequestUnstableVersions?.();
 		}
 
-		setActiveStabilityFilterIds((prev) => {
-			if (checked) {
-				if (prev.includes(filterId)) return prev;
-				return [...prev, filterId];
-			}
-
-			if (prev.length === 1) {
-				return prev;
-			}
-
-			return prev.filter((id) => id !== filterId);
-		});
+		setActiveStabilityFilterIds((prev) => toggleFilterId(prev, filterId, checked));
 	};
 
 	return (

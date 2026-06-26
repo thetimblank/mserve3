@@ -41,15 +41,8 @@ export const stringifyStructuredValue = (value: unknown): string => {
 export const toErrorMessage = (err: unknown, fallback: string) =>
 	err instanceof Error ? err.message : fallback;
 
-export const defaultValueToString = (value: ManagedConfigPropertyDefinition['defaultValue']) => {
-	if (value === undefined || value === null) return '';
-	if (typeof value === 'string') return value;
-	if (typeof value === 'number') return String(value);
-	if (typeof value === 'boolean') return value ? 'true' : 'false';
-	if (Array.isArray(value)) return value.map((entry) => String(entry)).join('\n');
-	if (isRecord(value)) return JSON.stringify(value, null, 2);
-	return '';
-};
+export const defaultValueToString = (value: ManagedConfigPropertyDefinition['defaultValue']): string =>
+	stringifyStructuredValue(value);
 
 export const createPropertyValues = (
 	properties: ManagedConfigPropertyDefinition[],
