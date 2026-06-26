@@ -57,49 +57,52 @@ e.g. v4.0.12pre0
 
 ### Checklist
 
-(May not be up-to-date)
-
-### v3
-
-Supported Providers
-
-- Velocity
-- Paper
-- Folia
-- Vanilla
+(May not be up-to-date, in-order from most to least important)
 
 ### v4
 
-- backup rework
-- rework MC settings for non-advanced users
+- major cleanup of backend (rust & typescript hidden logic/sturcture) code/performance optimizations, simple and reusable, delete uneeded normalizations, debloat, etc.
+- linux support
+- error reporting and feedback
+- minimize to background (minimal footprint)
+- setup networks and server groups
+- in-app plugin and modpack browser
+- remote start (SSH?)
+- rework backup system
+- --nogui will be forced when not in advanced mode
 - let others connect to your mserve
 - add tunneling instead of just port forwarding
-- linux support!!!
-- sleep mode
-- error reporting and feedback
-- more help pages and explanations
-- onboarding if needed. (advanced/beginner, theme, etc)
-- major cleanup of backend (rust & typescript hidden logic/sturcture) code/performance optimizations, simple and reusable, delete uneeded normalizations, etc.
-- add tab completion to terminal
-- rehaul UI
 - server logs
 - server crashed state
-- advanced statistics systems (plugins, etc to track stats instead of v3 system)
-- remote start (SSH?)
-- minimize to background (minimal footprint)
-- in-app plugin and modpack browser
-- setup networks and server groups
+- add tab completion to terminal
+- more help pages and explanations
+- sleep mode
+- rework MC settings for non-advanced users
+- onboarding if needed. (advanced/beginner, theme, etc)
+- move help pages below servers in sidebar
+
+Bugs
+
+- memory of mserve goes up every time server is launched, and never decreases until app is restarted
+- overflow of hover effect on dashboard in the most used category's cards
+- port not showing correctly/at all in the connect widget in a server's overview page
 
 Supported Providers
 
-- Modded servers
-- Spigot
+- Modpack servers
+- Modded servers (Forge, Fabric, Neoforge)
 - Bungee
+- Spigot
+- Pufferfish
+- Purpur
+- Waterfall
 
 ---
 
-### Future
+### v5
 
+- advanced statistics systems (plugins/jvm, etc to track stats instead of v3/v4 system)
 - change plugin settings?
 - accounts?
 - webapp?
+- rehaul UI
