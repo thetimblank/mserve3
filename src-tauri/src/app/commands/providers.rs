@@ -1,4 +1,7 @@
-use super::super::*;
+use super::super::{
+    ListProviderVersionsPayload, ProviderVersionEntry, ResolveProviderVersionPayload,
+    ResolvedProvider,
+};
 use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -95,7 +98,7 @@ fn fetch_cached(
 // ---------------------------------------------------------------------------
 
 /// Preserves document order of the Fill `versions` object (newest-first
-/// families) instead of letting serde_json's `BTreeMap` re-sort the keys.
+/// families) instead of letting `serde_json`'s `BTreeMap` re-sort the keys.
 struct OrderedVersionFamilies(Vec<(String, Vec<String>)>);
 
 impl<'de> Deserialize<'de> for OrderedVersionFamilies {
@@ -235,9 +238,9 @@ fn resolve_fill(
     )?;
     let builds: Vec<FillBuild> = serde_json::from_str(&text).map_err(|err| err.to_string())?;
 
-    let want_stable = stability
-        .map(|value| value.eq_ignore_ascii_case("stable") || value.eq_ignore_ascii_case("release"))
-        .unwrap_or(true);
+    let want_stable = stability.is_none_or(|value| {
+        value.eq_ignore_ascii_case("stable") || value.eq_ignore_ascii_case("release")
+    });
 
     // Builds are newest-first. Prefer the newest build matching the requested
     // stability; fall back to the newest build overall.
@@ -354,10 +357,7 @@ fn resolve_one_vanilla(
             has_jar: true,
             url: Some(server.url),
             size: server.size,
-            java_major: detail
-                .java_version
-                .map(|java| java.major_version)
-                .unwrap_or(0),
+            java_major: detail.java_version.map_or(0, |java| java.major_version),
             kind: version.kind.clone(),
         },
         None => VanillaResolved {
@@ -381,7 +381,7 @@ fn resolve_many_vanilla(
     let queue = Arc::new(Mutex::new(items));
     let results = Arc::new(Mutex::new(Vec::new()));
     let worker_count = MAX_RESOLVE_WORKERS
-        .min(queue.lock().map(|q| q.len()).unwrap_or(1))
+        .min(queue.lock().map_or(1, |q| q.len()))
         .max(1);
 
     let mut handles = Vec::with_capacity(worker_count);
@@ -392,9 +392,8 @@ fn resolve_many_vanilla(
         handles.push(std::thread::spawn(move || {
             loop {
                 let next = {
-                    let mut guard = match queue.lock() {
-                        Ok(guard) => guard,
-                        Err(_) => break,
+                    let Ok(mut guard) = queue.lock() else {
+                        break;
                     };
                     guard.pop()
                 };

@@ -39,7 +39,7 @@ type InitServerResult = {
 const normalizeDirectoryPath = (value: string) =>
 	value.trim().replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
 
-export const ImportServer: React.FC<React.HTMLAttributes<HTMLButtonElement>> = ({ ...props }) => {
+const ImportServer: React.FC<React.HTMLAttributes<HTMLButtonElement>> = ({ ...props }) => {
 	const navigate = useNavigate();
 	const { servers, addServer } = useServers();
 	const [open, setOpen] = React.useState(false);

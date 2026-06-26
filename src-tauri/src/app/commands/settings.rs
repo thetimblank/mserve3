@@ -1,5 +1,11 @@
-use super::super::support::*;
-use super::super::*;
+use super::super::support::{
+    home_dir, move_directory_with_fallback, normalize_custom_flags, normalize_provider,
+    parse_mserve_top_level_object, sanitize_mserve_value_config, server_key, swap_files,
+    write_synced_mserve_json,
+};
+use super::super::{
+    LifecycleState, RuntimeState, UpdateServerSettingsPayload, UpdateServerSettingsResult,
+};
 use std::fs;
 use std::path::PathBuf;
 use tauri::State;
@@ -13,8 +19,8 @@ pub(in crate::app) fn get_default_servers_root_path() -> Result<String, String> 
         .to_string())
 }
 
-/// Updates only the backup-related fields in mserve.json (storage_limit,
-/// auto_backup, auto_backup_interval, auto_restart). Does not require the server
+/// Updates only the backup-related fields in mserve.json (`storage_limit`,
+/// `auto_backup`, `auto_backup_interval`, `auto_restart`). Does not require the server
 /// to be offline so these settings can be changed while the server is running.
 #[tauri::command]
 pub(in crate::app) fn update_server_backup_settings(
@@ -100,8 +106,7 @@ pub(in crate::app) fn update_server_settings(
             let alive = existing
                 .child
                 .as_mut()
-                .map(|child| matches!(child.try_wait(), Ok(None)))
-                .unwrap_or(false);
+                .is_some_and(|child| matches!(child.try_wait(), Ok(None)));
             let active = alive
                 || matches!(
                     existing.state,

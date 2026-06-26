@@ -1,5 +1,5 @@
-use super::super::support::*;
-use super::super::*;
+use super::super::support::extract_zip_to_directory;
+use super::super::{JavaRuntimeInfo, inspect_java_executable, managed_java_root};
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};

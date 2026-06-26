@@ -1,4 +1,4 @@
-use super::super::*;
+use super::super::{ItemActionPayload, ToggleItemPayload};
 use std::fs;
 use std::path::{Path, PathBuf};
 

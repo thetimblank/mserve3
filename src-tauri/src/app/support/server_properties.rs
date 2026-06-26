@@ -6,7 +6,7 @@
 //! We only ever connect to RCON over `127.0.0.1`. This replaces the old approach
 //! of writing commands to stdin and scraping interleaved stdout.
 
-use super::super::*;
+use super::super::RconConfig;
 use rand::Rng;
 use std::collections::HashSet;
 use std::fs;
@@ -41,8 +41,7 @@ pub(in crate::app) fn read_property(directory: &Path, key: &str) -> Option<Strin
 /// modifying anything. Used to adopt servers we did not start.
 pub(in crate::app) fn read_rcon_config(directory: &Path) -> Option<RconConfig> {
     let enabled = read_property(directory, "enable-rcon")
-        .map(|value| value.eq_ignore_ascii_case("true"))
-        .unwrap_or(false);
+        .is_some_and(|value| value.eq_ignore_ascii_case("true"));
     if !enabled {
         return None;
     }
@@ -64,11 +63,9 @@ pub(in crate::app) fn ensure_rcon_enabled(directory: &Path) -> Result<RconConfig
     let existing_password =
         read_property(directory, "rcon.password").filter(|value| !value.is_empty());
     let enabled = read_property(directory, "enable-rcon")
-        .map(|value| value.eq_ignore_ascii_case("true"))
-        .unwrap_or(false);
+        .is_some_and(|value| value.eq_ignore_ascii_case("true"));
     let broadcast_silenced = read_property(directory, "broadcast-rcon-to-ops")
-        .map(|value| value.eq_ignore_ascii_case("false"))
-        .unwrap_or(false);
+        .is_some_and(|value| value.eq_ignore_ascii_case("false"));
 
     let port = existing_port.unwrap_or_else(free_loopback_port);
     let password = existing_password.clone().unwrap_or_else(generate_password);
@@ -132,8 +129,7 @@ fn free_loopback_port() -> u16 {
     TcpListener::bind("127.0.0.1:0")
         .ok()
         .and_then(|listener| listener.local_addr().ok())
-        .map(|address| address.port())
-        .unwrap_or(25575)
+        .map_or(25575, |address| address.port())
 }
 
 /// Updates (or appends) the `server-port` key in `server.properties`.

@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 
 type CreateServerProps = React.ComponentProps<typeof Button>;
 
-export const CreateServer: React.FC<CreateServerProps> = ({ children, ...props }) => {
+const CreateServer: React.FC<CreateServerProps> = ({ children, ...props }) => {
 	return (
 		<Button variant='link' {...props} asChild>
 			<Link to='/servers/new'>

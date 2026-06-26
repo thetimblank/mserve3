@@ -1,5 +1,12 @@
-use super::super::support::*;
-use super::super::*;
+use super::super::support::{
+    RconClient, emit_output_reader, ensure_rcon_enabled, get_runtime_config,
+    infer_provider_version, next_generation, no_window_command, probe_port, read_rcon_config,
+    resolve_telemetry_target, server_key, set_server_port, spawn_supervisor, terminate_runtime,
+};
+use super::super::{
+    LifecycleState, RuntimeServerConfig, RuntimeState, ServerRuntime, ServerRuntimeSnapshot,
+    ServerRuntimeStateEvent, TpsCommandState,
+};
 use std::collections::{HashMap, VecDeque};
 use std::io::Write;
 use std::path::PathBuf;
@@ -16,7 +23,7 @@ fn format_heap_size(ram_gb: f64) -> String {
     if megabytes.is_multiple_of(1024) {
         format!("{}G", megabytes / 1024)
     } else {
-        format!("{}M", megabytes)
+        format!("{megabytes}M")
     }
 }
 
@@ -54,14 +61,14 @@ fn resolve_java_executable(
     if let Some(server_java) = config
         .java_installation
         .as_deref()
-        .map(|value| value.trim())
+        .map(str::trim)
         .filter(|value| !value.is_empty())
     {
         return Ok(server_java.to_string());
     }
 
     if let Some(resolved) = java_executable
-        .map(|value| value.trim())
+        .map(str::trim)
         .filter(|value| !value.is_empty())
     {
         return Ok(resolved.to_string());
@@ -161,8 +168,7 @@ fn start_server_internal(
             let alive = existing
                 .child
                 .as_mut()
-                .map(|child| matches!(child.try_wait(), Ok(None)))
-                .unwrap_or(false);
+                .is_some_and(|child| matches!(child.try_wait(), Ok(None)));
             if alive {
                 return Err("Server is already running.".to_string());
             }
@@ -174,7 +180,7 @@ fn start_server_internal(
     let java_executable = resolve_java_executable(&config, java_executable.as_deref())?;
     ensure_java_executable_exists(&java_executable)?;
     let command_str = build_server_start_command(&config, &java_executable);
-    eprintln!("[Server] Executing: {}", command_str);
+    eprintln!("[Server] Executing: {command_str}");
 
     let is_proxy = provider_is_proxy(&config);
     let (host, mut server_port) = resolve_telemetry_target(&config, &directory_path);
@@ -384,7 +390,7 @@ pub(in crate::app) fn restart_server(
     std::thread::spawn(move || {
         for _ in 0..200 {
             let done = match processes.lock() {
-                Ok(guard) => guard.get(&key).map(|rt| rt.child.is_none()).unwrap_or(true),
+                Ok(guard) => guard.get(&key).is_none_or(|rt| rt.child.is_none()),
                 Err(_) => true,
             };
             if done {

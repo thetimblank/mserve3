@@ -317,5 +317,3 @@ export const ServerRuntimeMonitor: React.FC = () => {
 
 	return null;
 };
-
-export default ServerRuntimeMonitor;

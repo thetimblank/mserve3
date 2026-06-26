@@ -1,5 +1,8 @@
-use super::super::support::*;
-use super::super::*;
+use super::super::support::{
+    add_windows_firewall_rule, forward_port_windows_firewall_elevated, is_windows_admin,
+    move_file_with_fallback, no_window_command, resolve_local_ip, resolve_public_ip,
+};
+use super::super::{DownloadServerJarPayload, DownloadServerJarResult, PathValidationResult};
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -72,8 +75,7 @@ fn unique_destination_path(base_directory: &Path, file_name: &str) -> PathBuf {
 
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|value| value.as_millis())
-        .unwrap_or(0);
+        .map_or(0, |value| value.as_millis());
     base_directory.join(format!("{stem}-{timestamp}.{extension}"))
 }
 
@@ -257,8 +259,7 @@ pub(in crate::app) fn download_server_jar(
         .unwrap_or_else(|| {
             let millis = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .map(|value| value.as_millis())
-                .unwrap_or(0);
+                .map_or(0, |value| value.as_millis());
             format!("jar-download-{millis}")
         });
 

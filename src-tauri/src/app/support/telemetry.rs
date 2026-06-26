@@ -1,4 +1,4 @@
-use super::super::*;
+use super::super::{RconConfig, RuntimeServerConfig, TpsCommandState};
 use super::mserve_config::{default_telemetry_host, detect_default_telemetry_port};
 use super::rcon::RconClient;
 use serde_json::Value;
@@ -149,10 +149,9 @@ pub(in crate::app) fn resolve_telemetry_target(
     let host = config
         .telemetry_host
         .as_deref()
-        .map(|value| value.trim())
+        .map(str::trim)
         .filter(|value| !value.is_empty())
-        .map(|value| value.to_string())
-        .unwrap_or_else(default_telemetry_host);
+        .map_or_else(default_telemetry_host, std::string::ToString::to_string);
 
     let port = config
         .telemetry_port
@@ -238,18 +237,18 @@ pub(in crate::app) fn collect_status_ping(
 
         let players_online = parsed
             .pointer("/players/online")
-            .and_then(|value| value.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .and_then(|value| u32::try_from(value).ok());
         let players_max = parsed
             .pointer("/players/max")
-            .and_then(|value| value.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .and_then(|value| u32::try_from(value).ok());
         let server_version = parsed
             .pointer("/version/name")
             .and_then(|value| value.as_str())
-            .map(|value| value.trim())
+            .map(str::trim)
             .filter(|value| !value.is_empty())
-            .map(|value| value.to_string());
+            .map(std::string::ToString::to_string);
 
         Ok(StatusPingResult {
             online: true,
@@ -330,7 +329,7 @@ pub(in crate::app) fn refresh_process_metrics(
         }
         if let Some(process) = system.process(pid) {
             ram_bytes = ram_bytes.saturating_add(process.memory());
-            cpu_total += process.cpu_usage() as f64;
+            cpu_total += f64::from(process.cpu_usage());
         }
     }
 
@@ -472,24 +471,19 @@ pub(in crate::app) fn collect_tps_via_rcon(
         }
         TpsCommandState::Unknown => {
             // Paper/Spigot/Folia style first.
-            match rcon_run(host, rcon, client_slot, "tps") {
-                // Couldn't reach RCON — stay Unknown and retry next cycle.
-                None => return None,
-                Some(response) => {
-                    if let Some(tps) = parse_paper_tps(&response) {
-                        *state = TpsCommandState::Paper;
-                        return Some(tps);
-                    }
+            {
+                let response = rcon_run(host, rcon, client_slot, "tps")?;
+                if let Some(tps) = parse_paper_tps(&response) {
+                    *state = TpsCommandState::Paper;
+                    return Some(tps);
                 }
             }
             // Vanilla 1.21+ `tick query` style next.
-            match rcon_run(host, rcon, client_slot, "tick query") {
-                None => return None,
-                Some(response) => {
-                    if let Some(tps) = parse_tick_query_tps(&response) {
-                        *state = TpsCommandState::TickQuery;
-                        return Some(tps);
-                    }
+            {
+                let response = rcon_run(host, rcon, client_slot, "tick query")?;
+                if let Some(tps) = parse_tick_query_tps(&response) {
+                    *state = TpsCommandState::TickQuery;
+                    return Some(tps);
                 }
             }
             // Both commands reached the server and neither yields TPS (e.g. old

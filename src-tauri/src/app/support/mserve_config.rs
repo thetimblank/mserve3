@@ -1,5 +1,5 @@
-use super::super::*;
-use super::*;
+use super::super::{MserveProvider, SyncedMserveConfig};
+use super::copy_jar_to_server_directory;
 use serde::Deserialize;
 use serde::de::{self, MapAccess, Visitor};
 use serde_json::{Map, Value};
@@ -57,7 +57,7 @@ pub(in crate::app) fn default_custom_flags() -> Vec<String> {
 pub(in crate::app) fn default_supported_telemetry() -> Vec<String> {
     ALL_SUPPORTED_TELEMETRY
         .iter()
-        .map(|value| value.to_string())
+        .map(std::string::ToString::to_string)
         .collect()
 }
 
@@ -117,11 +117,7 @@ pub(in crate::app) fn infer_version_from_jar_file(file_name: &str) -> Option<Str
         .filter(|token| !token.is_empty())
     {
         let has_dot = token.contains('.');
-        let starts_with_number = token
-            .chars()
-            .next()
-            .map(|ch| ch.is_ascii_digit())
-            .unwrap_or(false);
+        let starts_with_number = token.chars().next().is_some_and(|ch| ch.is_ascii_digit());
         if has_dot && starts_with_number {
             return Some(token.to_string());
         }
@@ -200,7 +196,7 @@ pub(in crate::app) fn normalize_provider(
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .map(|value| value.to_string());
+        .map(std::string::ToString::to_string);
 
     MserveProvider {
         name,
@@ -253,10 +249,9 @@ pub(in crate::app) fn detect_default_telemetry_port(directory: &Path) -> u16 {
 
 pub(in crate::app) fn sanitize_telemetry_host(raw: Option<&serde_json::Value>) -> String {
     raw.and_then(|value| value.as_str())
-        .map(|value| value.trim())
+        .map(str::trim)
         .filter(|value| !value.is_empty())
-        .map(|value| value.to_string())
-        .unwrap_or_else(default_telemetry_host)
+        .map_or_else(default_telemetry_host, std::string::ToString::to_string)
 }
 
 pub(in crate::app) fn sanitize_telemetry_port(
@@ -264,7 +259,7 @@ pub(in crate::app) fn sanitize_telemetry_port(
     raw: Option<&serde_json::Value>,
 ) -> u16 {
     let parsed = raw
-        .and_then(|value| value.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .and_then(|value| u16::try_from(value).ok())
         .filter(|value| *value > 0);
 
@@ -306,51 +301,56 @@ fn sanitize_provider(raw: Option<&serde_json::Value>, fallback_file: &str) -> Ms
         .and_then(|entry| entry.as_str())
         .map(str::trim)
         .filter(|entry| !entry.is_empty())
-        .map(|entry| entry.to_string());
+        .map(std::string::ToString::to_string);
 
     let provider_version = object
         .get("provider_version")
         .and_then(|entry| entry.as_str())
         .map(str::trim)
         .filter(|entry| !entry.is_empty())
-        .map(|entry| entry.to_string())
-        .unwrap_or_else(|| fallback.provider_version.clone());
+        .map_or_else(
+            || fallback.provider_version.clone(),
+            std::string::ToString::to_string,
+        );
 
     let minecraft_version = object
         .get("minecraft_version")
         .and_then(|entry| entry.as_str())
         .map(str::trim)
         .filter(|entry| !entry.is_empty())
-        .map(|entry| entry.to_string())
-        .unwrap_or_else(|| fallback.minecraft_version.clone());
+        .map_or_else(
+            || fallback.minecraft_version.clone(),
+            std::string::ToString::to_string,
+        );
 
     let jdk_versions = object
         .get("jdk_versions")
         .and_then(|entry| entry.as_array())
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| item.as_u64())
-                .filter_map(|item| u32::try_from(item).ok())
-                .collect::<Vec<u32>>()
-        })
-        .unwrap_or_else(|| fallback.jdk_versions.clone());
+        .map_or_else(
+            || fallback.jdk_versions.clone(),
+            |items| {
+                items
+                    .iter()
+                    .filter_map(serde_json::Value::as_u64)
+                    .filter_map(|item| u32::try_from(item).ok())
+                    .collect::<Vec<u32>>()
+            },
+        );
 
     let supported_telemetry = object
         .get("supported_telemetry")
         .and_then(|entry| entry.as_array())
-        .map(|items| {
+        .map_or_else(default_supported_telemetry, |items| {
             items
                 .iter()
                 .filter_map(|item| item.as_str())
-                .map(|item| item.to_string())
+                .map(std::string::ToString::to_string)
                 .collect::<Vec<String>>()
-        })
-        .unwrap_or_else(default_supported_telemetry);
+        });
 
     let stable = object
         .get("stable")
-        .and_then(|entry| entry.as_bool())
+        .and_then(serde_json::Value::as_bool)
         .unwrap_or(true);
 
     normalize_provider(
@@ -463,7 +463,7 @@ pub(in crate::app) fn sanitize_custom_flags(raw: Option<&serde_json::Value>) -> 
 
     let flags = items
         .iter()
-        .filter_map(|item| item.as_str().map(|flag| flag.to_string()));
+        .filter_map(|item| item.as_str().map(std::string::ToString::to_string));
 
     normalize_custom_flags(flags)
 }
@@ -477,45 +477,41 @@ pub(in crate::app) fn sanitize_mserve_value_config(
     let normalized_id = object
         .get("id")
         .and_then(|value| value.as_str())
-        .map(|value| value.trim())
+        .map(str::trim)
         .filter(|value| !value.is_empty())
-        .map(|value| value.to_string())
-        .unwrap_or_else(generate_server_id);
+        .map_or_else(generate_server_id, std::string::ToString::to_string);
 
     let normalized_file = object
         .get("file")
         .and_then(|value| value.as_str())
-        .map(|value| value.trim())
+        .map(str::trim)
         .filter(|value| !value.is_empty() && value.to_lowercase().ends_with(".jar"))
-        .map(|value| value.to_string())
+        .map(std::string::ToString::to_string)
         .or_else(|| find_first_jar_file_name(directory))
         .unwrap_or_else(|| "server.jar".to_string());
 
     let normalized_ram = object
         .get("ram")
-        .and_then(|value| value.as_f64())
+        .and_then(serde_json::Value::as_f64)
         .filter(|value| value.is_finite())
-        .map(|value| value.max(0.25))
-        .unwrap_or(4.0);
+        .map_or(4.0, |value| value.max(0.25));
 
     let normalized_storage_limit = object
         .get("storage_limit")
-        .and_then(|value| value.as_u64())
-        .map(|value| value.max(1) as u32)
-        .unwrap_or(200);
+        .and_then(serde_json::Value::as_u64)
+        .map_or(200, |value| value.max(1) as u32);
 
     let normalized_auto_backup =
         normalize_auto_backup(object.get("auto_backup")).unwrap_or_else(default_auto_backup);
 
     let normalized_interval = object
         .get("auto_backup_interval")
-        .and_then(|value| value.as_u64())
-        .map(|value| value.max(1) as u32)
-        .unwrap_or(120);
+        .and_then(serde_json::Value::as_u64)
+        .map_or(120, |value| value.max(1) as u32);
 
     let normalized_auto_restart = object
         .get("auto_restart")
-        .and_then(|value| value.as_bool())
+        .and_then(serde_json::Value::as_bool)
         .unwrap_or(false);
 
     let normalized_custom_flags = sanitize_custom_flags(object.get("custom_flags"));
@@ -541,10 +537,12 @@ pub(in crate::app) fn sanitize_mserve_value_config(
     let normalized_created_at = object
         .get("created_at")
         .and_then(|value| value.as_str())
-        .map(|value| value.trim())
+        .map(str::trim)
         .filter(|value| !value.is_empty())
-        .map(|value| value.to_string())
-        .unwrap_or_else(|| chrono::Local::now().to_rfc3339());
+        .map_or_else(
+            || chrono::Local::now().to_rfc3339(),
+            std::string::ToString::to_string,
+        );
 
     config.file = normalized_file;
     config.id = normalized_id;
@@ -633,8 +631,7 @@ pub(in crate::app) fn has_required_mserve_json_fields(
     if object
         .get("id")
         .and_then(|value| value.as_str())
-        .map(|value| !value.trim().is_empty())
-        != Some(true)
+        .is_none_or(|value| value.trim().is_empty())
     {
         return false;
     }
@@ -642,19 +639,22 @@ pub(in crate::app) fn has_required_mserve_json_fields(
     if object
         .get("file")
         .and_then(|value| value.as_str())
-        .map(|value| !value.trim().is_empty() && value.to_lowercase().ends_with(".jar"))
-        != Some(true)
+        .is_none_or(|value| value.trim().is_empty() || !value.to_lowercase().ends_with(".jar"))
     {
         return false;
     }
 
-    if object.get("ram").and_then(|value| value.as_f64()).is_none() {
+    if object
+        .get("ram")
+        .and_then(serde_json::Value::as_f64)
+        .is_none()
+    {
         return false;
     }
 
     if object
         .get("storage_limit")
-        .and_then(|value| value.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .is_none()
     {
         return false;
@@ -670,7 +670,7 @@ pub(in crate::app) fn has_required_mserve_json_fields(
 
     if object
         .get("auto_backup_interval")
-        .and_then(|value| value.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .is_none()
     {
         return false;
@@ -678,7 +678,7 @@ pub(in crate::app) fn has_required_mserve_json_fields(
 
     if object
         .get("auto_restart")
-        .and_then(|value| value.as_bool())
+        .and_then(serde_json::Value::as_bool)
         .is_none()
     {
         return false;
@@ -695,8 +695,7 @@ pub(in crate::app) fn has_required_mserve_json_fields(
     object
         .get("created_at")
         .and_then(|value| value.as_str())
-        .map(|value| !value.trim().is_empty())
-        == Some(true)
+        .is_some_and(|value| !value.trim().is_empty())
 }
 
 pub(in crate::app) fn parse_mserve_top_level_object(
@@ -729,10 +728,12 @@ pub(in crate::app) fn resolve_repair_file(
         let fallback_name = input_path
             .file_name()
             .and_then(|name| name.to_str())
-            .map(|name| name.trim())
+            .map(str::trim)
             .filter(|name| !name.is_empty() && name.to_lowercase().ends_with(".jar"))
-            .map(|name| name.to_string())
-            .unwrap_or_else(|| "server.jar".to_string());
+            .map_or_else(
+                || "server.jar".to_string(),
+                std::string::ToString::to_string,
+            );
 
         return Ok(fallback_name);
     }

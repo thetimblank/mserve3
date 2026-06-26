@@ -1,4 +1,4 @@
-use super::super::*;
+use super::super::{ScannedDatapack, ScannedPlugin, ScannedWorld};
 use std::collections::HashMap;
 use std::fs;
 use std::net::{IpAddr, UdpSocket};
@@ -139,7 +139,10 @@ pub(in crate::app) fn list_plugins(directory: &Path, explicit: bool) -> Vec<Scan
                     continue;
                 };
 
-                if !file_name.ends_with(".jar") {
+                if !std::path::Path::new(file_name)
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("jar"))
+                {
                     continue;
                 }
 
@@ -175,7 +178,7 @@ pub(in crate::app) fn list_plugins(directory: &Path, explicit: bool) -> Vec<Scan
     }
 
     let mut result: Vec<ScannedPlugin> = deduped.into_values().collect();
-    result.sort_by(|a, b| a.file.to_lowercase().cmp(&b.file.to_lowercase()));
+    result.sort_by_key(|a| a.file.to_lowercase());
     result
 }
 
@@ -244,7 +247,7 @@ pub(in crate::app) fn list_worlds(directory: &Path) -> Vec<ScannedWorld> {
     }
 
     let mut result: Vec<ScannedWorld> = deduped.into_values().collect();
-    result.sort_by(|a, b| a.file.to_lowercase().cmp(&b.file.to_lowercase()));
+    result.sort_by_key(|a| a.file.to_lowercase());
     result
 }
 
@@ -301,6 +304,6 @@ pub(in crate::app) fn list_datapacks(directory: &Path, explicit: bool) -> Vec<Sc
     }
 
     let mut result: Vec<ScannedDatapack> = deduped.into_values().collect();
-    result.sort_by(|a, b| a.file.to_lowercase().cmp(&b.file.to_lowercase()));
+    result.sort_by_key(|a| a.file.to_lowercase());
     result
 }

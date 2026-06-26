@@ -6,7 +6,7 @@
 //! without pulling every raw row. A single connection guarded by a Mutex is
 //! plenty for this write-light workload.
 
-use super::super::*;
+use super::super::{TelemetryHistoryPoint, TelemetrySample};
 use rusqlite::{Connection, params};
 use std::collections::HashMap;
 use std::path::Path;
@@ -85,7 +85,7 @@ fn write_sample(connection: &Connection, server_id: &str, sample: &TelemetrySamp
         params![
             server_id,
             sample.timestamp,
-            sample.online as i64,
+            i64::from(sample.online),
             sample.players_online,
             sample.players_max,
             sample.tps,
@@ -126,7 +126,7 @@ fn read_range(
     let bucket_count = max_points.max(1) as i64;
     let bucket_size = (span / bucket_count).max(1);
 
-    let mut statement = match connection.prepare(
+    let Ok(mut statement) = connection.prepare(
         "SELECT (ts / ?1) * ?1 AS bucket,
                 AVG(CASE WHEN online != 0 THEN 1.0 ELSE 0.0 END),
                 AVG(players_online),
@@ -138,9 +138,8 @@ fn read_range(
          WHERE server_id = ?2 AND ts >= ?3 AND ts <= ?4
          GROUP BY bucket
          ORDER BY bucket ASC",
-    ) {
-        Ok(statement) => statement,
-        Err(_) => return Vec::new(),
+    ) else {
+        return Vec::new();
     };
 
     let real_points: HashMap<i64, TelemetryHistoryPoint> =

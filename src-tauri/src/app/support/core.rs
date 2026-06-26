@@ -1,4 +1,4 @@
-use super::super::*;
+use super::super::RuntimeServerConfig;
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
@@ -7,7 +7,7 @@ use std::process::Command;
 
 /// Windows process-creation flag that suppresses the console window that would
 /// otherwise be allocated when a GUI (no-console) build spawns a child process.
-/// https://learn.microsoft.com/windows/win32/procthread/process-creation-flags
+/// <https://learn.microsoft.com/windows/win32/procthread/process-creation-flags>
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
@@ -65,11 +65,11 @@ pub(in crate::app) fn copy_jar_to_server_directory(
 
     // Validate the source file exists
     if !source_path.exists() {
-        return Err(format!("Server jar file not found: {}", jar_path));
+        return Err(format!("Server jar file not found: {jar_path}"));
     }
 
     if !source_path.is_file() {
-        return Err(format!("Path is not a file: {}", jar_path));
+        return Err(format!("Path is not a file: {jar_path}"));
     }
 
     // Validate it's a jar file
@@ -90,20 +90,17 @@ pub(in crate::app) fn copy_jar_to_server_directory(
     if destination.exists() {
         return Ok((
             filename.clone(),
-            format!(
-                "Server jar file '{}' already exists in the server directory.",
-                filename
-            ),
+            format!("Server jar file '{filename}' already exists in the server directory."),
         ));
     }
 
     // Copy the file to the server directory
     fs::copy(&source_path, &destination)
-        .map_err(|err| format!("Failed to copy jar file to server directory: {}", err))?;
+        .map_err(|err| format!("Failed to copy jar file to server directory: {err}"))?;
 
     Ok((
         filename.clone(),
-        format!("Copied '{}' to server directory.", filename),
+        format!("Copied '{filename}' to server directory."),
     ))
 }
 

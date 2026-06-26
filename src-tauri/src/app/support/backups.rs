@@ -1,5 +1,5 @@
-use super::super::*;
-use super::*;
+use super::super::ScannedBackup;
+use super::{get_runtime_config, list_worlds, move_file_with_fallback, path_size_bytes};
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
@@ -45,9 +45,7 @@ fn write_backup_metadata(
 }
 
 fn parse_created_at_millis(created_at: &str) -> i64 {
-    chrono::DateTime::parse_from_rfc3339(created_at)
-        .map(|value| value.timestamp_millis())
-        .unwrap_or(0)
+    chrono::DateTime::parse_from_rfc3339(created_at).map_or(0, |value| value.timestamp_millis())
 }
 
 fn backup_world_paths(directory: &Path) -> Vec<PathBuf> {
@@ -91,9 +89,11 @@ fn list_backups_oldest_first(directory: &Path) -> Vec<PathBuf> {
 
 fn resolve_storage_limit_bytes(directory: &Path) -> Result<u64, String> {
     let config = get_runtime_config(directory)?;
-    let limit_gb = config
-        .storage_limit
-        .unwrap_or(STORAGE_LIMIT_DEFAULT_GB as u32) as u64;
+    let limit_gb = u64::from(
+        config
+            .storage_limit
+            .unwrap_or(STORAGE_LIMIT_DEFAULT_GB as u32),
+    );
     Ok(limit_gb
         .max(STORAGE_LIMIT_MIN_GB)
         .saturating_mul(BYTES_PER_GB))
@@ -166,12 +166,11 @@ pub(in crate::app) fn enforce_backup_storage_limit(
     for backup_path in oldest_backups {
         let should_keep = canonicalized_path(&backup_path)
             .as_ref()
-            .map(|candidate| {
+            .is_some_and(|candidate| {
                 protected_canonical
                     .iter()
                     .any(|protected| protected == candidate)
-            })
-            .unwrap_or(false);
+            });
         if should_keep {
             continue;
         }
@@ -244,8 +243,7 @@ pub(in crate::app) fn list_backups(directory: &Path) -> Vec<ScannedBackup> {
 
             let size = metadata
                 .as_ref()
-                .map(|value| value.size)
-                .unwrap_or_else(|| path_size_bytes(&path));
+                .map_or_else(|| path_size_bytes(&path), |value| value.size);
 
             backups.push(ScannedBackup {
                 directory: path.to_string_lossy().to_string(),
@@ -396,7 +394,6 @@ pub(in crate::app) fn extract_zip_to_directory(
         let mut file = archive.by_index(index).map_err(|err| err.to_string())?;
         let enclosed = file
             .enclosed_name()
-            .map(|path| path.to_path_buf())
             .ok_or_else(|| "Invalid zip entry path.".to_string())?;
 
         let out_path = destination.join(enclosed);

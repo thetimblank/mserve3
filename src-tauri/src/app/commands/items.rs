@@ -1,5 +1,11 @@
-use super::super::support::*;
-use super::super::*;
+use super::super::support::{
+    add_path_to_zip, copy_dir_filtered, extract_zip_to_directory, home_dir,
+    is_simple_relative_name, item_roots, list_backups, list_datapacks, list_plugins, list_worlds,
+    remove_item_to_trash, resolve_item_locations, toggle_item_activation,
+};
+use super::super::{
+    ExportWorldResult, ItemActionPayload, ServerScanResult, ToggleItemPayload, UploadItemPayload,
+};
 use std::fs;
 use std::path::PathBuf;
 use walkdir::WalkDir;
@@ -55,7 +61,7 @@ pub(in crate::app) fn export_server_world(
     fs::create_dir_all(&downloads).map_err(|err| err.to_string())?;
 
     let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
-    let zip_path = downloads.join(format!("{}-{}.zip", file, timestamp));
+    let zip_path = downloads.join(format!("{file}-{timestamp}.zip"));
     let zip_file = fs::File::create(&zip_path).map_err(|err| err.to_string())?;
     let mut zip = zip::ZipWriter::new(zip_file);
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);

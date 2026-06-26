@@ -1,4 +1,4 @@
-use super::super::*;
+use super::super::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 

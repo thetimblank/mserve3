@@ -1,4 +1,4 @@
-use super::super::*;
+use super::super::{ServerOutputEvent, ServerRuntime};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::sync::{Arc, Mutex};

@@ -8,7 +8,66 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tauri::{Emitter, Manager};
 
-use commands::*;
+use commands::{
+    __cmd__create_server_backup, __cmd__delete_server, __cmd__delete_server_backup,
+    __cmd__delete_server_item, __cmd__detect_java_runtimes, __cmd__download_java_runtime,
+    __cmd__download_server_jar, __cmd__export_server_world, __cmd__force_kill_all_servers,
+    __cmd__force_kill_server, __cmd__forward_port_windows_firewall,
+    __cmd__get_default_servers_root_path, __cmd__get_local_ip, __cmd__get_public_ip,
+    __cmd__get_running_server_directories, __cmd__get_server_runtime,
+    __cmd__get_server_start_command, __cmd__get_server_telemetry,
+    __cmd__get_server_telemetry_history, __cmd__get_system_memory_gb, __cmd__import_server,
+    __cmd__initialize_server, __cmd__inspect_server_directory, __cmd__list_provider_versions,
+    __cmd__open_server_folder, __cmd__open_server_path, __cmd__read_managed_server_config_file,
+    __cmd__read_networks_config, __cmd__read_server_network_file, __cmd__repair_server_mserve_json,
+    __cmd__resolve_provider_version, __cmd__restart_server, __cmd__restore_server_backup,
+    __cmd__scan_managed_server_config_files, __cmd__scan_server_contents,
+    __cmd__send_server_command, __cmd__set_server_item_active, __cmd__set_server_java_installation,
+    __cmd__start_server, __cmd__stop_server, __cmd__sync_server_mserve_json,
+    __cmd__uninstall_server_item, __cmd__update_server_backup_settings,
+    __cmd__update_server_settings, __cmd__upload_server_item, __cmd__validate_path,
+    __cmd__write_managed_server_config_file, __cmd__write_networks_config,
+    __cmd__write_server_network_file, __tauri_command_name_create_server_backup,
+    __tauri_command_name_delete_server, __tauri_command_name_delete_server_backup,
+    __tauri_command_name_delete_server_item, __tauri_command_name_detect_java_runtimes,
+    __tauri_command_name_download_java_runtime, __tauri_command_name_download_server_jar,
+    __tauri_command_name_export_server_world, __tauri_command_name_force_kill_all_servers,
+    __tauri_command_name_force_kill_server, __tauri_command_name_forward_port_windows_firewall,
+    __tauri_command_name_get_default_servers_root_path, __tauri_command_name_get_local_ip,
+    __tauri_command_name_get_public_ip, __tauri_command_name_get_running_server_directories,
+    __tauri_command_name_get_server_runtime, __tauri_command_name_get_server_start_command,
+    __tauri_command_name_get_server_telemetry, __tauri_command_name_get_server_telemetry_history,
+    __tauri_command_name_get_system_memory_gb, __tauri_command_name_import_server,
+    __tauri_command_name_initialize_server, __tauri_command_name_inspect_server_directory,
+    __tauri_command_name_list_provider_versions, __tauri_command_name_open_server_folder,
+    __tauri_command_name_open_server_path, __tauri_command_name_read_managed_server_config_file,
+    __tauri_command_name_read_networks_config, __tauri_command_name_read_server_network_file,
+    __tauri_command_name_repair_server_mserve_json, __tauri_command_name_resolve_provider_version,
+    __tauri_command_name_restart_server, __tauri_command_name_restore_server_backup,
+    __tauri_command_name_scan_managed_server_config_files,
+    __tauri_command_name_scan_server_contents, __tauri_command_name_send_server_command,
+    __tauri_command_name_set_server_item_active, __tauri_command_name_set_server_java_installation,
+    __tauri_command_name_start_server, __tauri_command_name_stop_server,
+    __tauri_command_name_sync_server_mserve_json, __tauri_command_name_uninstall_server_item,
+    __tauri_command_name_update_server_backup_settings,
+    __tauri_command_name_update_server_settings, __tauri_command_name_upload_server_item,
+    __tauri_command_name_validate_path, __tauri_command_name_write_managed_server_config_file,
+    __tauri_command_name_write_networks_config, __tauri_command_name_write_server_network_file,
+    create_server_backup, delete_server, delete_server_backup, delete_server_item,
+    detect_java_runtimes, download_java_runtime, download_server_jar, export_server_world,
+    force_kill_all_servers, force_kill_server, forward_port_windows_firewall,
+    get_default_servers_root_path, get_local_ip, get_public_ip, get_running_server_directories,
+    get_server_runtime, get_server_start_command, get_server_telemetry,
+    get_server_telemetry_history, get_system_memory_gb, import_server, initialize_server,
+    inspect_java_executable, inspect_server_directory, list_provider_versions, managed_java_root,
+    open_server_folder, open_server_path, read_managed_server_config_file, read_networks_config,
+    read_server_network_file, repair_server_mserve_json, resolve_provider_version, restart_server,
+    restore_server_backup, scan_managed_server_config_files, scan_server_contents,
+    send_server_command, set_server_item_active, set_server_java_installation, start_server,
+    stop_server, sync_server_mserve_json, uninstall_server_item, update_server_backup_settings,
+    update_server_settings, upload_server_item, validate_path, write_managed_server_config_file,
+    write_networks_config, write_server_network_file,
+};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct MserveProvider {
@@ -493,34 +552,71 @@ fn complete_startup(app: tauri::AppHandle) {
     }
 }
 
+/// Window-event handler: on a main-window close request, veto the close and emit
+/// `app-close-requested` with the directories of any still-running servers so the
+/// frontend can prompt before shutdown.
+///
+/// Extracted from the builder chain so it compiles as its own symbol rather than
+/// being inlined into the (otherwise enormous) `run` closure.
+fn on_main_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
+    if window.label() == "main"
+        && let tauri::WindowEvent::CloseRequested { api, .. } = event
+    {
+        api.prevent_close();
+        let state: tauri::State<'_, RuntimeState> = window.state();
+        let running = {
+            let guard = state
+                .processes
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            guard
+                .values()
+                .filter(|r| !matches!(r.state, LifecycleState::Offline | LifecycleState::Crashed))
+                .map(|r| r.directory.clone())
+                .collect::<Vec<_>>()
+        };
+        let _ = window.app_handle().emit(
+            "app-close-requested",
+            AppCloseRequestedPayload {
+                running_server_directories: running,
+            },
+        );
+    }
+}
+
+/// One-time app setup: open the telemetry store and schedule the splash → main
+/// window handoff. Extracted from the builder chain for the same reason as
+/// [`on_main_window_event`].
+fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    // Open the telemetry time-series database in the app data dir.
+    if let Ok(data_dir) = app.path().app_data_dir()
+        && let Err(err) = support::init_telemetry_store(&data_dir.join("telemetry.db"))
+    {
+        eprintln!("[Telemetry] Failed to open store: {err}");
+    }
+
+    let app_handle = app.handle().clone();
+    tauri::async_runtime::spawn(async move {
+        std::thread::sleep(std::time::Duration::from_secs(8));
+
+        if let Some(main_window) = app_handle.get_webview_window("main") {
+            let _ = main_window.show();
+            let _ = main_window.set_focus();
+        }
+
+        if let Some(splash_window) = app_handle.get_webview_window("splashscreen") {
+            let _ = splash_window.close();
+        }
+    });
+
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .manage(RuntimeState::default())
-        .on_window_event(|window, event| {
-            if window.label() == "main"
-                && let tauri::WindowEvent::CloseRequested { api, .. } = event
-            {
-                api.prevent_close();
-                let state: tauri::State<'_, RuntimeState> = window.state();
-                let running = {
-                    let guard = state.processes.lock().unwrap_or_else(|e| e.into_inner());
-                    guard
-                        .values()
-                        .filter(|r| {
-                            !matches!(r.state, LifecycleState::Offline | LifecycleState::Crashed)
-                        })
-                        .map(|r| r.directory.clone())
-                        .collect::<Vec<_>>()
-                };
-                let _ = window.app_handle().emit(
-                    "app-close-requested",
-                    AppCloseRequestedPayload {
-                        running_server_directories: running,
-                    },
-                );
-            }
-        })
+        .on_window_event(on_main_window_event)
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -532,30 +628,7 @@ pub fn run() {
                 )
                 .build(),
         )
-        .setup(|app| {
-            // Open the telemetry time-series database in the app data dir.
-            if let Ok(data_dir) = app.path().app_data_dir()
-                && let Err(err) = support::init_telemetry_store(&data_dir.join("telemetry.db"))
-            {
-                eprintln!("[Telemetry] Failed to open store: {err}");
-            }
-
-            let app_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                std::thread::sleep(std::time::Duration::from_secs(8));
-
-                if let Some(main_window) = app_handle.get_webview_window("main") {
-                    let _ = main_window.show();
-                    let _ = main_window.set_focus();
-                }
-
-                if let Some(splash_window) = app_handle.get_webview_window("splashscreen") {
-                    let _ = splash_window.close();
-                }
-            });
-
-            Ok(())
-        })
+        .setup(setup_app)
         .invoke_handler(tauri::generate_handler![
             forward_port_windows_firewall,
             validate_path,

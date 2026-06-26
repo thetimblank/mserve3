@@ -1,4 +1,4 @@
-use super::super::support::*;
+use super::super::support::open_path_in_file_manager;
 use std::path::PathBuf;
 
 #[tauri::command]
@@ -24,7 +24,7 @@ pub(in crate::app) fn open_server_path(path: String) -> Result<(), String> {
     } else {
         target
             .parent()
-            .map(|parent| parent.to_path_buf())
+            .map(std::path::Path::to_path_buf)
             .ok_or_else(|| "Cannot resolve parent directory.".to_string())?
     };
 

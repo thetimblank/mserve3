@@ -1,5 +1,15 @@
-use super::super::support::*;
-use super::super::*;
+use super::super::support::{
+    copy_jar_to_server_directory, default_auto_backup, default_custom_flags,
+    default_provider_for_file, default_synced_config, default_telemetry_host,
+    detect_default_telemetry_port, find_first_jar_file_name, generate_server_id,
+    has_required_mserve_json_fields, normalize_custom_flags, normalize_provider,
+    parse_mserve_top_level_object, resolve_repair_file, sanitize_mserve_value_config,
+    synced_mserve_json_string, validate_mserve_json_keys, write_eula, write_synced_mserve_json,
+};
+use super::super::{
+    InitServerPayload, InitServerResult, RepairMserveJsonPayload, ServerDirectoryInspectionResult,
+    SyncMserveJsonResult, SyncedMserveConfig,
+};
 use std::fs;
 use std::path::PathBuf;
 
@@ -54,11 +64,10 @@ pub(in crate::app) fn initialize_server(
     let (resolved_file, copy_message) =
         copy_jar_to_server_directory(&directory, payload.file.trim())?;
     let server_id = generate_server_id();
-    let provider = payload
-        .provider
-        .as_ref()
-        .map(|value| normalize_provider(value, &resolved_file))
-        .unwrap_or_else(|| default_provider_for_file(&resolved_file));
+    let provider = payload.provider.as_ref().map_or_else(
+        || default_provider_for_file(&resolved_file),
+        |value| normalize_provider(value, &resolved_file),
+    );
 
     let config = SyncedMserveConfig {
         id: server_id.clone(),
@@ -191,7 +200,12 @@ pub(in crate::app) fn inspect_server_directory(
                 continue;
             }
 
-            if first_jar_file.is_none() && path.is_file() && lower_name.ends_with(".jar") {
+            if first_jar_file.is_none()
+                && path.is_file()
+                && std::path::Path::new(&lower_name)
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("jar"))
+            {
                 first_jar_file = Some(name.to_string());
             }
         }
@@ -301,8 +315,9 @@ pub(in crate::app) fn import_server(directory: String) -> Result<InitServerResul
         let resolved_id = fs::read_to_string(&mserve_json_path)
             .ok()
             .and_then(|raw| parse_mserve_top_level_object(&raw).ok())
-            .map(|object| sanitize_mserve_value_config(&directory_path, &object).id)
-            .unwrap_or_else(generate_server_id);
+            .map_or_else(generate_server_id, |object| {
+                sanitize_mserve_value_config(&directory_path, &object).id
+            });
         (
             resolved_id,
             detected,
@@ -359,10 +374,7 @@ pub(in crate::app) fn import_server(directory: String) -> Result<InitServerResul
         (
             server_id,
             found_jar.clone(),
-            format!(
-                "Created mserve.json with default settings. Found jar file: {}",
-                found_jar
-            ),
+            format!("Created mserve.json with default settings. Found jar file: {found_jar}"),
         )
     };
 
@@ -400,16 +412,13 @@ pub(in crate::app) fn sync_server_mserve_json(
     }
 
     let raw = fs::read_to_string(&mserve_path).map_err(|err| err.to_string())?;
-    let object = match parse_mserve_top_level_object(&raw) {
-        Ok(value) => value,
-        Err(_) => {
-            return Ok(SyncMserveJsonResult {
-                status: "needs_setup".to_string(),
-                message: "The data found was invalid. Please rebuild mserve.json.".to_string(),
-                config: Some(default_synced_config(&directory_path)),
-                updated: false,
-            });
-        }
+    let Ok(object) = parse_mserve_top_level_object(&raw) else {
+        return Ok(SyncMserveJsonResult {
+            status: "needs_setup".to_string(),
+            message: "The data found was invalid. Please rebuild mserve.json.".to_string(),
+            config: Some(default_synced_config(&directory_path)),
+            updated: false,
+        });
     };
 
     if validate_mserve_json_keys(&object).is_err() {
@@ -482,18 +491,17 @@ pub(in crate::app) fn repair_server_mserve_json(
             object
                 .get("id")
                 .and_then(|value| value.as_str())
-                .map(|value| value.trim())
+                .map(str::trim)
                 .filter(|value| !value.is_empty())
-                .map(|value| value.to_string())
+                .map(std::string::ToString::to_string)
         })
         .unwrap_or_else(generate_server_id);
 
     let custom_flags = normalize_custom_flags(payload.custom_flags);
-    let provider = payload
-        .provider
-        .as_ref()
-        .map(|value| normalize_provider(value, &resolved_file))
-        .unwrap_or_else(|| default_provider_for_file(&resolved_file));
+    let provider = payload.provider.as_ref().map_or_else(
+        || default_provider_for_file(&resolved_file),
+        |value| normalize_provider(value, &resolved_file),
+    );
 
     let config = SyncedMserveConfig {
         id: existing_id,

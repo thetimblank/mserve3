@@ -10,7 +10,10 @@
 //!
 //! The frontend is a pure consumer of these events plus a one-shot snapshot.
 
-use super::super::*;
+use super::super::{
+    LifecycleState, RconConfig, ServerRuntime, ServerRuntimeStateEvent, ServerTelemetryEvent,
+    TelemetrySample, TpsCommandState,
+};
 use super::rcon::RconClient;
 use super::telemetry::{
     StatusPingResult, collect_status_ping, collect_tps_via_rcon, probe_port,
@@ -154,9 +157,8 @@ pub(in crate::app) fn spawn_supervisor(
         loop {
             // ---- Phase 1: brief lock — read a snapshot and detect process exit.
             let phase1 = {
-                let mut guard = match processes.lock() {
-                    Ok(guard) => guard,
-                    Err(_) => return,
+                let Ok(mut guard) = processes.lock() else {
+                    return;
                 };
 
                 match guard.get_mut(&key) {
@@ -190,8 +192,7 @@ pub(in crate::app) fn spawn_supervisor(
                             if runtime.stop_requested
                                 && runtime
                                     .stop_requested_at
-                                    .map(|at| at.elapsed() >= STOP_GRACE)
-                                    .unwrap_or(false)
+                                    .is_some_and(|at| at.elapsed() >= STOP_GRACE)
                                 && let Some(child) = runtime.child.as_mut()
                             {
                                 let _ = child.kill();
@@ -288,9 +289,8 @@ pub(in crate::app) fn spawn_supervisor(
             // ---- Phase 3: brief lock — write back state/sample, prepare events.
             let mut state_change: Option<ServerRuntimeStateEvent> = None;
             {
-                let mut guard = match processes.lock() {
-                    Ok(guard) => guard,
-                    Err(_) => return,
+                let Ok(mut guard) = processes.lock() else {
+                    return;
                 };
                 let Some(runtime) = guard.get_mut(&key) else {
                     return;
@@ -328,7 +328,6 @@ pub(in crate::app) fn spawn_supervisor(
             }
 
             std::thread::sleep(match new_state {
-                LifecycleState::Starting => STARTING_POLL,
                 LifecycleState::Online | LifecycleState::RunningExternal => ONLINE_POLL,
                 _ => STARTING_POLL,
             });

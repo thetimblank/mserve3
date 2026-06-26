@@ -1,5 +1,5 @@
 use super::super::support::no_window_command;
-use super::super::*;
+use super::super::{JavaRuntimeDetectionResult, JavaRuntimeInfo};
 use std::collections::HashSet;
 use std::env;
 use std::path::{Path, PathBuf};
@@ -284,8 +284,7 @@ fn extract_java_version(version_output: &str) -> Option<String> {
         let starts_with_digit = cleaned
             .chars()
             .next()
-            .map(|value| value.is_ascii_digit())
-            .unwrap_or(false);
+            .is_some_and(|value| value.is_ascii_digit());
 
         if starts_with_digit && cleaned.contains('.') {
             return Some(cleaned.to_string());
@@ -300,10 +299,7 @@ fn parse_java_major(version: &str) -> Option<u32> {
         return legacy.split('.').next()?.parse::<u32>().ok();
     }
 
-    let major_digits: String = version
-        .chars()
-        .take_while(|value| value.is_ascii_digit())
-        .collect();
+    let major_digits: String = version.chars().take_while(char::is_ascii_digit).collect();
 
     if major_digits.is_empty() {
         return None;
