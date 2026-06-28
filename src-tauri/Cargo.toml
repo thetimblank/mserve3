@@ -18,7 +18,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.5.5", features = [] }
 
 [dependencies]
-tauri = { version = "2.10.2", features = [] }
+tauri = { version = "2.10.2", features = ["tray-icon", "image-png"] }
 tauri-plugin-opener = "2.5.3"
 tauri-plugin-dialog = "2.6.0"
 tauri-plugin-updater = { version = "2", default-features = false, features = ["native-tls", "zip"] }

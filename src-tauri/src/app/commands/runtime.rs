@@ -445,6 +445,19 @@ pub(in crate::app) fn get_running_server_directories(
         .collect()
 }
 
+/// Send the app to the background: destroy the main webview window so the
+/// WebView2 renderer is fully torn down (freeing its RAM/CPU) while the Rust
+/// process — and therefore every supervisor thread and child server process —
+/// keeps running. The window is rebuilt on demand from the tray icon.
+#[tauri::command]
+pub(in crate::app) fn run_in_background(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    if let Some(window) = app.get_webview_window("main") {
+        window.destroy().map_err(|err| err.to_string())?;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub(in crate::app) fn force_kill_all_servers(state: State<'_, RuntimeState>) -> Result<(), String> {
     let mut guard = state.processes.lock().map_err(|_| "Runtime lock failed.")?;

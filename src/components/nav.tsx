@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { Copy, Minus, Square, X } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
+import { Copy, Minus, Moon, Square, X } from 'lucide-react';
 import { SidebarTrigger } from './ui/sidebar';
 
 const appWindow = getCurrentWindow();
@@ -18,6 +19,12 @@ const Nav: React.FC = () => {
 		await appWindow.minimize();
 	};
 
+	// Tear down the UI (frees the webview's RAM/CPU) while the backend keeps every
+	// server running. The window is summoned back from the system tray icon.
+	const runInBackground = async () => {
+		await invoke('run_in_background');
+	};
+
 	const close = async () => {
 		await appWindow.close();
 	};
@@ -32,6 +39,12 @@ const Nav: React.FC = () => {
 					{/* <img src='/MSERVE.png' width={24} height={24} alt='MSERVE' /> */}
 				</div>
 				<div className='size-full z-10' data-tauri-drag-region />
+				<button
+					className='cursor-pointer h-full w-8 center focusable rounded-xl'
+					title='Run in background (keep servers running)'
+					onClick={runInBackground}>
+					<Moon className='size-6 p-1 hover:bg-sidebar-foreground/30 rounded-sm' />
+				</button>
 				<button className='cursor-pointer h-full w-8 center focusable rounded-xl' onClick={minimize}>
 					<Minus className='size-6 p-1 hover:bg-sidebar-foreground/30 rounded-sm' />
 				</button>

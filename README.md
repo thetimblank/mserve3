@@ -64,7 +64,6 @@ e.g. v4.0.12pre0
 - major cleanup of backend (rust & typescript hidden logic/sturcture) code/performance optimizations, simple and reusable, delete uneeded normalizations, debloat, etc.
 - linux support
 - error reporting and feedback
-- minimize to background (minimal footprint)
 - setup networks and server groups
 - in-app plugin and modpack browser
 - remote start (SSH?)
@@ -86,6 +85,7 @@ Bugs
 - memory of mserve goes up every time server is launched, and never decreases until app is restarted
 - overflow of hover effect on dashboard in the most used category's cards
 - port not showing correctly/at all in the connect widget in a server's overview page
+- issues when using end task (or crash) on mserve
 
 Supported Providers
 

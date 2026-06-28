@@ -21,7 +21,7 @@ use commands::{
     __cmd__open_server_folder, __cmd__open_server_path, __cmd__read_managed_server_config_file,
     __cmd__read_networks_config, __cmd__read_server_network_file, __cmd__repair_server_mserve_json,
     __cmd__resolve_provider_version, __cmd__restart_server, __cmd__restore_server_backup,
-    __cmd__scan_managed_server_config_files, __cmd__scan_server_contents,
+    __cmd__run_in_background, __cmd__scan_managed_server_config_files, __cmd__scan_server_contents,
     __cmd__send_server_command, __cmd__set_server_item_active, __cmd__set_server_java_installation,
     __cmd__start_server, __cmd__stop_server, __cmd__sync_server_mserve_json,
     __cmd__uninstall_server_item, __cmd__update_server_backup_settings,
@@ -44,7 +44,7 @@ use commands::{
     __tauri_command_name_read_networks_config, __tauri_command_name_read_server_network_file,
     __tauri_command_name_repair_server_mserve_json, __tauri_command_name_resolve_provider_version,
     __tauri_command_name_restart_server, __tauri_command_name_restore_server_backup,
-    __tauri_command_name_scan_managed_server_config_files,
+    __tauri_command_name_run_in_background, __tauri_command_name_scan_managed_server_config_files,
     __tauri_command_name_scan_server_contents, __tauri_command_name_send_server_command,
     __tauri_command_name_set_server_item_active, __tauri_command_name_set_server_java_installation,
     __tauri_command_name_start_server, __tauri_command_name_stop_server,
@@ -62,11 +62,12 @@ use commands::{
     inspect_java_executable, inspect_server_directory, list_provider_versions, managed_java_root,
     open_server_folder, open_server_path, read_managed_server_config_file, read_networks_config,
     read_server_network_file, repair_server_mserve_json, resolve_provider_version, restart_server,
-    restore_server_backup, scan_managed_server_config_files, scan_server_contents,
-    send_server_command, set_server_item_active, set_server_java_installation, start_server,
-    stop_server, sync_server_mserve_json, uninstall_server_item, update_server_backup_settings,
-    update_server_settings, upload_server_item, validate_path, write_managed_server_config_file,
-    write_networks_config, write_server_network_file,
+    restore_server_backup, run_in_background, scan_managed_server_config_files,
+    scan_server_contents, send_server_command, set_server_item_active,
+    set_server_java_installation, start_server, stop_server, sync_server_mserve_json,
+    uninstall_server_item, update_server_backup_settings, update_server_settings,
+    upload_server_item, validate_path, write_managed_server_config_file, write_networks_config,
+    write_server_network_file,
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -552,9 +553,34 @@ fn complete_startup(app: tauri::AppHandle) {
     }
 }
 
-/// Window-event handler: on a main-window close request, veto the close and emit
-/// `app-close-requested` with the directories of any still-running servers so the
-/// frontend can prompt before shutdown.
+/// Directories of every server that isn't fully stopped — used to warn the user
+/// before a real quit.
+fn running_server_directories(app: &tauri::AppHandle) -> Vec<String> {
+    let state: tauri::State<'_, RuntimeState> = app.state();
+    let guard = state
+        .processes
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    guard
+        .values()
+        .filter(|r| !matches!(r.state, LifecycleState::Offline | LifecycleState::Crashed))
+        .map(|r| r.directory.clone())
+        .collect()
+}
+
+/// Emit `app-close-requested` so the frontend can prompt before shutdown. The
+/// frontend confirms via `confirm_close` (or force-kills first if servers run).
+fn emit_close_requested(app: &tauri::AppHandle) {
+    let _ = app.emit(
+        "app-close-requested",
+        AppCloseRequestedPayload {
+            running_server_directories: running_server_directories(app),
+        },
+    );
+}
+
+/// Window-event handler: on a main-window close request, veto the OS close and
+/// route through the frontend close flow (warn about running servers).
 ///
 /// Extracted from the builder chain so it compiles as its own symbol rather than
 /// being inlined into the (otherwise enormous) `run` closure.
@@ -563,25 +589,86 @@ fn on_main_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
         && let tauri::WindowEvent::CloseRequested { api, .. } = event
     {
         api.prevent_close();
-        let state: tauri::State<'_, RuntimeState> = window.state();
-        let running = {
-            let guard = state
-                .processes
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            guard
-                .values()
-                .filter(|r| !matches!(r.state, LifecycleState::Offline | LifecycleState::Crashed))
-                .map(|r| r.directory.clone())
-                .collect::<Vec<_>>()
-        };
-        let _ = window.app_handle().emit(
-            "app-close-requested",
-            AppCloseRequestedPayload {
-                running_server_directories: running,
-            },
-        );
+        emit_close_requested(window.app_handle());
     }
+}
+
+/// Bring the UI back from background mode. If the main window still exists just
+/// show + focus it; otherwise rebuild it (the webview was destroyed by
+/// `run_in_background`). Mirrors the `main` window config in `tauri.conf.json`;
+/// the window-state plugin restores the last size/position.
+fn show_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+        return;
+    }
+
+    let _ =
+        tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("index.html".into()))
+            .title("MSERVE")
+            .decorations(false)
+            .inner_size(1200.0, 800.0)
+            .build();
+}
+
+/// Tray "Quit" handler. If the UI is open, route through the normal close flow so
+/// the running-servers warning can intervene. If we're backgrounded (no window to
+/// host the dialog), force-kill servers and exit directly.
+fn quit_app(app: &tauri::AppHandle) {
+    if app.get_webview_window("main").is_some() {
+        emit_close_requested(app);
+        show_main_window(app);
+        return;
+    }
+
+    let state: tauri::State<'_, RuntimeState> = app.state();
+    let _ = force_kill_all_servers(state);
+    // Give the OS a moment to actually terminate the processes before exit.
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    std::process::exit(0);
+}
+
+/// Build the system tray icon shown while the app runs in the background (and
+/// always, so the user can summon the window or quit). Left-clicking the icon —
+/// or the "Open MSERVE" menu item — restores the UI; "Quit MSERVE" exits.
+fn setup_tray(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    use tauri::menu::{MenuBuilder, MenuItemBuilder};
+    use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+
+    let open_item = MenuItemBuilder::with_id("open", "Open MSERVE").build(app)?;
+    let quit_item = MenuItemBuilder::with_id("quit", "Quit MSERVE").build(app)?;
+    let menu = MenuBuilder::new(app)
+        .items(&[&open_item, &quit_item])
+        .build()?;
+
+    let mut tray_builder = TrayIconBuilder::with_id("main-tray")
+        .tooltip("MSERVE")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "open" => show_main_window(app),
+            "quit" => quit_app(app),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                show_main_window(tray.app_handle());
+            }
+        });
+
+    if let Some(icon) = app.default_window_icon().cloned() {
+        tray_builder = tray_builder.icon(icon);
+    }
+
+    tray_builder.build(app)?;
+    Ok(())
 }
 
 /// One-time app setup: open the telemetry store and schedule the splash → main
@@ -593,6 +680,10 @@ fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         && let Err(err) = support::init_telemetry_store(&data_dir.join("telemetry.db"))
     {
         eprintln!("[Telemetry] Failed to open store: {err}");
+    }
+
+    if let Err(err) = setup_tray(app.handle()) {
+        eprintln!("[Tray] Failed to create tray icon: {err}");
     }
 
     let app_handle = app.handle().clone();
@@ -671,6 +762,7 @@ pub fn run() {
             restart_server,
             force_kill_server,
             force_kill_all_servers,
+            run_in_background,
             get_running_server_directories,
             send_server_command,
             get_server_runtime,
@@ -682,6 +774,16 @@ pub fn run() {
             complete_startup,
             confirm_close
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app_handle, event| {
+            // When the main window is destroyed for background mode, the last
+            // window closing would normally end the app. Veto that exit so the
+            // Rust process (and every running server) stays alive behind the tray
+            // icon. A real quit goes through `confirm_close` / the tray "Quit"
+            // item, which call `std::process::exit` and bypass this guard.
+            if let tauri::RunEvent::ExitRequested { api, .. } = event {
+                api.prevent_exit();
+            }
+        });
 }
