@@ -2,6 +2,9 @@ mod backups;
 mod core;
 mod items;
 mod mserve_config;
+// Namespaced (not glob re-exported) so its generically-named helpers
+// (`read_secret`, `start_tunnel`, …) stay under `support::playit::`.
+pub(in crate::app) mod playit;
 mod rcon;
 mod runtime_io;
 mod scan;

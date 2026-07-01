@@ -10,33 +10,36 @@ use tauri::{Emitter, Manager};
 
 use commands::{
     __cmd__create_server_backup, __cmd__delete_server, __cmd__delete_server_backup,
-    __cmd__delete_server_item, __cmd__detect_java_runtimes, __cmd__download_java_runtime,
-    __cmd__download_server_jar, __cmd__export_server_world, __cmd__force_kill_all_servers,
-    __cmd__force_kill_server, __cmd__forward_port_windows_firewall,
-    __cmd__get_default_servers_root_path, __cmd__get_local_ip, __cmd__get_public_ip,
-    __cmd__get_running_server_directories, __cmd__get_server_runtime,
+    __cmd__delete_server_item, __cmd__detect_java_runtimes, __cmd__disconnect_playit_account,
+    __cmd__download_java_runtime, __cmd__download_server_jar, __cmd__export_server_world,
+    __cmd__force_kill_all_servers, __cmd__force_kill_server, __cmd__forward_port_windows_firewall,
+    __cmd__get_default_servers_root_path, __cmd__get_local_ip, __cmd__get_playit_status,
+    __cmd__get_public_ip, __cmd__get_running_server_directories, __cmd__get_server_runtime,
     __cmd__get_server_start_command, __cmd__get_server_telemetry,
-    __cmd__get_server_telemetry_history, __cmd__get_system_memory_gb, __cmd__import_server,
-    __cmd__initialize_server, __cmd__inspect_server_directory, __cmd__list_provider_versions,
-    __cmd__open_server_folder, __cmd__open_server_path, __cmd__read_managed_server_config_file,
-    __cmd__read_networks_config, __cmd__read_server_network_file, __cmd__repair_server_mserve_json,
+    __cmd__get_server_telemetry_history, __cmd__get_server_tunnel, __cmd__get_system_memory_gb,
+    __cmd__import_server, __cmd__initialize_server, __cmd__inspect_server_directory,
+    __cmd__list_provider_versions, __cmd__open_server_folder, __cmd__open_server_path,
+    __cmd__read_managed_server_config_file, __cmd__read_networks_config,
+    __cmd__read_server_network_file, __cmd__repair_server_mserve_json,
     __cmd__resolve_provider_version, __cmd__restart_server, __cmd__restore_server_backup,
     __cmd__run_in_background, __cmd__scan_managed_server_config_files, __cmd__scan_server_contents,
     __cmd__send_server_command, __cmd__set_server_item_active, __cmd__set_server_java_installation,
-    __cmd__start_server, __cmd__stop_server, __cmd__sync_server_mserve_json,
-    __cmd__uninstall_server_item, __cmd__update_server_backup_settings,
-    __cmd__update_server_settings, __cmd__upload_server_item, __cmd__validate_path,
-    __cmd__write_managed_server_config_file, __cmd__write_networks_config,
+    __cmd__set_server_tunnel, __cmd__start_playit_claim, __cmd__start_server, __cmd__stop_server,
+    __cmd__sync_server_mserve_json, __cmd__uninstall_server_item,
+    __cmd__update_server_backup_settings, __cmd__update_server_settings, __cmd__upload_server_item,
+    __cmd__validate_path, __cmd__write_managed_server_config_file, __cmd__write_networks_config,
     __cmd__write_server_network_file, __tauri_command_name_create_server_backup,
     __tauri_command_name_delete_server, __tauri_command_name_delete_server_backup,
     __tauri_command_name_delete_server_item, __tauri_command_name_detect_java_runtimes,
-    __tauri_command_name_download_java_runtime, __tauri_command_name_download_server_jar,
-    __tauri_command_name_export_server_world, __tauri_command_name_force_kill_all_servers,
-    __tauri_command_name_force_kill_server, __tauri_command_name_forward_port_windows_firewall,
+    __tauri_command_name_disconnect_playit_account, __tauri_command_name_download_java_runtime,
+    __tauri_command_name_download_server_jar, __tauri_command_name_export_server_world,
+    __tauri_command_name_force_kill_all_servers, __tauri_command_name_force_kill_server,
+    __tauri_command_name_forward_port_windows_firewall,
     __tauri_command_name_get_default_servers_root_path, __tauri_command_name_get_local_ip,
-    __tauri_command_name_get_public_ip, __tauri_command_name_get_running_server_directories,
-    __tauri_command_name_get_server_runtime, __tauri_command_name_get_server_start_command,
-    __tauri_command_name_get_server_telemetry, __tauri_command_name_get_server_telemetry_history,
+    __tauri_command_name_get_playit_status, __tauri_command_name_get_public_ip,
+    __tauri_command_name_get_running_server_directories, __tauri_command_name_get_server_runtime,
+    __tauri_command_name_get_server_start_command, __tauri_command_name_get_server_telemetry,
+    __tauri_command_name_get_server_telemetry_history, __tauri_command_name_get_server_tunnel,
     __tauri_command_name_get_system_memory_gb, __tauri_command_name_import_server,
     __tauri_command_name_initialize_server, __tauri_command_name_inspect_server_directory,
     __tauri_command_name_list_provider_versions, __tauri_command_name_open_server_folder,
@@ -47,6 +50,7 @@ use commands::{
     __tauri_command_name_run_in_background, __tauri_command_name_scan_managed_server_config_files,
     __tauri_command_name_scan_server_contents, __tauri_command_name_send_server_command,
     __tauri_command_name_set_server_item_active, __tauri_command_name_set_server_java_installation,
+    __tauri_command_name_set_server_tunnel, __tauri_command_name_start_playit_claim,
     __tauri_command_name_start_server, __tauri_command_name_stop_server,
     __tauri_command_name_sync_server_mserve_json, __tauri_command_name_uninstall_server_item,
     __tauri_command_name_update_server_backup_settings,
@@ -54,20 +58,20 @@ use commands::{
     __tauri_command_name_validate_path, __tauri_command_name_write_managed_server_config_file,
     __tauri_command_name_write_networks_config, __tauri_command_name_write_server_network_file,
     create_server_backup, delete_server, delete_server_backup, delete_server_item,
-    detect_java_runtimes, download_java_runtime, download_server_jar, export_server_world,
-    force_kill_all_servers, force_kill_server, forward_port_windows_firewall,
-    get_default_servers_root_path, get_local_ip, get_public_ip, get_running_server_directories,
-    get_server_runtime, get_server_start_command, get_server_telemetry,
-    get_server_telemetry_history, get_system_memory_gb, import_server, initialize_server,
-    inspect_java_executable, inspect_server_directory, list_provider_versions, managed_java_root,
-    open_server_folder, open_server_path, read_managed_server_config_file, read_networks_config,
-    read_server_network_file, repair_server_mserve_json, resolve_provider_version, restart_server,
-    restore_server_backup, run_in_background, scan_managed_server_config_files,
-    scan_server_contents, send_server_command, set_server_item_active,
-    set_server_java_installation, start_server, stop_server, sync_server_mserve_json,
-    uninstall_server_item, update_server_backup_settings, update_server_settings,
-    upload_server_item, validate_path, write_managed_server_config_file, write_networks_config,
-    write_server_network_file,
+    detect_java_runtimes, disconnect_playit_account, download_java_runtime, download_server_jar,
+    export_server_world, force_kill_all_servers, force_kill_server, forward_port_windows_firewall,
+    get_default_servers_root_path, get_local_ip, get_playit_status, get_public_ip,
+    get_running_server_directories, get_server_runtime, get_server_start_command,
+    get_server_telemetry, get_server_telemetry_history, get_server_tunnel, get_system_memory_gb,
+    import_server, initialize_server, inspect_java_executable, inspect_server_directory,
+    list_provider_versions, managed_java_root, open_server_folder, open_server_path,
+    read_managed_server_config_file, read_networks_config, read_server_network_file,
+    repair_server_mserve_json, resolve_provider_version, restart_server, restore_server_backup,
+    run_in_background, scan_managed_server_config_files, scan_server_contents, send_server_command,
+    set_server_item_active, set_server_java_installation, set_server_tunnel, start_playit_claim,
+    start_server, stop_server, sync_server_mserve_json, uninstall_server_item,
+    update_server_backup_settings, update_server_settings, upload_server_item, validate_path,
+    write_managed_server_config_file, write_networks_config, write_server_network_file,
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -141,6 +145,12 @@ struct SyncedMserveConfig {
     telemetry_host: String,
     telemetry_port: u16,
     created_at: String,
+    /// Whether public tunneling (playit.gg) is enabled for this server.
+    tunnel_enabled: bool,
+    /// The provisioned playit tunnel id, once created (for reuse across starts).
+    tunnel_id: Option<String>,
+    /// Last-known public tunnel address, surfaced even while offline.
+    tunnel_address: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -228,6 +238,29 @@ struct RuntimeServerConfig {
     provider: Option<MserveProvider>,
     telemetry_host: Option<String>,
     telemetry_port: Option<u16>,
+    #[serde(default)]
+    tunnel_enabled: bool,
+    #[serde(default)]
+    tunnel_id: Option<String>,
+    #[serde(default)]
+    tunnel_address: Option<String>,
+}
+
+/// playit.gg global account status, surfaced to the tunnel settings UI.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PlayitStatus {
+    claimed: bool,
+}
+
+/// Per-server tunnel snapshot for a freshly-mounted UI.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ServerTunnelInfo {
+    enabled: bool,
+    address: Option<String>,
+    /// "online" | "offline" | "disabled"
+    status: String,
 }
 
 /// The authoritative lifecycle of a server, owned by the backend supervisor and
@@ -318,6 +351,12 @@ struct ServerRuntime {
     generation: u64,
     stop_requested: bool,
     stop_requested_at: Option<Instant>,
+    /// Stop handle for this server's in-process playit agent (when tunneling is
+    /// enabled): flip to `false` to shut the agent down. `None` until the tunnel
+    /// has finished coming up (it is provisioned asynchronously after start).
+    playit_stop: Option<Arc<std::sync::atomic::AtomicBool>>,
+    /// Public tunnel address once the agent is online (for the runtime snapshot).
+    tunnel_address: Option<String>,
 }
 
 #[derive(Default, Clone)]
@@ -771,6 +810,11 @@ pub fn run() {
             scan_server_contents,
             set_server_item_active,
             delete_server,
+            get_playit_status,
+            start_playit_claim,
+            disconnect_playit_account,
+            set_server_tunnel,
+            get_server_tunnel,
             complete_startup,
             confirm_close
         ])

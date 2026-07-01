@@ -38,6 +38,7 @@ import { isProxyProvider } from '@/lib/server-provider';
 import { getServerProviderCapabilities } from '@/lib/server-provider-capabilities';
 import { getPrimaryMinecraftVersion } from '@/lib/utils';
 import { formatBytes, formatUptime } from './server-utils';
+import { useServerTunnel } from './hooks/use-server-tunnel';
 import MetricCard from './stats/metric-card';
 import { useServerTelemetryHistory } from './stats/use-server-telemetry-history';
 import { METRIC_COLORS, formatPercent, toChartData } from './stats/stats-utils';
@@ -106,9 +107,21 @@ const ServerOverviewPanel: React.FC<Props> = ({
 			? updateEntry.check
 			: null;
 
+	const tunnel = useServerTunnel(server.directory);
+	const tunnelAddress = tunnel.address ?? server.tunnel_address ?? null;
+	const showTunnel = tunnel.enabled && tunnel.status === 'online' && tunnelAddress != null;
+
 	const [publicIp, setPublicIp] = React.useState<string | null>(null);
 	const [ipHidden, setIpHidden] = React.useState(true);
 	const [copied, setCopied] = React.useState(false);
+	const [tunnelCopied, setTunnelCopied] = React.useState(false);
+
+	const copyTunnel = React.useCallback((text: string) => {
+		navigator.clipboard.writeText(text).then(() => {
+			setTunnelCopied(true);
+			setTimeout(() => setTunnelCopied(false), 2000);
+		});
+	}, []);
 
 	const copyToClipboard = React.useCallback((text: string | null) => {
 		if (text == null) return;
@@ -266,6 +279,32 @@ const ServerOverviewPanel: React.FC<Props> = ({
 									</Tooltip>
 								</div>
 							</div>
+							{/* Public tunnel address (playit.gg) */}
+							{showTunnel && (
+								<div className='flex items-center gap-2 rounded-md bg-card dark:bg-secondary/50 border-2 dark:border-none px-3 py-1 text-sm'>
+									<Globe className='size-4 shrink-0 text-emerald-500' />
+									<p className='text-muted-foreground select-none'>Tunnel:</p>
+									<span className='font-mono text-emerald-500'>{tunnelAddress}</span>
+									<Tooltip>
+										<TooltipTrigger asChild>
+											<Button
+												variant='ghost'
+												size='sm'
+												className='h-6 w-6 p-0 text-muted-foreground hover:text-foreground'
+												onClick={() => copyTunnel(tunnelAddress!)}>
+												{tunnelCopied ? (
+													<ClipboardCheck className='size-3.5' />
+												) : (
+													<Clipboard className='size-3.5' />
+												)}
+											</Button>
+										</TooltipTrigger>
+										<TooltipContent>
+											{tunnelCopied ? 'Copied address' : 'Copy tunnel address'}
+										</TooltipContent>
+									</Tooltip>
+								</div>
+							)}
 						</div>
 						{/* Live metric cards */}
 						<div className='grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5'>

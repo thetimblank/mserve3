@@ -1,4 +1,5 @@
 use super::super::{ServerOutputEvent, ServerRuntime};
+use super::playit;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::sync::{Arc, Mutex};
@@ -50,6 +51,11 @@ pub(in crate::app) fn emit_output_reader<R: std::io::Read + Send + 'static>(
 /// then escalate to a kill. Used by `delete_server`, where we need the process
 /// gone synchronously before touching the files.
 pub(in crate::app) fn terminate_runtime(runtime: &mut ServerRuntime) -> Result<(), String> {
+    // Stop the playit tunnel agent alongside the server it fronts.
+    if let Some(stop) = runtime.playit_stop.take() {
+        playit::stop_agent(&stop);
+    }
+
     if let Some(stdin) = runtime.stdin.as_mut() {
         let _ = writeln!(stdin, "stop");
         let _ = stdin.flush();

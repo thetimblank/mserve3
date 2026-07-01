@@ -43,6 +43,10 @@ export type MserveJsonProps = {
 	provider: Provider;
 	telemetry_host: string;
 	telemetry_port: number;
+	/** Whether public tunneling (playit.gg) is enabled for this server. */
+	tunnel_enabled?: boolean;
+	/** Last-known public tunnel address (surfaced even while offline). */
+	tunnel_address?: string;
 };
 
 export type MserveStats = {

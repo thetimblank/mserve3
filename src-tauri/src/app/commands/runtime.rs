@@ -1,3 +1,4 @@
+use super::super::support::playit;
 use super::super::support::{
     RconClient, emit_output_reader, ensure_rcon_enabled, get_runtime_config,
     infer_provider_version, next_generation, no_window_command, probe_port, read_rcon_config,
@@ -5,7 +6,7 @@ use super::super::support::{
 };
 use super::super::{
     LifecycleState, RuntimeServerConfig, RuntimeState, ServerRuntime, ServerRuntimeSnapshot,
-    ServerRuntimeStateEvent, TpsCommandState,
+    ServerRuntimeStateEvent, ServerTunnelInfo, TpsCommandState,
 };
 use std::collections::{HashMap, VecDeque};
 use std::io::Write;
@@ -146,6 +147,101 @@ fn patch_mserve_json_port(directory: &std::path::Path, port: u16) -> Result<(), 
     std::fs::write(&path, out).map_err(|e| e.to_string())
 }
 
+/// Persists the provisioned playit tunnel id + public address into `mserve.json`
+/// so a later start reuses the same tunnel instead of allocating a new one.
+fn patch_mserve_json_tunnel(
+    directory: &std::path::Path,
+    tunnel_id: &str,
+    address: &str,
+) -> Result<(), String> {
+    let path = directory.join("mserve.json");
+    let raw = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let mut value: serde_json::Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+    if let Some(obj) = value.as_object_mut() {
+        obj.insert("tunnel_id".to_string(), serde_json::json!(tunnel_id));
+        obj.insert("tunnel_address".to_string(), serde_json::json!(address));
+    }
+    let out = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
+    std::fs::write(&path, out).map_err(|e| e.to_string())
+}
+
+/// Brings up this server's playit tunnel asynchronously (when enabled) so server
+/// start isn't blocked on network I/O. Provisions/reuses the tunnel, starts the
+/// in-process agent, stores its stop handle on the runtime, and emits
+/// `playit-tunnel-state` transitions. If the server is torn down while the tunnel
+/// is still coming up, the freshly-started agent is stopped immediately.
+fn launch_tunnel(
+    app: tauri::AppHandle,
+    processes: Processes,
+    key: String,
+    directory: String,
+    config: &RuntimeServerConfig,
+    server_port: u16,
+    generation: u64,
+) {
+    if !config.tunnel_enabled {
+        return;
+    }
+    let directory_path = PathBuf::from(directory.trim());
+    let Some(secret) = playit::read_secret(&app) else {
+        playit::emit_tunnel_state(
+            &app,
+            &directory,
+            "error",
+            None,
+            Some("playit.gg account is not connected.".to_string()),
+        );
+        return;
+    };
+
+    let server_name = directory_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("mserve-server")
+        .to_string();
+    let stored_id = config.tunnel_id.clone();
+
+    playit::emit_tunnel_state(&app, &directory, "starting", None, None);
+
+    tauri::async_runtime::spawn(async move {
+        match playit::start_tunnel(secret, server_name, server_port, stored_id).await {
+            Ok(handle) => {
+                // Attach the stop handle to the runtime — but only if this server is
+                // still the same live generation. If it went down (or restarted)
+                // during setup, stop the agent we just started.
+                let attached = match processes.lock() {
+                    Ok(mut guard) => match guard.get_mut(&key) {
+                        Some(rt)
+                            if rt.generation == generation
+                                && rt.child.is_some()
+                                && !rt.stop_requested =>
+                        {
+                            rt.playit_stop = Some(handle.stop.clone());
+                            rt.tunnel_address = Some(handle.address.clone());
+                            true
+                        }
+                        _ => false,
+                    },
+                    Err(_) => false,
+                };
+
+                if !attached {
+                    playit::stop_agent(&handle.stop);
+                    playit::emit_tunnel_state(&app, &directory, "offline", None, None);
+                    return;
+                }
+
+                let _ =
+                    patch_mserve_json_tunnel(&directory_path, &handle.tunnel_id, &handle.address);
+                playit::emit_tunnel_state(&app, &directory, "online", Some(handle.address), None);
+            }
+            Err(err) => {
+                playit::emit_tunnel_state(&app, &directory, "error", None, Some(err));
+            }
+        }
+    });
+}
+
 /// Core start routine, shared by the `start_server` command and the restart flow.
 fn start_server_internal(
     directory: String,
@@ -252,6 +348,8 @@ fn start_server_internal(
         generation,
         stop_requested: false,
         stop_requested_at: None,
+        playit_stop: None,
+        tunnel_address: None,
     };
 
     {
@@ -279,6 +377,18 @@ fn start_server_internal(
             processes.clone(),
         );
     }
+
+    // Bring up the playit tunnel (if enabled) off the start path — it provisions
+    // over the network and must not block or fail the server start.
+    launch_tunnel(
+        app.clone(),
+        processes.clone(),
+        key.clone(),
+        directory.clone(),
+        &config,
+        server_port,
+        generation,
+    );
 
     spawn_supervisor(processes, app.clone(), key, generation);
 
@@ -463,6 +573,9 @@ pub(in crate::app) fn force_kill_all_servers(state: State<'_, RuntimeState>) -> 
     let mut guard = state.processes.lock().map_err(|_| "Runtime lock failed.")?;
     for runtime in guard.values_mut() {
         mark_stopping(runtime);
+        if let Some(stop) = runtime.playit_stop.take() {
+            playit::stop_agent(&stop);
+        }
         if let Some(child) = runtime.child.as_mut() {
             let _ = child.kill();
         }
@@ -569,6 +682,8 @@ fn register_external(
         generation,
         stop_requested: false,
         stop_requested_at: None,
+        playit_stop: None,
+        tunnel_address: None,
     };
 
     {
@@ -660,6 +775,116 @@ pub(in crate::app) fn get_server_runtime(
     }
 
     Ok(offline_snapshot())
+}
+
+/// Patches just the `tunnel_enabled` flag in `mserve.json`.
+fn patch_mserve_json_tunnel_enabled(
+    directory: &std::path::Path,
+    enabled: bool,
+) -> Result<(), String> {
+    let path = directory.join("mserve.json");
+    let raw = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let mut value: serde_json::Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+    if let Some(obj) = value.as_object_mut() {
+        obj.insert("tunnel_enabled".to_string(), serde_json::json!(enabled));
+    }
+    let out = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
+    std::fs::write(&path, out).map_err(|e| e.to_string())
+}
+
+/// Enables or disables public tunneling for a server. The flag is persisted to
+/// `mserve.json` (taking effect on the next start), and if the server is already
+/// running the tunnel is brought up / torn down live.
+#[tauri::command]
+pub(in crate::app) fn set_server_tunnel(
+    directory: String,
+    enabled: bool,
+    state: State<'_, RuntimeState>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    let directory_path = PathBuf::from(directory.trim());
+    if !directory_path.is_dir() {
+        return Err("Server directory does not exist.".to_string());
+    }
+    if enabled && !playit::is_claimed(&app) {
+        return Err("Connect a playit.gg account before enabling tunneling.".to_string());
+    }
+
+    patch_mserve_json_tunnel_enabled(&directory_path, enabled)?;
+
+    let key = server_key(&directory);
+    let processes = state.processes.clone();
+
+    // Snapshot the live state under the lock, then act outside it.
+    let action = {
+        let mut guard = processes.lock().map_err(|_| "Runtime lock failed.")?;
+        match guard.get_mut(&key) {
+            Some(runtime) => {
+                let running = runtime.child.is_some()
+                    && !matches!(
+                        runtime.state,
+                        LifecycleState::Offline | LifecycleState::Crashed
+                    );
+                if enabled {
+                    if running && runtime.playit_stop.is_none() {
+                        Some(("start", runtime.server_port, runtime.generation))
+                    } else {
+                        None
+                    }
+                } else if let Some(stop) = runtime.playit_stop.take() {
+                    playit::stop_agent(&stop);
+                    runtime.tunnel_address = None;
+                    Some(("stop", 0, 0))
+                } else {
+                    None
+                }
+            }
+            None => None,
+        }
+    };
+
+    match action {
+        Some(("start", port, generation)) => {
+            let config = get_runtime_config(&directory_path).unwrap_or_default();
+            launch_tunnel(app, processes, key, directory, &config, port, generation);
+        }
+        Some(("stop", _, _)) => {
+            playit::emit_tunnel_state(&app, &directory, "offline", None, None);
+        }
+        _ => {}
+    }
+
+    Ok(())
+}
+
+/// Returns the current tunnel state for a server (for a freshly-mounted UI).
+#[tauri::command]
+pub(in crate::app) fn get_server_tunnel(
+    directory: String,
+    state: State<'_, RuntimeState>,
+) -> Result<ServerTunnelInfo, String> {
+    let directory_path = PathBuf::from(directory.trim());
+    let config = get_runtime_config(&directory_path).unwrap_or_default();
+    let enabled = config.tunnel_enabled;
+
+    let key = server_key(&directory);
+    let guard = state.processes.lock().map_err(|_| "Runtime lock failed.")?;
+
+    let (address, status) = match guard.get(&key) {
+        Some(runtime) if runtime.playit_stop.is_some() => {
+            (runtime.tunnel_address.clone(), "online".to_string())
+        }
+        _ => {
+            let status = if enabled { "offline" } else { "disabled" };
+            (config.tunnel_address.clone(), status.to_string())
+        }
+    };
+
+    Ok(ServerTunnelInfo {
+        enabled,
+        address,
+        status,
+    })
 }
 
 #[tauri::command]

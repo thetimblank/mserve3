@@ -3,6 +3,15 @@
 Backend-specific guidance. See the root [CLAUDE.md](../CLAUDE.md) for project-wide
 conventions (IPC contract, events, release rule).
 
+## Build prerequisites
+
+The playit.gg tunneling feature embeds `playit-agent-core`, which pulls
+`rustls` → `ring`. `ring` compiles assembly at build time and needs a C
+toolchain on Windows: **clang/LLVM on `aarch64`** (`winget install LLVM.LLVM`,
+which puts `clang` on PATH) and **`nasm` on `x86_64`**. Without it `cargo
+build`/`check` fails in `ring`'s build script with a `failed to find tool
+"clang"` (or `nasm`) error. This is the one non-`rustup` build dependency.
+
 ## Entry path
 
 `src/main.rs` (GUI entry, no console) → `src/lib.rs::run()` → `src/app/mod.rs`
@@ -29,6 +38,7 @@ src/app/
 │   ├── items.rs          plugin/world/datapack toggle, delete, export, upload
 │   ├── config_files.rs   scan/read/write managed config files (whitelist.json, ops.json…)
 │   ├── telemetry.rs      get_server_telemetry, get_server_telemetry_history
+│   ├── playit.rs         playit.gg account: get_playit_status, start_playit_claim, disconnect
 │   └── navigation.rs     open folder/path, validate_path, delete_server
 └── support/          # subsystems & helpers (not directly exposed to the frontend)
     ├── supervisor.rs      per-server lifecycle owner (see below)
@@ -37,6 +47,9 @@ src/app/
     ├── mserve_config.rs   mserve.json read/normalize/write, provider inference
     ├── server_properties.rs  RCON provisioning into server.properties
     ├── rcon.rs            hand-rolled Source RCON client (loopback only)
+    ├── playit.rs          playit.gg tunneling: REST claim/tunnel + in-process agent
+    │                      (set_server_tunnel/get_server_tunnel live in commands/runtime.rs;
+    │                      emits playit-claim-state + playit-tunnel-state)
     ├── runtime_io.rs      stream child stdout/stderr → server-output events
     ├── backups.rs         backup copy/restore + retention enforcement
     ├── scan.rs            enumerate worlds/plugins/datapacks

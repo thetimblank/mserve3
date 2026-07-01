@@ -15,6 +15,7 @@ import {
 	StorageBackupsSettingsSection,
 } from '@/components/edit-server-properties-form';
 import ServerConfigFileEditor from '@/components/server-config-file-editor';
+import { TunnelSettingsSection } from './tunnel-settings-section';
 import { useUser } from '@/data/user';
 import { Button } from '@/components/ui/button';
 import {
@@ -59,6 +60,7 @@ type FormSectionId =
 	| 'java'
 	| 'provider-telemetry'
 	| 'server-jar'
+	| 'tunnel'
 	| 'location';
 
 type SectionId = FormSectionId | 'danger-zone' | ManagedServerConfigFileKind;
@@ -124,6 +126,25 @@ const PROVIDER_TELEMETRY_SECTION: SectionConfig = {
 	description: 'Provider metadata and telemetry options.',
 	keywords: ['provider', 'telemetry', 'tps', 'version', 'host', 'port', 'metadata'],
 	render: () => <ProviderTelemetrySettingsSection />,
+};
+
+const TUNNEL_SECTION: SectionConfig = {
+	id: 'tunnel',
+	title: 'Tunnel',
+	description: 'Expose this server publicly via playit.gg.',
+	keywords: [
+		'tunnel',
+		'playit',
+		'public',
+		'internet',
+		'expose',
+		'claim',
+		'address',
+		'port forward',
+		'external',
+		'remote',
+	],
+	render: (props) => <TunnelSettingsSection server={props.server} />,
 };
 
 const LOCATION_SECTION: SectionConfig = {
@@ -427,6 +448,7 @@ export default function ServerSettingsPanel({
 			STORAGE_BACKUPS_SECTION,
 			JAVA_SECTION,
 			PROVIDER_TELEMETRY_SECTION,
+			TUNNEL_SECTION,
 		];
 		if (user.advanced_mode) {
 			sections.push(LOCATION_SECTION);

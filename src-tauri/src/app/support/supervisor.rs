@@ -14,6 +14,7 @@ use super::super::{
     LifecycleState, RconConfig, ServerRuntime, ServerRuntimeStateEvent, ServerTelemetryEvent,
     TelemetrySample, TpsCommandState,
 };
+use super::playit;
 use super::rcon::RconClient;
 use super::telemetry::{
     StatusPingResult, collect_status_ping, collect_tps_via_rcon, probe_port,
@@ -186,6 +187,11 @@ pub(in crate::app) fn spawn_supervisor(
                             runtime.stdin = None;
                             runtime.pid = None;
                             runtime.latest_sample = None;
+                            // Tear the playit tunnel down with the server it fronts.
+                            if let Some(stop) = runtime.playit_stop.take() {
+                                playit::stop_agent(&stop);
+                            }
+                            runtime.tunnel_address = None;
                             Phase1::Terminal(state_event(runtime))
                         } else {
                             // Escalate a graceful stop that has overstayed its grace.
@@ -220,7 +226,9 @@ pub(in crate::app) fn spawn_supervisor(
             let snapshot = match phase1 {
                 Phase1::Stop => return,
                 Phase1::Terminal(event) => {
+                    let directory = event.directory.clone();
                     let _ = app.emit("server-runtime-state", event);
+                    playit::emit_tunnel_state(&app, &directory, "offline", None, None);
                     return;
                 }
                 Phase1::Continue(snapshot) => snapshot,

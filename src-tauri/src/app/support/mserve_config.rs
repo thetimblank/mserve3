@@ -385,6 +385,9 @@ pub(in crate::app) fn default_synced_config(directory: &Path) -> SyncedMserveCon
         telemetry_host: default_telemetry_host(),
         telemetry_port: detect_default_telemetry_port(directory),
         created_at: chrono::Local::now().to_rfc3339(),
+        tunnel_enabled: false,
+        tunnel_id: None,
+        tunnel_address: None,
     }
 }
 
@@ -544,6 +547,25 @@ pub(in crate::app) fn sanitize_mserve_value_config(
             std::string::ToString::to_string,
         );
 
+    let normalized_tunnel_enabled = object
+        .get("tunnel_enabled")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+
+    let normalized_tunnel_id = object
+        .get("tunnel_id")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(std::string::ToString::to_string);
+
+    let normalized_tunnel_address = object
+        .get("tunnel_address")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(std::string::ToString::to_string);
+
     config.file = normalized_file;
     config.id = normalized_id;
     config.ram = normalized_ram;
@@ -557,6 +579,9 @@ pub(in crate::app) fn sanitize_mserve_value_config(
     config.telemetry_host = normalized_telemetry_host;
     config.telemetry_port = normalized_telemetry_port;
     config.created_at = normalized_created_at;
+    config.tunnel_enabled = normalized_tunnel_enabled;
+    config.tunnel_id = normalized_tunnel_id;
+    config.tunnel_address = normalized_tunnel_address;
 
     config
 }
@@ -576,6 +601,9 @@ pub(in crate::app) fn synced_mserve_json_value(config: &SyncedMserveConfig) -> s
         "telemetry_host": config.telemetry_host,
         "telemetry_port": config.telemetry_port,
         "created_at": config.created_at,
+        "tunnel_enabled": config.tunnel_enabled,
+        "tunnel_id": config.tunnel_id,
+        "tunnel_address": config.tunnel_address,
     })
 }
 
@@ -614,6 +642,9 @@ pub(in crate::app) fn validate_mserve_json_keys(
         "telemetry_host",
         "telemetry_port",
         "created_at",
+        "tunnel_enabled",
+        "tunnel_id",
+        "tunnel_address",
     ];
 
     for key in object.keys() {
@@ -863,6 +894,52 @@ mod tests {
         assert_eq!(provider.minecraft_version, "proxy");
         // Velocity/BungeeCord get the 17 + 21 JDK set.
         assert_eq!(provider.jdk_versions, vec![17, 21]);
+    }
+
+    #[test]
+    fn sanitize_round_trips_tunnel_fields() {
+        let dir = tempfile::tempdir().unwrap();
+        let object = json!({
+            "tunnel_enabled": true,
+            "tunnel_id": " abc-123 ",
+            "tunnel_address": "purple-cat.at.ply.gg",
+        });
+        let map = object.as_object().unwrap().clone();
+
+        let config = sanitize_mserve_value_config(dir.path(), &map);
+        assert!(config.tunnel_enabled);
+        assert_eq!(config.tunnel_id.as_deref(), Some("abc-123"));
+        assert_eq!(
+            config.tunnel_address.as_deref(),
+            Some("purple-cat.at.ply.gg")
+        );
+
+        // Round-trips back out through the serializer.
+        let value = synced_mserve_json_value(&config);
+        assert_eq!(value["tunnel_enabled"], json!(true));
+        assert_eq!(value["tunnel_id"], json!("abc-123"));
+        assert_eq!(value["tunnel_address"], json!("purple-cat.at.ply.gg"));
+    }
+
+    #[test]
+    fn tunnel_fields_default_when_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        let map = serde_json::Map::new();
+
+        let config = sanitize_mserve_value_config(dir.path(), &map);
+        assert!(!config.tunnel_enabled);
+        assert!(config.tunnel_id.is_none());
+        assert!(config.tunnel_address.is_none());
+    }
+
+    #[test]
+    fn tunnel_keys_are_allowed() {
+        let object = json!({
+            "id": "srv-1", "file": "server.jar", "ram": 4.0, "storage_limit": 200,
+            "tunnel_enabled": true, "tunnel_id": "x", "tunnel_address": "y",
+        });
+        let map = object.as_object().unwrap().clone();
+        assert!(validate_mserve_json_keys(&map).is_ok());
     }
 
     #[test]

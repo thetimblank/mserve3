@@ -87,6 +87,9 @@ pub(in crate::app) fn initialize_server(
         telemetry_host: default_telemetry_host(),
         telemetry_port: detect_default_telemetry_port(&directory),
         created_at: chrono::Local::now().to_rfc3339(),
+        tunnel_enabled: false,
+        tunnel_id: None,
+        tunnel_address: None,
     };
 
     write_synced_mserve_json(&directory, &config)?;
@@ -367,6 +370,9 @@ pub(in crate::app) fn import_server(directory: String) -> Result<InitServerResul
             telemetry_host: default_telemetry_host(),
             telemetry_port: detect_default_telemetry_port(&directory_path),
             created_at: chrono::Local::now().to_rfc3339(),
+            tunnel_enabled: false,
+            tunnel_id: None,
+            tunnel_address: None,
         };
 
         write_synced_mserve_json(&directory_path, &config)?;
@@ -529,6 +535,9 @@ pub(in crate::app) fn repair_server_mserve_json(
             .filter(|value| *value > 0)
             .unwrap_or_else(|| detect_default_telemetry_port(&directory_path)),
         created_at: chrono::Local::now().to_rfc3339(),
+        tunnel_enabled: false,
+        tunnel_id: None,
+        tunnel_address: None,
     };
 
     write_synced_mserve_json(&directory_path, &config)?;

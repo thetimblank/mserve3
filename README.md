@@ -63,6 +63,7 @@ e.g. v4.0.12pre0
 
 - major cleanup of backend (rust & typescript hidden logic/sturcture) code/performance optimizations, simple and reusable, delete uneeded normalizations, debloat, etc.
 - linux support
+- bot protection
 - error reporting and feedback
 - setup networks and server groups
 - in-app plugin and modpack browser
@@ -73,7 +74,7 @@ e.g. v4.0.12pre0
 - add tunneling instead of just port forwarding
 - server logs
 - server crashed state
-- add tab completion to terminal
+- add tab completion to terminal (use plugin)
 - more help pages and explanations
 - sleep mode
 - rework MC settings for non-advanced users

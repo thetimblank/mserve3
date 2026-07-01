@@ -116,6 +116,32 @@ export type UpdateServerSettingsResult = {
 	telemetry_port: number;
 };
 
+/** Per-server tunnel status (mirrors the Rust `ServerTunnelInfo.status` strings,
+ * plus the transient `starting`/`error` states pushed via `playit-tunnel-state`). */
+export type TunnelStatus = 'online' | 'offline' | 'starting' | 'error' | 'disabled';
+
+/** One-shot snapshot returned by the `get_server_tunnel` command. */
+export type ServerTunnelInfo = {
+	enabled: boolean;
+	address: string | null;
+	status: TunnelStatus;
+};
+
+/** Payload of the `playit-tunnel-state` event. */
+export type PlayitTunnelStateEvent = {
+	directory: string;
+	status: TunnelStatus;
+	address: string | null;
+	error: string | null;
+};
+
+/** Payload of the `playit-claim-state` event. */
+export type PlayitClaimStateEvent = {
+	status: 'pending' | 'claimed' | 'error';
+	claimUrl: string | null;
+	error: string | null;
+};
+
 export type ServerContentTab =
 	| 'overview'
 	| 'statistics'

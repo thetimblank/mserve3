@@ -268,6 +268,8 @@ export const normalizeServer = (server: Server): Server => {
 		java_installation: server.java_installation?.trim() || undefined,
 		custom_flags: server.custom_flags,
 		created_at: toIsoDateString(server.created_at),
+		tunnel_enabled: server.tunnel_enabled ?? false,
+		tunnel_address: server.tunnel_address?.trim() || undefined,
 	};
 };
 
