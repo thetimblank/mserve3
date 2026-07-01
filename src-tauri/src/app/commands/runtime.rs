@@ -1,7 +1,9 @@
 use super::super::support::{
     RconClient, emit_output_reader, ensure_rcon_enabled, get_runtime_config,
-    infer_provider_version, next_generation, no_window_command, probe_port, read_rcon_config,
-    resolve_telemetry_target, server_key, set_server_port, spawn_supervisor, terminate_runtime,
+    infer_provider_version, kill_process_tree, next_generation, no_window_command,
+    pid_listening_on_port, probe_port, read_rcon_config, resolve_telemetry_target,
+    send_stop_via_stdin, server_key, set_server_port, spawn_supervisor, terminate_runtime,
+    tie_child_to_app_lifetime,
 };
 use super::super::{
     LifecycleState, RuntimeServerConfig, RuntimeState, ServerRuntime, ServerRuntimeSnapshot,
@@ -122,7 +124,7 @@ const DEFAULT_MC_PORT: u16 = 25565;
 fn find_next_available_port(processes: &HashMap<String, ServerRuntime>, start_port: u16) -> u16 {
     let in_use: std::collections::HashSet<u16> = processes
         .values()
-        .filter(|r| !matches!(r.state, LifecycleState::Offline | LifecycleState::Crashed))
+        .filter(|r| r.state.is_active())
         .map(|r| r.server_port)
         .collect();
 
@@ -131,6 +133,15 @@ fn find_next_available_port(processes: &HashMap<String, ServerRuntime>, start_po
         port = port.saturating_add(1);
     }
     port
+}
+
+/// True when an active managed runtime already occupies `host:port`. Guards
+/// both sequential port assignment on start and adoption of external servers
+/// (so one answering port can never be attributed to two servers).
+fn is_port_claimed(processes: &HashMap<String, ServerRuntime>, host: &str, port: u16) -> bool {
+    processes
+        .values()
+        .any(|r| r.host == host && r.server_port == port && r.state.is_active())
 }
 
 /// Patches the `telemetry_port` field in `mserve.json` so subsequent starts
@@ -190,12 +201,7 @@ fn start_server_internal(
     // the change so future starts and the frontend stay in sync.
     {
         let guard = processes.lock().map_err(|_| "Runtime lock failed.")?;
-        let port_claimed = guard.values().any(|r| {
-            r.host == host
-                && r.server_port == server_port
-                && !matches!(r.state, LifecycleState::Offline | LifecycleState::Crashed)
-        });
-        if port_claimed {
+        if is_port_claimed(&guard, &host, server_port) {
             let next_port = find_next_available_port(&guard, DEFAULT_MC_PORT);
             drop(guard);
             set_server_port(&directory_path, next_port)
@@ -221,6 +227,11 @@ fn start_server_internal(
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|err| format!("Failed to start java process: {err}"))?;
+
+    // Bind the server (and everything it spawns) to mserve's lifetime so an
+    // mserve crash or "End task" can never leave an orphaned java process
+    // squatting on the port.
+    tie_child_to_app_lifetime(&child);
 
     let stdin = child.stdin.take();
     let stdout = child.stdout.take();
@@ -351,15 +362,21 @@ pub(in crate::app) fn stop_server(
 
     // Prefer stdin for owned servers (output shows in the terminal); fall back to
     // RCON for adopted servers. The supervisor detects exit and emits `offline`.
-    if let Some(stdin) = runtime.stdin.as_mut() {
-        let _ = writeln!(stdin, "stop");
-        let _ = stdin.flush();
-    } else if let Some(rcon) = runtime.rcon.clone() {
-        let host = runtime.host.clone();
-        drop(guard);
-        let _ = RconClient::connect(&host, rcon.port, &rcon.password, Duration::from_millis(900))
-            .and_then(|mut client| client.command("stop"));
+    if send_stop_via_stdin(runtime) {
+        return Ok("Stopping server.".to_string());
     }
+
+    let Some(rcon) = runtime.rcon.clone() else {
+        return Err(
+            "This server was started outside mserve and has no RCON channel — use Force Kill."
+                .to_string(),
+        );
+    };
+    let host = runtime.host.clone();
+    drop(guard);
+    RconClient::connect(&host, rcon.port, &rcon.password, Duration::from_millis(900))
+        .and_then(|mut client| client.command("stop"))
+        .map_err(|err| format!("Could not reach the server over RCON to stop it ({err})."))?;
 
     Ok("Stopping server.".to_string())
 }
@@ -381,10 +398,7 @@ pub(in crate::app) fn restart_server(
             && runtime.child.is_some()
         {
             mark_stopping(runtime);
-            if let Some(stdin) = runtime.stdin.as_mut() {
-                let _ = writeln!(stdin, "stop");
-                let _ = stdin.flush();
-            }
+            send_stop_via_stdin(runtime);
         }
     }
 
@@ -412,22 +426,53 @@ pub(in crate::app) fn restart_server(
 pub(in crate::app) fn force_kill_server(
     directory: String,
     state: State<'_, RuntimeState>,
+    app: tauri::AppHandle,
 ) -> Result<String, String> {
     let key = server_key(&directory);
-    let mut guard = state.processes.lock().map_err(|_| "Runtime lock failed.")?;
-    let Some(runtime) = guard.get_mut(&key) else {
-        return Ok("No running server process found.".to_string());
+
+    // Owned child: kill it directly; the supervisor reports the exit.
+    let external = {
+        let mut guard = state.processes.lock().map_err(|_| "Runtime lock failed.")?;
+        let Some(runtime) = guard.get_mut(&key) else {
+            return Ok("No running server process found.".to_string());
+        };
+        mark_stopping(runtime);
+        if let Some(child) = runtime.child.as_mut() {
+            let _ = child.kill();
+            return Ok("Server process was force killed.".to_string());
+        }
+        (runtime.directory.clone(), runtime.server_port)
     };
 
-    mark_stopping(runtime);
+    // Adopted (externally started) server: we hold no process handle, so kill
+    // whatever is actually listening on its port. If nothing is, the process is
+    // already gone. Either way the runtime record is stale — drop it and tell
+    // the UI the server is offline (the supervisor exits once the entry is gone).
+    let (directory, server_port) = external;
+    let result = match pid_listening_on_port(server_port) {
+        Some(pid) => kill_process_tree(pid)
+            .map(|()| format!("Force killed external server process (PID {pid})."))
+            .map_err(|err| format!("Could not kill external server process (PID {pid}): {err}")),
+        None => Ok("Server process no longer exists — cleared its runtime state.".to_string()),
+    };
 
-    match runtime.child.as_mut() {
-        Some(child) => {
-            let _ = child.kill();
-            Ok("Server process was force killed.".to_string())
-        }
-        None => Ok("Server process is not owned by mserve.".to_string()),
+    if let Ok(mut guard) = state.processes.lock() {
+        guard.remove(&key);
     }
+    let _ = app.emit(
+        "server-runtime-state",
+        ServerRuntimeStateEvent {
+            directory,
+            state: LifecycleState::Offline,
+            pid: None,
+            started_at: None,
+            exit_code: None,
+            stderr_tail: Vec::new(),
+            server_port: Some(server_port),
+        },
+    );
+
+    result
 }
 
 #[tauri::command]
@@ -440,7 +485,7 @@ pub(in crate::app) fn get_running_server_directories(
     };
     guard
         .values()
-        .filter(|r| !matches!(r.state, LifecycleState::Offline | LifecycleState::Crashed))
+        .filter(|r| r.state.is_active())
         .map(|r| r.directory.clone())
         .collect()
 }
@@ -512,6 +557,7 @@ fn snapshot_from(runtime: &ServerRuntime) -> ServerRuntimeSnapshot {
         exit_code: runtime.exit_code,
         stderr_tail: runtime.stderr_tail.iter().cloned().collect(),
         sample: runtime.latest_sample.clone(),
+        server_port: Some(runtime.server_port),
     }
 }
 
@@ -523,6 +569,7 @@ fn offline_snapshot() -> ServerRuntimeSnapshot {
         exit_code: None,
         stderr_tail: Vec::new(),
         sample: None,
+        server_port: None,
     }
 }
 
@@ -581,15 +628,7 @@ fn register_external(
         // Don't adopt a host:port already owned by another managed server (see
         // the guard in `get_server_runtime`); this also closes the race between
         // two concurrent adoption probes for sibling servers sharing a port.
-        let claimed = guard.values().any(|existing| {
-            existing.host == runtime.host
-                && existing.server_port == runtime.server_port
-                && !matches!(
-                    existing.state,
-                    LifecycleState::Offline | LifecycleState::Crashed
-                )
-        });
-        if claimed {
+        if is_port_claimed(&guard, &runtime.host, runtime.server_port) {
             return;
         }
         guard.insert(key.clone(), runtime);
@@ -626,15 +665,7 @@ pub(in crate::app) fn get_server_runtime(
     // report it offline rather than adopting another server's identity/stats.
     {
         let guard = state.processes.lock().map_err(|_| "Runtime lock failed.")?;
-        let claimed = guard.values().any(|runtime| {
-            runtime.host == host
-                && runtime.server_port == server_port
-                && !matches!(
-                    runtime.state,
-                    LifecycleState::Offline | LifecycleState::Crashed
-                )
-        });
-        if claimed {
+        if is_port_claimed(&guard, &host, server_port) {
             return Ok(offline_snapshot());
         }
     }
@@ -656,6 +687,7 @@ pub(in crate::app) fn get_server_runtime(
             exit_code: None,
             stderr_tail: Vec::new(),
             sample: None,
+            server_port: Some(server_port),
         });
     }
 

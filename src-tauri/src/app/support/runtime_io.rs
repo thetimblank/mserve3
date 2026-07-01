@@ -46,14 +46,22 @@ pub(in crate::app) fn emit_output_reader<R: std::io::Read + Send + 'static>(
     });
 }
 
+/// Writes the `stop` console command to an owned server's stdin. Returns false
+/// when we hold no stdin handle (adopted/external server).
+pub(in crate::app) fn send_stop_via_stdin(runtime: &mut ServerRuntime) -> bool {
+    let Some(stdin) = runtime.stdin.as_mut() else {
+        return false;
+    };
+    let _ = writeln!(stdin, "stop");
+    let _ = stdin.flush();
+    true
+}
+
 /// Gracefully terminates a runtime's child process: send `stop`, wait briefly,
 /// then escalate to a kill. Used by `delete_server`, where we need the process
 /// gone synchronously before touching the files.
 pub(in crate::app) fn terminate_runtime(runtime: &mut ServerRuntime) -> Result<(), String> {
-    if let Some(stdin) = runtime.stdin.as_mut() {
-        let _ = writeln!(stdin, "stop");
-        let _ = stdin.flush();
-    }
+    send_stop_via_stdin(runtime);
 
     let Some(child) = runtime.child.as_mut() else {
         return Ok(());

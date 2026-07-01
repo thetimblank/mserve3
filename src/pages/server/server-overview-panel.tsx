@@ -109,6 +109,9 @@ const ServerOverviewPanel: React.FC<Props> = ({
 	const [publicIp, setPublicIp] = React.useState<string | null>(null);
 	const [ipHidden, setIpHidden] = React.useState(true);
 	const [copied, setCopied] = React.useState(false);
+	// The live runtime keeps `telemetry_port` in sync with the port the server is
+	// actually bound to; a server that has never reported one uses the MC default.
+	const connectPort = server.telemetry_port ?? 25565;
 
 	const copyToClipboard = React.useCallback((text: string | null) => {
 		if (text == null) return;
@@ -221,9 +224,7 @@ const ServerOverviewPanel: React.FC<Props> = ({
 											publicIp
 										)}
 									</span>
-									{server.telemetry_port != 25565 && (
-										<span className='font-mono text-sky-500'>:{server.telemetry_port}</span>
-									)}
+									<span className='font-mono text-sky-500'>:{connectPort}</span>
 								</p>
 								<div className='flex'>
 									<Tooltip>
@@ -249,11 +250,7 @@ const ServerOverviewPanel: React.FC<Props> = ({
 												size='sm'
 												className='h-6 w-6 p-0 text-muted-foreground hover:text-foreground'
 												onClick={() =>
-													copyToClipboard(
-														server.telemetry_port === 25565
-															? publicIp
-															: publicIp + ':' + server.telemetry_port,
-													)
+													copyToClipboard(publicIp == null ? null : `${publicIp}:${connectPort}`)
 												}>
 												{copied ? (
 													<ClipboardCheck className='size-3.5' />

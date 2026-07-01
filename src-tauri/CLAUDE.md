@@ -38,6 +38,7 @@ src/app/
     ├── server_properties.rs  RCON provisioning into server.properties
     ├── rcon.rs            hand-rolled Source RCON client (loopback only)
     ├── runtime_io.rs      stream child stdout/stderr → server-output events
+    ├── process.rs         OS process plumbing (kill-on-close job object, port→PID kill)
     ├── backups.rs         backup copy/restore + retention enforcement
     ├── scan.rs            enumerate worlds/plugins/datapacks
     ├── items.rs           move items between active/inactive folders

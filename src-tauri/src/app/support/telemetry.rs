@@ -4,6 +4,7 @@ use super::rcon::RconClient;
 use serde_json::Value;
 use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
+use std::sync::Mutex;
 use std::time::Duration;
 use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
 
@@ -265,9 +266,23 @@ pub(in crate::app) fn infer_provider_version(config: &RuntimeServerConfig) -> Op
 }
 
 // ---------------------------------------------------------------------------
-// Process metrics via sysinfo (cross-platform, no shell-out). The caller owns a
-// persistent `System` so CPU% is accurate across refreshes.
+// Process metrics via sysinfo (cross-platform, no shell-out). One process-wide
+// `System` is shared by every supervisor: the process table is only held once
+// (instead of once per running server) and CPU% stays accurate because the
+// same instance persists across refreshes. Refreshes are rate-limited so
+// several supervisors polling near-simultaneously reuse one snapshot instead
+// of producing bogus near-zero CPU deltas.
 // ---------------------------------------------------------------------------
+
+/// Minimum spacing between full process-table refreshes.
+const PROCESS_REFRESH_MIN_INTERVAL: Duration = Duration::from_millis(1000);
+
+struct SharedSystem {
+    system: System,
+    last_refresh: Option<std::time::Instant>,
+}
+
+static SHARED_SYSTEM: Mutex<Option<SharedSystem>> = Mutex::new(None);
 
 /// Walks parent links to decide whether `pid` is `root` or a descendant of it.
 /// Capped so a malformed/cyclic parent chain can never loop forever.
@@ -291,22 +306,36 @@ fn is_in_subtree(system: &System, pid: Pid, root: Pid) -> bool {
     false
 }
 
-pub(in crate::app) fn refresh_process_metrics(
-    system: &mut System,
+pub(in crate::app) fn collect_process_metrics(
     pid: u32,
     configured_ram_gb: Option<f64>,
 ) -> ProcessMetricsResult {
+    let Ok(mut guard) = SHARED_SYSTEM.lock() else {
+        return ProcessMetricsResult::default();
+    };
+    let shared = guard.get_or_insert_with(|| SharedSystem {
+        system: System::new(),
+        last_refresh: None,
+    });
+
     let root = Pid::from_u32(pid);
     // Refresh every process (not just `root`) so we can sum the whole subtree.
     // Some server jars (modern bundlers/launchers) run as a small bootstrap that
     // spawns the real JVM as a child, so the heap-holding process is often a
     // descendant of the PID we spawned, not the PID itself. Summing the subtree
     // gives the true memory/CPU regardless of how the server chose to launch.
-    system.refresh_processes_specifics(
-        ProcessesToUpdate::All,
-        true,
-        ProcessRefreshKind::nothing().with_cpu().with_memory(),
-    );
+    let due = shared
+        .last_refresh
+        .is_none_or(|at| at.elapsed() >= PROCESS_REFRESH_MIN_INTERVAL);
+    if due {
+        shared.system.refresh_processes_specifics(
+            ProcessesToUpdate::All,
+            true,
+            ProcessRefreshKind::nothing().with_cpu().with_memory(),
+        );
+        shared.last_refresh = Some(std::time::Instant::now());
+    }
+    let system = &shared.system;
 
     if system.process(root).is_none() {
         return ProcessMetricsResult::default();

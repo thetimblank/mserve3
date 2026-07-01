@@ -35,6 +35,28 @@ export const mapRuntimeStateToStatus = (state: ServerRuntimeState): ServerStatus
 	}
 };
 
+/**
+ * Stats reset applied whenever a server is known to be down. Shared by every
+ * lifecycle consumer (runtime monitor, server controls, detail-page hook) so
+ * "offline" always means the same thing.
+ */
+export const offlineServerStats = (): Partial<Server['stats']> => ({
+	online: false,
+	players_online: null,
+	players_max: null,
+	server_version: null,
+	tps: null,
+	ram_used: null,
+	cpu_used: null,
+	uptime: null,
+});
+
+/** Stats reset for a server that is starting up: offline metrics, fresh uptime. */
+export const startingServerStats = (): Partial<Server['stats']> => ({
+	...offlineServerStats(),
+	uptime: new Date(),
+});
+
 /** Maps a live telemetry sample to a {@link Server.stats} patch. */
 export const mapSampleToStats = (
 	sample: TelemetrySample,

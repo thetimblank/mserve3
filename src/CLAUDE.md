@@ -37,7 +37,7 @@ The four backend → frontend events and where they're consumed:
 
 | Event | Payload (camelCase) | Primary consumer |
 | --- | --- | --- |
-| `server-runtime-state` | `{ directory, state, pid, startedAt, exitCode, stderrTail }` | `components/server-runtime-monitor.tsx` |
+| `server-runtime-state` | `{ directory, state, pid, startedAt, exitCode, stderrTail, serverPort }` | `components/server-runtime-monitor.tsx` |
 | `server-telemetry` | `{ directory, sample }` | `server-runtime-monitor.tsx`, stats hooks |
 | `server-output` | `{ directory, stream, line }` | `pages/server/hooks/use-server-terminal.ts` |
 | `java-download-progress` | `{ … progress }` | `data/java-download.tsx` |

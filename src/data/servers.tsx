@@ -299,7 +299,10 @@ const loadServers = async (): Promise<Server[]> => {
 	try {
 		const parsed = JSON.parse(stored) as Server[];
 		if (!Array.isArray(parsed)) throw new Error('Invalid servers payload');
-		return normalizeServers(parsed);
+		// Runtime state is never trusted from storage: the backend supervisor is
+		// authoritative, and a stale persisted "online" (e.g. after the app was
+		// end-tasked) would show phantom running servers until the first sync.
+		return normalizeServers(parsed.map((server) => ({ ...server, status: 'offline' as const })));
 	} catch {
 		const defaults = createDefaultServers();
 		window.localStorage.setItem(STORAGE_KEY, JSON.stringify(defaults));
@@ -307,13 +310,30 @@ const loadServers = async (): Promise<Server[]> => {
 	}
 };
 
-const saveServers = async (servers: Server[]): Promise<void> => {
+/**
+ * Persisted shape: everything durable, minus live runtime state. `status` and
+ * the live stats are re-derived from the backend after startup, and skipping
+ * them means telemetry ticks (every few seconds per running server) no longer
+ * rewrite localStorage at all.
+ */
+const toPersistedServer = (server: Server) => {
+	const { status: _status, stats, ...durable } = server;
+	return {
+		...durable,
+		stats: {
+			worlds_size_bytes: stats.worlds_size_bytes,
+			backups_size_bytes: stats.backups_size_bytes,
+		},
+	};
+};
+
+const saveServers = (servers: Server[], serialized: string): void => {
 	if (!hasLocalStorage()) {
 		memoryStore = servers;
 		return;
 	}
 	try {
-		window.localStorage.setItem(STORAGE_KEY, JSON.stringify(servers));
+		window.localStorage.setItem(STORAGE_KEY, serialized);
 	} catch {
 		// Ignore storage errors
 	}
@@ -328,6 +348,7 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 	const [servers, setServers] = React.useState<Server[]>([]);
 	const [isReady, setIsReady] = React.useState(false);
 	const didInitialDiskSyncRef = React.useRef(false);
+	const lastPersistedRef = React.useRef<string | null>(null);
 
 	React.useEffect(() => {
 		let active = true;
@@ -343,7 +364,10 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
 	React.useEffect(() => {
 		if (!isReady) return;
-		saveServers(servers);
+		const serialized = JSON.stringify(servers.map(toPersistedServer));
+		if (serialized === lastPersistedRef.current) return;
+		lastPersistedRef.current = serialized;
+		saveServers(servers, serialized);
 	}, [servers, isReady]);
 
 	React.useEffect(() => {

@@ -23,7 +23,12 @@ import { useServers } from '@/data/servers';
 import { useUser } from '@/data/user';
 import { useJavaRuntimes } from '@/data/java-runtimes';
 import { isServerRuntimeClaimed } from '@/lib/server-runtime-registry';
-import { mapRuntimeStateToStatus, mapSampleToStats } from '@/lib/server-telemetry';
+import {
+	mapRuntimeStateToStatus,
+	mapSampleToStats,
+	offlineServerStats,
+	startingServerStats,
+} from '@/lib/server-telemetry';
 import { isJavaVersionError, stripAnsi } from '@/lib/utils';
 import { planJavaFallback, resolveServerJavaExecutable } from '@/lib/java-resolution';
 import { setServerJavaInstallation, type JavaRuntimeInfo } from '@/lib/java-runtime-service';
@@ -48,17 +53,6 @@ type RuntimeEntry = {
 	didFallback: boolean;
 	lastExecutable: string | null;
 };
-
-const offlineStats = () => ({
-	online: false,
-	players_online: null,
-	players_max: null,
-	server_version: null,
-	tps: null,
-	ram_used: null,
-	cpu_used: null,
-	uptime: null,
-});
 
 export const ServerRuntimeMonitor: React.FC = () => {
 	const { servers, setServerStatus, updateServer, updateServerStats } = useServers();
@@ -132,20 +126,26 @@ export const ServerRuntimeMonitor: React.FC = () => {
 
 		const startWith = (server: { id: string; directory: string }, javaExecutable: string) => {
 			setServerStatus(server.id, 'starting');
-			updateServerStats(server.id, { ...offlineStats(), uptime: new Date() });
+			updateServerStats(server.id, startingServerStats());
 			void invoke('start_server', { directory: server.directory, javaExecutable }).catch(() => {
 				if (!active) return;
 				setServerStatus(server.id, 'offline');
-				updateServerStats(server.id, offlineStats());
+				updateServerStats(server.id, offlineServerStats());
 			});
 		};
 
 		listen<ServerRuntimeStateEvent>('server-runtime-state', (event) => {
 			if (!active) return;
-			const { directory, state, exitCode } = event.payload;
+			const { directory, state, exitCode, serverPort } = event.payload;
 			const server = serversRef.current.find((item) => item.directory === directory);
 			if (!server) return;
 			if (isServerRuntimeClaimed(server.id)) return;
+
+			// The supervisor knows the port the server is actually bound to (it may
+			// have been reassigned on start when the configured one was taken).
+			if (serverPort != null && serverPort !== server.telemetry_port) {
+				updateServer(server.id, { telemetry_port: serverPort });
+			}
 
 			const entry = getEntry(server.id);
 
@@ -201,7 +201,7 @@ export const ServerRuntimeMonitor: React.FC = () => {
 				}
 				// No installed Java worked — the detail page offers a download.
 				setServerStatus(server.id, 'offline');
-				updateServerStats(server.id, offlineStats());
+				updateServerStats(server.id, offlineServerStats());
 				entriesRef.current.delete(server.id);
 				toast.error(`${server.name} couldn't start: no compatible Java runtime.`);
 				return;
@@ -229,7 +229,7 @@ export const ServerRuntimeMonitor: React.FC = () => {
 			}
 
 			setServerStatus(server.id, 'offline');
-			updateServerStats(server.id, offlineStats());
+			updateServerStats(server.id, offlineServerStats());
 			if (state === 'crashed') {
 				toast.error(
 					exitCode != null ? `${server.name} crashed (exit code ${exitCode}).` : `${server.name} crashed.`,
@@ -292,6 +292,9 @@ export const ServerRuntimeMonitor: React.FC = () => {
 					});
 					if (!active) return;
 					setServerStatus(server.id, mapRuntimeStateToStatus(snapshot.state));
+					if (snapshot.serverPort != null && snapshot.serverPort !== server.telemetry_port) {
+						updateServer(server.id, { telemetry_port: snapshot.serverPort });
+					}
 					if (snapshot.state === 'online' || snapshot.state === 'running-external') {
 						getEntry(server.id).everRunning = true;
 					}
@@ -301,7 +304,7 @@ export const ServerRuntimeMonitor: React.FC = () => {
 							mapSampleToStats(snapshot.sample, { fallbackUptime: server.stats.uptime }),
 						);
 					} else if (snapshot.state === 'offline') {
-						updateServerStats(server.id, offlineStats());
+						updateServerStats(server.id, offlineServerStats());
 					}
 				} catch {
 					// Backend unavailable; the next servers change retries.
@@ -313,7 +316,7 @@ export const ServerRuntimeMonitor: React.FC = () => {
 		return () => {
 			active = false;
 		};
-	}, [servers, getEntry, setServerStatus, updateServerStats]);
+	}, [servers, getEntry, setServerStatus, updateServer, updateServerStats]);
 
 	return null;
 };

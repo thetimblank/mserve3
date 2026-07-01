@@ -35,6 +35,12 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 rand = "0.8"
 dunce = "1"
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_System_JobObjects",
+] }
+
 [dev-dependencies]
 tempfile = "3"
 serial_test = "3"
