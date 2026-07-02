@@ -305,9 +305,9 @@ struct ServerRuntime {
     stop_requested: bool,
     stop_requested_at: Option<Instant>,
     /// Stop handle for this server's in-process playit agent (when tunneling is
-    /// enabled): flip to `false` to shut the agent down. `None` until the tunnel
-    /// has finished coming up (it is provisioned asynchronously after start).
-    playit_stop: Option<Arc<std::sync::atomic::AtomicBool>>,
+    /// enabled): cancel it to shut the agent down. `None` until the tunnel has
+    /// finished coming up (it is provisioned asynchronously after start).
+    playit_stop: Option<tokio_util::sync::CancellationToken>,
     /// Public tunnel address once the agent is online (for the runtime snapshot).
     tunnel_address: Option<String>,
 }
@@ -700,7 +700,23 @@ fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// Installs a lightweight stderr tracing subscriber so the in-process playit agent's
+/// diagnostics (control-server connect / auth / registration) are visible when the
+/// app is run from a console (`npm run dev`). Quiet by default — global `warn` plus
+/// `info` for the playit crates — and fully overridable via the `RUST_LOG` env var.
+fn init_tracing() {
+    use tracing_subscriber::EnvFilter;
+
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("warn,playit_agent_core=info,playit_api_client=info"));
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_writer(std::io::stderr)
+        .try_init();
+}
+
 pub fn run() {
+    init_tracing();
     tauri::Builder::default()
         .manage(RuntimeState::default())
         .on_window_event(on_main_window_event)

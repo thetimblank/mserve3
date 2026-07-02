@@ -24,6 +24,11 @@ describe('resolveJavaRequirement', () => {
 	it('handles modern year-based versions (26+) as Java 25', () => {
 		expect(resolveJavaRequirement('vanilla', '26').minimumMajor).toBe(25);
 	});
+	it('handles modern minor/patch versions (26.1.2) as Java 25', () => {
+		// The trailing `1.2` must not be misparsed as legacy Minecraft 1.2.
+		expect(resolveJavaRequirement('neoforge', '26.1.2').minimumMajor).toBe(25);
+		expect(resolveJavaRequirement('fabric', '26.1').minimumMajor).toBe(25);
+	});
 	it('uses provider rules for velocity regardless of version', () => {
 		const req = resolveJavaRequirement('velocity', 'proxy');
 		expect(req.minimumMajor).toBe(17);

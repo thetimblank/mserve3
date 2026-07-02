@@ -16,7 +16,7 @@ const SlideRam: React.FC = () => {
 					Continue
 				</Button>
 			}>
-			{form.provider && <RamSelector provider={form.provider} ram={form.ram} updateField={updateField} />}
+			<RamSelector provider={form.provider} ram={form.ram} updateField={updateField} />
 		</SlideShell>
 	);
 };

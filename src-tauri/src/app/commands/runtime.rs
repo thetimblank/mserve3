@@ -284,7 +284,7 @@ fn launch_tunnel(
                                 && rt.child.is_some()
                                 && !rt.stop_requested =>
                         {
-                            rt.playit_stop = Some(handle.stop.clone());
+                            rt.playit_stop = Some(handle.cancel.clone());
                             rt.tunnel_address = Some(handle.address.clone());
                             true
                         }
@@ -294,7 +294,7 @@ fn launch_tunnel(
                 };
 
                 if !attached {
-                    playit::stop_agent(&handle.stop);
+                    playit::stop_agent(&handle.cancel);
                     playit::emit_tunnel_state(&app, &directory, "offline", None, None);
                     return;
                 }

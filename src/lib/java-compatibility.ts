@@ -84,16 +84,8 @@ const parseMinecraftVersion = (version?: string | null): ParsedMinecraftVersion 
 	const normalized = version.trim().toLowerCase();
 	if (!normalized) return null;
 
-	// Legacy scheme: 1.20.4, 1.21
-	const legacy = normalized.match(/\b1\.(\d{1,2})(?:\.(\d{1,2}))?\b/);
-	if (legacy) {
-		const minor = Number(legacy[1]);
-		const patch = legacy[2] != null ? Number(legacy[2]) : null;
-		if (!Number.isInteger(minor)) return null;
-		return { major: 1, minor, patch: Number.isInteger(patch) ? patch : null };
-	}
-
-	// Modern year-based snapshots: 26w03a
+	// Modern year-based snapshots: 26w03a. Checked before the legacy scheme so a
+	// year like `26` isn't mistaken for a `1.x` release.
 	const snapshot = normalized.match(/\b(\d{2})w\d{2}[a-z]\b/);
 	if (snapshot) {
 		const year = Number(snapshot[1]);
@@ -102,7 +94,10 @@ const parseMinecraftVersion = (version?: string | null): ParsedMinecraftVersion 
 		}
 	}
 
-	// Modern year-based releases: 26, 26.1, 26.1.2
+	// Modern year-based releases: 26, 26.1, 26.1.2. Must run before the legacy
+	// scheme because the legacy `\b1\.` pattern would otherwise match the trailing
+	// `1.2` inside `26.1.2` (the `.` before the `1` is a word boundary) and misread
+	// the version as legacy `1.2`.
 	const modern = normalized.match(/\b(\d{2,})(?:\.(\d{1,2}))?(?:\.(\d{1,2}))?\b/);
 	if (modern) {
 		const major = Number(modern[1]);
@@ -115,6 +110,15 @@ const parseMinecraftVersion = (version?: string | null): ParsedMinecraftVersion 
 				patch: Number.isInteger(patch) ? patch : null,
 			};
 		}
+	}
+
+	// Legacy scheme: 1.20.4, 1.21
+	const legacy = normalized.match(/\b1\.(\d{1,2})(?:\.(\d{1,2}))?\b/);
+	if (legacy) {
+		const minor = Number(legacy[1]);
+		const patch = legacy[2] != null ? Number(legacy[2]) : null;
+		if (!Number.isInteger(minor)) return null;
+		return { major: 1, minor, patch: Number.isInteger(patch) ? patch : null };
 	}
 
 	return null;

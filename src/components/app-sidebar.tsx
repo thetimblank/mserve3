@@ -56,9 +56,16 @@ const help = [
 	},
 ];
 
+// Solid-purple active state matching the per-server entries below. Exact-path
+// match so a nested route (e.g. a server detail page under /servers) doesn't also
+// light up its parent nav item.
+const NAV_ACTIVE_CLASS =
+	'font-semibold bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground cursor-default';
+
 export function AppSidebar() {
 	const { servers } = useServers();
 	const location = useLocation();
+	const isNavActive = (url: string) => location.pathname === url;
 
 	return (
 		<Sidebar className='pt-10'>
@@ -70,7 +77,7 @@ export function AppSidebar() {
 								.filter((item) => !item.bottom)
 								.map((item) => (
 									<SidebarMenuItem key={item.title}>
-										<SidebarMenuButton asChild>
+										<SidebarMenuButton asChild className={isNavActive(item.url) ? NAV_ACTIVE_CLASS : ''}>
 											<Link to={item.url}>
 												<item.icon />
 												<span>{item.title}</span>
@@ -157,7 +164,7 @@ export function AppSidebar() {
 								// .filter((item) => !item.bottom)
 								.map((item) => (
 									<SidebarMenuItem key={item.title}>
-										<SidebarMenuButton asChild>
+										<SidebarMenuButton asChild className={isNavActive(item.url) ? NAV_ACTIVE_CLASS : ''}>
 											<Link to={item.url}>
 												<item.icon />
 												<span>{item.title}</span>
@@ -176,7 +183,7 @@ export function AppSidebar() {
 								.filter((item) => item.bottom)
 								.map((item) => (
 									<SidebarMenuItem key={item.title}>
-										<SidebarMenuButton asChild>
+										<SidebarMenuButton asChild className={isNavActive(item.url) ? NAV_ACTIVE_CLASS : ''}>
 											<Link to={item.url}>
 												<item.icon />
 												<span>{item.title}</span>

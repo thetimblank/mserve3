@@ -4,6 +4,7 @@ import { useServers } from '../data/servers';
 import { toast } from 'sonner';
 import SettingsAppearanceCard from './settings/settings-appearance-card';
 import SettingsBehaviorCard from './settings/settings-behavior-card';
+import SettingsTunnelCard from './settings/settings-tunnel-card';
 import SettingsJavaCard from './settings/settings-java-card';
 import SettingsDataCard from './settings/settings-data-card';
 import SettingsUpdateCard from './settings/settings-update-card';
@@ -59,6 +60,13 @@ const Settings: React.FC = () => {
 						whileInView={{ scale: 1, y: 0, opacity: 1 }}
 						transition={{ type: 'spring', duration: 0.5, delay: 0.1, bounce: 0 }}>
 						<SettingsJavaCard />
+					</m.div>
+
+					<m.div
+						initial={{ scale: 0.75, y: 10, opacity: 0 }}
+						whileInView={{ scale: 1, y: 0, opacity: 1 }}
+						transition={{ type: 'spring', duration: 0.5, delay: 0.125, bounce: 0 }}>
+						<SettingsTunnelCard />
 					</m.div>
 
 					<m.div

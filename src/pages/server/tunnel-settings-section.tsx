@@ -1,24 +1,18 @@
 import React from 'react';
-import {
-	Clipboard,
-	ClipboardCheck,
-	Globe,
-	Loader2,
-	OctagonAlert,
-	Plug,
-	Unplug,
-} from 'lucide-react';
-import { openUrl } from '@tauri-apps/plugin-opener';
+import { Link } from 'react-router-dom';
+import { Clipboard, ClipboardCheck, Globe, Loader2, OctagonAlert } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Container } from '@/components/ui/container';
+import { usePlayitAccount } from '@/hooks/use-playit-account';
 import type { Server } from '@/data/servers';
 
 import { useServerTunnel } from './hooks/use-server-tunnel';
 
 export const TunnelSettingsSection: React.FC<{ server: Server }> = ({ server }) => {
+	const account = usePlayitAccount();
 	const tunnel = useServerTunnel(server.directory);
 	const [copied, setCopied] = React.useState(false);
 
@@ -41,49 +35,23 @@ export const TunnelSettingsSection: React.FC<{ server: Server }> = ({ server }) 
 				</p>
 			</div>
 
-			{tunnel.claimed === null ? (
+			{account.claimed === null ? (
 				<div className='flex items-center gap-2 text-sm text-muted-foreground'>
 					<Loader2 className='size-4 animate-spin' />
 					<span>Loading tunnel status...</span>
 				</div>
-			) : !tunnel.claimed ? (
-				<Container className='space-y-4'>
+			) : !account.claimed ? (
+				<Container className='space-y-3'>
 					<div className='space-y-1'>
 						<p className='font-semibold'>Connect a playit.gg account</p>
 						<p className='text-sm text-muted-foreground'>
-							Tunneling needs a free playit.gg account. Connect one once for this install; every
-							server can then get its own tunnel.
+							Tunneling needs a free playit.gg account, connected once for this install. Set it up in{' '}
+							<Link to='/settings' className='font-medium text-foreground underline underline-offset-4'>
+								Settings
+							</Link>
+							, then enable tunneling here.
 						</p>
 					</div>
-
-					{tunnel.claimState.status === 'pending' ? (
-						<div className='space-y-2'>
-							<div className='flex items-center gap-2 text-sm text-muted-foreground'>
-								<Loader2 className='size-4 animate-spin' />
-								<span>Waiting for you to approve the connection in your browser...</span>
-							</div>
-							{tunnel.claimState.claimUrl && (
-								<Button
-									variant='link'
-									className='h-auto px-0'
-									onClick={() => openUrl(tunnel.claimState.claimUrl!)}>
-									Reopen approval page
-								</Button>
-							)}
-						</div>
-					) : (
-						<Button onClick={tunnel.connectAccount} disabled={tunnel.busy}>
-							<Plug className='size-4' />
-							<span>Connect playit.gg account</span>
-						</Button>
-					)}
-
-					{tunnel.claimState.status === 'error' && tunnel.claimState.error && (
-						<p className='flex items-center gap-2 text-sm text-destructive'>
-							<OctagonAlert className='size-4 shrink-0' />
-							{tunnel.claimState.error}
-						</p>
-					)}
 				</Container>
 			) : (
 				<div className='space-y-6'>
@@ -138,16 +106,6 @@ export const TunnelSettingsSection: React.FC<{ server: Server }> = ({ server }) 
 							)}
 						</div>
 					)}
-
-					<Button
-						variant='ghost'
-						size='sm'
-						className='text-muted-foreground'
-						onClick={tunnel.disconnectAccount}
-						disabled={tunnel.busy}>
-						<Unplug className='size-4' />
-						<span>Disconnect playit.gg account</span>
-					</Button>
 				</div>
 			)}
 		</div>

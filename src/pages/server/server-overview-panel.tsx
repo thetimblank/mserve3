@@ -118,6 +118,10 @@ const ServerOverviewPanel: React.FC<Props> = ({
 	// The live runtime keeps `telemetry_port` in sync with the port the server is
 	// actually bound to; a server that has never reported one uses the MC default.
 	const connectPort = server.telemetry_port ?? 25565;
+	// Minecraft's default port (25565) is implied by clients, so showing/copying it
+	// is redundant — omit the suffix only for that one port.
+	const showConnectPort = connectPort !== 25565;
+	const connectAddress = publicIp == null ? null : showConnectPort ? `${publicIp}:${connectPort}` : publicIp;
 
 	const copyToClipboard = React.useCallback((text: string | null) => {
 		if (text == null) return;
@@ -238,7 +242,9 @@ const ServerOverviewPanel: React.FC<Props> = ({
 											publicIp
 										)}
 									</span>
-									<span className='font-mono text-sky-500'>:{connectPort}</span>
+									{showConnectPort && (
+										<span className='font-mono text-sky-500'>:{connectPort}</span>
+									)}
 								</p>
 								<div className='flex'>
 									<Tooltip>
@@ -263,9 +269,7 @@ const ServerOverviewPanel: React.FC<Props> = ({
 												variant='ghost'
 												size='sm'
 												className='h-6 w-6 p-0 text-muted-foreground hover:text-foreground'
-												onClick={() =>
-													copyToClipboard(publicIp == null ? null : `${publicIp}:${connectPort}`)
-												}>
+												onClick={() => copyToClipboard(connectAddress)}>
 												{copied ? (
 													<ClipboardCheck className='size-3.5' />
 												) : (

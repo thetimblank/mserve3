@@ -18,9 +18,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.5.5", features = [] }
 
 [dependencies]
-tauri = { version = "2.10.2", features = ["tray-icon", "image-png"] }
+tauri = { version = "2.11.3", features = ["tray-icon", "image-png"] }
 tauri-plugin-opener = "2.5.3"
-tauri-plugin-dialog = "2.6.0"
+tauri-plugin-dialog = "2.7.1"
 tauri-plugin-updater = { version = "2", default-features = false, features = ["native-tls", "zip"] }
 tauri-plugin-window-state = "2"
 serde = { version = "1", features = ["derive"] }
@@ -34,13 +34,24 @@ sysinfo = "0.33"
 rusqlite = { version = "0.32", features = ["bundled"] }
 rand = "0.8"
 dunce = "1"
-playit-agent-core = "0.20.1"
-playit-api-client = "0.1.2"
-playit-agent-proto = "1.3"
+# Pinned to playit's Git release tag. The crates.io versions (agent-core 0.20.1 /
+# api-client 0.1.2) are frozen on an old protocol the live playit API now rejects
+# with `AgentVersionTooOld` (the agent registration + version structs changed shape).
+# All three MUST share the same git source so their types (PortProto, AgentVersion…)
+# unify into one. Bump the tag to track playit releases.
+playit-agent-core = { git = "https://github.com/playit-cloud/playit-agent", tag = "v1.0.10" }
+playit-api-client = { git = "https://github.com/playit-cloud/playit-agent", tag = "v1.0.10" }
+playit-agent-proto = { git = "https://github.com/playit-cloud/playit-agent", tag = "v1.0.10" }
 uuid = "1"
 # Async timers for the in-process playit agent flows (claim polling, tunnel
 # allocation waits). The full tokio runtime is already pulled by playit-agent-core.
 tokio = { version = "1", features = ["time"] }
+# `CancellationToken`, the stop handle for the in-process playit agent (must unify
+# with the version `playit-agent-core` uses).
+tokio-util = "0.7"
+# Surfaces the playit agent crates' `tracing` diagnostics (they log connection/auth
+# failures via `tracing`, which is otherwise dropped with no subscriber installed).
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 sha2 = "0.10"
 
 [target.'cfg(windows)'.dependencies]

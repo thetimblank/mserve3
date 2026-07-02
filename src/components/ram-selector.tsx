@@ -75,7 +75,9 @@ const GAMEPLAY_RAM_PRESETS: RamPreset[] = [
 
 interface Props extends React.HTMLAttributes<HTMLDivElement> {
 	updateField: (key: 'ram', value: number) => void;
-	provider: Provider;
+	// Optional: modpack servers have no jar-based provider yet, so fall back to the
+	// gameplay presets (a modpack is never a proxy).
+	provider?: Provider | null;
 	ram: number;
 }
 
