@@ -4,7 +4,12 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
 import type { Server, ServerStatus, ServerUpdate } from '@/data/servers';
 import { isJavaVersionError, stripAnsi } from '@/lib/utils';
-import { mapRuntimeStateToStatus, mapSampleToStats } from '@/lib/server-telemetry';
+import {
+	mapRuntimeStateToStatus,
+	mapSampleToStats,
+	offlineServerStats,
+	startingServerStats,
+} from '@/lib/server-telemetry';
 import { useUser } from '@/data/user';
 import { useJavaRuntimes } from '@/data/java-runtimes';
 import { useJavaDownload } from '@/data/java-download';
@@ -104,6 +109,7 @@ export const useServerRuntime = ({
 	const runtimeRef = React.useRef<RuntimeState>(initialRuntimeState());
 	const serverDirectory = server?.directory;
 	const serverStatus = server?.status;
+	const serverTelemetryPort = server?.telemetry_port;
 
 	const autoBackupModes = server?.auto_backup ?? [];
 	const hasOnStartBackup = autoBackupModes.includes('on_start');
@@ -147,29 +153,12 @@ export const useServerRuntime = ({
 		runtimeRef.current.stopRequested = false;
 		runtimeRef.current.restartRequested = false;
 		runtimeRef.current.everRunning = false;
-		updateServerStats(serverId, {
-			online: false,
-			players_online: null,
-			players_max: null,
-			server_version: null,
-			tps: null,
-			ram_used: null,
-			cpu_used: null,
-			uptime: null,
-		});
+		updateServerStats(serverId, offlineServerStats());
 	}, [serverId, setServerStatus, updateServerStats]);
 
 	const setStartingState = React.useCallback(() => {
 		runtimeRef.current.startAt = new Date();
-		updateServerStats(serverId, {
-			online: false,
-			players_online: null,
-			players_max: null,
-			tps: null,
-			ram_used: null,
-			cpu_used: null,
-			uptime: runtimeRef.current.startAt,
-		});
+		updateServerStats(serverId, { ...startingServerStats(), uptime: runtimeRef.current.startAt });
 		setServerStatus(serverId, 'starting');
 	}, [serverId, setServerStatus, updateServerStats]);
 
@@ -184,6 +173,36 @@ export const useServerRuntime = ({
 			}),
 		[javaRuntimes, server?.java_installation, server?.provider, user.java_installation_default],
 	);
+
+	// Resolves an installed compatible Java, or offers to download the
+	// recommended one. Returns `null` when the user cancelled the download.
+	const acquireJava = React.useCallback(async (): Promise<{
+		executablePath: string;
+		majorVersion: number | null;
+	} | null> => {
+		const resolution = resolveJava();
+		if (resolution.status === 'resolved') {
+			return { executablePath: resolution.executablePath, majorVersion: resolution.majorVersion };
+		}
+		const runtime = await ensureJava(resolution.requirement.recommendedMajor);
+		return runtime ? { executablePath: runtime.executablePath, majorVersion: runtime.majorVersion } : null;
+	}, [ensureJava, resolveJava]);
+
+	// Resets the per-cycle bookkeeping for a fresh start (or restart) attempt.
+	const beginStartCycle = React.useCallback((options?: { restart?: boolean }) => {
+		const runtime = runtimeRef.current;
+		runtime.manualStopRequested = false;
+		runtime.restartRequested = Boolean(options?.restart);
+		runtime.stopRequested = Boolean(options?.restart);
+		runtime.forceKilled = false;
+		runtime.everRunning = false;
+		runtime.javaAttemptMajors = [];
+		runtime.javaDidFallback = false;
+		runtime.javaFallbackInProgress = false;
+		runtime.javaDownloadAttempted = false;
+		runtime.javaGiveUp = false;
+		runtime.currentJavaExecutable = null;
+	}, []);
 
 	// Spawns the server with a specific Java executable and records the attempt so
 	// the start-failure fallback can step down through versions.
@@ -287,6 +306,7 @@ export const useServerRuntime = ({
 			});
 			updateServer(serverId, {
 				plugins: result.plugins,
+				mods: result.mods,
 				worlds: result.worlds,
 				datapacks: result.datapacks,
 				backups: mapScannedBackups(result.backups),
@@ -366,6 +386,9 @@ export const useServerRuntime = ({
 				});
 				if (!active) return;
 				setServerStatus(serverId, mapRuntimeStateToStatus(snapshot.state));
+				if (snapshot.serverPort != null && snapshot.serverPort !== serverTelemetryPort) {
+					updateServer(serverId, { telemetry_port: snapshot.serverPort });
+				}
 				if (snapshot.state === 'online' || snapshot.state === 'running-external') {
 					runtimeRef.current.everRunning = true;
 					if (!runtimeRef.current.startAt) {
@@ -383,7 +406,7 @@ export const useServerRuntime = ({
 		return () => {
 			active = false;
 		};
-	}, [serverDirectory, serverId, setServerStatus, updateServerStats]);
+	}, [serverDirectory, serverId, serverTelemetryPort, setServerStatus, updateServer, updateServerStats]);
 
 	// Console output: terminal display + early wrong-Java detection.
 	React.useEffect(() => {
@@ -446,7 +469,13 @@ export const useServerRuntime = ({
 		listen<ServerRuntimeStateEvent>('server-runtime-state', (event) => {
 			if (!active) return;
 			if (event.payload.directory !== serverDirectory) return;
-			const { state, exitCode, startedAt } = event.payload;
+			const { state, exitCode, startedAt, serverPort } = event.payload;
+
+			// The supervisor knows the port the server is actually bound to (it may
+			// have been reassigned on start when the configured one was taken).
+			if (serverPort != null && serverPort !== serverTelemetryPort) {
+				updateServer(serverId, { telemetry_port: serverPort });
+			}
 
 			if (state === 'online' || state === 'running-external') {
 				runtimeRef.current.everRunning = true;
@@ -573,6 +602,7 @@ export const useServerRuntime = ({
 		server?.java_installation,
 		serverDirectory,
 		serverId,
+		serverTelemetryPort,
 		setOfflineState,
 		setServerStatus,
 		setStartingState,
@@ -645,41 +675,20 @@ export const useServerRuntime = ({
 		if (!serverDirectory) return;
 		if (isBusy) return;
 
-		runtimeRef.current.manualStopRequested = false;
-		runtimeRef.current.stopRequested = false;
-		runtimeRef.current.restartRequested = false;
-		runtimeRef.current.forceKilled = false;
-		runtimeRef.current.everRunning = false;
-		// Reset automatic-Java fallback state for a fresh start cycle.
-		runtimeRef.current.javaAttemptMajors = [];
-		runtimeRef.current.javaDidFallback = false;
-		runtimeRef.current.javaFallbackInProgress = false;
-		runtimeRef.current.javaDownloadAttempted = false;
-		runtimeRef.current.javaGiveUp = false;
-		runtimeRef.current.currentJavaExecutable = null;
+		beginStartCycle();
 		setIsBusy(true);
 		setStartingState();
 		appendTerminalLine('[system] Starting server...');
 
 		try {
-			const resolution = resolveJava();
-			let javaExecutable: string;
-			let major: number | null;
-			if (resolution.status === 'resolved') {
-				javaExecutable = resolution.executablePath;
-				major = resolution.majorVersion;
-			} else {
-				const runtime = await ensureJava(resolution.requirement.recommendedMajor);
-				if (!runtime) {
-					setOfflineState();
-					appendTerminalLine('[system] Start cancelled — no Java runtime available.');
-					return;
-				}
-				javaExecutable = runtime.executablePath;
-				major = runtime.majorVersion;
+			const java = await acquireJava();
+			if (!java) {
+				setOfflineState();
+				appendTerminalLine('[system] Start cancelled — no Java runtime available.');
+				return;
 			}
 
-			await startWithJava(javaExecutable, major);
+			await startWithJava(java.executablePath, java.majorVersion);
 			await syncServerContents();
 		} catch (err) {
 			setOfflineState();
@@ -689,10 +698,10 @@ export const useServerRuntime = ({
 			setIsBusy(false);
 		}
 	}, [
+		acquireJava,
 		appendTerminalLine,
-		ensureJava,
+		beginStartCycle,
 		isBusy,
-		resolveJava,
 		serverDirectory,
 		setIsBusy,
 		setOfflineState,
@@ -730,48 +739,27 @@ export const useServerRuntime = ({
 		if (!serverDirectory) return;
 		if (isBusy) return;
 
-		runtimeRef.current.manualStopRequested = false;
-		runtimeRef.current.restartRequested = true;
-		runtimeRef.current.stopRequested = true;
-		runtimeRef.current.forceKilled = false;
-		runtimeRef.current.everRunning = false;
-		// Reset automatic-Java fallback state for a fresh start cycle.
-		runtimeRef.current.javaAttemptMajors = [];
-		runtimeRef.current.javaDidFallback = false;
-		runtimeRef.current.javaFallbackInProgress = false;
-		runtimeRef.current.javaDownloadAttempted = false;
-		runtimeRef.current.javaGiveUp = false;
-		runtimeRef.current.currentJavaExecutable = null;
+		beginStartCycle({ restart: true });
 		setIsBusy(true);
 		setServerStatus(serverId, 'closing');
 		appendTerminalLine('[system] Restarting server...');
 
 		try {
-			const resolution = resolveJava();
-			let javaExecutable: string;
-			let major: number | null;
-			if (resolution.status === 'resolved') {
-				javaExecutable = resolution.executablePath;
-				major = resolution.majorVersion;
-			} else {
-				const runtime = await ensureJava(resolution.requirement.recommendedMajor);
-				if (!runtime) {
-					setOfflineState();
-					appendTerminalLine('[system] Restart cancelled — no Java runtime available.');
-					return;
-				}
-				javaExecutable = runtime.executablePath;
-				major = runtime.majorVersion;
+			const java = await acquireJava();
+			if (!java) {
+				setOfflineState();
+				appendTerminalLine('[system] Restart cancelled — no Java runtime available.');
+				return;
 			}
 
-			runtimeRef.current.currentJavaExecutable = javaExecutable;
-			if (major != null && !runtimeRef.current.javaAttemptMajors.includes(major)) {
-				runtimeRef.current.javaAttemptMajors.push(major);
+			runtimeRef.current.currentJavaExecutable = java.executablePath;
+			if (java.majorVersion != null && !runtimeRef.current.javaAttemptMajors.includes(java.majorVersion)) {
+				runtimeRef.current.javaAttemptMajors.push(java.majorVersion);
 			}
 			runtimeRef.current.awaitingReady = true;
-			await appendResolvedStartCommand(javaExecutable);
+			await appendResolvedStartCommand(java.executablePath);
 			// The backend stops, waits for exit, then starts; events do the rest.
-			await invoke('restart_server', { directory: serverDirectory, javaExecutable });
+			await invoke('restart_server', { directory: serverDirectory, javaExecutable: java.executablePath });
 		} catch (err) {
 			setOfflineState();
 			const message = showError(err, 'Failed to restart server.');
@@ -780,11 +768,11 @@ export const useServerRuntime = ({
 			setIsBusy(false);
 		}
 	}, [
+		acquireJava,
 		appendResolvedStartCommand,
 		appendTerminalLine,
-		ensureJava,
+		beginStartCycle,
 		isBusy,
-		resolveJava,
 		serverDirectory,
 		serverId,
 		setIsBusy,

@@ -24,6 +24,7 @@ export type RestoreServerBackupResult = {
 
 export type ScanServerContentsResult = {
 	plugins: MserveServer['plugins'];
+	mods: MserveServer['mods'];
 	worlds: MserveServer['worlds'];
 	datapacks: MserveServer['datapacks'];
 	backups: ScannedBackupEntry[];
@@ -63,6 +64,8 @@ export type ServerRuntimeStateEvent = {
 	startedAt: string | null;
 	exitCode: number | null;
 	stderrTail: string[];
+	/** The actual port the server is bound to (authoritative over local config). */
+	serverPort: number | null;
 };
 
 /** Payload of the `server-telemetry` event. */
@@ -79,6 +82,8 @@ export type ServerRuntimeSnapshot = {
 	exitCode: number | null;
 	stderrTail: string[];
 	sample: TelemetrySample | null;
+	/** The actual port the server is bound to (`null` when not tracked). */
+	serverPort: number | null;
 };
 
 /** A bucket-averaged history point for the (future) telemetry timeline graph. */
@@ -146,6 +151,7 @@ export type ServerContentTab =
 	| 'overview'
 	| 'statistics'
 	| 'plugins'
+	| 'mods'
 	| 'worlds'
 	| 'datapacks'
 	| 'backups'

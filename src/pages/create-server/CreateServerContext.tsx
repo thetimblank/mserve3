@@ -1,11 +1,18 @@
 import * as React from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import { useJavaRuntimes } from '@/data/java-runtimes';
 import { useServers } from '@/data/servers';
 import { useUser } from '@/data/user';
 import { buildCreatedServer } from '@/lib/mserve-server-mapper';
 import type { Provider } from '@/lib/mserve-schema';
+import {
+	installModrinthModpack,
+	type ModpackInstallProgressEvent,
+	type ModrinthVersion,
+} from '@/lib/modrinth-service';
 import {
 	createDefaultServerSetupForm,
 	type InitServerPayload,
@@ -13,7 +20,7 @@ import {
 	type ServerSetupFormData,
 } from '@/lib/mserve-sync';
 import { clampRamGb } from '@/lib/ram-utils';
-import { isProxyProvider } from '@/lib/server-provider';
+import { createProvider, isProxyProvider } from '@/lib/server-provider';
 import { getDefaultServersRootPath } from '@/lib/server-root-path';
 import {
 	CREATE_SERVER_SLIDE_INDEX,
@@ -28,6 +35,15 @@ export type PathValidationResult = {
 	exists: boolean;
 	isDirectory: boolean;
 	isFile: boolean;
+};
+
+/** A Modrinth modpack version the user picked in the jar slide. */
+export type ModpackSelection = {
+	projectId: string;
+	slug: string;
+	title: string;
+	pageUrl: string;
+	version: ModrinthVersion;
 };
 
 const DONE_SLIDE_INDEX = CREATE_SERVER_SLIDE_INDEX.done;
@@ -83,6 +99,9 @@ type CreateServerContextValue = {
 	createdServerId: string | null;
 	error: string | null;
 	isSubmitting: boolean;
+	modpack: ModpackSelection | null;
+	modpackInstallProgress: ModpackInstallProgressEvent | null;
+	setModpack: (selection: ModpackSelection | null) => void;
 	updateField: <K extends keyof ServerSetupFormData>(key: K, value: ServerSetupFormData[K]) => void;
 	setServerName: (value: string) => void;
 	setSlide: (slide: number) => void;
@@ -115,6 +134,10 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 	const [createdServerId, setCreatedServerId] = React.useState<string | null>(null);
 	const [error, setError] = React.useState<string | null>(null);
 	const [isSubmitting, setIsSubmitting] = React.useState(false);
+	const [modpack, setModpackState] = React.useState<ModpackSelection | null>(null);
+	const [modpackInstallProgress, setModpackInstallProgress] =
+		React.useState<ModpackInstallProgressEvent | null>(null);
+	const { runtimes: javaRuntimes } = useJavaRuntimes();
 
 	React.useEffect(() => {
 		const configuredRootPath = user.servers_root_path.trim();
@@ -185,6 +208,18 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 		setHasStarted(true);
 	}, []);
 
+	const setModpack = React.useCallback((selection: ModpackSelection | null) => {
+		setModpackState(selection);
+		setHasStarted(true);
+		if (selection) {
+			// The modpack install determines the launch file and provider, so any
+			// previously selected jar no longer applies.
+			providerRef.current = null;
+			setProvider(null);
+			setForm((prev) => ({ ...prev, file: '', provider: null }));
+		}
+	}, []);
+
 	const nextSlide = React.useCallback(() => {
 		setHasStarted(true);
 		setSlide((prev) => getCreateServerNextSlide(prev, providerRef.current));
@@ -217,6 +252,8 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 		setCreatedServerId(null);
 		setError(null);
 		setIsSubmitting(false);
+		setModpackState(null);
+		setModpackInstallProgress(null);
 	}, []);
 
 	const goToCreatedServer = React.useCallback(() => {
@@ -289,6 +326,108 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 		if (directoryValidation.exists) {
 			setError('A folder with this name already exists. Please change the server name.');
 			setSlide(CREATE_SERVER_SLIDE_INDEX.directory);
+			return;
+		}
+
+		// Modpack path: the backend installer populates the directory (pack files,
+		// overrides, mod loader), then initialize_server adopts it.
+		if (modpack) {
+			setIsSubmitting(true);
+			setModpackInstallProgress(null);
+			let unlisten: UnlistenFn | null = null;
+			try {
+				const installId =
+					typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+						? crypto.randomUUID()
+						: `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+				unlisten = await listen<ModpackInstallProgressEvent>('modpack-install-progress', (event) => {
+					if (event.payload.installId !== installId) return;
+					setModpackInstallProgress(event.payload);
+				});
+
+				// Forge/NeoForge installers need a Java runtime; hand over the newest
+				// one detected (the backend errors clearly when it's required but missing).
+				const javaExecutable =
+					[...javaRuntimes].sort((a, b) => b.majorVersion - a.majorVersion)[0]?.executablePath ??
+					null;
+
+				const installPromise = installModrinthModpack({
+					directory,
+					version: modpack.version,
+					javaExecutable,
+					installId,
+				});
+
+				await toast.promise(installPromise, {
+					loading: `Installing ${modpack.title}…`,
+					success: () => `Server "${trimmedName}" has been created from ${modpack.title}`,
+					error: (err) =>
+						typeof err === 'string'
+							? err
+							: err instanceof Error
+								? err.message
+								: 'Failed to install the modpack.',
+				});
+
+				const installed = await installPromise;
+				const provider = createProvider(installed.providerName, {
+					file: installed.file,
+					provider_version: installed.loaderVersion,
+					minecraft_version: installed.minecraftVersion,
+					download_url: modpack.version.fileUrl,
+					stable: modpack.version.versionType === 'release',
+					...(installed.jdkVersions.length > 0 ? { jdk_versions: installed.jdkVersions } : {}),
+				});
+
+				const payload: InitServerPayload = {
+					directory,
+					create_directory_if_missing: true,
+					adopt_existing_directory: true,
+					file: installed.file,
+					ram: clampRamGb(form.ram),
+					storage_limit: Math.max(1, Number(form.storage_limit) || 200),
+					auto_restart: form.auto_restart,
+					auto_backup: form.auto_backup,
+					auto_backup_interval: Math.max(1, Number(form.auto_backup_interval) || 120),
+					auto_agree_eula: form.auto_agree_eula,
+					java_installation: form.java_installation,
+					custom_flags: ['--nogui'],
+					provider,
+				};
+
+				const res = await invoke<InitServerResult>('initialize_server', { payload });
+				if (!res.ok) {
+					throw new Error(res.message || 'Failed to initialize server.');
+				}
+
+				const serverId = addServer(
+					buildCreatedServer(
+						{
+							...form,
+							file: installed.file,
+							provider,
+							directory,
+							create_directory_if_missing: true,
+						},
+						res,
+					),
+				);
+				setCreatedServerId(serverId);
+				setSlide(DONE_SLIDE_INDEX);
+			} catch (err) {
+				const message =
+					typeof err === 'string'
+						? err
+						: err instanceof Error
+							? err.message
+							: 'Failed to install the modpack.';
+				setError(message);
+			} finally {
+				unlisten?.();
+				setIsSubmitting(false);
+				setModpackInstallProgress(null);
+			}
 			return;
 		}
 
@@ -381,7 +520,16 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 		} finally {
 			setIsSubmitting(false);
 		}
-	}, [addServer, findExistingServerByName, form, isResolvingServersRootPath, serverName, serversRootPath]);
+	}, [
+		addServer,
+		findExistingServerByName,
+		form,
+		isResolvingServersRootPath,
+		javaRuntimes,
+		modpack,
+		serverName,
+		serversRootPath,
+	]);
 
 	React.useEffect(() => {
 		if (slide !== DONE_SLIDE_INDEX || !createdServerId) return;
@@ -416,10 +564,13 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 			showBackButton,
 			showStepIndicator,
 			hasStarted,
-			isDirty: isFormDirty(form, serverName),
+			isDirty: isFormDirty(form, serverName) || modpack !== null,
 			createdServerId,
 			error,
 			isSubmitting,
+			modpack,
+			modpackInstallProgress,
+			setModpack,
 			updateField,
 			setServerName,
 			setSlide,
@@ -447,6 +598,9 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 			hasStarted,
 			isResolvingServersRootPath,
 			isSubmitting,
+			modpack,
+			modpackInstallProgress,
+			setModpack,
 			nextSlide,
 			prevSlide,
 			resetDraft,

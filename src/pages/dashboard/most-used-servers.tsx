@@ -22,16 +22,13 @@ type Props = {
 };
 
 const MostUsedServers: React.FC<Props> = ({ servers, activity, limit = 5 }) => {
-	const serversById = React.useMemo(
-		() => new Map(servers.map((server) => [server.id, server])),
-		[servers],
-	);
+	const serversById = React.useMemo(() => new Map(servers.map((server) => [server.id, server])), [servers]);
 	const ranked = activity.ranked.slice(0, limit);
 
 	return (
 		<section className='flex flex-col gap-3'>
 			<h2 className='text-sm font-semibold tracking-wide text-muted-foreground uppercase'>Most used</h2>
-			<Card className='flex-1 gap-0 divide-y divide-border p-0'>
+			<Card className='flex-1 gap-0 divide-y divide-border overflow-hidden p-0'>
 				{ranked.length === 0 ? (
 					<div className='flex flex-1 flex-col items-center justify-center gap-2 py-10 text-center text-muted-foreground'>
 						<BarChart3 className='size-8' />

@@ -41,6 +41,19 @@ uuid = "1"
 # Async timers for the in-process playit agent flows (claim polling, tunnel
 # allocation waits). The full tokio runtime is already pulled by playit-agent-core.
 tokio = { version = "1", features = ["time"] }
+sha2 = "0.10"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_System_JobObjects",
+] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+# Adoptium ships tar.gz (not zip) for Linux/macOS Java downloads.
+flate2 = "1"
+tar = "0.4"
 
 [dev-dependencies]
 tempfile = "3"

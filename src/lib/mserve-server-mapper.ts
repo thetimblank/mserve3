@@ -33,6 +33,7 @@ const buildServerShell = (
 	datapacks: [],
 	worlds: [],
 	plugins: [],
+	mods: [],
 	stats: {
 		online: false,
 		players_online: null,

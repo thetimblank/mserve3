@@ -44,7 +44,14 @@ pub(in crate::app) fn initialize_server(
         fs::create_dir_all(&directory).map_err(|err| err.to_string())?;
     }
 
-    if directory.join("mserve.json").exists() || directory.join("server.properties").exists() {
+    let conflicting = if payload.adopt_existing_directory {
+        // Adopted directories were just populated by a modpack install; only an
+        // existing mserve.json means another managed server lives here.
+        directory.join("mserve.json").exists()
+    } else {
+        directory.join("mserve.json").exists() || directory.join("server.properties").exists()
+    };
+    if conflicting {
         return Ok(InitServerResult {
             ok: false,
             message: "There is already a server in this location.".to_string(),
@@ -60,9 +67,17 @@ pub(in crate::app) fn initialize_server(
         .filter(|value| matches!(value.as_str(), "interval" | "on_close" | "on_start"))
         .collect();
 
-    // Copy the jar file to the server directory
-    let (resolved_file, copy_message) =
-        copy_jar_to_server_directory(&directory, payload.file.trim())?;
+    // Copy the jar file to the server directory. Adopted directories already
+    // hold their launch file (or use an argfile launch), so the name is taken
+    // as-is.
+    let (resolved_file, copy_message) = if payload.adopt_existing_directory {
+        (
+            payload.file.trim().to_string(),
+            "Adopted existing server files.".to_string(),
+        )
+    } else {
+        copy_jar_to_server_directory(&directory, payload.file.trim())?
+    };
     let server_id = generate_server_id();
     let provider = payload.provider.as_ref().map_or_else(
         || default_provider_for_file(&resolved_file),

@@ -81,34 +81,16 @@ export function AppSidebar() {
 						</SidebarMenu>
 					</SidebarGroupContent>
 				</SidebarGroup>
-				<SidebarGroup>
-					<SidebarGroupLabel>Help Pages</SidebarGroupLabel>
-					<SidebarGroupContent>
-						<SidebarMenu>
-							{help
-								// .filter((item) => !item.bottom)
-								.map((item) => (
-									<SidebarMenuItem key={item.title}>
-										<SidebarMenuButton asChild>
-											<Link to={item.url}>
-												<item.icon />
-												<span>{item.title}</span>
-											</Link>
-										</SidebarMenuButton>
-									</SidebarMenuItem>
-								))}
-						</SidebarMenu>
-					</SidebarGroupContent>
-				</SidebarGroup>
+
 				<SidebarGroup>
 					<SidebarGroupLabel>Servers</SidebarGroupLabel>
 					<SidebarGroupContent>
 						<SidebarMenu>
 							<SidebarMenuItem>
-								<CreateServer />
+								<CreateServer className='py-0! px-2! h-7!' />
 							</SidebarMenuItem>
 							<SidebarMenuItem>
-								<ImportServer />
+								<ImportServer className='py-0! px-2! h-7!' />
 							</SidebarMenuItem>
 							{servers.length === 0 && (
 								<SidebarMenuItem>
@@ -163,6 +145,26 @@ export function AppSidebar() {
 									);
 								})(),
 							)}
+						</SidebarMenu>
+					</SidebarGroupContent>
+				</SidebarGroup>
+
+				<SidebarGroup>
+					<SidebarGroupLabel>Help Pages</SidebarGroupLabel>
+					<SidebarGroupContent>
+						<SidebarMenu>
+							{help
+								// .filter((item) => !item.bottom)
+								.map((item) => (
+									<SidebarMenuItem key={item.title}>
+										<SidebarMenuButton asChild>
+											<Link to={item.url}>
+												<item.icon />
+												<span>{item.title}</span>
+											</Link>
+										</SidebarMenuButton>
+									</SidebarMenuItem>
+								))}
 						</SidebarMenu>
 					</SidebarGroupContent>
 				</SidebarGroup>

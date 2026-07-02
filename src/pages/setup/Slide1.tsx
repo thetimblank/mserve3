@@ -41,7 +41,7 @@ export default function Slide1() {
 
 		setIsSubmitting(true);
 		try {
-			const forwardPromise = invoke<string[]>('forward_port_windows_firewall', { port });
+			const forwardPromise = invoke<string[]>('forward_port_firewall', { port });
 			toast.promise(forwardPromise, {
 				loading: `Adding firewall rules for port ${port}...`,
 				success: 'Firewall rules created.',
@@ -73,7 +73,9 @@ export default function Slide1() {
 			<form onSubmit={onSubmit} className='flex flex-col items-start'>
 				<p>Which Port would you like to use to port forward?</p>
 				<p className='text-muted-foreground text-sm'>
-					Recommended is 25565. We will automatically setup TCP and UDP rules on your windows firewall.
+					Recommended is 25565. We will automatically set up TCP and UDP rules on your system firewall
+						(Windows Defender Firewall, or firewalld/ufw on Linux). You may be asked for administrator
+						access.
 				</p>
 				<Field className='flex flex-col mt-8 gap-1'>
 					<Label htmlFor='server-port'>Port</Label>

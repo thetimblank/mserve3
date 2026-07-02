@@ -1,10 +1,14 @@
 mod backups;
+mod content_meta;
 mod core;
 mod items;
+#[cfg(target_os = "linux")]
+mod linux_firewall;
 mod mserve_config;
 // Namespaced (not glob re-exported) so its generically-named helpers
 // (`read_secret`, `start_tunnel`, …) stay under `support::playit::`.
 pub(in crate::app) mod playit;
+mod process;
 mod rcon;
 mod runtime_io;
 mod scan;
@@ -14,12 +18,17 @@ mod telemetry;
 mod telemetry_store;
 #[cfg(test)]
 mod testkit;
+#[cfg(windows)]
 mod windows_firewall;
 
 pub(super) use backups::*;
+pub(super) use content_meta::*;
 pub(super) use core::*;
 pub(super) use items::*;
+#[cfg(target_os = "linux")]
+pub(super) use linux_firewall::*;
 pub(super) use mserve_config::*;
+pub(super) use process::*;
 pub(super) use rcon::*;
 pub(super) use runtime_io::*;
 pub(super) use scan::*;
@@ -27,4 +36,5 @@ pub(super) use server_properties::*;
 pub(super) use supervisor::*;
 pub(super) use telemetry::*;
 pub(super) use telemetry_store::*;
+#[cfg(windows)]
 pub(super) use windows_firewall::*;

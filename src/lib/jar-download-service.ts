@@ -126,6 +126,12 @@ const JAR_TAB_DEFINITIONS: Record<JarTab, JarTabDefinition> = {
 		label: 'Vanilla',
 		description: 'Official Mojang servers for true vanilla gameplay.',
 	},
+	modded: {
+		id: 'modded',
+		label: 'Modded',
+		description:
+			'Mod-loader servers (Fabric). Forge and NeoForge servers are created by installing a modpack.',
+	},
 	proxies: {
 		id: 'proxies',
 		label: 'Proxies',
@@ -143,6 +149,7 @@ const getProviderFiltersForTab = (tab: JarTab): JarProviderFilterDefinition[] =>
 const PROVIDER_FILTERS_BY_TAB: Record<JarTab, JarProviderFilterDefinition[]> = {
 	plugin: getProviderFiltersForTab('plugin'),
 	vanilla: getProviderFiltersForTab('vanilla'),
+	modded: getProviderFiltersForTab('modded'),
 	proxies: getProviderFiltersForTab('proxies'),
 };
 
@@ -169,6 +176,13 @@ const STABILITY_FILTERS_BY_TAB: Record<JarTab, JarStabilityFilterDefinition[]> =
 			{ id: 'snapshot', label: labels.unstableLabel, description: 'Snapshot channel (may be unstable).' },
 		];
 	})(),
+	modded: (() => {
+		const labels = getStabilityLabels('modded');
+		return [
+			{ id: 'stable', label: labels.stableLabel, description: 'Production-ready releases.' },
+			{ id: 'unstable', label: labels.unstableLabel, description: 'Preview or development builds.' },
+		];
+	})(),
 	proxies: (() => {
 		const labels = getStabilityLabels('proxies');
 		return [
@@ -183,11 +197,12 @@ const STABILITY_FILTERS_BY_TAB: Record<JarTab, JarStabilityFilterDefinition[]> =
 export const UNSTABLE_STABILITY_IDS: Record<JarTab, JarStabilityFilterId> = {
 	plugin: 'unstable',
 	vanilla: 'snapshot',
+	modded: 'unstable',
 	proxies: 'unstable',
 };
 
 export const getJarTabs = (): JarTabDefinition[] =>
-	(['plugin', 'vanilla', 'proxies'] as const).map((tab) => JAR_TAB_DEFINITIONS[tab]);
+	(['plugin', 'vanilla', 'modded', 'proxies'] as const).map((tab) => JAR_TAB_DEFINITIONS[tab]);
 
 export const getJarTabInfo = (tab: JarTab): JarTabDefinition => JAR_TAB_DEFINITIONS[tab];
 

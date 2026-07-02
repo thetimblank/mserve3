@@ -61,37 +61,34 @@ e.g. v4.0.12pre0
 
 ### v4
 
-- major cleanup of backend (rust & typescript hidden logic/sturcture) code/performance optimizations, simple and reusable, delete uneeded normalizations, debloat, etc.
-- linux support
-- bot protection
-- error reporting and feedback
-- setup networks and server groups
-- in-app plugin and modpack browser
-- remote start (SSH?)
-- rework backup system
-- --nogui will be forced when not in advanced mode
-- let others connect to your mserve
+- ~~full Linux support (firewall via firewalld/ufw, Java detection/download, process management, .deb/.rpm/AppImage releases + updater)~~ ✅
+- add smarter error reporting and feedback
+- fully finish and clean up the "setup networks" page. it should have all the features users should expect and work flawlessly. clean up the UI to be more intuitive as well.
+- ~~add a full in-app plugin and modpack browser similar to prism launcher. (Modrinth browser for plugins/mods/datapacks in the server tabs + modpack installs in the create wizard, incl. Fabric/Forge/NeoForge server support)~~ ✅
+- rework backup system to have all of the features the user would expect, e.g. different retention policies, better/smart limits, etc.
 - add tunneling instead of just port forwarding
-- server logs
-- server crashed state
-- add tab completion to terminal (use plugin)
-- more help pages and explanations
-- sleep mode
-- rework MC settings for non-advanced users
-- onboarding if needed. (advanced/beginner, theme, etc)
-- move help pages below servers in sidebar
+- better statistics in home page, something more useful and something like "insights"
+- server crashed state and crash protection
+- server bot protection and enhance security
+- add tab completion to terminal
+- more help pages and explanations (think of features normal users may be confused about, also add page to just have like "I want a survival SMP" and auto-prefill settings [might be good for onboarding], etc.)
+- sleep mode and settings controlling sleep mode. (like when no more users are logged in afte X time, also auto boot up when someone joins, etc)
+- rework MC settings for non-advanced users (Like the server.properties, velocity.toml, etc. make these more user friendly for non-advanced users)
+- onboarding if needed. (advanced/beginner, theme, what is goal, etc)
+- ~~move help pages below servers in sidebar~~✅
+- make --nogui forced when not in advanced mode (?)
 
-Bugs
+Bugs/Fixes
 
-- memory of mserve goes up every time server is launched, and never decreases until app is restarted
-- overflow of hover effect on dashboard in the most used category's cards
-- port not showing correctly/at all in the connect widget in a server's overview page
-- issues when using end task (or crash) on mserve
+- Ram not showing up on modpack screen
+- Auto-java detection not working on stuff like 26.1.2 (Uses J17, then J21, but never gets to J25.) Also, J17 is just wrong for this, not sure why it shows that for 26.1.2
+- 25565 not hidden for server IP on server overview panel. (Only hide this port since its redundant in MC.)
+- add same active effect to other app sidebar pages that is shown for each server. (solid purple when on the page)
 
 Supported Providers
 
-- Modpack servers
-- Modded servers (Forge, Fabric, Neoforge)
+- Modpack servers ✅
+- Modded servers (Forge, Fabric, Neoforge) ✅
 - Bungee
 - Spigot
 - Pufferfish
@@ -107,3 +104,5 @@ Supported Providers
 - accounts?
 - webapp?
 - rehaul UI
+- remote start (SSH?)
+- let others connect to your mserve

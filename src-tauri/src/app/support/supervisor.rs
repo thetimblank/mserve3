@@ -17,15 +17,14 @@ use super::super::{
 use super::playit;
 use super::rcon::RconClient;
 use super::telemetry::{
-    StatusPingResult, collect_status_ping, collect_tps_via_rcon, probe_port,
-    refresh_process_metrics,
+    StatusPingResult, collect_process_metrics, collect_status_ping, collect_tps_via_rcon,
+    probe_port,
 };
 use super::telemetry_store;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use sysinfo::System;
 use tauri::Emitter;
 
 static NEXT_GENERATION: AtomicU64 = AtomicU64::new(1);
@@ -76,7 +75,7 @@ fn state_event(runtime: &ServerRuntime) -> ServerRuntimeStateEvent {
         started_at: Some(runtime.started_at.to_rfc3339()),
         exit_code: runtime.exit_code,
         stderr_tail: runtime.stderr_tail.iter().cloned().collect(),
-        server_port: None,
+        server_port: Some(runtime.server_port),
     }
 }
 
@@ -149,7 +148,6 @@ pub(in crate::app) fn spawn_supervisor(
     generation: u64,
 ) {
     std::thread::spawn(move || {
-        let mut system = System::new();
         let mut external_miss_streak: u32 = 0;
         // Persistent RCON connection for TPS, reused across polls so we don't
         // reconnect (and spam the server log with connect/disconnect) every cycle.
@@ -162,7 +160,7 @@ pub(in crate::app) fn spawn_supervisor(
                     return;
                 };
 
-                match guard.get_mut(&key) {
+                let phase = match guard.get_mut(&key) {
                     None => Phase1::Stop,
                     Some(runtime) if runtime.generation != generation => Phase1::Stop,
                     Some(runtime) => {
@@ -201,6 +199,7 @@ pub(in crate::app) fn spawn_supervisor(
                                     .is_some_and(|at| at.elapsed() >= STOP_GRACE)
                                 && let Some(child) = runtime.child.as_mut()
                             {
+                                super::process::kill_child_process_group(child);
                                 let _ = child.kill();
                             }
                             Phase1::Continue(Snapshot {
@@ -220,7 +219,15 @@ pub(in crate::app) fn spawn_supervisor(
                             })
                         }
                     }
+                };
+
+                // A terminal exit is the end of this runtime: drop it from the
+                // map so it holds no dead entries and the server can be probed
+                // (and re-adopted) fresh on the next runtime query.
+                if matches!(phase, Phase1::Terminal(_)) {
+                    guard.remove(&key);
                 }
+                phase
             };
 
             let snapshot = match phase1 {
@@ -274,7 +281,7 @@ pub(in crate::app) fn spawn_supervisor(
 
                 let metrics = snapshot
                     .pid
-                    .map(|pid| refresh_process_metrics(&mut system, pid, snapshot.configured_ram))
+                    .map(|pid| collect_process_metrics(pid, snapshot.configured_ram))
                     .unwrap_or_default();
 
                 Some(TelemetrySample {
@@ -314,6 +321,11 @@ pub(in crate::app) fn spawn_supervisor(
                 if runtime.state != new_state {
                     runtime.state = new_state;
                     state_change = Some(state_event(runtime));
+                }
+                // An adopted server that stopped answering is done: drop the
+                // entry (see the terminal-exit removal in phase 1).
+                if external_terminal {
+                    guard.remove(&key);
                 }
             }
 

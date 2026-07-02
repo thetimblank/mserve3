@@ -20,7 +20,7 @@ const MAX_RESOLVE_WORKERS: usize = 16;
 // HTTP helpers
 // ---------------------------------------------------------------------------
 
-fn http_client() -> Result<reqwest::blocking::Client, String> {
+pub(in crate::app) fn http_client() -> Result<reqwest::blocking::Client, String> {
     reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(30))
         .user_agent(concat!("mserve/", env!("CARGO_PKG_VERSION")))
@@ -28,7 +28,10 @@ fn http_client() -> Result<reqwest::blocking::Client, String> {
         .map_err(|err| err.to_string())
 }
 
-fn fetch_text(client: &reqwest::blocking::Client, url: &str) -> Result<String, String> {
+pub(in crate::app) fn fetch_text(
+    client: &reqwest::blocking::Client,
+    url: &str,
+) -> Result<String, String> {
     let response = client.get(url).send().map_err(|err| err.to_string())?;
     if !response.status().is_success() {
         return Err(format!(
@@ -74,7 +77,7 @@ fn write_cache(name: &str, contents: &str) {
 
 /// Returns a fresh cache hit, otherwise fetches and re-caches. If the network
 /// fetch fails, falls back to a stale cache entry (offline robustness).
-fn fetch_cached(
+pub(in crate::app) fn fetch_cached(
     client: &reqwest::blocking::Client,
     url: &str,
     cache_name: &str,
@@ -476,7 +479,7 @@ fn vanilla_list_entries(
     Ok(entries)
 }
 
-fn resolve_vanilla(
+pub(in crate::app) fn resolve_vanilla(
     client: &reqwest::blocking::Client,
     version: &str,
 ) -> Result<ResolvedProvider, String> {
@@ -536,6 +539,127 @@ fn resolve_vanilla(
 }
 
 // ---------------------------------------------------------------------------
+// Fabric (meta.fabricmc.net)
+// ---------------------------------------------------------------------------
+
+const FABRIC_META: &str = "https://meta.fabricmc.net/v2";
+
+#[derive(Deserialize, Clone)]
+struct FabricGameVersion {
+    version: String,
+    stable: bool,
+}
+
+#[derive(Deserialize)]
+struct FabricLoaderEntry {
+    loader: FabricVersionInfo,
+}
+
+#[derive(Deserialize, Clone)]
+struct FabricVersionInfo {
+    version: String,
+    stable: bool,
+}
+
+fn fabric_game_versions(
+    client: &reqwest::blocking::Client,
+) -> Result<Vec<FabricGameVersion>, String> {
+    let text = fetch_cached(
+        client,
+        &format!("{FABRIC_META}/versions/game"),
+        "fabric-game-versions.json",
+        LIST_CACHE_TTL_SECS,
+    )?;
+    serde_json::from_str(&text).map_err(|err| err.to_string())
+}
+
+fn fabric_list_entries(
+    client: &reqwest::blocking::Client,
+    include_unstable: bool,
+) -> Result<Vec<ProviderVersionEntry>, String> {
+    let versions = fabric_game_versions(client)?;
+    Ok(versions
+        .into_iter()
+        .filter(|version| version.stable || include_unstable)
+        .map(|version| ProviderVersionEntry {
+            provider: "fabric".to_string(),
+            tab: "modded".to_string(),
+            minecraft_version: version.version.clone(),
+            version: version.version,
+            stability: if version.stable { "stable" } else { "unstable" }.to_string(),
+        })
+        .collect())
+}
+
+/// Picks the newest stable entry (the lists are newest-first), falling back to
+/// the newest entry overall when nothing is marked stable.
+fn pick_stable_fabric_version(entries: &[FabricVersionInfo]) -> Option<&FabricVersionInfo> {
+    entries
+        .iter()
+        .find(|entry| entry.stable)
+        .or_else(|| entries.first())
+}
+
+fn resolve_fabric(
+    client: &reqwest::blocking::Client,
+    version: &str,
+) -> Result<ResolvedProvider, String> {
+    let loaders_text = fetch_text(client, &format!("{FABRIC_META}/versions/loader/{version}"))?;
+    let loader_entries: Vec<FabricLoaderEntry> =
+        serde_json::from_str(&loaders_text).map_err(|err| err.to_string())?;
+    let loaders: Vec<FabricVersionInfo> = loader_entries
+        .into_iter()
+        .map(|entry| entry.loader)
+        .collect();
+    let loader = pick_stable_fabric_version(&loaders)
+        .ok_or_else(|| format!("No Fabric loader is available for Minecraft {version}."))?
+        .clone();
+
+    let installers_text = fetch_cached(
+        client,
+        &format!("{FABRIC_META}/versions/installer"),
+        "fabric-installer-versions.json",
+        LIST_CACHE_TTL_SECS,
+    )?;
+    let installers: Vec<FabricVersionInfo> =
+        serde_json::from_str(&installers_text).map_err(|err| err.to_string())?;
+    let installer = pick_stable_fabric_version(&installers)
+        .ok_or_else(|| "No Fabric installer version is available.".to_string())?
+        .clone();
+
+    let game_stable = fabric_game_versions(client)
+        .ok()
+        .and_then(|versions| {
+            versions
+                .iter()
+                .find(|entry| entry.version == version)
+                .map(|entry| entry.stable)
+        })
+        .unwrap_or_else(|| !version_is_unstable(version));
+
+    // The vanilla metadata carries the authoritative Java requirement for this
+    // Minecraft version; Fabric itself follows it. Best-effort only.
+    let jdk_versions = resolve_vanilla(client, version)
+        .map(|resolved| resolved.jdk_versions)
+        .unwrap_or_default();
+
+    Ok(ResolvedProvider {
+        name: "fabric".to_string(),
+        file: format!("fabric-server-mc.{version}-loader.{}.jar", loader.version),
+        download_url: format!(
+            "{FABRIC_META}/versions/loader/{version}/{}/{}/server/jar",
+            loader.version, installer.version
+        ),
+        provider_version: loader.version,
+        minecraft_version: version.to_string(),
+        jdk_versions,
+        stable: game_stable && loader.stable,
+        size_bytes: None,
+        sha256: None,
+    })
+}
+
+// ---------------------------------------------------------------------------
 // Commands
 // ---------------------------------------------------------------------------
 
@@ -559,6 +683,7 @@ pub(in crate::app) fn list_provider_versions(
         }
         "proxies" => fill_list_entries(&client, "velocity", "proxies", include_unstable),
         "vanilla" => vanilla_list_entries(&client, include_unstable),
+        "modded" => fabric_list_entries(&client, include_unstable),
         other => Err(format!("Unsupported provider tab: {other}.")),
     }
 }
@@ -579,6 +704,7 @@ pub(in crate::app) fn resolve_provider_version(
             resolve_fill(&client, &provider, version, payload.stability.as_deref())
         }
         "vanilla" => resolve_vanilla(&client, version),
+        "fabric" => resolve_fabric(&client, version),
         other => Err(format!("Unsupported provider: {other}.")),
     }
 }

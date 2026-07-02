@@ -20,6 +20,8 @@ export type SyncedMserveConfig = MserveJsonProps;
 export type InitServerPayload = {
 	directory: string;
 	create_directory_if_missing: boolean;
+	/** True when the directory was pre-populated (e.g. by a modpack install). */
+	adopt_existing_directory?: boolean;
 	file: string;
 	ram: number;
 	storage_limit: number;

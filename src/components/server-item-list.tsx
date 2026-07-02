@@ -34,7 +34,7 @@ import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { m } from 'motion/react';
 
-type ItemType = 'plugin' | 'world' | 'datapack';
+type ItemType = 'plugin' | 'mod' | 'world' | 'datapack';
 
 type Item = {
 	name?: string;
@@ -57,6 +57,8 @@ type ServerItemListProps = {
 	disabled?: boolean;
 	ctaLabel?: string;
 	ctaUrl?: string;
+	/** When set, the CTA button runs this instead of opening `ctaUrl` externally. */
+	onCta?: () => void;
 	onDeleteItem?: (item: Item, type: ItemType) => Promise<void> | void;
 	onUninstallItem?: (item: Item, type: ItemType) => Promise<void> | void;
 	onExportItem?: (item: Item, type: ItemType) => Promise<void> | void;
@@ -82,6 +84,9 @@ const getItemPath = (serverDirectory: string, itemType: ItemType, item: Item) =>
 	if (itemType === 'plugin') {
 		return item.activated ? join('plugins', item.file) : join('inactive', 'plugins', item.file);
 	}
+	if (itemType === 'mod') {
+		return item.activated ? join('mods', item.file) : join('inactive', 'mods', item.file);
+	}
 	if (itemType === 'world') {
 		return item.activated ? join(item.file) : join('inactive', 'worlds', item.file);
 	}
@@ -101,6 +106,7 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 	disabled,
 	ctaLabel,
 	ctaUrl,
+	onCta,
 	onDeleteItem,
 	onUninstallItem,
 	onExportItem,
@@ -333,9 +339,11 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 				title:
 					type === 'plugin'
 						? 'Add plugin(s)'
-						: type === 'world'
-							? 'Add world zip/folder'
-							: 'Add datapack(s)',
+						: type === 'mod'
+							? 'Add mod(s)'
+							: type === 'world'
+								? 'Add world zip/folder'
+								: 'Add datapack(s)',
 			});
 
 			const paths = (Array.isArray(selected) ? selected : selected ? [selected] : []).filter(
@@ -366,8 +374,10 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 					</div>
 					{description && <p className='text-muted-foreground'>{description}</p>}
 				</div>
-				{ctaLabel && ctaUrl && (
-					<Button onClick={() => openUrl(ctaUrl)} variant='link'>
+				{ctaLabel && (onCta || ctaUrl) && (
+					<Button
+						onClick={() => (onCta ? onCta() : ctaUrl && void openUrl(ctaUrl))}
+						variant='link'>
 						{ctaLabel}
 						{type === 'world' ? <Archive /> : <ArrowUpRightFromSquare />}
 					</Button>
@@ -453,8 +463,8 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 														Deactivating this {type} will temporarily move it to another
 														directory so it is not loaded when the server runs until it is
 														reactivated. <br /> Deactivating this may cause unwanted behavior.
-														{type === 'plugin' &&
-															' Plugins that rely on this plugin may break.'}
+														{(type === 'plugin' || type === 'mod') &&
+															` ${type === 'plugin' ? 'Plugins' : 'Mods'} that rely on this ${type} may break.`}
 														{type === 'datapack' &&
 															' Datapacks may regenerate new or features might stop working.'}
 														{type === 'world' &&
@@ -480,7 +490,7 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 											Activate
 										</Button>
 									)}
-									{type === 'plugin' && (
+									{(type === 'plugin' || type === 'mod') && (
 										<AlertDialog>
 											<AlertDialogTrigger asChild>
 												<Button

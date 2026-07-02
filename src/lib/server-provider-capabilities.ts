@@ -71,7 +71,10 @@ export const getServerProviderCapabilities = (
 			resolvedCatalog.supports_tps_command && resolveTelemetrySupport(resolvedProvider, 'tps'),
 		supportsVersionCommand:
 			resolvedCatalog.supports_version_command && resolveTelemetrySupport(resolvedProvider, 'version'),
-		supportsAutoAgreeEula: resolvedCatalog.kind === 'plugin' || resolvedCatalog.kind === 'vanilla',
+		supportsAutoAgreeEula:
+			resolvedCatalog.kind === 'plugin' ||
+			resolvedCatalog.kind === 'vanilla' ||
+			resolvedCatalog.kind === 'modded',
 	};
 };
 

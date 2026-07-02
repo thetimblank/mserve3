@@ -1,7 +1,7 @@
 use super::super::support::{
     add_path_to_zip, copy_dir_filtered, extract_zip_to_directory, home_dir,
-    is_simple_relative_name, item_roots, list_backups, list_datapacks, list_plugins, list_worlds,
-    remove_item_to_trash, resolve_item_locations, toggle_item_activation,
+    is_simple_relative_name, item_roots, list_backups, list_datapacks, list_mods, list_plugins,
+    list_worlds, remove_item_to_trash, resolve_item_locations, toggle_item_activation,
 };
 use super::super::{
     ExportWorldResult, ItemActionPayload, ServerScanResult, ToggleItemPayload, UploadItemPayload,
@@ -19,8 +19,8 @@ pub(in crate::app) fn delete_server_item(payload: ItemActionPayload) -> Result<(
 
 #[tauri::command]
 pub(in crate::app) fn uninstall_server_item(payload: ItemActionPayload) -> Result<(), String> {
-    if payload.item_type != "plugin" {
-        return Err("Uninstall is only supported for plugins.".to_string());
+    if payload.item_type != "plugin" && payload.item_type != "mod" {
+        return Err("Uninstall is only supported for plugins and mods.".to_string());
     }
 
     remove_item_to_trash(&payload)
@@ -143,6 +143,7 @@ pub(in crate::app) fn scan_server_contents(directory: String) -> Result<ServerSc
 
     Ok(ServerScanResult {
         plugins: list_plugins(&directory_path, explicit),
+        mods: list_mods(&directory_path, explicit),
         worlds,
         datapacks: list_datapacks(&directory_path, explicit),
         backups,

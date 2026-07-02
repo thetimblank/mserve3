@@ -413,6 +413,23 @@ pub(in crate::app) fn extract_zip_to_directory(
     Ok(())
 }
 
+/// Extracts a `.tar.gz` archive into `destination`. Used for Adoptium Java
+/// downloads, which ship as tarballs on Linux/macOS (zip on Windows). The tar
+/// crate's `unpack` sanitizes entry paths and preserves the Unix permission
+/// bits, so extracted `bin/java` stays executable.
+#[cfg(unix)]
+pub(in crate::app) fn extract_tar_gz_to_directory(
+    archive_path: &Path,
+    destination: &Path,
+) -> Result<(), String> {
+    let file = fs::File::open(archive_path).map_err(|err| err.to_string())?;
+    let decoder = flate2::read::GzDecoder::new(file);
+    let mut archive = tar::Archive::new(decoder);
+
+    fs::create_dir_all(destination).map_err(|err| err.to_string())?;
+    archive.unpack(destination).map_err(|err| err.to_string())
+}
+
 pub(in crate::app) fn add_path_to_zip<W: Write + io::Seek>(
     writer: &mut zip::ZipWriter<W>,
     root: &Path,

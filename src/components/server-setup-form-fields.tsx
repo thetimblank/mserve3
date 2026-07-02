@@ -6,6 +6,7 @@ import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { type AutoBackupMode, type ServerSetupFormData } from '@/lib/mserve-sync';
+import { examplePaths } from '@/lib/platform';
 import { backupChoices } from '@/pages/server/server-constants';
 import { toggleBackupMode as toggleBackupModeValue } from '@/pages/server/server-utils';
 import RamSliderField from '@/components/ram-slider-field';
@@ -49,7 +50,7 @@ export const ServerSetupFormFields: React.FC<ServerSetupFormFieldsProps> = ({
 						<div className='flex gap-2'>
 							<Input
 								id={`${idPrefix}-directory`}
-								placeholder='C:\\servers\\MyServer'
+								placeholder={examplePaths.serverDirectory}
 								value={form.directory}
 								onChange={(event) => onFieldChange('directory', event.target.value)}
 								required
@@ -83,7 +84,7 @@ export const ServerSetupFormFields: React.FC<ServerSetupFormFieldsProps> = ({
 				<div className='flex gap-2'>
 					<Input
 						id={`${idPrefix}-file`}
-						placeholder='C:\\servers\\server-1.21.11.jar'
+						placeholder={examplePaths.serverJar}
 						value={form.file}
 						onChange={(event) => onFieldChange('file', event.target.value)}
 						required
@@ -104,7 +105,7 @@ export const ServerSetupFormFields: React.FC<ServerSetupFormFieldsProps> = ({
 				<Label htmlFor={`${idPrefix}-java-installation`}>Java installation override (optional)</Label>
 				<Input
 					id={`${idPrefix}-java-installation`}
-					placeholder='C:\\Program Files\\Java\\jdk-25\\bin\\java.exe'
+					placeholder={examplePaths.javaExecutable}
 					value={form.java_installation}
 					onChange={(event) => onFieldChange('java_installation', event.target.value)}
 				/>

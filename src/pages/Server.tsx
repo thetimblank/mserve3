@@ -16,8 +16,17 @@ import {
 	AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
-import { ArrowLeft, Globe, Package, Plug } from 'lucide-react';
+import { ArrowLeft, Blocks, Globe, Package, Plug } from 'lucide-react';
 import ServerItemList from '@/components/server-item-list';
+import ModrinthBrowserDialog from '@/components/modrinth/modrinth-browser-dialog';
+import {
+	installModrinthFile,
+	resolveModrinthGameVersion,
+	resolveModrinthModLoaders,
+	resolveModrinthPluginLoaders,
+	type ModrinthVersion,
+} from '@/lib/modrinth-service';
+import type { ModrinthInstallTarget } from '@/components/modrinth/modrinth-project-detail';
 import { useJavaRuntimes } from '@/data/java-runtimes';
 import { resolveServerJavaExecutable } from '@/lib/java-resolution';
 
@@ -117,6 +126,9 @@ const Server: React.FC = () => {
 	);
 
 	const [showNetworkDialog, setShowNetworkDialog] = React.useState(false);
+	const [modrinthBrowserType, setModrinthBrowserType] = React.useState<
+		'plugin' | 'mod' | 'datapack' | null
+	>(null);
 
 	const {
 		syncServerContents,
@@ -155,6 +167,32 @@ const Server: React.FC = () => {
 		syncServerContents,
 		showError,
 	});
+
+	const handleModrinthInstall = React.useCallback(
+		async (version: ModrinthVersion, project: ModrinthInstallTarget) => {
+			if (!server || !modrinthBrowserType) return;
+			try {
+				await installModrinthFile({
+					directory: server.directory,
+					itemType: modrinthBrowserType,
+					version,
+					projectTitle: project.title,
+					pageUrl: project.pageUrl,
+				});
+				toast.success(`Installed ${project.title} ${version.versionNumber}.`);
+				await handleItemsChanged();
+			} catch (err) {
+				const message =
+					typeof err === 'string'
+						? err
+						: err instanceof Error
+							? err.message
+							: `Failed to install ${project.title}.`;
+				toast.error(message);
+			}
+		},
+		[server, modrinthBrowserType, handleItemsChanged],
+	);
 
 	// If the server is part of a network, prompt whether to start alone or with
 	// the rest of the network; otherwise start immediately.
@@ -260,6 +298,42 @@ const Server: React.FC = () => {
 				</AlertDialogContent>
 			</AlertDialog>
 
+			{/* In-app Modrinth browser for plugins / datapacks */}
+			<ModrinthBrowserDialog
+				open={modrinthBrowserType !== null}
+				onOpenChange={(open) => {
+					if (!open) setModrinthBrowserType(null);
+				}}
+				title={
+					modrinthBrowserType === 'datapack'
+						? 'Browse Datapacks on Modrinth'
+						: modrinthBrowserType === 'mod'
+							? 'Browse Mods on Modrinth'
+							: 'Browse Plugins on Modrinth'
+				}
+				description={`Search, filter, and install straight into ${server.name}.`}
+				projectType={modrinthBrowserType ?? 'plugin'}
+				pinnedLoaders={
+					modrinthBrowserType === 'plugin'
+						? resolveModrinthPluginLoaders(server.provider)
+						: modrinthBrowserType === 'mod'
+							? resolveModrinthModLoaders(server.provider)
+							: []
+				}
+				pinnedGameVersion={resolveModrinthGameVersion(server.provider)}
+				installedFiles={(modrinthBrowserType === 'datapack'
+					? server.datapacks
+					: modrinthBrowserType === 'mod'
+						? server.mods
+						: server.plugins
+				).map((item) => item.file)}
+				installDisabled={isBusy || server.status === 'online'}
+				installDisabledReason={
+					server.status === 'online' ? 'Stop the server before installing content.' : undefined
+				}
+				onInstallVersion={handleModrinthInstall}
+			/>
+
 			<div className='min-h-full flex flex-col p-12 w-full'>
 				{errorMessage && (
 					<div className='mb-4 rounded-lg border-2 border-destructive/40 bg-destructive/10 p-3'>
@@ -322,8 +396,23 @@ const Server: React.FC = () => {
 						items={server.plugins}
 						onChanged={handleItemsChanged}
 						disabled={isBusy || server.status === 'online'}
-						ctaLabel='Download More'
-						ctaUrl='https://modrinth.com/discover/plugins'
+						ctaLabel='Browse Modrinth'
+						onCta={() => setModrinthBrowserType('plugin')}
+					/>
+				)}
+				{activeTab === 'mods' && providerCapabilities.kind === 'modded' && (
+					<ServerItemList
+						icon={<Blocks />}
+						type='mod'
+						serverDirectory={server.directory}
+						title='Mods'
+						searchPlaceholder='Search for Mod...'
+						emptyLabel='No Mods were found.'
+						items={server.mods}
+						onChanged={handleItemsChanged}
+						disabled={isBusy || server.status === 'online'}
+						ctaLabel='Browse Modrinth'
+						onCta={() => setModrinthBrowserType('mod')}
 					/>
 				)}
 				{activeTab === 'worlds' && providerCapabilities.kind !== 'proxy' && (
@@ -350,8 +439,8 @@ const Server: React.FC = () => {
 						items={server.datapacks}
 						onChanged={handleItemsChanged}
 						disabled={isBusy || server.status === 'online'}
-						ctaLabel='Add More'
-						ctaUrl='https://modrinth.com/discover/datapacks'
+						ctaLabel='Browse Modrinth'
+						onCta={() => setModrinthBrowserType('datapack')}
 					/>
 				)}
 				{activeTab === 'backups' && providerCapabilities.kind !== 'proxy' && (

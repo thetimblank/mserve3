@@ -8,71 +8,11 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tauri::{Emitter, Manager};
 
-use commands::{
-    __cmd__create_server_backup, __cmd__delete_server, __cmd__delete_server_backup,
-    __cmd__delete_server_item, __cmd__detect_java_runtimes, __cmd__disconnect_playit_account,
-    __cmd__download_java_runtime, __cmd__download_server_jar, __cmd__export_server_world,
-    __cmd__force_kill_all_servers, __cmd__force_kill_server, __cmd__forward_port_windows_firewall,
-    __cmd__get_default_servers_root_path, __cmd__get_local_ip, __cmd__get_playit_status,
-    __cmd__get_public_ip, __cmd__get_running_server_directories, __cmd__get_server_runtime,
-    __cmd__get_server_start_command, __cmd__get_server_telemetry,
-    __cmd__get_server_telemetry_history, __cmd__get_server_tunnel, __cmd__get_system_memory_gb,
-    __cmd__import_server, __cmd__initialize_server, __cmd__inspect_server_directory,
-    __cmd__list_provider_versions, __cmd__open_server_folder, __cmd__open_server_path,
-    __cmd__read_managed_server_config_file, __cmd__read_networks_config,
-    __cmd__read_server_network_file, __cmd__repair_server_mserve_json,
-    __cmd__resolve_provider_version, __cmd__restart_server, __cmd__restore_server_backup,
-    __cmd__run_in_background, __cmd__scan_managed_server_config_files, __cmd__scan_server_contents,
-    __cmd__send_server_command, __cmd__set_server_item_active, __cmd__set_server_java_installation,
-    __cmd__set_server_tunnel, __cmd__start_playit_claim, __cmd__start_server, __cmd__stop_server,
-    __cmd__sync_server_mserve_json, __cmd__uninstall_server_item,
-    __cmd__update_server_backup_settings, __cmd__update_server_settings, __cmd__upload_server_item,
-    __cmd__validate_path, __cmd__write_managed_server_config_file, __cmd__write_networks_config,
-    __cmd__write_server_network_file, __tauri_command_name_create_server_backup,
-    __tauri_command_name_delete_server, __tauri_command_name_delete_server_backup,
-    __tauri_command_name_delete_server_item, __tauri_command_name_detect_java_runtimes,
-    __tauri_command_name_disconnect_playit_account, __tauri_command_name_download_java_runtime,
-    __tauri_command_name_download_server_jar, __tauri_command_name_export_server_world,
-    __tauri_command_name_force_kill_all_servers, __tauri_command_name_force_kill_server,
-    __tauri_command_name_forward_port_windows_firewall,
-    __tauri_command_name_get_default_servers_root_path, __tauri_command_name_get_local_ip,
-    __tauri_command_name_get_playit_status, __tauri_command_name_get_public_ip,
-    __tauri_command_name_get_running_server_directories, __tauri_command_name_get_server_runtime,
-    __tauri_command_name_get_server_start_command, __tauri_command_name_get_server_telemetry,
-    __tauri_command_name_get_server_telemetry_history, __tauri_command_name_get_server_tunnel,
-    __tauri_command_name_get_system_memory_gb, __tauri_command_name_import_server,
-    __tauri_command_name_initialize_server, __tauri_command_name_inspect_server_directory,
-    __tauri_command_name_list_provider_versions, __tauri_command_name_open_server_folder,
-    __tauri_command_name_open_server_path, __tauri_command_name_read_managed_server_config_file,
-    __tauri_command_name_read_networks_config, __tauri_command_name_read_server_network_file,
-    __tauri_command_name_repair_server_mserve_json, __tauri_command_name_resolve_provider_version,
-    __tauri_command_name_restart_server, __tauri_command_name_restore_server_backup,
-    __tauri_command_name_run_in_background, __tauri_command_name_scan_managed_server_config_files,
-    __tauri_command_name_scan_server_contents, __tauri_command_name_send_server_command,
-    __tauri_command_name_set_server_item_active, __tauri_command_name_set_server_java_installation,
-    __tauri_command_name_set_server_tunnel, __tauri_command_name_start_playit_claim,
-    __tauri_command_name_start_server, __tauri_command_name_stop_server,
-    __tauri_command_name_sync_server_mserve_json, __tauri_command_name_uninstall_server_item,
-    __tauri_command_name_update_server_backup_settings,
-    __tauri_command_name_update_server_settings, __tauri_command_name_upload_server_item,
-    __tauri_command_name_validate_path, __tauri_command_name_write_managed_server_config_file,
-    __tauri_command_name_write_networks_config, __tauri_command_name_write_server_network_file,
-    create_server_backup, delete_server, delete_server_backup, delete_server_item,
-    detect_java_runtimes, disconnect_playit_account, download_java_runtime, download_server_jar,
-    export_server_world, force_kill_all_servers, force_kill_server, forward_port_windows_firewall,
-    get_default_servers_root_path, get_local_ip, get_playit_status, get_public_ip,
-    get_running_server_directories, get_server_runtime, get_server_start_command,
-    get_server_telemetry, get_server_telemetry_history, get_server_tunnel, get_system_memory_gb,
-    import_server, initialize_server, inspect_java_executable, inspect_server_directory,
-    list_provider_versions, managed_java_root, open_server_folder, open_server_path,
-    read_managed_server_config_file, read_networks_config, read_server_network_file,
-    repair_server_mserve_json, resolve_provider_version, restart_server, restore_server_backup,
-    run_in_background, scan_managed_server_config_files, scan_server_contents, send_server_command,
-    set_server_item_active, set_server_java_installation, set_server_tunnel, start_playit_claim,
-    start_server, stop_server, sync_server_mserve_json, uninstall_server_item,
-    update_server_backup_settings, update_server_settings, upload_server_item, validate_path,
-    write_managed_server_config_file, write_networks_config, write_server_network_file,
-};
+// Every `#[tauri::command]` (plus the `__cmd__…`/`__tauri_command_name_…` glue
+// the macro generates) must be in scope for `generate_handler!` below. A glob
+// keeps this from being a 60-line hand-maintained list that has to be edited
+// for every new command.
+use commands::*;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct MserveProvider {
@@ -91,6 +31,11 @@ struct MserveProvider {
 struct InitServerPayload {
     directory: String,
     create_directory_if_missing: bool,
+    /// True when the directory was pre-populated (modpack install): the jar is
+    /// already in place and existing content (e.g. an overrides-provided
+    /// server.properties) is expected rather than a conflict.
+    #[serde(default)]
+    adopt_existing_directory: bool,
     file: String,
     ram: f64,
     storage_limit: u32,
@@ -276,6 +221,14 @@ enum LifecycleState {
     RunningExternal,
 }
 
+impl LifecycleState {
+    /// True while the server is (or may be) up — i.e. not `offline`/`crashed`.
+    /// Active runtimes claim their host:port and count as "running" in the UI.
+    fn is_active(self) -> bool {
+        !matches!(self, LifecycleState::Offline | LifecycleState::Crashed)
+    }
+}
+
 /// Loopback RCON credentials, provisioned into server.properties on start.
 #[derive(Debug, Clone)]
 struct RconConfig {
@@ -382,8 +335,8 @@ struct ServerRuntimeStateEvent {
     started_at: Option<String>,
     exit_code: Option<i32>,
     stderr_tail: Vec<String>,
-    /// The actual port the server is bound to. Set on the `starting` event so
-    /// the frontend can update its view immediately (e.g. when we reassigned a
+    /// The actual port the server is bound to. Always carried so the frontend
+    /// can keep its view of the address current (e.g. when we reassigned a
     /// conflicting port before spawn).
     server_port: Option<u16>,
 }
@@ -407,6 +360,8 @@ struct ServerRuntimeSnapshot {
     exit_code: Option<i32>,
     stderr_tail: Vec<String>,
     sample: Option<TelemetrySample>,
+    /// The actual port the server is bound to (`None` when not tracked).
+    server_port: Option<u16>,
 }
 
 #[derive(Debug, Serialize)]
@@ -532,6 +487,7 @@ struct ScannedWorld {
 struct ScannedDatapack {
     name: Option<String>,
     file: String,
+    url: Option<String>,
     activated: bool,
 }
 
@@ -539,6 +495,7 @@ struct ScannedDatapack {
 #[serde(rename_all = "camelCase")]
 struct ServerScanResult {
     plugins: Vec<ScannedPlugin>,
+    mods: Vec<ScannedPlugin>,
     worlds: Vec<ScannedWorld>,
     datapacks: Vec<ScannedDatapack>,
     backups: Vec<ScannedBackup>,
@@ -602,7 +559,7 @@ fn running_server_directories(app: &tauri::AppHandle) -> Vec<String> {
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     guard
         .values()
-        .filter(|r| !matches!(r.state, LifecycleState::Offline | LifecycleState::Crashed))
+        .filter(|r| r.state.is_active())
         .map(|r| r.directory.clone())
         .collect()
 }
@@ -760,7 +717,7 @@ pub fn run() {
         )
         .setup(setup_app)
         .invoke_handler(tauri::generate_handler![
-            forward_port_windows_firewall,
+            forward_port_firewall,
             validate_path,
             get_local_ip,
             get_public_ip,
@@ -770,6 +727,12 @@ pub fn run() {
             download_server_jar,
             list_provider_versions,
             resolve_provider_version,
+            search_modrinth_projects,
+            get_modrinth_project,
+            list_modrinth_project_versions,
+            get_modrinth_tags,
+            install_modrinth_file,
+            install_modrinth_modpack,
             initialize_server,
             inspect_server_directory,
             import_server,

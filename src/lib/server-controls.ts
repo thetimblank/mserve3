@@ -9,6 +9,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
 
 import type { Server, ServerStatus } from '@/data/servers';
+import { offlineServerStats, startingServerStats } from '@/lib/server-telemetry';
 import type { ServerRuntimeSnapshot } from '@/pages/server/server-types';
 
 export type ServerControlContext = {
@@ -21,26 +22,6 @@ export type ServerControlContext = {
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-const offlineStats = (): Partial<Server['stats']> => ({
-	online: false,
-	players_online: null,
-	players_max: null,
-	tps: null,
-	ram_used: null,
-	cpu_used: null,
-	uptime: null,
-});
-
-const startingStats = (): Partial<Server['stats']> => ({
-	online: false,
-	players_online: null,
-	players_max: null,
-	tps: null,
-	ram_used: null,
-	cpu_used: null,
-	uptime: new Date(),
-});
-
 export const startServer = async ({
 	server,
 	javaExecutable,
@@ -48,7 +29,7 @@ export const startServer = async ({
 	updateServerStats,
 }: ServerControlContext): Promise<boolean> => {
 	setServerStatus(server.id, 'starting');
-	updateServerStats(server.id, startingStats());
+	updateServerStats(server.id, startingServerStats());
 	try {
 		await invoke('start_server', {
 			directory: server.directory,
@@ -60,7 +41,7 @@ export const startServer = async ({
 		return true;
 	} catch (err) {
 		setServerStatus(server.id, 'offline');
-		updateServerStats(server.id, offlineStats());
+		updateServerStats(server.id, offlineServerStats());
 		toast.error(err instanceof Error ? err.message : 'Failed to start server.');
 		return false;
 	}
@@ -75,11 +56,11 @@ export const stopServer = async ({
 	try {
 		await invoke('stop_server', { directory: server.directory });
 		setServerStatus(server.id, 'offline');
-		updateServerStats(server.id, offlineStats());
+		updateServerStats(server.id, offlineServerStats());
 		return true;
 	} catch (err) {
 		setServerStatus(server.id, 'offline');
-		updateServerStats(server.id, offlineStats());
+		updateServerStats(server.id, offlineServerStats());
 		toast.error(err instanceof Error ? err.message : 'Failed to stop server.');
 		return false;
 	}
@@ -94,11 +75,11 @@ export const forceKillServer = async ({
 	try {
 		await invoke('force_kill_server', { directory: server.directory });
 		setServerStatus(server.id, 'offline');
-		updateServerStats(server.id, offlineStats());
+		updateServerStats(server.id, offlineServerStats());
 		return true;
 	} catch (err) {
 		setServerStatus(server.id, 'offline');
-		updateServerStats(server.id, offlineStats());
+		updateServerStats(server.id, offlineServerStats());
 		toast.error(err instanceof Error ? err.message : 'Failed to force kill server process.');
 		return false;
 	}

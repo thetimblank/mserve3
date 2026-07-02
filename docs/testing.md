@@ -53,8 +53,9 @@ RAM, asserts `online` + telemetry, then stops. Run it explicitly or via the
 
 ## CI
 
-- [ci.yml](../.github/workflows/ci.yml) — every PR/push (`windows-latest`): build +
-  typecheck, Vitest, `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test`.
+- [ci.yml](../.github/workflows/ci.yml) — every PR/push (`windows-latest` +
+  `ubuntu-latest`): build + typecheck, Vitest, `cargo fmt --check`,
+  `cargo clippy -D warnings`, `cargo test`.
 - [e2e-nightly.yml](../.github/workflows/e2e-nightly.yml) — schedule + manual: the L4
   matrix.
 

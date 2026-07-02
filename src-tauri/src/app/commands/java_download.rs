@@ -1,5 +1,10 @@
+#[cfg(unix)]
+use super::super::support::extract_tar_gz_to_directory;
+#[cfg(windows)]
 use super::super::support::extract_zip_to_directory;
-use super::super::{JavaRuntimeInfo, inspect_java_executable, managed_java_root};
+use super::super::{
+    JavaRuntimeInfo, inspect_java_executable, java_executable_name, managed_java_root,
+};
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -18,16 +23,34 @@ struct JavaDownloadProgressEvent {
     done: bool,
 }
 
-/// Adoptium only ships zip archives for Windows. The other platforms use
-/// `.tar.gz`, which we don't unpack here — callers fall back to the Java guide.
+/// Adoptium OS identifier. Windows ships zip archives; Linux/macOS ship
+/// `.tar.gz` — both are unpacked below.
 fn adoptium_os() -> Option<&'static str> {
-    #[cfg(target_os = "windows")]
-    {
-        Some("windows")
+    match std::env::consts::OS {
+        "windows" => Some("windows"),
+        "linux" => Some("linux"),
+        "macos" => Some("mac"),
+        _ => None,
     }
-    #[cfg(not(target_os = "windows"))]
+}
+
+const fn adoptium_archive_extension() -> &'static str {
+    if cfg!(windows) { "zip" } else { "tar.gz" }
+}
+
+fn extract_java_archive(archive_path: &Path, destination: &Path) -> Result<(), String> {
+    #[cfg(windows)]
     {
-        None
+        extract_zip_to_directory(archive_path, destination)
+    }
+    #[cfg(unix)]
+    {
+        extract_tar_gz_to_directory(archive_path, destination)
+    }
+    #[cfg(not(any(windows, unix)))]
+    {
+        let _ = (archive_path, destination);
+        Err("Java archive extraction is not supported on this platform.".to_string())
     }
 }
 
@@ -40,7 +63,7 @@ fn adoptium_arch() -> Option<&'static str> {
 }
 
 fn find_java_executable(root: &Path, depth: u32) -> Option<PathBuf> {
-    let direct = root.join("bin").join("java.exe");
+    let direct = root.join("bin").join(java_executable_name());
     if direct.is_file() {
         return Some(direct);
     }
@@ -89,7 +112,10 @@ pub(in crate::app) fn download_java_runtime(
 
     let download_dir = std::env::temp_dir().join("mserve").join("java-downloads");
     fs::create_dir_all(&download_dir).map_err(|err| err.to_string())?;
-    let archive_path = download_dir.join(format!("temurin-{major_version}.zip"));
+    let archive_path = download_dir.join(format!(
+        "temurin-{major_version}.{}",
+        adoptium_archive_extension()
+    ));
 
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(600))
@@ -161,7 +187,7 @@ pub(in crate::app) fn download_java_runtime(
     }
     fs::create_dir_all(&install_dir).map_err(|err| err.to_string())?;
 
-    extract_zip_to_directory(&archive_path, &install_dir)?;
+    extract_java_archive(&archive_path, &install_dir)?;
     let _ = fs::remove_file(&archive_path);
 
     let executable = find_java_executable(&install_dir, 3).ok_or_else(|| {
