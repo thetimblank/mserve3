@@ -1,6 +1,15 @@
 import React from 'react';
 import clsx from 'clsx';
-import { Archive, ChartColumnIncreasing, Globe, Home, Package, Plug, Settings } from 'lucide-react';
+import {
+	Archive,
+	Blocks,
+	ChartColumnIncreasing,
+	Globe,
+	Home,
+	Package,
+	Plug,
+	Settings,
+} from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import type { ServerContentTab } from './server-types';
@@ -15,6 +24,7 @@ const tabMeta: Record<ServerContentTab, { icon: React.ReactNode; label: string }
 	overview: { icon: <Home />, label: 'Overview' },
 	statistics: { icon: <ChartColumnIncreasing />, label: 'Statistics' },
 	plugins: { icon: <Plug />, label: 'Plugins' },
+	mods: { icon: <Blocks />, label: 'Mods' },
 	worlds: { icon: <Globe />, label: 'Worlds' },
 	datapacks: { icon: <Package />, label: 'Datapacks' },
 	backups: { icon: <Archive />, label: 'Backups' },
@@ -26,6 +36,7 @@ export const SERVER_TABS: ServerContentTab[] = [
 	'statistics',
 	'settings',
 	'plugins',
+	'mods',
 	'worlds',
 	'datapacks',
 	'backups',
@@ -40,7 +51,11 @@ export const getServerContentTabUrl = (serverId: string, tab: ServerContentTab) 
 export const getAvailableServerContentTabs = (providerKind?: string | null): ServerContentTab[] => {
 	const tabs: ServerContentTab[] = ['overview', 'statistics', 'settings'];
 
-	if (providerKind !== 'vanilla') {
+	// Modded servers load mods, not plugins; everything else (except vanilla)
+	// gets the plugins tab.
+	if (providerKind === 'modded') {
+		tabs.push('mods');
+	} else if (providerKind !== 'vanilla') {
 		tabs.push('plugins');
 	}
 

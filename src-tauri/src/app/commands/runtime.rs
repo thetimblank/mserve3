@@ -10,8 +10,9 @@ use super::super::{
     ServerRuntimeStateEvent, TpsCommandState,
 };
 use std::collections::{HashMap, VecDeque};
+use std::fs;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -29,20 +30,72 @@ fn format_heap_size(ram_gb: f64) -> String {
     }
 }
 
-fn resolve_server_start_args(config: &RuntimeServerConfig) -> Vec<String> {
-    let file = if config.file.trim().is_empty() {
-        "server.jar".to_string()
+/// Modern Forge/NeoForge servers are not launched with `-jar`; their installer
+/// generates a JVM `@argfile` under `libraries/` that wires up the module path.
+/// Returns the `@`-prefixed argfile token (relative to the server directory,
+/// which is the child's working directory) when one exists.
+fn resolve_launch_argfile(directory: &Path, config: &RuntimeServerConfig) -> Option<String> {
+    let provider = config
+        .provider
+        .as_ref()
+        .map(|provider| provider.name.to_lowercase())
+        .unwrap_or_default();
+
+    let vendor_dir = if provider.contains("neoforge") {
+        directory
+            .join("libraries")
+            .join("net")
+            .join("neoforged")
+            .join("neoforge")
+    } else if provider.contains("forge") {
+        directory
+            .join("libraries")
+            .join("net")
+            .join("minecraftforge")
+            .join("forge")
     } else {
-        config.file.trim().to_string()
+        return None;
     };
 
+    let args_file_name = if cfg!(windows) {
+        "win_args.txt"
+    } else {
+        "unix_args.txt"
+    };
+
+    // One subdirectory per installed loader version (normally exactly one).
+    let entries = fs::read_dir(&vendor_dir).ok()?;
+    for entry in entries.flatten() {
+        let candidate = entry.path().join(args_file_name);
+        if candidate.is_file() {
+            let relative = candidate
+                .strip_prefix(directory)
+                .map(Path::to_path_buf)
+                .unwrap_or(candidate);
+            return Some(format!("@{}", relative.to_string_lossy()));
+        }
+    }
+
+    None
+}
+
+fn resolve_server_start_args(directory: &Path, config: &RuntimeServerConfig) -> Vec<String> {
     let heap = format_heap_size(config.ram.unwrap_or(4.0));
-    let mut args = vec![
-        format!("-Xmx{heap}"),
-        format!("-Xms{heap}"),
-        "-jar".to_string(),
-        file,
-    ];
+    let mut args = vec![format!("-Xmx{heap}"), format!("-Xms{heap}")];
+
+    // Forge/NeoForge installations launch through their generated argfile;
+    // everything else is a plain executable jar.
+    if let Some(argfile) = resolve_launch_argfile(directory, config) {
+        args.push(argfile);
+    } else {
+        let file = if config.file.trim().is_empty() {
+            "server.jar".to_string()
+        } else {
+            config.file.trim().to_string()
+        };
+        args.push("-jar".to_string());
+        args.push(file);
+    }
 
     args.extend(config.custom_flags.clone().unwrap_or_default());
     args
@@ -79,8 +132,12 @@ fn resolve_java_executable(
     Err(NO_JAVA_ERROR.to_string())
 }
 
-fn build_server_start_command(config: &RuntimeServerConfig, java_executable: &str) -> String {
-    let args = resolve_server_start_args(config);
+fn build_server_start_command(
+    directory: &Path,
+    config: &RuntimeServerConfig,
+    java_executable: &str,
+) -> String {
+    let args = resolve_server_start_args(directory, config);
     format!("{} {}", java_executable, args.join(" "))
 }
 
@@ -187,10 +244,10 @@ fn start_server_internal(
         }
     }
 
-    let args = resolve_server_start_args(&config);
+    let args = resolve_server_start_args(&directory_path, &config);
     let java_executable = resolve_java_executable(&config, java_executable.as_deref())?;
     ensure_java_executable_exists(&java_executable)?;
-    let command_str = build_server_start_command(&config, &java_executable);
+    let command_str = build_server_start_command(&directory_path, &config, &java_executable);
     eprintln!("[Server] Executing: {command_str}");
 
     let is_proxy = provider_is_proxy(&config);
@@ -334,7 +391,11 @@ pub(in crate::app) fn get_server_start_command(
 
     let config = get_runtime_config(&directory_path)?;
     let java_executable = resolve_java_executable(&config, java_executable.as_deref())?;
-    Ok(build_server_start_command(&config, &java_executable))
+    Ok(build_server_start_command(
+        &directory_path,
+        &config,
+        &java_executable,
+    ))
 }
 
 /// Flags a runtime as gracefully stopping (idempotent). Already-terminal

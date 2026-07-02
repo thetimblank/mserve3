@@ -306,6 +306,7 @@ export const useServerRuntime = ({
 			});
 			updateServer(serverId, {
 				plugins: result.plugins,
+				mods: result.mods,
 				worlds: result.worlds,
 				datapacks: result.datapacks,
 				backups: mapScannedBackups(result.backups),

@@ -13,6 +13,7 @@ pub(in crate::app) fn item_roots(
     let inactive_root = directory.join("inactive");
     match item_type {
         "plugin" => Ok((directory.join("plugins"), inactive_root.join("plugins"))),
+        "mod" => Ok((directory.join("mods"), inactive_root.join("mods"))),
         "world" => Ok((directory.to_path_buf(), inactive_root.join("worlds"))),
         "datapack" => Ok((
             directory.join("world").join("datapacks"),
@@ -53,6 +54,7 @@ pub(in crate::app) fn remove_item_to_trash(payload: &ItemActionPayload) -> Resul
     };
 
     trash::delete(&target).map_err(|err| err.to_string())?;
+    super::content_meta::forget_content_meta(&directory, payload.item_type.as_str(), file);
     Ok(())
 }
 

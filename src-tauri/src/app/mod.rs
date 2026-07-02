@@ -31,6 +31,11 @@ struct MserveProvider {
 struct InitServerPayload {
     directory: String,
     create_directory_if_missing: bool,
+    /// True when the directory was pre-populated (modpack install): the jar is
+    /// already in place and existing content (e.g. an overrides-provided
+    /// server.properties) is expected rather than a conflict.
+    #[serde(default)]
+    adopt_existing_directory: bool,
     file: String,
     ram: f64,
     storage_limit: u32,
@@ -447,6 +452,7 @@ struct ScannedWorld {
 struct ScannedDatapack {
     name: Option<String>,
     file: String,
+    url: Option<String>,
     activated: bool,
 }
 
@@ -454,6 +460,7 @@ struct ScannedDatapack {
 #[serde(rename_all = "camelCase")]
 struct ServerScanResult {
     plugins: Vec<ScannedPlugin>,
+    mods: Vec<ScannedPlugin>,
     worlds: Vec<ScannedWorld>,
     datapacks: Vec<ScannedDatapack>,
     backups: Vec<ScannedBackup>,
@@ -685,6 +692,12 @@ pub fn run() {
             download_server_jar,
             list_provider_versions,
             resolve_provider_version,
+            search_modrinth_projects,
+            get_modrinth_project,
+            list_modrinth_project_versions,
+            get_modrinth_tags,
+            install_modrinth_file,
+            install_modrinth_modpack,
             initialize_server,
             inspect_server_directory,
             import_server,

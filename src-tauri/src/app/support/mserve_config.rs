@@ -63,7 +63,7 @@ pub(in crate::app) fn default_supported_telemetry() -> Vec<String> {
 
 fn default_jdk_versions_for_provider(provider_name: &str) -> Vec<u32> {
     match provider_name {
-        "velocity" | "bungeecord" => vec![17, 21],
+        "velocity" | "bungeecord" | "forge" => vec![17, 21],
         _ => vec![21],
     }
 }
@@ -79,6 +79,16 @@ fn normalize_provider_name(raw: &str) -> Option<String> {
     }
     if normalized.contains("folia") {
         return Some("folia".to_string());
+    }
+    if normalized.contains("fabric") {
+        return Some("fabric".to_string());
+    }
+    // "neoforge" contains "forge", so it must be checked first.
+    if normalized.contains("neoforge") {
+        return Some("neoforge".to_string());
+    }
+    if normalized.contains("forge") {
+        return Some("forge".to_string());
     }
     if normalized.contains("spigot") || normalized.contains("bukkit") {
         return Some("spigot".to_string());
@@ -814,12 +824,25 @@ mod tests {
     }
 
     #[test]
-    fn unknown_jar_has_no_inferred_provider() {
-        // A custom/modded jar (e.g. Fabric) isn't one of the known names.
+    fn modded_jars_infer_their_loader_provider() {
         assert_eq!(
-            infer_provider_from_jar_file("fabric-server-launch.jar"),
-            None
+            infer_provider_from_jar_file("fabric-server-launch.jar").as_deref(),
+            Some("fabric")
         );
+        // "neoforge" contains "forge" — must resolve to neoforge, not forge.
+        assert_eq!(
+            infer_provider_from_jar_file("neoforge-21.1.77-installer.jar").as_deref(),
+            Some("neoforge")
+        );
+        assert_eq!(
+            infer_provider_from_jar_file("forge-1.20.1-47.2.0.jar").as_deref(),
+            Some("forge")
+        );
+    }
+
+    #[test]
+    fn unknown_jar_has_no_inferred_provider() {
+        assert_eq!(infer_provider_from_jar_file("custom-server.jar"), None);
         assert_eq!(infer_provider_from_jar_file("server.jar"), None);
         assert_eq!(infer_provider_from_jar_file("   "), None);
     }
@@ -850,9 +873,9 @@ mod tests {
 
     #[test]
     fn default_provider_for_unknown_file_is_vanilla() {
-        let provider = default_provider_for_file("fabric-server-launch.jar");
+        let provider = default_provider_for_file("custom-server.jar");
         assert_eq!(provider.name, "vanilla");
-        assert_eq!(provider.file, "fabric-server-launch.jar");
+        assert_eq!(provider.file, "custom-server.jar");
         assert!(provider.stable);
     }
 

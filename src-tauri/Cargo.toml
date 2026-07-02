@@ -34,6 +34,7 @@ sysinfo = "0.33"
 rusqlite = { version = "0.32", features = ["bundled"] }
 rand = "0.8"
 dunce = "1"
+sha2 = "0.10"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [

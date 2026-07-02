@@ -5,7 +5,16 @@ import SlideShell from './SlideShell';
 import { Container } from '@/components/ui/container';
 
 const SlideReview: React.FC = () => {
-	const { form, serverName, resolvedDirectory, isSubmitting, prevSlide, createServer } = useCreateServer();
+	const {
+		form,
+		serverName,
+		resolvedDirectory,
+		isSubmitting,
+		prevSlide,
+		createServer,
+		modpack,
+		modpackInstallProgress,
+	} = useCreateServer();
 	const visibleStepSlides = getCreateServerStepSlides(form.provider);
 	const showBackups = visibleStepSlides.some((step) => step === CREATE_SERVER_SLIDE_INDEX.backups);
 	const showEula = visibleStepSlides.some((step) => step === CREATE_SERVER_SLIDE_INDEX.eula);
@@ -33,20 +42,38 @@ const SlideReview: React.FC = () => {
 					<p className='text-sm text-muted-foreground'>Directory</p>
 					<p className='break-all'>{resolvedDirectory || '(not set)'}</p>
 				</div>
-				<div>
-					<p className='text-sm text-muted-foreground'>Jar file</p>
-					<p className='break-all'>{form.file || '(not set)'}</p>
-				</div>
-				<div className='grid grid-cols-2 gap-4'>
-					<div>
-						<p className='text-sm text-muted-foreground'>Provider</p>
-						<p>{form.provider?.name || '(not set)'}</p>
+				{modpack ? (
+					<div className='grid grid-cols-2 gap-4'>
+						<div>
+							<p className='text-sm text-muted-foreground'>Modpack</p>
+							<p>
+								{modpack.title}{' '}
+								<span className='text-muted-foreground'>{modpack.version.versionNumber}</span>
+							</p>
+						</div>
+						<div>
+							<p className='text-sm text-muted-foreground'>Version</p>
+							<p>{modpack.version.gameVersions[0] ?? '(from modpack)'}</p>
+						</div>
 					</div>
-					<div>
-						<p className='text-sm text-muted-foreground'>Version</p>
-						<p>{form.provider?.minecraft_version || '(not detected)'}</p>
-					</div>
-				</div>
+				) : (
+					<>
+						<div>
+							<p className='text-sm text-muted-foreground'>Jar file</p>
+							<p className='break-all'>{form.file || '(not set)'}</p>
+						</div>
+						<div className='grid grid-cols-2 gap-4'>
+							<div>
+								<p className='text-sm text-muted-foreground'>Provider</p>
+								<p>{form.provider?.name || '(not set)'}</p>
+							</div>
+							<div>
+								<p className='text-sm text-muted-foreground'>Version</p>
+								<p>{form.provider?.minecraft_version || '(not detected)'}</p>
+							</div>
+						</div>
+					</>
+				)}
 				<div className='grid grid-cols-2 gap-4'>
 					<div>
 						<p className='text-sm text-muted-foreground'>RAM</p>
@@ -81,6 +108,21 @@ const SlideReview: React.FC = () => {
 								<p>{form.auto_backup_interval} minutes</p>
 							</div>
 						)}
+					</div>
+				)}
+				{isSubmitting && modpackInstallProgress && (
+					<div className='space-y-2 rounded-md border-2 p-3'>
+						<p className='text-sm'>{modpackInstallProgress.message}</p>
+						<div className='h-2 w-full rounded-full bg-secondary overflow-hidden'>
+							<div
+								className='h-full bg-accent transition-[width] duration-200 ease-linear'
+								style={{
+									width: `${Math.round(
+										Math.max(0, Math.min(1, modpackInstallProgress.progress)) * 100,
+									)}%`,
+								}}
+							/>
+						</div>
 					</div>
 				)}
 			</Container>

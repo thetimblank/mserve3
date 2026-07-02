@@ -22,6 +22,7 @@ export interface Server extends MserveJsonProps {
 	datapacks: {
 		name?: string;
 		file: string;
+		url?: string;
 		activated: boolean;
 	}[];
 	worlds: {
@@ -31,6 +32,13 @@ export interface Server extends MserveJsonProps {
 		activated: boolean;
 	}[];
 	plugins: {
+		name?: string;
+		file: string;
+		url?: string;
+		size?: number;
+		activated: boolean;
+	}[];
+	mods: {
 		name?: string;
 		file: string;
 		url?: string;
@@ -236,6 +244,7 @@ export const normalizeServer = (server: Server): Server => {
 		datapacks: toUniqueToggleFileList(server.datapacks),
 		worlds: toUniqueToggleFileList(server.worlds),
 		plugins: toUniqueToggleFileList(server.plugins),
+		mods: toUniqueToggleFileList(server.mods),
 		// Stats are live, UI-only runtime state — shaped/defaulted here.
 		stats: {
 			online,

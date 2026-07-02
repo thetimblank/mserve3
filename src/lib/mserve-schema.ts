@@ -1,11 +1,20 @@
 import { TELEMETRY_POLLING } from './mserve-consts';
 
 export type AutoBackupMode = 'interval' | 'on_close' | 'on_start';
-export type ProviderName = 'paper' | 'folia' | 'spigot' | 'vanilla' | 'velocity' | 'bungeecord';
+export type ProviderName =
+	| 'paper'
+	| 'folia'
+	| 'spigot'
+	| 'vanilla'
+	| 'velocity'
+	| 'bungeecord'
+	| 'fabric'
+	| 'forge'
+	| 'neoforge';
 export type TelemetryKey = (typeof TELEMETRY_POLLING)[number];
 export type TelemetryPolling = TelemetryKey[];
-export type ProviderKind = 'plugin' | 'vanilla' | 'proxy' | 'unknown';
-export type ProviderTab = 'plugin' | 'vanilla' | 'proxies';
+export type ProviderKind = 'plugin' | 'vanilla' | 'proxy' | 'modded' | 'unknown';
+export type ProviderTab = 'plugin' | 'vanilla' | 'proxies' | 'modded';
 
 /**
  * The provider data that lives in `mserve.json` — version-specific, per-server

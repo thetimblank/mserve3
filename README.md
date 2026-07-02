@@ -64,9 +64,8 @@ e.g. v4.0.12pre0
 - ~~full Linux support (firewall via firewalld/ufw, Java detection/download, process management, .deb/.rpm/AppImage releases + updater)~~ ✅
 - add smarter error reporting and feedback
 - fully finish and clean up the "setup networks" page. it should have all the features users should expect and work flawlessly. clean up the UI to be more intuitive as well.
-- add a full in-app plugin and modpack browser similar to prism launcher.
+- ~~add a full in-app plugin and modpack browser similar to prism launcher. (Modrinth browser for plugins/mods/datapacks in the server tabs + modpack installs in the create wizard, incl. Fabric/Forge/NeoForge server support)~~ ✅
 - rework backup system to have all of the features the user would expect, e.g. different retention policies, better/smart limits, etc.
-- make --nogui forced when not in advanced mode
 - add tunneling instead of just port forwarding
 - better statistics in home page, something more useful and something like "insights"
 - server crashed state and crash protection
@@ -76,13 +75,20 @@ e.g. v4.0.12pre0
 - sleep mode and settings controlling sleep mode. (like when no more users are logged in afte X time, also auto boot up when someone joins, etc)
 - rework MC settings for non-advanced users (Like the server.properties, velocity.toml, etc. make these more user friendly for non-advanced users)
 - onboarding if needed. (advanced/beginner, theme, what is goal, etc)
-- move help pages below servers in sidebar
-- overflow of hover effect on dashboard in the most used category's cards
+- ~~move help pages below servers in sidebar~~✅
+- make --nogui forced when not in advanced mode (?)
+
+Bugs/Fixes
+
+- Ram not showing up on modpack screen
+- Auto-java detection not working on stuff like 26.1.2 (Uses J17, then J21, but never gets to J25.) Also, J17 is just wrong for this, not sure why it shows that for 26.1.2
+- 25565 not hidden for server IP on server overview panel. (Only hide this port since its redundant in MC.)
+- add same active effect to other app sidebar pages that is shown for each server. (solid purple when on the page)
 
 Supported Providers
 
-- Modpack servers
-- Modded servers (Forge, Fabric, Neoforge)
+- Modpack servers ✅
+- Modded servers (Forge, Fabric, Neoforge) ✅
 - Bungee
 - Spigot
 - Pufferfish

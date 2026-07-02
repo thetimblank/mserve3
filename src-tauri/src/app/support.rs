@@ -1,4 +1,5 @@
 mod backups;
+mod content_meta;
 mod core;
 mod items;
 #[cfg(target_os = "linux")]
@@ -18,6 +19,7 @@ mod testkit;
 mod windows_firewall;
 
 pub(super) use backups::*;
+pub(super) use content_meta::*;
 pub(super) use core::*;
 pub(super) use items::*;
 #[cfg(target_os = "linux")]

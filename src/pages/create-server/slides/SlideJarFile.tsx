@@ -28,6 +28,7 @@ import {
 	isServerProvider,
 	PROVIDER_NAMES,
 } from '@/lib/server-provider';
+import ModrinthBrowser from '@/components/modrinth/modrinth-browser';
 import { useCreateServer, type PathValidationResult } from '../CreateServerContext';
 import JarVersionSelectorPane from './components/JarVersionSelectorPane';
 import SlideShell from './SlideShell';
@@ -44,9 +45,13 @@ const parseJdkVersions = (value: string): number[] =>
 
 const SlideJarFile: React.FC = () => {
 	const { user } = useUser();
-	const { form, updateField, nextSlide, setError, clearError } = useCreateServer();
+	const { form, updateField, nextSlide, setError, clearError, modpack, setModpack } =
+		useCreateServer();
 	const tabs = React.useMemo(() => getJarTabs(), []);
 	const [activeTab, setActiveTab] = React.useState<JarTab>('plugin');
+	const [sourceMode, setSourceMode] = React.useState<'software' | 'modpack'>(
+		modpack ? 'modpack' : 'software',
+	);
 	const [includeUnstable, setIncludeUnstable] = React.useState(false);
 	const [rows, setRows] = React.useState<JarVersionRow[]>([]);
 	const [isLoadingRows, setIsLoadingRows] = React.useState(false);
@@ -143,6 +148,16 @@ const SlideJarFile: React.FC = () => {
 	const onContinue = async () => {
 		if (isDownloading) return;
 
+		if (sourceMode === 'modpack') {
+			if (!modpack) {
+				setError('Pick a modpack version to continue.');
+				return;
+			}
+			clearError();
+			nextSlide();
+			return;
+		}
+
 		try {
 			if (selectedRow) {
 				const downloadId =
@@ -177,6 +192,7 @@ const SlideJarFile: React.FC = () => {
 					}
 
 					setDownloadProgress(1);
+					setModpack(null);
 					updateField('file', result.path);
 					updateField('provider', provider);
 					clearError();
@@ -223,6 +239,7 @@ const SlideJarFile: React.FC = () => {
 				return;
 			}
 
+			setModpack(null);
 			updateField('provider', provider);
 			clearError();
 			nextSlide();
@@ -235,15 +252,15 @@ const SlideJarFile: React.FC = () => {
 	return (
 		<SlideShell
 			fullWidth
-			title='Choose the server jar file'
-			description='Browse and download a supported server jar. Advanced mode enables manual file and provider selection.'
+			title='Choose the server software'
+			description='Browse and download a supported server jar, or build the server from a Modrinth modpack. Advanced mode enables manual file and provider selection.'
 			actions={
 				<Button
 					type='button'
 					onClick={onContinue}
-					disabled={isDownloading || isLoadingRows}
+					disabled={isDownloading || (sourceMode === 'software' && isLoadingRows)}
 					className='relative overflow-hidden'>
-					{form.file.length > 0 ? (
+					{sourceMode === 'modpack' || form.file.length > 0 ? (
 						<>
 							Continue <ArrowRight />
 						</>
@@ -267,8 +284,66 @@ const SlideJarFile: React.FC = () => {
 				</Button>
 			}>
 			<div className='flex flex-col gap-4'>
+				<div className='flex gap-2'>
+					<Button
+						type='button'
+						variant={sourceMode === 'software' ? 'default' : 'secondary'}
+						onClick={() => setSourceMode('software')}
+						disabled={isDownloading}>
+						Server Software
+					</Button>
+					<Button
+						type='button'
+						variant={sourceMode === 'modpack' ? 'default' : 'secondary'}
+						onClick={() => setSourceMode('modpack')}
+						disabled={isDownloading}>
+						Modpacks
+					</Button>
+				</div>
+
+				{sourceMode === 'modpack' && (
+					<>
+						{modpack && (
+							<div className='rounded-md border-2 border-accent/50 bg-accent/10 px-4 py-3 text-sm flex items-center justify-between gap-4'>
+								<span>
+									Selected modpack: <span className='font-bold'>{modpack.title}</span>{' '}
+									<span className='text-muted-foreground'>
+										{modpack.version.versionNumber} (Minecraft{' '}
+										{modpack.version.gameVersions[0] ?? 'unknown'})
+									</span>
+								</span>
+								<Button type='button' variant='secondary' onClick={() => setModpack(null)}>
+									Clear
+								</Button>
+							</div>
+						)}
+						<div className='h-[60vh] min-h-96'>
+							<ModrinthBrowser
+								projectType='modpack'
+								installLabel='Use'
+								onInstallVersion={async (version, project) => {
+									setModpack({
+										projectId: project.projectId,
+										slug: project.slug,
+										title: project.title,
+										pageUrl: project.pageUrl,
+										version,
+									});
+									clearError();
+									nextSlide();
+								}}
+							/>
+						</div>
+						<p className='text-xs text-muted-foreground'>
+							The pack&apos;s files, configs, and mod loader (Fabric, Forge, or NeoForge) are
+							installed automatically when the server is created.
+						</p>
+					</>
+				)}
+
+				{sourceMode === 'software' && (
 				<Field>
-					<div className='grid grid-cols-3 gap-2 mb-3'>
+					<div className='grid grid-cols-4 gap-2 mb-3'>
 						{tabs.map((tab) => (
 							<div key={tab.id} className='flex items-center gap-1'>
 								<Button
@@ -311,8 +386,9 @@ const SlideJarFile: React.FC = () => {
 						/>
 					)}
 				</Field>
+				)}
 
-				{isAdvancedMode && (
+				{sourceMode === 'software' && isAdvancedMode && (
 					<>
 						<Field>
 							<Label htmlFor='create-server-file'>Jar file location</Label>

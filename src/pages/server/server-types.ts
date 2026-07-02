@@ -24,6 +24,7 @@ export type RestoreServerBackupResult = {
 
 export type ScanServerContentsResult = {
 	plugins: MserveServer['plugins'];
+	mods: MserveServer['mods'];
 	worlds: MserveServer['worlds'];
 	datapacks: MserveServer['datapacks'];
 	backups: ScannedBackupEntry[];
@@ -124,6 +125,7 @@ export type ServerContentTab =
 	| 'overview'
 	| 'statistics'
 	| 'plugins'
+	| 'mods'
 	| 'worlds'
 	| 'datapacks'
 	| 'backups'

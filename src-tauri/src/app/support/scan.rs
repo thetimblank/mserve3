@@ -1,4 +1,5 @@
 use super::super::{ScannedDatapack, ScannedPlugin, ScannedWorld};
+use super::content_meta::read_content_meta;
 use std::collections::HashMap;
 use std::fs;
 use std::net::{IpAddr, UdpSocket};
@@ -167,8 +168,18 @@ fn dedup_by_file<T>(
     result
 }
 
-pub(in crate::app) fn list_plugins(directory: &Path, explicit: bool) -> Vec<ScannedPlugin> {
-    let mut plugins = vec![];
+/// Shared lister for jar-based content slots (plugins in `plugins/`, mods in
+/// `mods/`). `meta_key` selects the sidecar section holding catalog provenance.
+fn list_jar_items(
+    directory: &Path,
+    explicit: bool,
+    active_dir: &str,
+    meta_key: &str,
+) -> Vec<ScannedPlugin> {
+    let content_meta = read_content_meta(directory);
+    let item_meta = content_meta.items.get(meta_key);
+
+    let mut items = vec![];
     let read = |dir: PathBuf, activated: bool, into: &mut Vec<ScannedPlugin>| {
         read_dir_items(&dir, activated, into, |path, file_name, activated| {
             if !path.is_file()
@@ -178,24 +189,38 @@ pub(in crate::app) fn list_plugins(directory: &Path, explicit: bool) -> Vec<Scan
             {
                 return None;
             }
+            let meta = item_meta.and_then(|entries| entries.get(file_name));
             Some(ScannedPlugin {
-                name: infer_plugin_name(file_name, explicit),
+                name: meta
+                    .map(|item| item.name.clone())
+                    .filter(|name| !name.is_empty())
+                    .or_else(|| infer_plugin_name(file_name, explicit)),
                 file: file_name.to_string(),
-                url: None,
+                url: meta
+                    .map(|item| item.page_url.clone())
+                    .filter(|url| !url.is_empty()),
                 size: fs::metadata(path).ok().map(|metadata| metadata.len()),
                 activated,
             })
         });
     };
 
-    read(directory.join("plugins"), true, &mut plugins);
+    read(directory.join(active_dir), true, &mut items);
     read(
-        directory.join("inactive").join("plugins"),
+        directory.join("inactive").join(active_dir),
         false,
-        &mut plugins,
+        &mut items,
     );
 
-    dedup_by_file(plugins, |plugin| &plugin.file, |plugin| plugin.activated)
+    dedup_by_file(items, |item| &item.file, |item| item.activated)
+}
+
+pub(in crate::app) fn list_plugins(directory: &Path, explicit: bool) -> Vec<ScannedPlugin> {
+    list_jar_items(directory, explicit, "plugins", "plugin")
+}
+
+pub(in crate::app) fn list_mods(directory: &Path, explicit: bool) -> Vec<ScannedPlugin> {
+    list_jar_items(directory, explicit, "mods", "mod")
 }
 
 pub(in crate::app) fn list_worlds(directory: &Path) -> Vec<ScannedWorld> {
@@ -235,6 +260,9 @@ pub(in crate::app) fn list_worlds(directory: &Path) -> Vec<ScannedWorld> {
 }
 
 pub(in crate::app) fn list_datapacks(directory: &Path, explicit: bool) -> Vec<ScannedDatapack> {
+    let content_meta = read_content_meta(directory);
+    let datapack_meta = content_meta.items.get("datapack");
+
     let mut datapacks = vec![];
     let read = |dir: PathBuf, activated: bool, into: &mut Vec<ScannedDatapack>| {
         read_dir_items(&dir, activated, into, |path, file_name, activated| {
@@ -242,9 +270,16 @@ pub(in crate::app) fn list_datapacks(directory: &Path, explicit: bool) -> Vec<Sc
             if !(path.is_dir() || is_zip) {
                 return None;
             }
+            let meta = datapack_meta.and_then(|entries| entries.get(file_name));
             Some(ScannedDatapack {
-                name: infer_datapack_name(file_name, explicit),
+                name: meta
+                    .map(|item| item.name.clone())
+                    .filter(|name| !name.is_empty())
+                    .or_else(|| infer_datapack_name(file_name, explicit)),
                 file: file_name.to_string(),
+                url: meta
+                    .map(|item| item.page_url.clone())
+                    .filter(|url| !url.is_empty()),
                 activated,
             })
         });
