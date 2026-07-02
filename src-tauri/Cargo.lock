@@ -8,6 +8,8 @@ version = "3.5.1"
 dependencies = [
  "chrono",
  "dunce",
+ "flate2",
+ "libc",
  "rand",
  "reqwest 0.12.28",
  "rusqlite",
@@ -15,6 +17,7 @@ dependencies = [
  "serde_json",
  "serial_test",
  "sysinfo",
+ "tar",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",

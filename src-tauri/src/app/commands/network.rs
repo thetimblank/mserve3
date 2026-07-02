@@ -1,7 +1,12 @@
+#[cfg(target_os = "linux")]
+use super::super::support::forward_port_linux_firewall;
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+use super::super::support::no_window_command;
+#[cfg(target_os = "windows")]
 use super::super::support::{
     add_windows_firewall_rule, forward_port_windows_firewall_elevated, is_windows_admin,
-    move_file_with_fallback, no_window_command, resolve_local_ip, resolve_public_ip,
 };
+use super::super::support::{move_file_with_fallback, resolve_local_ip, resolve_public_ip};
 use super::super::{DownloadServerJarPayload, DownloadServerJarResult, PathValidationResult};
 use std::fs;
 use std::io::{Read, Write};
@@ -169,18 +174,12 @@ pub(in crate::app) fn get_system_memory_gb() -> Result<u32, String> {
     Ok(gib.max(1))
 }
 
+/// Opens `port` (TCP + UDP) in the local firewall: Windows Defender Firewall on
+/// Windows, firewalld/ufw on Linux. Elevates when needed (UAC / polkit).
 #[tauri::command]
-pub(in crate::app) fn forward_port_windows_firewall(port: u16) -> Result<Vec<String>, String> {
+pub(in crate::app) fn forward_port_firewall(port: u16) -> Result<Vec<String>, String> {
     if port == 0 {
         return Err("Port must be between 1 and 65535.".to_string());
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = port;
-        return Err(
-            "Windows Defender Firewall forwarding is only supported on Windows.".to_string(),
-        );
     }
 
     #[cfg(target_os = "windows")]
@@ -196,6 +195,17 @@ pub(in crate::app) fn forward_port_windows_firewall(port: u16) -> Result<Vec<Str
             }
         }
         Ok(created)
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        forward_port_linux_firewall(port)
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    {
+        let _ = port;
+        Err("Automatic firewall configuration is not supported on this platform.".to_string())
     }
 }
 

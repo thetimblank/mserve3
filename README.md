@@ -61,7 +61,7 @@ e.g. v4.0.12pre0
 
 ### v4
 
-- add full linux support
+- ~~full Linux support (firewall via firewalld/ufw, Java detection/download, process management, .deb/.rpm/AppImage releases + updater)~~ ✅
 - add smarter error reporting and feedback
 - fully finish and clean up the "setup networks" page. it should have all the features users should expect and work flawlessly. clean up the UI to be more intuitive as well.
 - add a full in-app plugin and modpack browser similar to prism launcher.

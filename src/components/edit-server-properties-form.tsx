@@ -25,6 +25,7 @@ import {
 import { type JavaRuntimeInfo } from '@/lib/java-runtime-service';
 import { javaResolutionLabel, resolveServerJavaExecutable } from '@/lib/java-resolution';
 import { clampRamGb } from '@/lib/ram-utils';
+import { examplePaths } from '@/lib/platform';
 import { getServerNameFromDirectory } from '@/lib/mserve-server-mapper';
 import { backupChoices } from '@/pages/server/server-constants';
 import {
@@ -804,7 +805,7 @@ export const JavaSettingsSection: React.FC = () => {
 					<Input
 						className='font-mono'
 						id='edit-java-installation'
-						placeholder='C:\Program Files\Java\jdk-25\bin\java.exe'
+						placeholder={examplePaths.javaExecutable}
 						value={settingsForm.java_installation}
 						onChange={(event) => updateSettingsField('java_installation', event.target.value)}
 					/>

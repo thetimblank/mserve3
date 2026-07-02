@@ -75,6 +75,7 @@ pub(in crate::app) fn terminate_runtime(runtime: &mut ServerRuntime) -> Result<(
         }
     }
 
+    super::process::kill_child_process_group(child);
     child.kill().map_err(|err| err.to_string())?;
     child.wait().map_err(|err| err.to_string())?;
     Ok(())

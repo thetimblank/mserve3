@@ -1,9 +1,9 @@
 use super::super::support::{
     RconClient, emit_output_reader, ensure_rcon_enabled, get_runtime_config,
-    infer_provider_version, kill_process_tree, next_generation, no_window_command,
-    pid_listening_on_port, probe_port, read_rcon_config, resolve_telemetry_target,
-    send_stop_via_stdin, server_key, set_server_port, spawn_supervisor, terminate_runtime,
-    tie_child_to_app_lifetime,
+    infer_provider_version, isolate_in_own_process_group, kill_child_process_group,
+    kill_process_tree, next_generation, no_window_command, pid_listening_on_port, probe_port,
+    read_rcon_config, resolve_telemetry_target, send_stop_via_stdin, server_key, set_server_port,
+    spawn_supervisor, terminate_runtime, tie_child_to_app_lifetime,
 };
 use super::super::{
     LifecycleState, RuntimeServerConfig, RuntimeState, ServerRuntime, ServerRuntimeSnapshot,
@@ -219,12 +219,15 @@ fn start_server_internal(
         ensure_rcon_enabled(&directory_path).ok()
     };
 
-    let mut child = no_window_command(&java_executable)
+    let mut command = no_window_command(&java_executable);
+    command
         .args(args)
         .current_dir(&directory_path)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    isolate_in_own_process_group(&mut command);
+    let mut child = command
         .spawn()
         .map_err(|err| format!("Failed to start java process: {err}"))?;
 
@@ -438,6 +441,7 @@ pub(in crate::app) fn force_kill_server(
         };
         mark_stopping(runtime);
         if let Some(child) = runtime.child.as_mut() {
+            kill_child_process_group(child);
             let _ = child.kill();
             return Ok("Server process was force killed.".to_string());
         }
@@ -509,6 +513,7 @@ pub(in crate::app) fn force_kill_all_servers(state: State<'_, RuntimeState>) -> 
     for runtime in guard.values_mut() {
         mark_stopping(runtime);
         if let Some(child) = runtime.child.as_mut() {
+            kill_child_process_group(child);
             let _ = child.kill();
         }
     }

@@ -41,6 +41,12 @@ windows-sys = { version = "0.61", features = [
     "Win32_System_JobObjects",
 ] }
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+# Adoptium ships tar.gz (not zip) for Linux/macOS Java downloads.
+flate2 = "1"
+tar = "0.4"
+
 [dev-dependencies]
 tempfile = "3"
 serial_test = "3"

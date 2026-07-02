@@ -9,12 +9,30 @@ permissions:
    contents: write
 
 jobs:
-   release:
-      runs-on: windows-latest
+   build:
+      name: Build (${{ matrix.updater_platform }})
+      strategy:
+         fail-fast: false
+         matrix:
+            include:
+               - os: windows-latest
+                 updater_platform: windows-x86_64
+               # 22.04 keeps the glibc requirement low so the binaries run on
+               # older distros too.
+               - os: ubuntu-22.04
+                 updater_platform: linux-x86_64
+      runs-on: ${{ matrix.os }}
 
       steps:
          - name: Checkout
            uses: actions/checkout@v4
+
+         - name: Install Linux system dependencies (Tauri)
+           if: runner.os == 'Linux'
+           run: |
+              sudo apt-get update
+              sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+                libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
 
          - name: Setup Node
            uses: actions/setup-node@v4
@@ -34,21 +52,21 @@ jobs:
            run: npm ci
 
          - name: Build signed Tauri release artifacts
-           shell: pwsh
            env:
               TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
               TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
            run: npm run release:build
 
-         - name: Generate latest.json for updater
+         # Each platform writes a small JSON fragment describing its updater
+         # artifact (URL + minisign signature); the manifest job merges the
+         # fragments into the single latest.json the updater plugin fetches.
+         - name: Collect updater fragment (Windows)
+           if: runner.os == 'Windows'
            shell: pwsh
            run: |
               $ErrorActionPreference = 'Stop'
               $tag = '${{ github.ref_name }}'
               $repo = '${{ github.repository }}'
-
-              $tauriConfig = Get-Content 'src-tauri/tauri.conf.json' -Raw | ConvertFrom-Json
-              $version = $tauriConfig.version
 
               $nsisBundleDir = 'src-tauri/target/release/bundle/nsis'
               $setupExe = Get-ChildItem $nsisBundleDir -Filter '*-setup.exe' | Select-Object -First 1
@@ -61,24 +79,48 @@ jobs:
                 throw "Missing signature file for $($setupExe.Name): $setupSigPath"
               }
 
-              $signature = (Get-Content $setupSigPath -Raw).Trim()
-              $downloadUrl = "https://github.com/$repo/releases/download/$tag/$($setupExe.Name)"
-
-              $latest = @{
-                version = $version
-                notes = 'See release notes on GitHub.'
-                pub_date = (Get-Date).ToUniversalTime().ToString('o')
-                platforms = @{
-                  'windows-x86_64' = @{
-                    signature = $signature
-                    url = $downloadUrl
-                  }
-                }
+              $fragment = @{
+                platform = 'windows-x86_64'
+                signature = (Get-Content $setupSigPath -Raw).Trim()
+                url = "https://github.com/$repo/releases/download/$tag/$($setupExe.Name)"
               }
+              $fragment | ConvertTo-Json | Out-File -FilePath 'updater-windows-x86_64.json' -Encoding utf8
 
-              $latest | ConvertTo-Json -Depth 6 | Out-File -FilePath latest.json -Encoding utf8
+         - name: Collect updater fragment (Linux)
+           if: runner.os == 'Linux'
+           shell: bash
+           run: |
+              set -euo pipefail
+              tag='${{ github.ref_name }}'
+              repo='${{ github.repository }}'
 
-         - name: Upload GitHub release assets
+              appimage_dir='src-tauri/target/release/bundle/appimage'
+              appimage=$(find "$appimage_dir" -maxdepth 1 -name '*.AppImage' | head -n 1)
+              if [ -z "$appimage" ]; then
+                echo 'No AppImage found in bundle output.' >&2
+                exit 1
+              fi
+              if [ ! -f "$appimage.sig" ]; then
+                echo "Missing signature file for $appimage" >&2
+                exit 1
+              fi
+
+              name=$(basename "$appimage")
+              jq -n \
+                --arg platform 'linux-x86_64' \
+                --arg signature "$(cat "$appimage.sig")" \
+                --arg url "https://github.com/$repo/releases/download/$tag/$name" \
+                '{platform: $platform, signature: $signature, url: $url}' \
+                > updater-linux-x86_64.json
+
+         - name: Upload updater fragment
+           uses: actions/upload-artifact@v4
+           with:
+              name: updater-${{ matrix.updater_platform }}
+              path: updater-${{ matrix.updater_platform }}.json
+
+         - name: Upload GitHub release assets (Windows)
+           if: runner.os == 'Windows'
            uses: softprops/action-gh-release@v2
            with:
               tag_name: ${{ github.ref_name }}
@@ -88,4 +130,55 @@ jobs:
                  src-tauri/target/release/bundle/nsis/*-setup.exe.sig
                  src-tauri/target/release/bundle/msi/*.msi
                  src-tauri/target/release/bundle/msi/*.msi.sig
-                 latest.json
+
+         - name: Upload GitHub release assets (Linux)
+           if: runner.os == 'Linux'
+           uses: softprops/action-gh-release@v2
+           with:
+              tag_name: ${{ github.ref_name }}
+              make_latest: true
+              files: |
+                 src-tauri/target/release/bundle/appimage/*.AppImage
+                 src-tauri/target/release/bundle/appimage/*.AppImage.sig
+                 src-tauri/target/release/bundle/deb/*.deb
+                 src-tauri/target/release/bundle/rpm/*.rpm
+
+   updater-manifest:
+      name: Publish latest.json
+      needs: build
+      runs-on: ubuntu-latest
+
+      steps:
+         - name: Checkout
+           uses: actions/checkout@v4
+
+         - name: Download updater fragments
+           uses: actions/download-artifact@v4
+           with:
+              pattern: updater-*
+              merge-multiple: true
+
+         - name: Generate latest.json for updater
+           shell: bash
+           run: |
+              set -euo pipefail
+              version=$(jq -r '.version' src-tauri/tauri.conf.json)
+
+              jq -s \
+                --arg version "$version" \
+                --arg pub_date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+                '{
+                  version: $version,
+                  notes: "See release notes on GitHub.",
+                  pub_date: $pub_date,
+                  platforms: (map({(.platform): {signature: .signature, url: .url}}) | add)
+                }' \
+                updater-*.json > latest.json
+              cat latest.json
+
+         - name: Upload latest.json to release
+           uses: softprops/action-gh-release@v2
+           with:
+              tag_name: ${{ github.ref_name }}
+              make_latest: true
+              files: latest.json

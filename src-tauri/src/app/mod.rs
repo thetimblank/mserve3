@@ -675,7 +675,7 @@ pub fn run() {
         )
         .setup(setup_app)
         .invoke_handler(tauri::generate_handler![
-            forward_port_windows_firewall,
+            forward_port_firewall,
             validate_path,
             get_local_ip,
             get_public_ip,

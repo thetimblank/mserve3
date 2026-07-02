@@ -193,6 +193,7 @@ pub(in crate::app) fn spawn_supervisor(
                                     .is_some_and(|at| at.elapsed() >= STOP_GRACE)
                                 && let Some(child) = runtime.child.as_mut()
                             {
+                                super::process::kill_child_process_group(child);
                                 let _ = child.kill();
                             }
                             Phase1::Continue(Snapshot {

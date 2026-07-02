@@ -15,7 +15,11 @@ networks.
 - **Shell:** [Tauri 2.10](https://tauri.app/) (Rust backend + webview frontend)
 - **Frontend:** React 18 + TypeScript (strict) + Vite 6 + Tailwind 4 + shadcn/ui (Radix), React Router 7, Context for state
 - **Backend:** Rust (edition 2024), SQLite via `rusqlite` (telemetry time-series), `reqwest`, `sysinfo`, hand-rolled RCON + Server-List-Ping
-- **Platform:** **Windows-only today** (uses `netsh` firewall, `CREATE_NO_WINDOW`, registry Java scan). Linux is a v4 goal — don't assume cross-platform.
+- **Platform:** **Windows + Linux.** Platform-specific behavior is isolated behind
+  `cfg` branches: firewall (`netsh` on Windows, firewalld/ufw via pkexec on Linux),
+  process lifetime (job object vs. process groups + exit hooks), Java install scan,
+  and Java auto-download (zip vs. tar.gz). New backend code that touches processes,
+  paths, or external tools must keep both platforms working (macOS is best-effort).
 
 ## Commands
 

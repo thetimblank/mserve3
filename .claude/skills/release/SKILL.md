@@ -44,12 +44,16 @@ npm run release:build
 
 Signing needs `TAURI_SIGNING_PRIVATE_KEY` + `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
 in the environment (locally provided via the project's signing setup; in CI via
-GitHub secrets). Output: NSIS `.exe` + MSI `.msi`, each with a `.sig`.
+GitHub secrets). Output on Windows: NSIS `.exe` + MSI `.msi`; on Linux:
+`.AppImage` + `.deb` + `.rpm` — updater artifacts (`.exe`/`.AppImage`) each get
+a `.sig`.
 
 ## 4. Publish (CI does the heavy lifting)
 
 `.github/workflows/release-tauri.yml` triggers on a pushed `v*` tag, builds on
-`windows-latest`, and uploads the installers + `latest.json` to the GitHub Release.
+`windows-latest` **and** `ubuntu-22.04`, uploads each platform's installers to
+the GitHub Release, then a final job merges both platforms' updater signatures
+into one `latest.json`.
 So the normal flow is:
 
 ```bash

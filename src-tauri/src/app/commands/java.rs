@@ -12,7 +12,7 @@ struct JavaCandidate {
     source: &'static str,
 }
 
-const fn java_executable_name() -> &'static str {
+pub(in crate::app) const fn java_executable_name() -> &'static str {
     #[cfg(target_os = "windows")]
     {
         "java.exe"
@@ -192,7 +192,7 @@ fn collect_path_candidates(
 }
 
 #[cfg(target_os = "windows")]
-fn collect_windows_common_candidates(
+fn collect_common_install_candidates(
     candidates: &mut Vec<JavaCandidate>,
     seen: &mut HashSet<String>,
 ) {
@@ -248,8 +248,68 @@ fn collect_windows_common_candidates(
     }
 }
 
-#[cfg(not(target_os = "windows"))]
-fn collect_windows_common_candidates(
+/// Standard Linux JVM locations: distro packages install under `/usr/lib/jvm`
+/// (`/usr/lib64/jvm` on openSUSE), Oracle RPMs under `/usr/java`, and the two
+/// popular per-user managers put JDKs in `~/.sdkman/candidates/java` and
+/// `~/.jdks` (JetBrains).
+#[cfg(target_os = "linux")]
+fn collect_common_install_candidates(
+    candidates: &mut Vec<JavaCandidate>,
+    seen: &mut HashSet<String>,
+) {
+    use super::super::support::home_dir;
+
+    let system_roots = [
+        PathBuf::from("/usr/lib/jvm"),
+        PathBuf::from("/usr/lib64/jvm"),
+        PathBuf::from("/usr/lib32/jvm"),
+        PathBuf::from("/usr/java"),
+        PathBuf::from("/opt/java"),
+        PathBuf::from("/opt/jdk"),
+    ];
+    let home = home_dir();
+    let user_roots = [
+        home.join(".sdkman").join("candidates").join("java"),
+        home.join(".jdks"),
+    ];
+
+    for root in system_roots.iter().chain(user_roots.iter()) {
+        push_java_under(root, 1, candidates, seen, "common_install_dir");
+    }
+}
+
+/// macOS JVM bundles live under `/Library/Java/JavaVirtualMachines` (and the
+/// per-user equivalent) with the actual JDK home at `Contents/Home`.
+#[cfg(target_os = "macos")]
+fn collect_common_install_candidates(
+    candidates: &mut Vec<JavaCandidate>,
+    seen: &mut HashSet<String>,
+) {
+    use super::super::support::home_dir;
+
+    let roots = [
+        PathBuf::from("/Library/Java/JavaVirtualMachines"),
+        home_dir().join("Library/Java/JavaVirtualMachines"),
+    ];
+
+    for root in roots {
+        let Ok(entries) = std::fs::read_dir(&root) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            push_java_under(
+                &entry.path().join("Contents").join("Home"),
+                0,
+                candidates,
+                seen,
+                "common_install_dir",
+            );
+        }
+    }
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+fn collect_common_install_candidates(
     _candidates: &mut Vec<JavaCandidate>,
     _seen: &mut HashSet<String>,
 ) {
@@ -407,7 +467,7 @@ pub(in crate::app) fn detect_java_runtimes(
     collect_managed_candidates(&app, &mut candidates, &mut seen_candidates);
     collect_java_home_candidate(&mut candidates, &mut seen_candidates);
     collect_path_candidates(&mut candidates, &mut seen_candidates, &mut errors);
-    collect_windows_common_candidates(&mut candidates, &mut seen_candidates);
+    collect_common_install_candidates(&mut candidates, &mut seen_candidates);
 
     let scanned_candidates = candidates.len();
 

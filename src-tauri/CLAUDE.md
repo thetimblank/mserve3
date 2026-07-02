@@ -22,7 +22,7 @@ src/app/
 │   ├── providers.rs      list/resolve provider versions, download_server_jar
 │   ├── java.rs           detect_java_runtimes (registry/PATH/JAVA_HOME scan)
 │   ├── java_download.rs   download_java_runtime (+ java-download-progress event)
-│   ├── network.rs        firewall port forwarding (netsh)
+│   ├── network.rs        firewall port forwarding (per-OS dispatch)
 │   ├── networks.rs       networks.json + per-server network file (Velocity forwarding)
 │   ├── settings.rs       update_server_settings, set_server_java_installation
 │   ├── backups.rs        create/restore/delete backup
@@ -38,12 +38,13 @@ src/app/
     ├── server_properties.rs  RCON provisioning into server.properties
     ├── rcon.rs            hand-rolled Source RCON client (loopback only)
     ├── runtime_io.rs      stream child stdout/stderr → server-output events
-    ├── process.rs         OS process plumbing (kill-on-close job object, port→PID kill)
+    ├── process.rs         OS process plumbing (job object / process groups, port→PID kill)
     ├── backups.rs         backup copy/restore + retention enforcement
     ├── scan.rs            enumerate worlds/plugins/datapacks
     ├── items.rs           move items between active/inactive folders
     ├── core.rs            platform helpers (no_window_command, home_dir, file moves)
-    └── windows_firewall.rs  netsh wrappers
+    ├── linux_firewall.rs  firewalld/ufw wrappers via pkexec (cfg(linux))
+    └── windows_firewall.rs  netsh wrappers (cfg(windows))
 ```
 
 ## Adding / registering a command

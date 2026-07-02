@@ -7,6 +7,7 @@ import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '
 import { Label } from '@/components/ui/label';
 import { useUser } from '@/data/user';
 import { getDefaultServersRootPath } from '@/lib/server-root-path';
+import { examplePaths } from '@/lib/platform';
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -91,7 +92,7 @@ const SettingsDataCard: React.FC<SettingsDataCardProps> = ({ onClearAllData }) =
 						<InputGroupInput
 							id='settings-servers-root-path'
 							className='font-mono'
-							placeholder='C:\\Users\\you\\mserve\\servers'
+							placeholder={examplePaths.serversRoot}
 							value={serversRootPath}
 							onChange={(event) => setServersRootPath(event.target.value)}
 							onBlur={commitServersRootPath}
