@@ -114,6 +114,7 @@ const ServerOverviewPanel: React.FC<Props> = ({
 	const [publicIp, setPublicIp] = React.useState<string | null>(null);
 	const [ipHidden, setIpHidden] = React.useState(true);
 	const [copied, setCopied] = React.useState(false);
+	const [tunnelCopied, setTunnelCopied] = React.useState(false);
 	// The live runtime keeps `telemetry_port` in sync with the port the server is
 	// actually bound to; a server that has never reported one uses the MC default.
 	const connectPort = server.telemetry_port ?? 25565;
@@ -123,6 +124,14 @@ const ServerOverviewPanel: React.FC<Props> = ({
 		navigator.clipboard.writeText(text).then(() => {
 			setCopied(true);
 			setTimeout(() => setCopied(false), 2000);
+		});
+	}, []);
+
+	const copyTunnel = React.useCallback((text: string | null) => {
+		if (text == null) return;
+		navigator.clipboard.writeText(text).then(() => {
+			setTunnelCopied(true);
+			setTimeout(() => setTunnelCopied(false), 2000);
 		});
 	}, []);
 
