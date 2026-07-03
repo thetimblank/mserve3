@@ -12,7 +12,6 @@ import {
 	LocationSettingsSection,
 	ProviderTelemetrySettingsSection,
 	GeneralSettingsSection,
-	StorageBackupsSettingsSection,
 } from '@/components/edit-server-properties-form';
 import ServerConfigFileEditor from '@/components/server-config-file-editor';
 import { TunnelSettingsSection } from './tunnel-settings-section';
@@ -56,7 +55,6 @@ type Props = {
 type FormSectionId =
 	| 'rename'
 	| 'performance'
-	| 'storage-backups'
 	| 'java'
 	| 'provider-telemetry'
 	| 'server-jar'
@@ -110,14 +108,6 @@ const JAVA_SECTION: SectionConfig = {
 		'build',
 	],
 	render: () => <JavaSettingsSection />,
-};
-
-const STORAGE_BACKUPS_SECTION: SectionConfig = {
-	id: 'storage-backups',
-	title: 'Backups',
-	description: 'Backup storage limit, auto-backups, and auto-restart.',
-	keywords: ['storage', 'backup', 'backups', 'interval', 'auto restart', 'restart', 'gigabytes'],
-	render: () => <StorageBackupsSettingsSection />,
 };
 
 const PROVIDER_TELEMETRY_SECTION: SectionConfig = {
@@ -445,7 +435,6 @@ export default function ServerSettingsPanel({
 	const baseSections = React.useMemo(() => {
 		const sections: SectionConfig[] = [
 			GENERAL_SECTION,
-			STORAGE_BACKUPS_SECTION,
 			JAVA_SECTION,
 			PROVIDER_TELEMETRY_SECTION,
 			TUNNEL_SECTION,

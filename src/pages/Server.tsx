@@ -155,7 +155,8 @@ const Server: React.FC = () => {
 	const {
 		handleDeleteBackup,
 		handleCreateBackup,
-		handleSetStorageLimit,
+		handleSetBackupLocked,
+		handleSaveBackupSettings,
 		handleClearAllBackups,
 		handleRestoreBackup,
 	} = useServerBackupActions({
@@ -452,7 +453,8 @@ const Server: React.FC = () => {
 						onCreateBackup={handleCreateBackup}
 						onRestoreBackup={handleRestoreBackup}
 						onDeleteBackup={handleDeleteBackup}
-						onSetStorageLimit={handleSetStorageLimit}
+						onSetBackupLocked={handleSetBackupLocked}
+						onSaveBackupSettings={handleSaveBackupSettings}
 						onClearAllBackups={handleClearAllBackups}
 					/>
 				)}

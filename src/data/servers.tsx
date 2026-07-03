@@ -5,7 +5,8 @@ import { requestMserveRepair } from '@/lib/mserve-repair-controller';
 import { type MserveJsonProps, type MserveStats, type Provider } from '@/lib/mserve-schema';
 import { createProvider } from '@/lib/server-provider';
 
-export type { AutoBackupMode } from '@/lib/mserve-schema';
+export type { AutoBackupMode, BackupPolicy, BackupScopeItem } from '@/lib/mserve-schema';
+import { normalizeBackupPolicy, normalizeBackupScope } from '@/lib/mserve-schema';
 
 export type ServerStatus = 'online' | 'offline' | 'starting' | 'closing';
 
@@ -18,6 +19,14 @@ export interface Server extends MserveJsonProps {
 		created_at: Date;
 		directory: string;
 		size?: number;
+		/** User-given label for manual backups. */
+		name?: string;
+		/** "manual" | "on_start" | "on_close" | "interval" | "pre_restore". */
+		reason?: string;
+		/** Locked backups are never removed by retention or storage limits. */
+		locked?: boolean;
+		/** Scope items captured in this backup ("worlds", "plugins", …). */
+		contents?: string[];
 	}[];
 	datapacks: {
 		name?: string;
@@ -210,6 +219,10 @@ const toUniqueBackups = (items?: Server['backups']) => {
 			directory,
 			created_at: toDate(item.created_at),
 			size: Math.max(0, Number(item.size) || 0),
+			name: item.name?.trim() || undefined,
+			reason: item.reason?.trim() || undefined,
+			locked: item.locked === true,
+			contents: Array.isArray(item.contents) ? item.contents : undefined,
 		});
 	}
 
@@ -273,6 +286,12 @@ export const normalizeServer = (server: Server): Server => {
 		storage_limit: server.storage_limit,
 		auto_backup: server.auto_backup,
 		auto_backup_interval: server.auto_backup_interval,
+		// Defaulted here (not copied verbatim) because servers persisted by
+		// older app versions don't have these fields yet.
+		backup_policy: normalizeBackupPolicy(server.backup_policy),
+		backup_max_count: Math.max(0, Math.round(Number(server.backup_max_count) || 0)),
+		backup_max_age_days: Math.max(0, Math.round(Number(server.backup_max_age_days) || 0)),
+		backup_scope: normalizeBackupScope(server.backup_scope),
 		auto_restart: server.auto_restart,
 		java_installation: server.java_installation?.trim() || undefined,
 		custom_flags: server.custom_flags,
@@ -435,6 +454,10 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 				server.ram !== config.ram ||
 				server.storage_limit !== config.storage_limit ||
 				server.auto_backup_interval !== config.auto_backup_interval ||
+				server.backup_policy !== normalizeBackupPolicy(config.backup_policy) ||
+				server.backup_max_count !== config.backup_max_count ||
+				server.backup_max_age_days !== config.backup_max_age_days ||
+				!sameStringList(server.backup_scope, normalizeBackupScope(config.backup_scope)) ||
 				server.auto_restart !== config.auto_restart ||
 				(server.java_installation ?? '') !== (config.java_installation ?? '') ||
 				!sameStringList(server.auto_backup, config.auto_backup) ||
@@ -459,6 +482,10 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 						storage_limit: config.storage_limit,
 						auto_backup: config.auto_backup,
 						auto_backup_interval: config.auto_backup_interval,
+						backup_policy: config.backup_policy,
+						backup_max_count: config.backup_max_count,
+						backup_max_age_days: config.backup_max_age_days,
+						backup_scope: config.backup_scope,
 						auto_restart: config.auto_restart,
 						java_installation: config.java_installation,
 						custom_flags: config.custom_flags,

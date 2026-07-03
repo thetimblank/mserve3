@@ -27,6 +27,8 @@ interface ApplyChangesDrawerProps {
 	onOpenChange: (open: boolean) => void;
 	network: ManagedNetwork;
 	servers: Server[];
+	/** Running-server messages that block writing config files right now. */
+	runtimeBlockers: string[];
 	onApplied: () => void;
 }
 
@@ -77,6 +79,7 @@ export const ApplyChangesDrawer: React.FC<ApplyChangesDrawerProps> = ({
 	onOpenChange,
 	network,
 	servers,
+	runtimeBlockers,
 	onApplied,
 }) => {
 	const [plan, setPlan] = React.useState<NetworkApplyPlan | null>(null);
@@ -145,6 +148,19 @@ export const ApplyChangesDrawer: React.FC<ApplyChangesDrawerProps> = ({
 				</DrawerHeader>
 
 				<div className='flex-1 overflow-y-auto px-4 pb-4'>
+					{runtimeBlockers.length > 0 && (
+						<div className='mb-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-600 dark:text-amber-400'>
+							<p className='mb-1 flex items-center gap-2 font-semibold'>
+								<TriangleAlert className='size-4 shrink-0' /> Stop these servers before applying
+							</p>
+							<ul className='ml-6 list-disc space-y-0.5 text-xs'>
+								{runtimeBlockers.map((message, index) => (
+									<li key={index}>{message}</li>
+								))}
+							</ul>
+						</div>
+					)}
+
 					{loading && (
 						<div className='flex items-center gap-2 p-6 text-sm text-muted-foreground'>
 							<Loader2 className='size-4 animate-spin' /> Computing changes…
@@ -184,7 +200,7 @@ export const ApplyChangesDrawer: React.FC<ApplyChangesDrawerProps> = ({
 					</DrawerClose>
 					<Button
 						onClick={handleApply}
-						disabled={loading || applying || !!error || changeCount === 0}
+						disabled={loading || applying || !!error || changeCount === 0 || runtimeBlockers.length > 0}
 						className={clsx(applying && 'pointer-events-none')}>
 						{applying ? <Loader2 className='size-4 animate-spin' /> : null}
 						Apply {changeCount > 0 ? `(${changeCount})` : ''}

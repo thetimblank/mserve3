@@ -13,8 +13,12 @@ export const toggleBackupMode = (
 export const mapScannedBackups = (backups: ScannedBackupEntry[]) =>
 	backups.map((backup) => ({
 		directory: backup.directory,
-		created_at: new Date(backup.created_at ?? Date.now()),
+		created_at: new Date(backup.createdAt ?? Date.now()),
 		size: Math.max(0, Number(backup.size) || 0),
+		name: backup.name ?? undefined,
+		reason: backup.reason ?? undefined,
+		locked: backup.locked === true,
+		contents: backup.contents ?? undefined,
 	}));
 
 export const buildUpdateServerSettingsPayload = (

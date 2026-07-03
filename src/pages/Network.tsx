@@ -1,7 +1,17 @@
 import React from 'react';
 import { useLocation } from 'react-router-dom';
 import { m } from 'motion/react';
-import { ChevronDown, Loader2, Play, Plus, RotateCcw, Network, Square, UploadCloud } from 'lucide-react';
+import {
+	ChevronDown,
+	Loader2,
+	Play,
+	Plus,
+	RotateCcw,
+	Network,
+	Square,
+	UploadCloud,
+	Users,
+} from 'lucide-react';
 import clsx from 'clsx';
 
 import { useServers } from '@/data/servers';
@@ -16,7 +26,14 @@ import {
 	DropdownMenuSubTrigger,
 	DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { diagnoseNetwork, networkHasBlockingErrors } from '@/lib/network-config-engine';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { HelpButton } from '@/components/help/help-button';
+import {
+	diagnoseNetwork,
+	getNetworkConfigDiagnostics,
+	getNetworkRuntimeBlockers,
+	networkHasBlockingErrors,
+} from '@/lib/network-config-engine';
 import { getNetworkServerIds, type NetworkNodePosition } from '@/lib/network-schema';
 
 import { NetworkCanvas } from './network/NetworkCanvas';
@@ -123,6 +140,10 @@ const NetworkPage: React.FC = () => {
 		[activeNetwork, servers, networks],
 	);
 
+	// Structural problems stay visible while editing; running-server blockers
+	// are only surfaced when the user actually tries to apply.
+	const configDiagnostics = React.useMemo(() => getNetworkConfigDiagnostics(diagnostics), [diagnostics]);
+	const runtimeBlockers = React.useMemo(() => getNetworkRuntimeBlockers(diagnostics), [diagnostics]);
 	const hasBlockingErrors = networkHasBlockingErrors(diagnostics);
 
 	// Keep node metrics live while the page is open, and drive whole-network runs.
@@ -136,11 +157,24 @@ const NetworkPage: React.FC = () => {
 		() => (activeNetwork ? getNetworkServerIds(activeNetwork) : []),
 		[activeNetwork],
 	);
-	const onlineCount = React.useMemo(
-		() =>
-			servers.filter((server) => networkServerIds.includes(server.id) && server.status === 'online')
-				.length,
+	const networkServers = React.useMemo(
+		() => servers.filter((server) => networkServerIds.includes(server.id)),
 		[servers, networkServerIds],
+	);
+	const onlineCount = React.useMemo(
+		() => networkServers.filter((server) => server.status === 'online').length,
+		[networkServers],
+	);
+	const playersOnline = React.useMemo(
+		() =>
+			networkServers.reduce(
+				(total, server) =>
+					server.id !== activeNetwork?.proxyServerId && server.status === 'online'
+						? total + Math.max(0, Number(server.stats.players_online) || 0)
+						: total,
+				0,
+			),
+		[networkServers, activeNetwork?.proxyServerId],
 	);
 	const progressServerName = progress?.currentServerId
 		? servers.find((server) => server.id === progress.currentServerId)?.name
@@ -178,6 +212,24 @@ const NetworkPage: React.FC = () => {
 		[activeNetwork, updateNetwork],
 	);
 
+	// Arrange nodes into the canonical shape: proxy on the left, backends in a
+	// column on the right in `try` order.
+	const handleAutoLayout = React.useCallback(() => {
+		if (!activeNetwork) return;
+		const layout: Record<string, NetworkNodePosition> = {};
+		const orderedMembers = [...activeNetwork.members].sort((a, b) => a.tryIndex - b.tryIndex);
+		if (activeNetwork.proxyServerId) {
+			layout[activeNetwork.proxyServerId] = {
+				x: 40,
+				y: Math.max(0, ((orderedMembers.length - 1) * 170) / 2),
+			};
+		}
+		orderedMembers.forEach((member, index) => {
+			layout[member.serverId] = { x: 420, y: index * 170 };
+		});
+		updateNetwork(activeNetwork.id, { layout });
+	}, [activeNetwork, updateNetwork]);
+
 	const handleApplied = React.useCallback(() => {
 		// Server config files changed on disk; nudge telemetry to re-read on next poll.
 		for (const server of servers) {
@@ -195,23 +247,42 @@ const NetworkPage: React.FC = () => {
 						transition={{ type: 'spring', duration: 0.5, bounce: 0 }}
 						className='flex items-center gap-3 text-3xl font-black'>
 						<Network className='size-8 text-primary' />
-						Server Network <span className='text-mserve-accent'>(BETA)</span>
+						Server Networks
+						<HelpButton topic='networks' />
 					</m.h1>
 					<p className='mt-1 text-sm text-muted-foreground'>
-						Connect backend servers to a Velocity proxy. mserve assigns ports and wires modern
-						forwarding automatically.
+						Group servers behind a Velocity proxy — one address for players, automatic ports and
+						secure forwarding for you.
 					</p>
 				</div>
 
 				<div className='flex shrink-0 items-center gap-2'>
 					{activeNetwork && (
-						<span className='mr-1 inline-flex items-center gap-2 text-xs text-muted-foreground'>
+						<span className='mr-1 inline-flex items-center gap-3 text-xs text-muted-foreground'>
 							{busy && <Loader2 className='size-3.5 animate-spin' />}
-							{busy
-								? `${progress?.action === 'stop' ? 'Stopping' : progress?.action === 'restart' ? 'Restarting' : 'Starting'}${
-										progressServerName ? ` ${progressServerName}` : ''
-									}…`
-								: `${onlineCount}/${networkServerIds.length} online`}
+							{busy ? (
+								`${progress?.action === 'stop' ? 'Stopping' : progress?.action === 'restart' ? 'Restarting' : 'Starting'}${
+									progressServerName ? ` ${progressServerName}` : ''
+								}…`
+							) : (
+								<>
+									<span>
+										{onlineCount}/{networkServerIds.length} online
+									</span>
+									{onlineCount > 0 && (
+										<Tooltip>
+											<TooltipTrigger asChild>
+												<span className='inline-flex items-center gap-1'>
+													<Users className='size-3.5' /> {playersOnline}
+												</span>
+											</TooltipTrigger>
+											<TooltipContent>
+												<p className='font-bold'>Players online across backends</p>
+											</TooltipContent>
+										</Tooltip>
+									)}
+								</>
+							)}
 						</span>
 					)}
 					<Button variant='outline' onClick={handleCreateNetwork}>
@@ -232,7 +303,7 @@ const NetworkPage: React.FC = () => {
 							disabled={hasBlockingErrors || !activeNetwork.proxyServerId}
 							title={
 								hasBlockingErrors
-									? 'Resolve the errors below before applying'
+									? 'Fix the problems shown in the panel first'
 									: 'Review and apply config changes'
 							}>
 							<UploadCloud /> Apply changes
@@ -274,9 +345,9 @@ const NetworkPage: React.FC = () => {
 						<h1 className='text-3xl font-bold flex gap-5 items-center mb-2 w-fit'>
 							Create your first network
 						</h1>
-						<p className='mb-2'>Group servers behind a Proxy to build a multi-server network.</p>
-						<p className='text-mserve-accent mb-4'>
-							Please note this is a beta feature and may not work as intended.
+						<p className='mb-4 max-w-md text-muted-foreground'>
+							Connect a Velocity proxy to your servers so players join one address and hop between
+							worlds. mserve handles ports, forwarding, and config files.
 						</p>
 
 						<Button onClick={handleCreateNetwork}>
@@ -290,19 +361,20 @@ const NetworkPage: React.FC = () => {
 						<NetworkCanvas
 							network={activeNetwork}
 							servers={servers}
-							diagnostics={diagnostics}
+							diagnostics={configDiagnostics}
 							selectedServerId={selectedServerId}
 							onSelectServer={setSelectedServerId}
 							onLayoutChange={handleLayoutChange}
 							onRemoveMember={handleRemoveMember}
 							onRemoveProxy={handleRemoveProxy}
+							onAutoLayout={handleAutoLayout}
 						/>
 					</div>
 					<aside className='flex w-90 shrink-0 flex-col overflow-hidden rounded-2xl border bg-background p-3'>
 						<NetworkInspector
 							network={activeNetwork}
 							servers={servers}
-							diagnostics={diagnostics}
+							diagnostics={configDiagnostics}
 							onUpdate={(update) => updateNetwork(activeNetwork.id, update)}
 							onDelete={() => removeNetwork(activeNetwork.id)}
 						/>
@@ -316,6 +388,7 @@ const NetworkPage: React.FC = () => {
 					onOpenChange={setApplyOpen}
 					network={activeNetwork}
 					servers={servers}
+					runtimeBlockers={runtimeBlockers.map((blocker) => blocker.message)}
 					onApplied={handleApplied}
 				/>
 			)}

@@ -50,6 +50,44 @@ pub(in crate::app) fn default_auto_backup() -> Vec<String> {
     vec![]
 }
 
+pub(in crate::app) const BACKUP_SCOPE_ITEMS: [&str; 4] = ["worlds", "plugins", "mods", "configs"];
+
+pub(in crate::app) fn default_backup_policy() -> String {
+    "smart".to_string()
+}
+
+pub(in crate::app) fn default_backup_scope() -> Vec<String> {
+    vec!["worlds".to_string()]
+}
+
+pub(in crate::app) fn normalize_backup_policy(raw: Option<&str>) -> String {
+    match raw.map(str::trim) {
+        Some("simple") => "simple".to_string(),
+        _ => default_backup_policy(),
+    }
+}
+
+/// Keeps only known scope items (in canonical order, deduped). An empty or
+/// missing scope falls back to the default (worlds only) so a backup is never
+/// silently empty.
+pub(in crate::app) fn normalize_backup_scope(raw: Option<&[String]>) -> Vec<String> {
+    let Some(items) = raw else {
+        return default_backup_scope();
+    };
+
+    let output = BACKUP_SCOPE_ITEMS
+        .iter()
+        .filter(|known| items.iter().any(|item| item.trim() == **known))
+        .map(std::string::ToString::to_string)
+        .collect::<Vec<String>>();
+
+    if output.is_empty() {
+        default_backup_scope()
+    } else {
+        output
+    }
+}
+
 pub(in crate::app) fn default_custom_flags() -> Vec<String> {
     vec![]
 }
@@ -388,6 +426,10 @@ pub(in crate::app) fn default_synced_config(directory: &Path) -> SyncedMserveCon
         storage_limit: 200,
         auto_backup: default_auto_backup(),
         auto_backup_interval: 120,
+        backup_policy: default_backup_policy(),
+        backup_max_count: 0,
+        backup_max_age_days: 0,
+        backup_scope: default_backup_scope(),
         auto_restart: false,
         custom_flags: default_custom_flags(),
         java_installation: None,
@@ -522,6 +564,31 @@ pub(in crate::app) fn sanitize_mserve_value_config(
         .and_then(serde_json::Value::as_u64)
         .map_or(120, |value| value.max(1) as u32);
 
+    let normalized_backup_policy =
+        normalize_backup_policy(object.get("backup_policy").and_then(|value| value.as_str()));
+
+    let normalized_backup_max_count = object
+        .get("backup_max_count")
+        .and_then(serde_json::Value::as_u64)
+        .map_or(0, |value| u32::try_from(value).unwrap_or(u32::MAX));
+
+    let normalized_backup_max_age_days = object
+        .get("backup_max_age_days")
+        .and_then(serde_json::Value::as_u64)
+        .map_or(0, |value| u32::try_from(value).unwrap_or(u32::MAX));
+
+    let raw_backup_scope = object
+        .get("backup_scope")
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .map(std::string::ToString::to_string)
+                .collect::<Vec<String>>()
+        });
+    let normalized_backup_scope = normalize_backup_scope(raw_backup_scope.as_deref());
+
     let normalized_auto_restart = object
         .get("auto_restart")
         .and_then(serde_json::Value::as_bool)
@@ -582,6 +649,10 @@ pub(in crate::app) fn sanitize_mserve_value_config(
     config.storage_limit = normalized_storage_limit;
     config.auto_backup = normalized_auto_backup;
     config.auto_backup_interval = normalized_interval;
+    config.backup_policy = normalized_backup_policy;
+    config.backup_max_count = normalized_backup_max_count;
+    config.backup_max_age_days = normalized_backup_max_age_days;
+    config.backup_scope = normalized_backup_scope;
     config.auto_restart = normalized_auto_restart;
     config.custom_flags = normalized_custom_flags;
     config.java_installation = normalized_java_installation;
@@ -604,6 +675,10 @@ pub(in crate::app) fn synced_mserve_json_value(config: &SyncedMserveConfig) -> s
         "storage_limit": config.storage_limit.max(1),
         "auto_backup": config.auto_backup,
         "auto_backup_interval": config.auto_backup_interval.max(1),
+        "backup_policy": config.backup_policy,
+        "backup_max_count": config.backup_max_count,
+        "backup_max_age_days": config.backup_max_age_days,
+        "backup_scope": config.backup_scope,
         "auto_restart": config.auto_restart,
         "custom_flags": config.custom_flags,
         "java_installation": config.java_installation,
@@ -645,6 +720,10 @@ pub(in crate::app) fn validate_mserve_json_keys(
         "storage_limit",
         "auto_backup",
         "auto_backup_interval",
+        "backup_policy",
+        "backup_max_count",
+        "backup_max_age_days",
+        "backup_scope",
         "auto_restart",
         "custom_flags",
         "java_installation",

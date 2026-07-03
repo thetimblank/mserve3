@@ -1,6 +1,8 @@
 import * as React from 'react';
 import { m } from 'motion/react';
 import clsx from 'clsx';
+import { HelpButton } from '@/components/help/help-button';
+import type { HelpTopicId } from '@/components/help/help-topics';
 
 type SlideShellProps = {
 	title: string;
@@ -10,6 +12,8 @@ type SlideShellProps = {
 	icon?: React.ReactElement;
 	fullWidth?: boolean;
 	className?: string;
+	/** Renders a quick-help button next to the title. */
+	helpTopic?: HelpTopicId;
 };
 
 const SlideShell: React.FC<SlideShellProps> = ({
@@ -20,6 +24,7 @@ const SlideShell: React.FC<SlideShellProps> = ({
 	fullWidth,
 	className,
 	icon,
+	helpTopic,
 }) => {
 	return (
 		<m.div
@@ -29,7 +34,10 @@ const SlideShell: React.FC<SlideShellProps> = ({
 			className={clsx('w-full', !fullWidth && 'max-w-lg', className)}>
 			<div className='mb-10 flex flex-col items-center text-center'>
 				{icon && React.cloneElement(icon, { className: 'size-20 mb-6' })}
-				<h1 className='text-3xl font-bold mb-2'>{title}</h1>
+				<h1 className='text-3xl font-bold mb-2 inline-flex items-center gap-2'>
+					{title}
+					{helpTopic && <HelpButton topic={helpTopic} />}
+				</h1>
 				<p>{description}</p>
 			</div>
 			{children}

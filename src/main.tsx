@@ -24,6 +24,7 @@ import JavaGuide from './pages/JavaGuide';
 import { Toaster } from './components/ui/sonner';
 import Setup from './pages/Setup';
 import MserveRepairDialog from '@/components/mserve-repair-dialog';
+import { OnboardingOverlay } from '@/components/onboarding/onboarding-overlay';
 import { CloseWarningDialog } from '@/components/close-warning-dialog';
 import CreateServerPage from './pages/CreateServer';
 import { CreateServerProvider } from './pages/create-server/CreateServerContext';
@@ -105,6 +106,7 @@ const RootLayout: React.FC = () => {
 													<ServerRuntimeMonitor />
 													<MserveRepairDialog />
 													<CloseWarningDialog />
+													<OnboardingOverlay />
 													<Nav />
 													<AppSidebar />
 													<SidebarInset className='h-full min-h-0 overflow-hidden'>

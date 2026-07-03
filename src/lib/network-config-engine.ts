@@ -78,8 +78,17 @@ export interface NetworkApplyPlan {
 
 export type NetworkDiagnosticLevel = 'error' | 'warning';
 
+/**
+ * `config` diagnostics describe the network itself (wrong topology, port
+ * clashes…) and are surfaced persistently in the inspector/canvas. `runtime`
+ * diagnostics only reflect the current moment (a server happens to be running)
+ * and are surfaced at apply time instead of nagging while users edit.
+ */
+export type NetworkDiagnosticKind = 'config' | 'runtime';
+
 export interface NetworkDiagnostic {
 	level: NetworkDiagnosticLevel;
+	kind: NetworkDiagnosticKind;
 	message: string;
 	serverId?: string;
 }
@@ -351,25 +360,31 @@ export const diagnoseNetwork = (
 
 	const proxy = network.proxyServerId ? byId.get(network.proxyServerId) : undefined;
 	if (!network.proxyServerId) {
-		diagnostics.push({ level: 'error', message: 'No proxy server assigned to this network.' });
+		diagnostics.push({
+			level: 'error',
+			kind: 'config',
+			message: 'Choose a proxy server to route this network.',
+		});
 	} else if (!proxy) {
-		diagnostics.push({ level: 'error', message: 'The assigned proxy server no longer exists.' });
+		diagnostics.push({
+			level: 'error',
+			kind: 'config',
+			message: 'The assigned proxy server no longer exists.',
+		});
 	} else if (resolveProviderKind(proxy.provider) !== 'proxy') {
 		diagnostics.push({
 			level: 'error',
+			kind: 'config',
 			message: `${proxy.name} is not a Velocity proxy and cannot route a network.`,
 			serverId: proxy.id,
 		});
 	} else if (proxy.status !== 'offline') {
 		diagnostics.push({
 			level: 'error',
-			message: `${proxy.name} must be stopped before applying network changes.`,
+			kind: 'runtime',
+			message: `${proxy.name} is running — stop it before applying changes.`,
 			serverId: proxy.id,
 		});
-	}
-
-	if (network.members.length === 0) {
-		diagnostics.push({ level: 'warning', message: 'This network has no backend servers yet.' });
 	}
 
 	const seenPorts = new Set<number>();
@@ -378,6 +393,7 @@ export const diagnoseNetwork = (
 		if (!server) {
 			diagnostics.push({
 				level: 'error',
+				kind: 'config',
 				message: 'A member server no longer exists and should be removed.',
 				serverId: member.serverId,
 			});
@@ -387,7 +403,8 @@ export const diagnoseNetwork = (
 		if (server.status !== 'offline') {
 			diagnostics.push({
 				level: 'error',
-				message: `${server.name} must be stopped before applying network changes.`,
+				kind: 'runtime',
+				message: `${server.name} is running — stop it before applying changes.`,
 				serverId: server.id,
 			});
 		}
@@ -396,7 +413,8 @@ export const diagnoseNetwork = (
 		if (kind !== 'plugin') {
 			diagnostics.push({
 				level: 'warning',
-				message: `${server.name} is ${kind}; Velocity modern forwarding needs a Paper/Folia backend. It will be wired but auth forwarding cannot be configured automatically.`,
+				kind: 'config',
+				message: `${server.name} will be routed, but secure player forwarding needs a Paper/Folia backend — players may need online-mode workarounds.`,
 				serverId: server.id,
 			});
 		}
@@ -404,6 +422,7 @@ export const diagnoseNetwork = (
 		if (seenPorts.has(member.port)) {
 			diagnostics.push({
 				level: 'error',
+				kind: 'config',
 				message: `Port ${member.port} is assigned to more than one backend.`,
 				serverId: server.id,
 			});
@@ -418,7 +437,8 @@ export const diagnoseNetwork = (
 		if (otherNetwork) {
 			diagnostics.push({
 				level: 'warning',
-				message: `${server.name} is also a member of "${otherNetwork.name}".`,
+				kind: 'config',
+				message: `${server.name} is also a member of "${otherNetwork.name}". Applying one network overwrites the other's port and forwarding config.`,
 				serverId: server.id,
 			});
 		}
@@ -427,5 +447,14 @@ export const diagnoseNetwork = (
 	return diagnostics;
 };
 
+/** Config-level errors that make the network unapplicable no matter what. */
 export const networkHasBlockingErrors = (diagnostics: NetworkDiagnostic[]): boolean =>
-	diagnostics.some((diagnostic) => diagnostic.level === 'error');
+	diagnostics.some((diagnostic) => diagnostic.kind === 'config' && diagnostic.level === 'error');
+
+/** Diagnostics that only block right now (running servers). Shown at apply time. */
+export const getNetworkRuntimeBlockers = (diagnostics: NetworkDiagnostic[]): NetworkDiagnostic[] =>
+	diagnostics.filter((diagnostic) => diagnostic.kind === 'runtime' && diagnostic.level === 'error');
+
+/** Diagnostics worth showing while editing (everything except runtime state). */
+export const getNetworkConfigDiagnostics = (diagnostics: NetworkDiagnostic[]): NetworkDiagnostic[] =>
+	diagnostics.filter((diagnostic) => diagnostic.kind === 'config');

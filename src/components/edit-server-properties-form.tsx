@@ -18,7 +18,6 @@ import { getDefaultProviderCommandSupport } from '@/lib/server-provider-capabili
 import {
 	createProvider,
 	getProviderDisplayName,
-	isProxyProvider,
 	isServerProvider,
 	PROVIDER_NAMES,
 } from '@/lib/server-provider';
@@ -27,18 +26,15 @@ import { javaResolutionLabel, resolveServerJavaExecutable } from '@/lib/java-res
 import { clampRamGb } from '@/lib/ram-utils';
 import { examplePaths } from '@/lib/platform';
 import { getServerNameFromDirectory } from '@/lib/mserve-server-mapper';
-import { backupChoices } from '@/pages/server/server-constants';
 import {
 	buildServerRunCommandPreview,
 	buildUpdateServerSettingsPayload,
 	formatCustomFlagsInput,
 	parseCustomFlagsInput,
 	resolveNewDirectory,
-	toggleBackupMode,
 } from '@/pages/server/server-utils';
 import type { ServerSettingsForm, UpdateServerSettingsResult } from '@/pages/server/server-types';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
-import { InputGroup, InputGroupAddon, InputGroupInput } from './ui/input-group';
 import RamSelector from './ram-selector';
 import JavaRuntimeSelect from './java-runtime-select';
 import JarDownloadModal, {
@@ -102,7 +98,6 @@ type EditServerSettingsContextValue = {
 	setIsJarModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
 	updateSettingsField: <K extends keyof ServerSettingsForm>(key: K, value: ServerSettingsForm[K]) => void;
 	updateProvider: (updater: (provider: Provider) => Provider) => void;
-	toggleSettingsBackupMode: (mode: (typeof backupChoices)[number]['value'], enabled: boolean) => void;
 	toggleSupportedTelemetry: (key: TelemetryKey, enabled: boolean) => void;
 	handleProviderJarDownloaded: (selection: DownloadedJarSelection) => void;
 	pickSwapJarFile: () => Promise<void>;
@@ -115,7 +110,6 @@ type EditServerSettingsContextValue = {
 	isSaving: boolean;
 	isOffline: boolean;
 	onManualSync?: () => void;
-	handleSaveBackupSettings: () => Promise<void>;
 };
 
 const EditServerSettingsContext = React.createContext<EditServerSettingsContextValue | null>(null);
@@ -241,16 +235,6 @@ export const EditServerSettingsProvider: React.FC<EditServerSettingsProviderProp
 			provider: updater(prev.provider),
 		}));
 	}, []);
-
-	const toggleSettingsBackupMode = React.useCallback(
-		(mode: (typeof backupChoices)[number]['value'], enabled: boolean) => {
-			setSettingsForm((prev) => ({
-				...prev,
-				auto_backup: toggleBackupMode(prev.auto_backup, mode, enabled),
-			}));
-		},
-		[],
-	);
 
 	const toggleSupportedTelemetry = React.useCallback(
 		(key: TelemetryKey, enabled: boolean) => {
@@ -391,41 +375,6 @@ export const EditServerSettingsProvider: React.FC<EditServerSettingsProviderProp
 		user.java_installation_default,
 	]);
 
-	const handleSaveBackupSettings = React.useCallback(async () => {
-		if (isSaving) return;
-		setIsSaving(true);
-		try {
-			await invoke('update_server_backup_settings', {
-				directory: server.directory,
-				storageLimit: settingsForm.storage_limit,
-				autoBackup: settingsForm.auto_backup,
-				autoBackupInterval: settingsForm.auto_backup_interval,
-				autoRestart: settingsForm.auto_restart,
-			});
-			updateServer(serverId, {
-				storage_limit: settingsForm.storage_limit,
-				auto_backup: settingsForm.auto_backup,
-				auto_backup_interval: settingsForm.auto_backup_interval,
-				auto_restart: settingsForm.auto_restart,
-			});
-			toast.success('Backup settings saved.');
-		} catch (err) {
-			const message = err instanceof Error ? err.message : 'Failed to save backup settings.';
-			toast.error(message);
-		} finally {
-			setIsSaving(false);
-		}
-	}, [
-		isSaving,
-		server.directory,
-		serverId,
-		settingsForm.auto_backup,
-		settingsForm.auto_backup_interval,
-		settingsForm.auto_restart,
-		settingsForm.storage_limit,
-		updateServer,
-	]);
-
 	React.useEffect(() => {
 		if (isFormLocked || !hasUnsavedChanges) {
 			toast.dismiss(unsavedToastId);
@@ -496,7 +445,6 @@ export const EditServerSettingsProvider: React.FC<EditServerSettingsProviderProp
 		setIsJarModalOpen,
 		updateSettingsField,
 		updateProvider,
-		toggleSettingsBackupMode,
 		toggleSupportedTelemetry,
 		handleProviderJarDownloaded,
 		pickSwapJarFile,
@@ -509,7 +457,6 @@ export const EditServerSettingsProvider: React.FC<EditServerSettingsProviderProp
 		isSaving,
 		isOffline,
 		onManualSync,
-		handleSaveBackupSettings,
 	};
 
 	return <EditServerSettingsContext.Provider value={value}>{children}</EditServerSettingsContext.Provider>;
@@ -607,96 +554,6 @@ export const GeneralSettingsSection: React.FC = () => {
 				</Label>
 			</div>
 		</SectionShell>
-	);
-};
-
-export const StorageBackupsSettingsSection: React.FC = () => {
-	const {
-		settingsForm,
-		updateSettingsField,
-		toggleSettingsBackupMode,
-		server,
-		isSaving,
-		handleSaveBackupSettings,
-	} = useEditServerSettings();
-	// Proxy servers (e.g. Velocity) have no world data, so backups don't apply.
-	const supportsBackups = !isProxyProvider(settingsForm.provider);
-	const isOnline = server.status !== 'offline';
-	return (
-		<div className='space-y-12'>
-			{supportsBackups && (
-				<div className='space-y-2 max-w-lg'>
-					<Label htmlFor='edit-storage-limit' className='text-xl'>
-						Backup storage limit
-					</Label>
-					<InputGroup>
-						<InputGroupInput
-							id='edit-storage-limit'
-							type='number'
-							min={1}
-							value={settingsForm.storage_limit}
-							onChange={(event) => updateSettingsField('storage_limit', Number(event.target.value))}
-						/>
-						<InputGroupAddon className='font-mono font-bold uppercase text-xs' align='inline-end'>
-							Gigabytes
-						</InputGroupAddon>
-					</InputGroup>
-				</div>
-			)}
-
-			{supportsBackups && (
-				<div className='space-y-4 max-w-lg'>
-					<div className='space-y-2'>
-						<p className='text-xl'>Auto backup modes</p>
-						<div className='space-y-2'>
-							{backupChoices.map((choice) => (
-								<Label key={choice.value} className='flex items-center gap-3'>
-									<Checkbox
-										checked={settingsForm.auto_backup.includes(choice.value)}
-										onCheckedChange={(checked) =>
-											toggleSettingsBackupMode(
-												choice.value,
-												typeof checked === 'boolean' ? checked : false,
-											)
-										}
-									/>
-									{choice.label}
-								</Label>
-							))}
-						</div>
-					</div>
-
-					{settingsForm.auto_backup.includes('interval') && (
-						<div className='space-y-2 max-w-lg'>
-							<Label htmlFor='edit-backup-interval'>Backup interval</Label>
-							<InputGroup>
-								<InputGroupInput
-									id='edit-backup-interval'
-									type='number'
-									min={1}
-									value={settingsForm.auto_backup_interval}
-									onChange={(event) =>
-										updateSettingsField('auto_backup_interval', Number(event.target.value))
-									}
-								/>
-								<InputGroupAddon className='font-mono font-bold uppercase text-xs' align='inline-end'>
-									Minutes
-								</InputGroupAddon>
-							</InputGroup>
-						</div>
-					)}
-				</div>
-			)}
-
-			{isOnline && (
-				<div className='flex justify-end'>
-					<Button type='button' onClick={handleSaveBackupSettings} disabled={isSaving}>
-						{isSaving ? <Loader className='animate-spin size-4' /> : <Save className='size-4' />}
-						{isSaving ? 'Saving...' : 'Save'}
-					</Button>
-				</div>
-			)}
-		</div>
 	);
 };
 

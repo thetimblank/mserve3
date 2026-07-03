@@ -11,6 +11,7 @@ const SlideRam: React.FC = () => {
 		<SlideShell
 			title='Set memory'
 			description='Choose how much RAM this server can use.'
+			helpTopic='ram'
 			actions={
 				<Button type='button' onClick={continueToNext}>
 					Continue

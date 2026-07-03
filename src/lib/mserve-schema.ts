@@ -1,6 +1,26 @@
 import { TELEMETRY_POLLING } from './mserve-consts';
 
 export type AutoBackupMode = 'interval' | 'on_close' | 'on_start';
+/**
+ * How old backups are cleaned up:
+ * - `smart` — keeps everything recent, then thins to one per day, week, month.
+ * - `simple` — only the explicit caps (count / age / storage) apply.
+ */
+export type BackupPolicy = 'smart' | 'simple';
+/** What a backup snapshot captures. */
+export type BackupScopeItem = 'worlds' | 'plugins' | 'mods' | 'configs';
+
+export const BACKUP_SCOPE_ITEMS: BackupScopeItem[] = ['worlds', 'plugins', 'mods', 'configs'];
+
+export const normalizeBackupPolicy = (raw: unknown): BackupPolicy =>
+	raw === 'simple' ? 'simple' : 'smart';
+
+/** Keeps only known scope items (canonical order); empty falls back to worlds. */
+export const normalizeBackupScope = (raw: unknown): BackupScopeItem[] => {
+	if (!Array.isArray(raw)) return ['worlds'];
+	const items = BACKUP_SCOPE_ITEMS.filter((item) => raw.includes(item));
+	return items.length > 0 ? items : ['worlds'];
+};
 export type ProviderName =
 	| 'paper'
 	| 'folia'
@@ -45,6 +65,12 @@ export type MserveJsonProps = {
 	storage_limit: number;
 	auto_backup: AutoBackupMode[];
 	auto_backup_interval: number;
+	backup_policy: BackupPolicy;
+	/** Maximum number of backups to keep. 0 = no count cap. */
+	backup_max_count: number;
+	/** Delete backups older than this many days. 0 = no age cap. */
+	backup_max_age_days: number;
+	backup_scope: BackupScopeItem[];
 	auto_restart: boolean;
 	custom_flags: string[];
 	created_at: string;

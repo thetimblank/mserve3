@@ -1,10 +1,11 @@
 use super::super::support::{
-    copy_jar_to_server_directory, default_auto_backup, default_custom_flags,
-    default_provider_for_file, default_synced_config, default_telemetry_host,
+    copy_jar_to_server_directory, default_auto_backup, default_backup_policy, default_backup_scope,
+    default_custom_flags, default_provider_for_file, default_synced_config, default_telemetry_host,
     detect_default_telemetry_port, find_first_jar_file_name, generate_server_id,
-    has_required_mserve_json_fields, normalize_custom_flags, normalize_provider,
-    parse_mserve_top_level_object, resolve_repair_file, sanitize_mserve_value_config,
-    synced_mserve_json_string, validate_mserve_json_keys, write_eula, write_synced_mserve_json,
+    has_required_mserve_json_fields, normalize_backup_policy, normalize_backup_scope,
+    normalize_custom_flags, normalize_provider, parse_mserve_top_level_object, resolve_repair_file,
+    sanitize_mserve_value_config, synced_mserve_json_string, validate_mserve_json_keys, write_eula,
+    write_synced_mserve_json,
 };
 use super::super::{
     InitServerPayload, InitServerResult, RepairMserveJsonPayload, ServerDirectoryInspectionResult,
@@ -91,6 +92,10 @@ pub(in crate::app) fn initialize_server(
         storage_limit: payload.storage_limit.max(1),
         auto_backup,
         auto_backup_interval: payload.auto_backup_interval.max(1),
+        backup_policy: default_backup_policy(),
+        backup_max_count: 0,
+        backup_max_age_days: 0,
+        backup_scope: default_backup_scope(),
         auto_restart: payload.auto_restart,
         custom_flags: normalize_custom_flags(payload.custom_flags.unwrap_or_default()),
         java_installation: payload
@@ -378,6 +383,10 @@ pub(in crate::app) fn import_server(directory: String) -> Result<InitServerResul
             storage_limit: 200,
             auto_backup: default_auto_backup(),
             auto_backup_interval: 120,
+            backup_policy: default_backup_policy(),
+            backup_max_count: 0,
+            backup_max_age_days: 0,
+            backup_scope: default_backup_scope(),
             auto_restart: false,
             custom_flags: default_custom_flags(),
             java_installation: None,
@@ -505,9 +514,12 @@ pub(in crate::app) fn repair_server_mserve_json(
         .filter(|value| matches!(value.as_str(), "interval" | "on_close" | "on_start"))
         .collect();
 
-    let existing_id = fs::read_to_string(directory_path.join("mserve.json"))
+    let existing_object = fs::read_to_string(directory_path.join("mserve.json"))
         .ok()
-        .and_then(|raw| parse_mserve_top_level_object(&raw).ok())
+        .and_then(|raw| parse_mserve_top_level_object(&raw).ok());
+
+    let existing_id = existing_object
+        .as_ref()
         .and_then(|object| {
             object
                 .get("id")
@@ -517,6 +529,37 @@ pub(in crate::app) fn repair_server_mserve_json(
                 .map(std::string::ToString::to_string)
         })
         .unwrap_or_else(generate_server_id);
+
+    // Backup retention/scope settings aren't part of the repair form; carry
+    // whatever the old file had (falling back to the defaults).
+    let existing_backup_policy = normalize_backup_policy(
+        existing_object
+            .as_ref()
+            .and_then(|object| object.get("backup_policy"))
+            .and_then(|value| value.as_str()),
+    );
+    let existing_backup_max_count = existing_object
+        .as_ref()
+        .and_then(|object| object.get("backup_max_count"))
+        .and_then(serde_json::Value::as_u64)
+        .map_or(0, |value| u32::try_from(value).unwrap_or(u32::MAX));
+    let existing_backup_max_age_days = existing_object
+        .as_ref()
+        .and_then(|object| object.get("backup_max_age_days"))
+        .and_then(serde_json::Value::as_u64)
+        .map_or(0, |value| u32::try_from(value).unwrap_or(u32::MAX));
+    let existing_backup_scope_raw = existing_object
+        .as_ref()
+        .and_then(|object| object.get("backup_scope"))
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .map(std::string::ToString::to_string)
+                .collect::<Vec<String>>()
+        });
+    let existing_backup_scope = normalize_backup_scope(existing_backup_scope_raw.as_deref());
 
     let custom_flags = normalize_custom_flags(payload.custom_flags);
     let provider = payload.provider.as_ref().map_or_else(
@@ -531,6 +574,10 @@ pub(in crate::app) fn repair_server_mserve_json(
         storage_limit: payload.storage_limit.max(1),
         auto_backup,
         auto_backup_interval: payload.auto_backup_interval.max(1),
+        backup_policy: existing_backup_policy,
+        backup_max_count: existing_backup_max_count,
+        backup_max_age_days: existing_backup_max_age_days,
+        backup_scope: existing_backup_scope,
         auto_restart: payload.auto_restart,
         custom_flags,
         java_installation: payload

@@ -1,6 +1,7 @@
 import * as React from 'react';
-import { Settings2 } from 'lucide-react';
+import { Settings2, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
@@ -70,6 +71,20 @@ const SettingsBehaviorCard: React.FC = () => {
 					<p className='text-sm text-muted-foreground'>
 						When enabled, MSERVE checks each server's provider for a newer jar build when the app loads and
 						flags it in the server's jar settings. No update is ever installed automatically.
+					</p>
+				</div>
+				<div className='space-y-2'>
+					<Button
+						variant='outline'
+						size='sm'
+						onClick={() => {
+							updateUserField('onboarding_completed', false);
+							toast.success('Welcome tour will replay now.');
+						}}>
+						<Sparkles /> Replay welcome tour
+					</Button>
+					<p className='text-sm text-muted-foreground'>
+						Runs the first-launch setup again: experience level, theme, and starting point.
 					</p>
 				</div>
 			</CardContent>

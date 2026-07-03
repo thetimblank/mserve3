@@ -1,10 +1,13 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
 	AlertCircle,
 	AlertTriangle,
 	ArrowDown,
 	ArrowUp,
+	Circle,
+	CircleCheck,
 	Copy,
 	HelpCircle,
 	Plus,
@@ -13,6 +16,8 @@ import {
 	Trash2,
 } from 'lucide-react';
 import clsx from 'clsx';
+
+import { HelpButton } from '@/components/help/help-button';
 
 import type { Server } from '@/data/servers';
 import type { NetworkUpdate } from '@/data/networks';
@@ -51,7 +56,20 @@ interface NetworkInspectorProps {
 }
 
 const SectionLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-	<p className='mb-2 text-xs font-bold uppercase tracking-wider text-muted-foreground'>{children}</p>
+	<p className='mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground'>
+		{children}
+	</p>
+);
+
+const ChecklistRow: React.FC<{ done: boolean; children: React.ReactNode }> = ({ done, children }) => (
+	<li className='flex items-center gap-2 text-xs'>
+		{done ? (
+			<CircleCheck className='size-4 shrink-0 text-emerald-500' />
+		) : (
+			<Circle className='size-4 shrink-0 text-muted-foreground/50' />
+		)}
+		<span className={done ? 'text-muted-foreground line-through' : ''}>{children}</span>
+	</li>
 );
 
 const MemberRow: React.FC<{
@@ -162,6 +180,7 @@ export const NetworkInspector: React.FC<NetworkInspectorProps> = ({
 	React.useEffect(() => setBasePort(String(network.basePort)), [network.basePort]);
 
 	const [pendingRemoval, setPendingRemoval] = React.useState<{ serverId: string; name: string } | null>(null);
+	const [confirmDeleteOpen, setConfirmDeleteOpen] = React.useState(false);
 
 	const proxies = React.useMemo(
 		() => servers.filter((server) => resolveProviderKind(server.provider) === 'proxy'),
@@ -242,8 +261,23 @@ export const NetworkInspector: React.FC<NetworkInspectorProps> = ({
 		}
 	};
 
+	const isSetupComplete = Boolean(network.proxyServerId) && network.members.length > 0;
+
 	return (
 		<div className='flex h-full flex-col gap-5 overflow-y-auto p-1'>
+			{!isSetupComplete && (
+				<div className='rounded-xl border border-dashed bg-muted/20 p-3'>
+					<p className='mb-2 text-xs font-bold uppercase tracking-wider text-muted-foreground'>
+						Finish setting up
+					</p>
+					<ul className='space-y-1.5'>
+						<ChecklistRow done={Boolean(network.proxyServerId)}>Choose a proxy server</ChecklistRow>
+						<ChecklistRow done={network.members.length > 0}>Add at least one backend</ChecklistRow>
+						<ChecklistRow done={false}>Apply changes to write the config files</ChecklistRow>
+					</ul>
+				</div>
+			)}
+
 			<div>
 				<SectionLabel>Network name</SectionLabel>
 				<Input
@@ -260,9 +294,12 @@ export const NetworkInspector: React.FC<NetworkInspectorProps> = ({
 			<div>
 				<SectionLabel>Proxy</SectionLabel>
 				{proxies.length === 0 ? (
-					<p className='rounded-lg border border-dashed p-3 text-xs text-muted-foreground'>
-						No Velocity proxy servers found. Create one from the Create Server flow to route a network.
-					</p>
+					<div className='rounded-lg border border-dashed p-3 text-xs text-muted-foreground'>
+						<p>No Velocity proxy servers yet. A proxy is the front door players connect to.</p>
+						<Button asChild size='sm' variant='outline' className='mt-2 w-full'>
+							<Link to='/servers/new'>Create a Velocity proxy</Link>
+						</Button>
+					</div>
 				) : (
 					<Select
 						value={network.proxyServerId ?? undefined}
@@ -282,7 +319,9 @@ export const NetworkInspector: React.FC<NetworkInspectorProps> = ({
 			</div>
 
 			<div>
-				<SectionLabel>Base port</SectionLabel>
+				<SectionLabel>
+					Base port <HelpButton topic='port-forwarding' className='size-5' />
+				</SectionLabel>
 				<Input
 					type='number'
 					min={1}
@@ -413,10 +452,33 @@ export const NetworkInspector: React.FC<NetworkInspectorProps> = ({
 			)}
 
 			<div className='mt-auto pt-2'>
-				<Button variant='destructive-secondary' className='w-full' onClick={onDelete}>
+				<Button variant='destructive-secondary' className='w-full' onClick={() => setConfirmDeleteOpen(true)}>
 					<Trash2 /> Delete network
 				</Button>
 			</div>
+
+			<AlertDialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>Delete "{network.name}"?</AlertDialogTitle>
+						<AlertDialogDescription>
+							This removes the network definition only — your servers and any config files already
+							applied to them are untouched.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel>Cancel</AlertDialogCancel>
+						<AlertDialogAction
+							variant='destructive'
+							onClick={() => {
+								setConfirmDeleteOpen(false);
+								onDelete();
+							}}>
+							Delete network
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
 
 			<AlertDialog open={pendingRemoval !== null} onOpenChange={(open) => !open && setPendingRemoval(null)}>
 				<AlertDialogContent>

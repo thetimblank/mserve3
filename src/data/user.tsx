@@ -12,6 +12,8 @@ export interface UserData {
 	auto_check_server_updates: boolean;
 	completed_setup_hosting_ports: number[];
 	initial_setup_hosting_tutorial_completed: boolean;
+	/** True once the first-launch welcome tour has been finished or skipped. */
+	onboarding_completed: boolean;
 	created_at: Date;
 	updated_at: Date;
 }
@@ -69,6 +71,7 @@ export const createDefaultUserData = (): UserData => {
 		auto_check_server_updates: true,
 		completed_setup_hosting_ports: [],
 		initial_setup_hosting_tutorial_completed: false,
+		onboarding_completed: false,
 		created_at: now,
 		updated_at: now,
 	};
@@ -91,6 +94,7 @@ export const normalizeUserData = (user: Partial<UserData> | null | undefined): U
 		auto_check_server_updates: user?.auto_check_server_updates ?? true,
 		completed_setup_hosting_ports: normalizePortList(user?.completed_setup_hosting_ports),
 		initial_setup_hosting_tutorial_completed: user?.initial_setup_hosting_tutorial_completed ?? false,
+		onboarding_completed: user?.onboarding_completed ?? false,
 		created_at: toDate(user?.created_at ?? fallback.created_at),
 		updated_at: toDate(user?.updated_at ?? fallback.updated_at),
 	};

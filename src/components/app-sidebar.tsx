@@ -77,7 +77,9 @@ export function AppSidebar() {
 								.filter((item) => !item.bottom)
 								.map((item) => (
 									<SidebarMenuItem key={item.title}>
-										<SidebarMenuButton asChild className={isNavActive(item.url) ? NAV_ACTIVE_CLASS : ''}>
+										<SidebarMenuButton
+											asChild
+											className={isNavActive(item.url) ? NAV_ACTIVE_CLASS : ''}>
 											<Link to={item.url}>
 												<item.icon />
 												<span>{item.title}</span>
@@ -157,14 +159,16 @@ export function AppSidebar() {
 				</SidebarGroup>
 
 				<SidebarGroup>
-					<SidebarGroupLabel>Help Pages</SidebarGroupLabel>
+					<SidebarGroupLabel>Help</SidebarGroupLabel>
 					<SidebarGroupContent>
 						<SidebarMenu>
 							{help
 								// .filter((item) => !item.bottom)
 								.map((item) => (
 									<SidebarMenuItem key={item.title}>
-										<SidebarMenuButton asChild className={isNavActive(item.url) ? NAV_ACTIVE_CLASS : ''}>
+										<SidebarMenuButton
+											asChild
+											className={isNavActive(item.url) ? NAV_ACTIVE_CLASS : ''}>
 											<Link to={item.url}>
 												<item.icon />
 												<span>{item.title}</span>
@@ -183,7 +187,9 @@ export function AppSidebar() {
 								.filter((item) => item.bottom)
 								.map((item) => (
 									<SidebarMenuItem key={item.title}>
-										<SidebarMenuButton asChild className={isNavActive(item.url) ? NAV_ACTIVE_CLASS : ''}>
+										<SidebarMenuButton
+											asChild
+											className={isNavActive(item.url) ? NAV_ACTIVE_CLASS : ''}>
 											<Link to={item.url}>
 												<item.icon />
 												<span>{item.title}</span>

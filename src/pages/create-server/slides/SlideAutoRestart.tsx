@@ -13,6 +13,7 @@ const SlideAutoRestart: React.FC = () => {
 		<SlideShell
 			title='Auto restart'
 			description='Automatically restart this server after it closes.'
+			helpTopic='auto-restart'
 			actions={
 				<Button type='button' onClick={continueToNext}>
 					Continue

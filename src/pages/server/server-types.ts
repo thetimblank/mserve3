@@ -1,4 +1,4 @@
-import type { AutoBackupMode, Server as MserveServer } from '@/data/servers';
+import type { AutoBackupMode, BackupPolicy, BackupScopeItem, Server as MserveServer } from '@/data/servers';
 import type { Provider } from '@/lib/mserve-schema';
 
 export type ServerOutputEvent = {
@@ -7,10 +7,15 @@ export type ServerOutputEvent = {
 	line: string;
 };
 
+// NOTE: the Rust `ScannedBackup` struct serializes camelCase.
 export type ScannedBackupEntry = {
 	directory: string;
-	created_at?: string;
+	createdAt?: string;
 	size?: number;
+	name?: string | null;
+	reason?: string | null;
+	locked?: boolean;
+	contents?: string[];
 };
 
 export type CreateServerBackupResult = {
@@ -111,6 +116,10 @@ export type UpdateServerSettingsPayload = {
 	telemetry_port?: number;
 	jar_swap_path?: string;
 	new_directory?: string;
+	backup_policy?: BackupPolicy;
+	backup_max_count?: number;
+	backup_max_age_days?: number;
+	backup_scope?: BackupScopeItem[];
 };
 
 export type UpdateServerSettingsResult = {

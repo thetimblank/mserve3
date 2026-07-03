@@ -1,7 +1,7 @@
 use super::super::support::{
-    home_dir, move_directory_with_fallback, normalize_custom_flags, normalize_provider,
-    parse_mserve_top_level_object, sanitize_mserve_value_config, server_key, swap_files,
-    write_synced_mserve_json,
+    home_dir, move_directory_with_fallback, normalize_backup_policy, normalize_backup_scope,
+    normalize_custom_flags, normalize_provider, parse_mserve_top_level_object,
+    sanitize_mserve_value_config, server_key, swap_files, write_synced_mserve_json,
 };
 use super::super::{
     LifecycleState, RuntimeState, UpdateServerSettingsPayload, UpdateServerSettingsResult,
@@ -20,15 +20,22 @@ pub(in crate::app) fn get_default_servers_root_path() -> Result<String, String> 
 }
 
 /// Updates only the backup-related fields in mserve.json (`storage_limit`,
-/// `auto_backup`, `auto_backup_interval`, `auto_restart`). Does not require the server
-/// to be offline so these settings can be changed while the server is running.
+/// `auto_backup`, `auto_backup_interval`, `auto_restart`, retention policy and
+/// scope). Does not require the server to be offline so these settings can be
+/// changed while the server is running. The retention fields are optional so
+/// callers can update triggers without touching policy (and vice versa).
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub(in crate::app) fn update_server_backup_settings(
     directory: String,
     storage_limit: u32,
     auto_backup: Vec<String>,
     auto_backup_interval: u32,
     auto_restart: bool,
+    backup_policy: Option<String>,
+    backup_max_count: Option<u32>,
+    backup_max_age_days: Option<u32>,
+    backup_scope: Option<Vec<String>>,
 ) -> Result<(), String> {
     let directory_path = PathBuf::from(directory.trim());
     if !directory_path.exists() || !directory_path.is_dir() {
@@ -52,6 +59,18 @@ pub(in crate::app) fn update_server_backup_settings(
         .collect();
     config.auto_backup_interval = auto_backup_interval.max(1);
     config.auto_restart = auto_restart;
+    if let Some(policy) = backup_policy {
+        config.backup_policy = normalize_backup_policy(Some(&policy));
+    }
+    if let Some(max_count) = backup_max_count {
+        config.backup_max_count = max_count;
+    }
+    if let Some(max_age_days) = backup_max_age_days {
+        config.backup_max_age_days = max_age_days;
+    }
+    if let Some(scope) = backup_scope {
+        config.backup_scope = normalize_backup_scope(Some(&scope));
+    }
 
     write_synced_mserve_json(&directory_path, &config)?;
     Ok(())
@@ -180,6 +199,18 @@ pub(in crate::app) fn update_server_settings(
     config.storage_limit = payload.storage_limit.max(1);
     config.auto_backup_interval = payload.auto_backup_interval.max(1);
     config.auto_restart = payload.auto_restart;
+    if let Some(policy) = payload.backup_policy.as_deref() {
+        config.backup_policy = normalize_backup_policy(Some(policy));
+    }
+    if let Some(max_count) = payload.backup_max_count {
+        config.backup_max_count = max_count;
+    }
+    if let Some(max_age_days) = payload.backup_max_age_days {
+        config.backup_max_age_days = max_age_days;
+    }
+    if let Some(scope) = payload.backup_scope.as_deref() {
+        config.backup_scope = normalize_backup_scope(Some(scope));
+    }
     config.custom_flags = custom_flags;
     config.java_installation = payload
         .java_installation

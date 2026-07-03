@@ -253,6 +253,7 @@ const SlideJarFile: React.FC = () => {
 		<SlideShell
 			fullWidth
 			title='Choose the server software'
+			helpTopic='providers'
 			description='Browse and download a supported server jar, or build the server from a Modrinth modpack. Advanced mode enables manual file and provider selection.'
 			actions={
 				<Button

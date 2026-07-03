@@ -331,13 +331,15 @@ export const useServerRuntime = ({
 			try {
 				const result = await invoke<CreateServerBackupResult>('create_server_backup', {
 					directory: serverDirectory,
+					name: null,
+					reason,
 				});
 				const deletedBackupsCount = Math.max(0, Number(result.deletedBackupsCount) || 0);
 				if (deletedBackupsCount > 0) {
 					toast.info(
 						deletedBackupsCount === 1
-							? 'Deleted 1 old backup to make space for the new backup.'
-							: `Deleted ${deletedBackupsCount} old backups to make space for the new backup.`,
+							? 'Removed 1 old backup per your retention settings.'
+							: `Removed ${deletedBackupsCount} old backups per your retention settings.`,
 					);
 				}
 				if (reason !== 'interval') {

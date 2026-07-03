@@ -18,6 +18,10 @@ const buildServerShell = (
 	| 'storage_limit'
 	| 'auto_backup'
 	| 'auto_backup_interval'
+	| 'backup_policy'
+	| 'backup_max_count'
+	| 'backup_max_age_days'
+	| 'backup_scope'
 	| 'auto_restart'
 	| 'java_installation'
 	| 'custom_flags'
@@ -67,6 +71,12 @@ export const buildCreatedServer = (form: ServerSetupFormData, result: InitServer
 	storage_limit: Math.max(1, Number(form.storage_limit) || 200),
 	auto_backup: form.auto_backup,
 	auto_backup_interval: Math.max(1, Number(form.auto_backup_interval) || 120),
+	// New servers start on the smart retention policy; the backend writes the
+	// same defaults into mserve.json.
+	backup_policy: 'smart',
+	backup_max_count: 0,
+	backup_max_age_days: 0,
+	backup_scope: ['worlds'],
 	auto_restart: form.auto_restart,
 	java_installation: form.java_installation.trim() || undefined,
 	custom_flags: isProxyProvider(form.provider) ? [] : ['--nogui'],
@@ -84,6 +94,10 @@ export const buildImportedServer = (result: InitServerIdentity, config: SyncedMs
 	storage_limit: config.storage_limit,
 	auto_backup: config.auto_backup,
 	auto_backup_interval: config.auto_backup_interval,
+	backup_policy: config.backup_policy,
+	backup_max_count: config.backup_max_count,
+	backup_max_age_days: config.backup_max_age_days,
+	backup_scope: config.backup_scope,
 	auto_restart: config.auto_restart,
 	java_installation: config.java_installation,
 	custom_flags: config.custom_flags,

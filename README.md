@@ -47,13 +47,7 @@ With your updater endpoint, users will always read `latest.json` from the latest
 
 ### Version
 
-**Stable versions:**
-v(major feature update).(minor feature update).(patch/fix update)
-e.g. v3.3.0
-
-**Unstable Versions:**
-v(major feature update).(minor feature update).(patch/fix update)pre(subpatch/fix)
-e.g. v4.0.12pre0
+Using semver `vmajor.minor.fix` e.g. `v4.0.12`
 
 ### Checklist
 
@@ -62,24 +56,28 @@ e.g. v4.0.12pre0
 ### v4
 
 - ~~full Linux support (firewall via firewalld/ufw, Java detection/download, process management, .deb/.rpm/AppImage releases + updater)~~ ✅
-- add smarter error reporting and feedback
-- fully finish and clean up the "setup networks" page. it should have all the features users should expect and work flawlessly. clean up the UI to be more intuitive as well.
+- Add smarter error reporting and feedback. Setup sentry for simple tracking, then a Report a bug and a Feedback form as its own tab above settings in the side bar. (Put a text area and optional screen shot, and maybe steps to reproduce or some instructions). Simply link it to a discord web hook or something similar where i can just see it, doesn't have to be crazy for now. Also, any way to tell the user that reported something that their bug got fixed?
+- ~~Fully finish and clean up the "setup networks" page. it should have all the features users should expect and work flawlessly. clean up the UI to be more intuitive as well, currently its kind of a mess with undeeded warnings, etc. Keep the canvas, you can obviously still modify it though.~~ ✅
 - ~~add a full in-app plugin and modpack browser similar to prism launcher. (Modrinth browser for plugins/mods/datapacks in the server tabs + modpack installs in the create wizard, incl. Fabric/Forge/NeoForge server support)~~ ✅
-- rework backup system to have all of the features the user would expect, e.g. different retention policies, better/smart limits, etc.
+- ~~Rework backup system to have all of the features the user would expect, e.g. different retention policies, better/smart limits, etc. Think about other stuff that would go into this system. Make it a smart backup system. Also obviously remove backups for any proxies. you may want to also let users choose what they backup, maybe perworld, also plugin configs, etc, just do what's best here for UX.~~ ✅
 - ~~add tunneling instead of just port forwarding~~
-- better statistics in home page, something more useful and something like "insights"
-- server crashed state and crash protection
-- server bot protection and enhance security
-- add tab completion to terminal
-- more help pages and explanations (think of features normal users may be confused about, also add page to just have like "I want a survival SMP" and auto-prefill settings [might be good for onboarding], etc.)
+- ~~more help pages and explanations (think of features normal users may be confused about, also add page to just have like "I want a survival SMP" and auto-prefill settings [might be good for onboarding], etc.)~~ ✅
+- Home page upgrade: better statistics (storage size, etc.), also add something useful and like "insights", cleanup the ui and make it a dashboard people come to remember and find genuine use out of. add other features they should expect and some beyond.
+- Add a Server crashed state (UI) and crash protection if possible or even a thing.
+- Server bot protection and enhance security
 - sleep mode and settings controlling sleep mode. (like when no more users are logged in afte X time, also auto boot up when someone joins, etc)
 - rework MC settings for non-advanced users (Like the server.properties, velocity.toml, etc. make these more user friendly for non-advanced users)
-- onboarding if needed. (advanced/beginner, theme, what is goal, etc)
+- ~~onboarding (advanced/beginner, theme, what is goal, etc)~~ ✅
 - ~~move help pages below servers in sidebar~~ ✅
+- remove a lot of native windows tauri functions from right clicking
+- improve current help pages and maybe add some more smaller ones
+- improve some UI like the plugins, datapacks, and backups pages, and more
+- relocate some settings to better match the function, e.g. backups settings are now in the backups tab.
 - make --nogui forced when not in advanced mode (?)
 
 Bugs/Fixes
 
+- ~~Proxies have a backup settings tab, remove the backups page in the settings tab entirely (since it has now moved to the backups tab)~~ ✅
 - ~~Ram not showing up on modpack screen~~ ✅
 - ~~Auto-java detection not working on stuff like 26.1.2 (Uses J17, then J21, but never gets to J25.) Also, J17 is just wrong for this, not sure why it shows that for 26.1.2~~ ✅
 - ~~25565 not hidden for server IP on server overview panel. (Only hide this port since its redundant in MC.)~~ ✅
@@ -87,8 +85,8 @@ Bugs/Fixes
 
 Supported Providers
 
-- Modpack servers ✅
-- Modded servers (Forge, Fabric, Neoforge) ✅
+- ~~Modpack servers~~ ✅
+- ~~Modded servers (Forge, Fabric, Neoforge)~~ ✅
 - Bungee
 - Spigot
 - Pufferfish
@@ -99,6 +97,7 @@ Supported Providers
 
 ### v5
 
+- add tab completion to terminal using plugins/mods and matrix for vanilla
 - advanced statistics systems (plugins/jvm, etc to track stats instead of v3/v4 system)
 - change plugin settings?
 - accounts?

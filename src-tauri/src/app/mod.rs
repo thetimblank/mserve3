@@ -83,6 +83,15 @@ struct SyncedMserveConfig {
     storage_limit: u32,
     auto_backup: Vec<String>,
     auto_backup_interval: u32,
+    /// Retention policy: "smart" (thin old backups: dailies → weeklies →
+    /// monthlies) or "simple" (only the explicit caps below apply).
+    backup_policy: String,
+    /// Maximum number of backups to keep. 0 = no count cap.
+    backup_max_count: u32,
+    /// Delete backups older than this many days. 0 = no age cap.
+    backup_max_age_days: u32,
+    /// What a backup contains: any of "worlds", "plugins", "mods", "configs".
+    backup_scope: Vec<String>,
     auto_restart: bool,
     custom_flags: Vec<String>,
     java_installation: Option<String>,
@@ -131,6 +140,14 @@ struct RestoreBackupPayload {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SetBackupLockedPayload {
+    directory: String,
+    backup_directory: String,
+    locked: bool,
+}
+
+#[derive(Debug, Deserialize)]
 struct UpdateServerSettingsPayload {
     directory: String,
     ram: f64,
@@ -145,6 +162,12 @@ struct UpdateServerSettingsPayload {
     telemetry_port: Option<u16>,
     jar_swap_path: Option<String>,
     new_directory: Option<String>,
+    // Backup retention/scope settings. Optional so older callers that don't
+    // send them keep the values already in mserve.json.
+    backup_policy: Option<String>,
+    backup_max_count: Option<u32>,
+    backup_max_age_days: Option<u32>,
+    backup_scope: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -189,6 +212,10 @@ struct RuntimeServerConfig {
     tunnel_id: Option<String>,
     #[serde(default)]
     tunnel_address: Option<String>,
+    backup_policy: Option<String>,
+    backup_max_count: Option<u32>,
+    backup_max_age_days: Option<u32>,
+    backup_scope: Option<Vec<String>>,
 }
 
 /// playit.gg global account status, surfaced to the tunnel settings UI.
@@ -509,6 +536,15 @@ struct ScannedBackup {
     directory: String,
     created_at: String,
     size: u64,
+    /// User-given label for manual backups.
+    name: Option<String>,
+    /// Why the backup was created: "manual" | "on_start" | "on_close" |
+    /// "interval" | "pre_restore" (absent on backups from older versions).
+    reason: Option<String>,
+    /// Locked backups are never removed by retention or storage limits.
+    locked: bool,
+    /// The scopes captured in this backup ("worlds", "plugins", "mods", "configs").
+    contents: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -773,6 +809,8 @@ pub fn run() {
             set_server_java_installation,
             restore_server_backup,
             delete_server_backup,
+            set_server_backup_locked,
+            apply_server_backup_retention,
             upload_server_item,
             start_server,
             get_server_start_command,

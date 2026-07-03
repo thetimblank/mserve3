@@ -29,6 +29,7 @@ const SlideBackups: React.FC = () => {
 		<SlideShell
 			title='Backup settings'
 			description='Choose backup behavior and limits.'
+			helpTopic='backups'
 			actions={
 				<Button type='button' onClick={continueToNext}>
 					Continue
