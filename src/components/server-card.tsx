@@ -1,11 +1,12 @@
 import { Button } from '@/components/ui/button';
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Server, useServers } from '@/data/servers';
+import { isStoppedStatus, Server, useServers } from '@/data/servers';
 import {
 	ArrowDownToLine,
 	CircleCheck,
 	Clock,
 	MemoryStick,
+	Moon,
 	OctagonX,
 	Package,
 	RefreshCcw,
@@ -155,16 +156,18 @@ const ServerCard: React.FC<Props> = ({ server, delay }) => {
 						<Link to={`/servers/${encodeURIComponent(server.id)}`}>
 							<Button>View More Details</Button>
 						</Link>
-						{server.status !== 'offline' && (
+						{!isStoppedStatus(server.status) && (
 							<Button variant='destructive-secondary' onClick={handleForceKill} disabled={isBusy}>
 								<OctagonX />
 								<p>Force Kill</p>
 							</Button>
 						)}
-						{(server.status === 'online' || server.status === 'starting') && (
+						{(server.status === 'online' ||
+							server.status === 'starting' ||
+							server.status === 'sleeping') && (
 							<Button variant='secondary' onClick={handleStop} disabled={isBusy}>
 								<OctagonX />
-								<p>Stop</p>
+								<p>{server.status === 'sleeping' ? 'Stop sleeping' : 'Stop'}</p>
 							</Button>
 						)}
 						{(server.status === 'online' || server.status === 'starting') && (
@@ -173,10 +176,16 @@ const ServerCard: React.FC<Props> = ({ server, delay }) => {
 								<p>Restart</p>
 							</Button>
 						)}
-						{server.status === 'offline' && (
+						{isStoppedStatus(server.status) && (
 							<Button variant='secondary' onClick={handleStart} disabled={isBusy}>
 								<CircleCheck />
 								<p>Serve</p>
+							</Button>
+						)}
+						{server.status === 'sleeping' && (
+							<Button variant='secondary' onClick={handleStart} disabled={isBusy}>
+								<Moon />
+								<p>Wake</p>
 							</Button>
 						)}
 						<OpenFolderButton directory={server.directory} disabled={isBusy} />

@@ -25,96 +25,14 @@ pub(in crate::app) struct ProcessMetricsResult {
 
 // ---------------------------------------------------------------------------
 // Server List Ping (the unauthenticated status protocol every Java server and
-// proxy answers). Universal source for online/players/version.
+// proxy answers). Universal source for online/players/version. The low-level
+// VarInt/String codec lives in `mc_protocol` (shared with the sleep listener).
 // ---------------------------------------------------------------------------
 
-fn encode_varint(value: i32) -> Vec<u8> {
-    let mut encoded = Vec::new();
-    let mut unsigned = value as u32;
-
-    loop {
-        let mut temp = (unsigned & 0b0111_1111) as u8;
-        unsigned >>= 7;
-
-        if unsigned != 0 {
-            temp |= 0b1000_0000;
-        }
-
-        encoded.push(temp);
-
-        if unsigned == 0 {
-            break;
-        }
-    }
-
-    encoded
-}
-
-/// Decodes a Minecraft protocol VarInt by pulling one byte at a time from
-/// `next_byte`, so the same logic serves both the live TCP stream and an
-/// in-memory packet slice.
-fn read_varint(mut next_byte: impl FnMut() -> Result<u8, String>) -> Result<i32, String> {
-    let mut result = 0_i32;
-    let mut bytes_read = 0;
-
-    loop {
-        if bytes_read >= 5 {
-            return Err("VarInt is too big.".to_string());
-        }
-
-        let value = i32::from(next_byte()?);
-        result |= (value & 0x7F) << (7 * bytes_read);
-        bytes_read += 1;
-
-        if (value & 0x80) == 0 {
-            break;
-        }
-    }
-
-    Ok(result)
-}
-
-fn read_varint_from_stream(stream: &mut TcpStream) -> Result<i32, String> {
-    read_varint(|| {
-        let mut byte = [0_u8; 1];
-        stream
-            .read_exact(&mut byte)
-            .map_err(|err| err.to_string())?;
-        Ok(byte[0])
-    })
-}
-
-fn read_varint_from_slice(data: &[u8], cursor: &mut usize) -> Result<i32, String> {
-    read_varint(|| {
-        let byte = *data
-            .get(*cursor)
-            .ok_or_else(|| "Unexpected end of packet while reading VarInt.".to_string())?;
-        *cursor += 1;
-        Ok(byte)
-    })
-}
-
-fn read_string_from_slice(data: &[u8], cursor: &mut usize) -> Result<String, String> {
-    let length = read_varint_from_slice(data, cursor)?;
-    if length < 0 {
-        return Err("String length was negative.".to_string());
-    }
-
-    let length = usize::try_from(length).map_err(|_| "Invalid string length.".to_string())?;
-    let end = cursor.saturating_add(length);
-    let bytes = data
-        .get(*cursor..end)
-        .ok_or_else(|| "Unexpected end of packet while reading string.".to_string())?;
-    *cursor = end;
-
-    String::from_utf8(bytes.to_vec()).map_err(|err| err.to_string())
-}
-
-fn with_packet_length(payload: &[u8]) -> Vec<u8> {
-    let mut packet = encode_varint(payload.len() as i32);
-    packet.extend_from_slice(payload);
-    packet
-}
+use super::mc_protocol::{
+    encode_varint, read_string_from_slice, read_varint_from_slice, read_varint_from_stream,
+    with_packet_length,
+};
 
 fn clamp_percentage(value: f64) -> f64 {
     if !value.is_finite() {
@@ -524,65 +442,8 @@ pub(in crate::app) fn collect_tps_via_rcon(
 mod tests {
     use super::*;
 
-    // --- VarInt codec (Minecraft's variable-length integers) ---
-
-    #[test]
-    fn varint_roundtrips_known_values() {
-        // Reference encodings from the Minecraft protocol spec.
-        assert_eq!(encode_varint(0), vec![0x00]);
-        assert_eq!(encode_varint(1), vec![0x01]);
-        assert_eq!(encode_varint(127), vec![0x7f]);
-        assert_eq!(encode_varint(128), vec![0x80, 0x01]);
-        assert_eq!(encode_varint(255), vec![0xff, 0x01]);
-        assert_eq!(encode_varint(25565), vec![0xdd, 0xc7, 0x01]);
-    }
-
-    #[test]
-    fn varint_decodes_what_it_encodes() {
-        for value in [0, 1, 127, 128, 300, 25565, 2_097_151, i32::MAX] {
-            let encoded = encode_varint(value);
-            let mut cursor = 0usize;
-            assert_eq!(
-                read_varint_from_slice(&encoded, &mut cursor).unwrap(),
-                value
-            );
-            assert_eq!(cursor, encoded.len());
-        }
-    }
-
-    #[test]
-    fn varint_rejects_overlong_sequence() {
-        // Five continuation bytes with the high bit always set is too long.
-        let data = [0x80, 0x80, 0x80, 0x80, 0x80, 0x01];
-        let mut cursor = 0usize;
-        assert!(read_varint_from_slice(&data, &mut cursor).is_err());
-    }
-
-    #[test]
-    fn varint_errors_on_truncated_input() {
-        let data = [0x80]; // continuation bit set but no following byte
-        let mut cursor = 0usize;
-        assert!(read_varint_from_slice(&data, &mut cursor).is_err());
-    }
-
-    // --- length-prefixed strings ---
-
-    #[test]
-    fn reads_length_prefixed_string() {
-        let mut data = encode_varint("hi".len() as i32);
-        data.extend_from_slice(b"hi");
-        let mut cursor = 0usize;
-        assert_eq!(read_string_from_slice(&data, &mut cursor).unwrap(), "hi");
-        assert_eq!(cursor, data.len());
-    }
-
-    #[test]
-    fn string_read_errors_when_body_truncated() {
-        let mut data = encode_varint(10); // claims 10 bytes...
-        data.extend_from_slice(b"abc"); // ...but only 3 follow
-        let mut cursor = 0usize;
-        assert!(read_string_from_slice(&data, &mut cursor).is_err());
-    }
+    // The VarInt/String codec is unit-tested in `mc_protocol`; here we only cover
+    // telemetry-specific parsing (MOTD stripping, status JSON extraction, …).
 
     // --- Minecraft formatting stripping ---
 

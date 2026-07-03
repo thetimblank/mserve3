@@ -62,6 +62,10 @@ pub(in crate::app) fn send_stop_via_stdin(runtime: &mut ServerRuntime) -> bool {
 /// then escalate to a kill. Used by `delete_server`, where we need the process
 /// gone synchronously before touching the files.
 pub(in crate::app) fn terminate_runtime(runtime: &mut ServerRuntime) -> Result<(), String> {
+    // Release a sleeping server's wake listener so its port is freed.
+    if let Some(flag) = runtime.sleep_stop.take() {
+        flag.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
     // Stop the playit tunnel agent alongside the server it fronts.
     if let Some(stop) = runtime.playit_stop.take() {
         playit::stop_agent(&stop);

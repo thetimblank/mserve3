@@ -6,16 +6,24 @@ import { LayoutGrid } from 'lucide-react';
 import CreateServer from '@/components/create-server';
 import ImportServer from '@/components/import-server';
 import Logo from '@/components/logo';
+import DarkVeil from '@/components/dark-veil-effect';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useServers } from '@/data/servers';
 import { useNetworks } from '@/data/networks';
+import { useUser, type DashboardSectionId } from '@/data/user';
+import { useTheme } from '@/components/theme-provider';
 
 import DashboardMetrics from './dashboard/dashboard-metrics';
 import OnlineServers from './dashboard/online-servers';
 import MostUsedServers from './dashboard/most-used-servers';
 import DashboardNetworks from './dashboard/dashboard-networks';
+import StorageInsights from './dashboard/storage-insights';
+import ActivityInsights from './dashboard/activity-insights';
+import NeedsAttention from './dashboard/needs-attention';
+import DashboardCustomizeMenu from './dashboard/dashboard-customize-menu';
 import { useDashboardActivity } from './dashboard/use-dashboard-activity';
+import { useDashboardStorage } from './dashboard/use-dashboard-storage';
 
 const greeting = () => {
 	const hour = new Date().getHours();
@@ -27,76 +35,122 @@ const greeting = () => {
 const Home: React.FC = () => {
 	const { servers, isReady } = useServers();
 	const { networks } = useNetworks();
+	const { user } = useUser();
+	const { theme } = useTheme();
 	const activity = useDashboardActivity(servers);
+	const storage = useDashboardStorage(servers);
+
+	const hidden = React.useMemo(
+		() => new Set(user.dashboard_hidden_sections),
+		[user.dashboard_hidden_sections],
+	);
+	const shows = (id: DashboardSectionId) => !hidden.has(id);
+
+	const reducedMotion = user.accessibility.reduced_motion;
+	const isLight = theme === 'light';
 
 	return (
-		<main className='h-full w-full overflow-y-auto app-scroll-area p-8 lg:p-12'>
-			{!isReady && (
-				<div className='space-y-6'>
-					<Skeleton className='h-10 w-72' />
-					<div className='grid grid-cols-2 gap-4 lg:grid-cols-4'>
-						<Skeleton className='h-28' />
-						<Skeleton className='h-28' />
-						<Skeleton className='h-28' />
-						<Skeleton className='h-28' />
+		<main className='relative h-full w-full overflow-y-auto app-scroll-area'>
+			{/* DarkVeil backdrop — sits behind all content, never intercepts clicks. */}
+			<div aria-hidden className='pointer-events-none absolute inset-0 z-0 overflow-hidden'>
+				<DarkVeil speed={reducedMotion ? 0 : 1} hueShift={isLight ? 30 : 0} />
+				<div
+					className={isLight ? 'absolute inset-0 bg-background/88' : 'absolute inset-0 bg-background/72'}
+				/>
+			</div>
+
+			<div className='relative z-10 p-8 lg:p-12'>
+				{!isReady && (
+					<div className='space-y-6'>
+						<Skeleton className='h-10 w-72' />
+						<div className='grid grid-cols-2 gap-4 lg:grid-cols-5'>
+							<Skeleton className='h-28' />
+							<Skeleton className='h-28' />
+							<Skeleton className='h-28' />
+							<Skeleton className='h-28' />
+							<Skeleton className='h-28' />
+						</div>
+						<Skeleton className='h-64 w-full' />
 					</div>
-					<Skeleton className='h-64 w-full' />
-				</div>
-			)}
+				)}
 
-			{isReady && servers.length === 0 && (
-				<div className='flex h-full items-center justify-center'>
-					<m.div
-						initial={{ scale: 0.75, y: 10, opacity: 0 }}
-						whileInView={{ scale: 1, y: 0, opacity: 1 }}
-						transition={{ type: 'spring', duration: 0.5, bounce: 0 }}
-						className='flex flex-col items-center text-center'>
-						<Logo size='lg' className='mb-6' />
-						<h1 className='mb-2 flex w-fit items-center gap-5 text-3xl font-bold'>Welcome to MSERVE</h1>
-						<p className='mb-10'>Create or import your first server to get started.</p>
-						<CreateServer />
-						<ImportServer />
-					</m.div>
-				</div>
-			)}
+				{isReady && servers.length === 0 && (
+					<div className='flex h-full min-h-[70vh] items-center justify-center'>
+						<m.div
+							initial={{ scale: 0.75, y: 10, opacity: 0 }}
+							whileInView={{ scale: 1, y: 0, opacity: 1 }}
+							transition={{ type: 'spring', duration: 0.5, bounce: 0 }}
+							className='flex flex-col items-center text-center'>
+							<Logo size='lg' className='mb-6' />
+							<h1 className='mb-2 flex w-fit items-center gap-5 text-3xl font-bold'>
+								Welcome to MSERVE
+							</h1>
+							<p className='mb-10'>Create or import your first server to get started.</p>
+							<CreateServer />
+							<ImportServer />
+						</m.div>
+					</div>
+				)}
 
-			{isReady && servers.length > 0 && (
-				<div className='flex flex-col gap-8'>
-					<m.header
-						initial={{ y: 16, opacity: 0 }}
-						animate={{ y: 0, opacity: 1 }}
-						transition={{ type: 'spring', duration: 0.5, bounce: 0 }}
-						className='flex flex-wrap items-center justify-between gap-4'>
-						<div className='flex items-center gap-4'>
-							<Logo className='size-10' delay={0.2} />
-							<div>
-								<h1 className='text-3xl font-bold leading-tight'>{greeting()}</h1>
-								<p className='text-sm text-muted-foreground'>
-									Here's how your {servers.length} server{servers.length === 1 ? '' : 's'} are doing.
-								</p>
+				{isReady && servers.length > 0 && (
+					<div className='flex flex-col gap-8'>
+						<m.header
+							initial={{ y: 16, opacity: 0 }}
+							animate={{ y: 0, opacity: 1 }}
+							transition={{ type: 'spring', duration: 0.5, bounce: 0 }}
+							className='flex flex-wrap items-center justify-between gap-4'>
+							<div className='flex items-center gap-4'>
+								<Logo className='size-10' delay={0.2} />
+								<div>
+									<h1 className='text-3xl font-bold leading-tight'>{greeting()}</h1>
+									<p className='text-sm text-muted-foreground'>
+										Here's how your {servers.length} server{servers.length === 1 ? '' : 's'} are
+										doing.
+									</p>
+								</div>
 							</div>
-						</div>
-						<Button asChild variant='outline'>
-							<Link to='/servers'>
-								<LayoutGrid /> All servers
-							</Link>
-						</Button>
-					</m.header>
+							<div className='flex items-center gap-2'>
+								<DashboardCustomizeMenu />
+								<Button asChild variant='outline'>
+									<Link to='/servers'>
+										<LayoutGrid /> All servers
+									</Link>
+								</Button>
+							</div>
+						</m.header>
 
-					<DashboardMetrics servers={servers} activity={activity} />
+						{shows('metrics') && (
+							<DashboardMetrics servers={servers} activity={activity} storage={storage} />
+						)}
 
-					<div className='grid gap-6 xl:grid-cols-5'>
-						<div className='xl:col-span-3'>
-							<OnlineServers servers={servers} />
-						</div>
-						<div className='xl:col-span-2'>
-							<MostUsedServers servers={servers} activity={activity} />
-						</div>
+						{shows('attention') && <NeedsAttention servers={servers} />}
+
+						{(shows('storage') || shows('activity')) && (
+							<div className='grid gap-6 lg:grid-cols-2'>
+								{shows('storage') && <StorageInsights servers={servers} storage={storage} />}
+								{shows('activity') && <ActivityInsights servers={servers} activity={activity} />}
+							</div>
+						)}
+
+						{(shows('online') || shows('most-used')) && (
+							<div className='grid gap-6 xl:grid-cols-5'>
+								{shows('online') && (
+									<div className='xl:col-span-3'>
+										<OnlineServers servers={servers} />
+									</div>
+								)}
+								{shows('most-used') && (
+									<div className='xl:col-span-2'>
+										<MostUsedServers servers={servers} activity={activity} />
+									</div>
+								)}
+							</div>
+						)}
+
+						{shows('networks') && <DashboardNetworks networks={networks} servers={servers} />}
 					</div>
-
-					<DashboardNetworks networks={networks} servers={servers} />
-				</div>
-			)}
+				)}
+			</div>
 		</main>
 	);
 };

@@ -11,7 +11,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { readManagedConfigFile, writeManagedConfigFile } from '@/components/server-config-file-editor/file-operations';
 import { parsePropertiesMap, serializePropertiesMap } from '@/components/server-config-file-editor/properties-config';
 import { resolveProviderKind } from '@/lib/server-provider-capabilities';
-import type { Server } from '@/data/servers';
+import { isStoppedStatus, type Server } from '@/data/servers';
 import {
 	buildNetworkAliasMap,
 	FORWARDING_SECRET_FILE,
@@ -378,7 +378,7 @@ export const diagnoseNetwork = (
 			message: `${proxy.name} is not a Velocity proxy and cannot route a network.`,
 			serverId: proxy.id,
 		});
-	} else if (proxy.status !== 'offline') {
+	} else if (!isStoppedStatus(proxy.status)) {
 		diagnostics.push({
 			level: 'error',
 			kind: 'runtime',
@@ -400,7 +400,7 @@ export const diagnoseNetwork = (
 			continue;
 		}
 
-		if (server.status !== 'offline') {
+		if (!isStoppedStatus(server.status)) {
 			diagnostics.push({
 				level: 'error',
 				kind: 'runtime',

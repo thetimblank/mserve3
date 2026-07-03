@@ -15,9 +15,9 @@ const toUptimeDate = (value: string | null): Date | null => {
 
 /**
  * Maps a backend {@link ServerRuntimeState} to the UI's {@link ServerStatus}.
- * `running-external` (a server we adopted) reads as online; `crashed` reads as
- * offline for status purposes — the crash itself is surfaced via a toast and
- * drives auto-restart elsewhere.
+ * `running-external` (a server we adopted) reads as online. `crashed` and
+ * `sleeping` map to their own statuses so the UI can render a crash panel and a
+ * "sleeping" badge respectively; both used to be collapsed to `offline`.
  */
 export const mapRuntimeStateToStatus = (state: ServerRuntimeState): ServerStatus => {
 	switch (state) {
@@ -29,6 +29,9 @@ export const mapRuntimeStateToStatus = (state: ServerRuntimeState): ServerStatus
 		case 'stopping':
 			return 'closing';
 		case 'crashed':
+			return 'crashed';
+		case 'sleeping':
+			return 'sleeping';
 		case 'offline':
 		default:
 			return 'offline';

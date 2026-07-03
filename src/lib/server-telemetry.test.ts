@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { mapRuntimeStateToStatus, mapSampleToStats } from './server-telemetry';
+import { isRunningStatus, isStoppedStatus } from '@/data/servers';
 import type { TelemetrySample } from '@/pages/server/server-types';
 
 describe('mapRuntimeStateToStatus', () => {
@@ -9,9 +10,29 @@ describe('mapRuntimeStateToStatus', () => {
 		// An adopted external server reads as online.
 		expect(mapRuntimeStateToStatus('running-external')).toBe('online');
 		expect(mapRuntimeStateToStatus('stopping')).toBe('closing');
-		// Crashed reads as offline for status (crash surfaced separately).
-		expect(mapRuntimeStateToStatus('crashed')).toBe('offline');
+		// Crashed and sleeping now have their own statuses (no longer collapsed).
+		expect(mapRuntimeStateToStatus('crashed')).toBe('crashed');
+		expect(mapRuntimeStateToStatus('sleeping')).toBe('sleeping');
 		expect(mapRuntimeStateToStatus('offline')).toBe('offline');
+	});
+});
+
+describe('status predicates', () => {
+	it('isStoppedStatus: offline and crashed are stopped; sleeping is not', () => {
+		expect(isStoppedStatus('offline')).toBe(true);
+		expect(isStoppedStatus('crashed')).toBe(true);
+		expect(isStoppedStatus('sleeping')).toBe(false);
+		expect(isStoppedStatus('online')).toBe(false);
+		expect(isStoppedStatus('starting')).toBe(false);
+		expect(isStoppedStatus('closing')).toBe(false);
+	});
+
+	it('isRunningStatus: online and starting are running', () => {
+		expect(isRunningStatus('online')).toBe(true);
+		expect(isRunningStatus('starting')).toBe(true);
+		expect(isRunningStatus('sleeping')).toBe(false);
+		expect(isRunningStatus('crashed')).toBe(false);
+		expect(isRunningStatus('offline')).toBe(false);
 	});
 });
 

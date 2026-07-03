@@ -107,7 +107,9 @@ const JarDownloadModal: React.FC<JarDownloadModalProps> = ({ open, onOpenChange,
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChangeInternal}>
-			<DialogContent className='sm:max-w-4xl' showCloseButton={!isDownloading}>
+			<DialogContent
+				className='flex max-h-[85vh] flex-col sm:max-w-4xl'
+				showCloseButton={!isDownloading}>
 				<DialogHeader>
 					<DialogTitle>Browse and download server jars</DialogTitle>
 					<DialogDescription>
@@ -116,7 +118,7 @@ const JarDownloadModal: React.FC<JarDownloadModalProps> = ({ open, onOpenChange,
 					</DialogDescription>
 				</DialogHeader>
 
-				<div className='space-y-4'>
+				<div className='flex min-h-0 flex-1 flex-col gap-4'>
 					<div className='grid grid-cols-3 gap-2'>
 						{tabs.map((tab) => {
 							const isActive = tab.id === activeTab;
@@ -146,28 +148,30 @@ const JarDownloadModal: React.FC<JarDownloadModalProps> = ({ open, onOpenChange,
 						})}
 					</div>
 
-					{isDownloading ? (
-						<div className='rounded-md border-2 p-8 flex flex-col items-center justify-center gap-3 text-sm'>
-							<Spinner className='size-5' />
-							<div className='flex items-center gap-2'>
-								<Download className='size-4' />
-								<span>Downloading selected jar...</span>
+					<div className='min-h-0 flex-1 overflow-y-auto'>
+						{isDownloading ? (
+							<div className='rounded-md border-2 p-8 flex flex-col items-center justify-center gap-3 text-sm'>
+								<Spinner className='size-5' />
+								<div className='flex items-center gap-2'>
+									<Download className='size-4' />
+									<span>Downloading selected jar...</span>
+								</div>
 							</div>
-						</div>
-					) : isLoadingRows ? (
-						<div className='rounded-md border-2 p-8 flex items-center justify-center gap-2 text-sm'>
-							<Spinner />
-							<span>Loading versions...</span>
-						</div>
-					) : (
-						<JarVersionSelectorPane
-							tab={activeTab}
-							rows={rows}
-							selectedRowId={selectedRow?.id ?? null}
-							onSelectRow={setSelectedRow}
-							onRequestUnstableVersions={() => setIncludeUnstable(true)}
-						/>
-					)}
+						) : isLoadingRows ? (
+							<div className='rounded-md border-2 p-8 flex items-center justify-center gap-2 text-sm'>
+								<Spinner />
+								<span>Loading versions...</span>
+							</div>
+						) : (
+							<JarVersionSelectorPane
+								tab={activeTab}
+								rows={rows}
+								selectedRowId={selectedRow?.id ?? null}
+								onSelectRow={setSelectedRow}
+								onRequestUnstableVersions={() => setIncludeUnstable(true)}
+							/>
+						)}
+					</div>
 				</div>
 
 				<DialogFooter>

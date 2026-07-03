@@ -72,6 +72,11 @@ export type MserveJsonProps = {
 	backup_max_age_days: number;
 	backup_scope: BackupScopeItem[];
 	auto_restart: boolean;
+	/** Sleep mode: stop + hold the port after `sleep_idle_minutes` of no players. */
+	sleep_enabled: boolean;
+	sleep_idle_minutes: number;
+	/** MOTD shown in the server list while sleeping (legacy-§ color codes). */
+	sleep_motd: string;
 	custom_flags: string[];
 	created_at: string;
 	java_installation: string | undefined;
@@ -109,6 +114,9 @@ export type MserveJsonFormProps = {
 	ram: number;
 	storage_limit: number;
 	auto_restart: boolean;
+	sleep_enabled: boolean;
+	sleep_idle_minutes: number;
+	sleep_motd: string;
 	auto_backup: AutoBackupMode[];
 	auto_backup_interval: number;
 	auto_agree_eula: boolean;
@@ -129,6 +137,10 @@ export type MserveRepairPayload = Pick<
 > & {
 	create_directory_if_missing?: boolean;
 	auto_agree_eula?: boolean;
+	// Sleep-mode fields are optional here; the backend fills defaults when omitted.
+	sleep_enabled?: boolean;
+	sleep_idle_minutes?: number;
+	sleep_motd?: string;
 	custom_flags: string[];
 	provider: Provider;
 	telemetry_host?: string;
@@ -142,6 +154,9 @@ export const createDefaultMserveForm = (): MserveJsonFormProps => ({
 	ram: 4,
 	storage_limit: 200,
 	auto_restart: false,
+	sleep_enabled: false,
+	sleep_idle_minutes: 15,
+	sleep_motd: '§eSleeping §7— join to wake this server',
 	auto_backup: ['on_close'],
 	auto_backup_interval: 120,
 	auto_agree_eula: true,

@@ -23,6 +23,9 @@ const buildServerShell = (
 	| 'backup_max_age_days'
 	| 'backup_scope'
 	| 'auto_restart'
+	| 'sleep_enabled'
+	| 'sleep_idle_minutes'
+	| 'sleep_motd'
 	| 'java_installation'
 	| 'custom_flags'
 	| 'provider'
@@ -78,6 +81,9 @@ export const buildCreatedServer = (form: ServerSetupFormData, result: InitServer
 	backup_max_age_days: 0,
 	backup_scope: ['worlds'],
 	auto_restart: form.auto_restart,
+	sleep_enabled: form.sleep_enabled,
+	sleep_idle_minutes: Math.max(1, Number(form.sleep_idle_minutes) || 15),
+	sleep_motd: form.sleep_motd,
 	java_installation: form.java_installation.trim() || undefined,
 	custom_flags: isProxyProvider(form.provider) ? [] : ['--nogui'],
 	provider: createProvider(form.provider ?? DEFAULT_SERVER_PROVIDER, { file: result.file }),
@@ -99,6 +105,9 @@ export const buildImportedServer = (result: InitServerIdentity, config: SyncedMs
 	backup_max_age_days: config.backup_max_age_days,
 	backup_scope: config.backup_scope,
 	auto_restart: config.auto_restart,
+	sleep_enabled: config.sleep_enabled,
+	sleep_idle_minutes: config.sleep_idle_minutes,
+	sleep_motd: config.sleep_motd,
 	java_installation: config.java_installation,
 	custom_flags: config.custom_flags,
 	provider: createProvider(config.provider, { file: config.file }),

@@ -3,11 +3,12 @@ import { m } from 'motion/react';
 import clsx from 'clsx';
 import { ChevronsDown, Maximize2, Minimize2, Trash2 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import type { ServerStatus } from '@/data/servers';
 
 type ServerTerminalPanelProps = {
 	isVisible: boolean;
 	isBusy: boolean;
-	status: 'online' | 'offline' | 'starting' | 'closing';
+	status: ServerStatus;
 	terminalLines: string[];
 	terminalInput: string;
 	onTerminalInputChange: (value: string) => void;
@@ -71,7 +72,13 @@ const ServerTerminalPanel: React.FC<ServerTerminalPanelProps> = ({
 					placeholder='> '
 					value={terminalInput}
 					onChange={(event) => onTerminalInputChange(event.target.value)}
-					disabled={status === 'offline' || status === 'closing' || isBusy}
+					disabled={
+						status === 'offline' ||
+						status === 'closing' ||
+						status === 'crashed' ||
+						status === 'sleeping' ||
+						isBusy
+					}
 				/>
 				<div className='flex items-center'>
 					<Tooltip>

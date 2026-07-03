@@ -2,10 +2,10 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
-import { ArrowUpRight, CircleCheck, Folder, OctagonX, RefreshCcw, Trash2 } from 'lucide-react';
+import { ArrowUpRight, CircleCheck, Folder, Moon, OctagonX, RefreshCcw, Trash2 } from 'lucide-react';
 
 import type { Server } from '@/data/servers';
-import { useServers } from '@/data/servers';
+import { isStoppedStatus, useServers } from '@/data/servers';
 import { useServerJavaResolver } from '@/data/java-download';
 import {
 	forceKillServer,
@@ -65,10 +65,13 @@ export const ServerNodeMenu: React.FC<ServerNodeMenuProps> = ({ server, role, on
 	};
 
 	const status = server.status;
-	const canStart = status === 'offline';
-	const canStop = status === 'online' || status === 'starting';
+	const isSleeping = status === 'sleeping';
+	// Waking a sleeping server is just a start (the backend tears down its wake
+	// listener), so it lives under the same "start" affordance.
+	const canStart = isStoppedStatus(status) || isSleeping;
+	const canStop = status === 'online' || status === 'starting' || isSleeping;
 	const canRestart = status === 'online' || status === 'starting';
-	const canForceKill = status !== 'offline';
+	const canForceKill = !isStoppedStatus(status);
 
 	const openFolder = async () => {
 		try {
@@ -90,7 +93,15 @@ export const ServerNodeMenu: React.FC<ServerNodeMenuProps> = ({ server, role, on
 					</ContextMenuItem>
 					{canStart && (
 						<ContextMenuItem onSelect={() => void handleStart()}>
-							<CircleCheck /> Start
+							{isSleeping ? (
+								<>
+									<Moon /> Wake
+								</>
+							) : (
+								<>
+									<CircleCheck /> Start
+								</>
+							)}
 						</ContextMenuItem>
 					)}
 					{canRestart && (
@@ -100,7 +111,7 @@ export const ServerNodeMenu: React.FC<ServerNodeMenuProps> = ({ server, role, on
 					)}
 					{canStop && (
 						<ContextMenuItem onSelect={() => void stopServer(context())}>
-							<OctagonX /> Stop
+							<OctagonX /> {isSleeping ? 'Stop sleeping' : 'Stop'}
 						</ContextMenuItem>
 					)}
 					{canForceKill && (

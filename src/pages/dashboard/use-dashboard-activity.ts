@@ -23,6 +23,8 @@ const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_POINTS = 96;
 const REFRESH_MS = 60000;
 
+export type PlayerTrend = 'up' | 'down' | 'flat';
+
 export type ServerActivity = {
 	serverId: string;
 	/** 0..1 fraction of buckets the server was online. */
@@ -35,6 +37,10 @@ export type ServerActivity = {
 	hasData: boolean;
 	/** Recent trend, ready for {@link TelemetrySparkline}. */
 	chart: ChartPoint[];
+	/** Player-count trend over the window (first half vs second half). */
+	trend: PlayerTrend;
+	/** Player-count sum by local hour-of-day (length 24). */
+	hourBuckets: number[];
 	/** Blended ranking score (higher = more used). */
 	score: number;
 };
@@ -44,7 +50,40 @@ export type DashboardActivity = {
 	/** Servers ordered most-used first (only those with telemetry data). */
 	ranked: ServerActivity[];
 	totalInterruptions: number;
+	/** Summed player counts by local hour-of-day across all servers (length 24). */
+	hourHistogram: number[];
+	/** The single busiest hour-of-day (0..23), or null when there's no data. */
+	peakHour: number | null;
 	isLoading: boolean;
+};
+
+/**
+ * Player-count trend: compares the mean of the first half of the window to the
+ * second half. Pure and exported for tests.
+ */
+export const computeTrend = (points: TelemetryHistoryPoint[]): PlayerTrend => {
+	const withPlayers = points.filter((point) => point.playersOnline != null);
+	if (withPlayers.length < 4) return 'flat';
+	const mid = Math.floor(withPlayers.length / 2);
+	const mean = (slice: TelemetryHistoryPoint[]) =>
+		slice.reduce((sum, point) => sum + (point.playersOnline ?? 0), 0) / Math.max(1, slice.length);
+	const first = mean(withPlayers.slice(0, mid));
+	const second = mean(withPlayers.slice(mid));
+	const delta = second - first;
+	if (delta > 0.5) return 'up';
+	if (delta < -0.5) return 'down';
+	return 'flat';
+};
+
+/** Sums player counts into 24 local hour-of-day buckets. Pure and exported. */
+export const buildHourBuckets = (points: TelemetryHistoryPoint[]): number[] => {
+	const buckets = new Array<number>(24).fill(0);
+	for (const point of points) {
+		if (point.playersOnline == null || point.playersOnline <= 0) continue;
+		const hour = new Date(point.timestamp).getHours();
+		if (hour >= 0 && hour < 24) buckets[hour] += point.playersOnline;
+	}
+	return buckets;
 };
 
 const summarize = (serverId: string, points: TelemetryHistoryPoint[]): ServerActivity => {
@@ -81,6 +120,8 @@ const summarize = (serverId: string, points: TelemetryHistoryPoint[]): ServerAct
 		interruptions,
 		hasData: points.length > 0,
 		chart,
+		trend: computeTrend(points),
+		hourBuckets: buildHourBuckets(points),
 		score,
 	};
 };
@@ -133,13 +174,21 @@ export const useDashboardActivity = (servers: Server[]): DashboardActivity => {
 	}, [serverIdsKey]);
 
 	return React.useMemo(() => {
-		const ranked = Array.from(byServer.values())
+		const all = Array.from(byServer.values());
+		const ranked = all
 			.filter((activity) => activity.hasData && activity.score > 0)
 			.sort((left, right) => right.score - left.score);
-		const totalInterruptions = Array.from(byServer.values()).reduce(
-			(sum, activity) => sum + activity.interruptions,
-			0,
-		);
-		return { byServer, ranked, totalInterruptions, isLoading };
+		const totalInterruptions = all.reduce((sum, activity) => sum + activity.interruptions, 0);
+
+		const hourHistogram = new Array<number>(24).fill(0);
+		for (const activity of all) {
+			for (let hour = 0; hour < 24; hour += 1) {
+				hourHistogram[hour] += activity.hourBuckets[hour] ?? 0;
+			}
+		}
+		const maxHour = Math.max(...hourHistogram);
+		const peakHour = maxHour > 0 ? hourHistogram.indexOf(maxHour) : null;
+
+		return { byServer, ranked, totalInterruptions, hourHistogram, peakHour, isLoading };
 	}, [byServer, isLoading]);
 };

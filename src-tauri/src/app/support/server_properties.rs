@@ -88,7 +88,10 @@ pub(in crate::app) fn ensure_rcon_enabled(directory: &Path) -> Result<RconConfig
 
 /// Rewrites `server.properties` so each `(key, value)` is present exactly once,
 /// preserving all other lines, comments, and ordering. Missing keys are appended.
-fn apply_properties(directory: &Path, updates: &[(&str, String)]) -> Result<(), String> {
+pub(in crate::app) fn apply_properties(
+    directory: &Path,
+    updates: &[(&str, String)],
+) -> Result<(), String> {
     let path = properties_path(directory);
     let existing = fs::read_to_string(&path).unwrap_or_default();
 

@@ -8,7 +8,20 @@ import { createProvider } from '@/lib/server-provider';
 export type { AutoBackupMode, BackupPolicy, BackupScopeItem } from '@/lib/mserve-schema';
 import { normalizeBackupPolicy, normalizeBackupScope } from '@/lib/mserve-schema';
 
-export type ServerStatus = 'online' | 'offline' | 'starting' | 'closing';
+export type ServerStatus = 'online' | 'offline' | 'starting' | 'closing' | 'crashed' | 'sleeping';
+
+/**
+ * A server whose process is down and can be (re)started from a stopped state:
+ * `offline` or `crashed`. Note `sleeping` is deliberately excluded — its port is
+ * still held by the wake listener, so "start" means "wake" and settings that read
+ * server.properties at boot stay locked, same as a running server.
+ */
+export const isStoppedStatus = (status: ServerStatus): boolean =>
+	status === 'offline' || status === 'crashed';
+
+/** A server whose process is up or coming up: `online` or `starting`. */
+export const isRunningStatus = (status: ServerStatus): boolean =>
+	status === 'online' || status === 'starting';
 
 export interface Server extends MserveJsonProps {
 	id: string;
@@ -293,6 +306,10 @@ export const normalizeServer = (server: Server): Server => {
 		backup_max_age_days: Math.max(0, Math.round(Number(server.backup_max_age_days) || 0)),
 		backup_scope: normalizeBackupScope(server.backup_scope),
 		auto_restart: server.auto_restart,
+		// Defaulted for servers persisted before sleep mode existed.
+		sleep_enabled: server.sleep_enabled ?? false,
+		sleep_idle_minutes: Math.max(1, Math.round(Number(server.sleep_idle_minutes) || 15)),
+		sleep_motd: server.sleep_motd?.trim() || '§eSleeping §7— join to wake this server',
 		java_installation: server.java_installation?.trim() || undefined,
 		custom_flags: server.custom_flags,
 		created_at: toIsoDateString(server.created_at),
@@ -459,6 +476,9 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 				server.backup_max_age_days !== config.backup_max_age_days ||
 				!sameStringList(server.backup_scope, normalizeBackupScope(config.backup_scope)) ||
 				server.auto_restart !== config.auto_restart ||
+				server.sleep_enabled !== config.sleep_enabled ||
+				server.sleep_idle_minutes !== config.sleep_idle_minutes ||
+				server.sleep_motd !== config.sleep_motd ||
 				(server.java_installation ?? '') !== (config.java_installation ?? '') ||
 				!sameStringList(server.auto_backup, config.auto_backup) ||
 				!sameStringList(server.custom_flags, config.custom_flags) ||
@@ -487,6 +507,9 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 						backup_max_age_days: config.backup_max_age_days,
 						backup_scope: config.backup_scope,
 						auto_restart: config.auto_restart,
+						sleep_enabled: config.sleep_enabled,
+						sleep_idle_minutes: config.sleep_idle_minutes,
+						sleep_motd: config.sleep_motd,
 						java_installation: config.java_installation,
 						custom_flags: config.custom_flags,
 						provider: configProvider,

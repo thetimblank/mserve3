@@ -1,6 +1,7 @@
 use super::super::support::{
-    copy_jar_to_server_directory, default_auto_backup, default_backup_policy, default_backup_scope,
-    default_custom_flags, default_provider_for_file, default_synced_config, default_telemetry_host,
+    DEFAULT_SLEEP_IDLE_MINUTES, DEFAULT_SLEEP_MOTD, copy_jar_to_server_directory,
+    default_auto_backup, default_backup_policy, default_backup_scope, default_custom_flags,
+    default_provider_for_file, default_synced_config, default_telemetry_host,
     detect_default_telemetry_port, find_first_jar_file_name, generate_server_id,
     has_required_mserve_json_fields, normalize_backup_policy, normalize_backup_scope,
     normalize_custom_flags, normalize_provider, parse_mserve_top_level_object, resolve_repair_file,
@@ -13,6 +14,19 @@ use super::super::{
 };
 use std::fs;
 use std::path::PathBuf;
+
+/// Clamps an optional idle-minutes value from a payload to at least 1, defaulting
+/// when absent. Keeps sleep-mode plumbing consistent across create and repair.
+fn resolve_sleep_idle_minutes(minutes: Option<u32>) -> u32 {
+    minutes.unwrap_or(DEFAULT_SLEEP_IDLE_MINUTES).max(1)
+}
+
+/// Trims an optional MOTD from a payload, falling back to the default when blank.
+fn resolve_sleep_motd(motd: Option<&str>) -> String {
+    motd.map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map_or_else(|| DEFAULT_SLEEP_MOTD.to_string(), str::to_string)
+}
 
 #[tauri::command]
 pub(in crate::app) fn initialize_server(
@@ -97,6 +111,9 @@ pub(in crate::app) fn initialize_server(
         backup_max_age_days: 0,
         backup_scope: default_backup_scope(),
         auto_restart: payload.auto_restart,
+        sleep_enabled: payload.sleep_enabled,
+        sleep_idle_minutes: resolve_sleep_idle_minutes(payload.sleep_idle_minutes),
+        sleep_motd: resolve_sleep_motd(payload.sleep_motd.as_deref()),
         custom_flags: normalize_custom_flags(payload.custom_flags.unwrap_or_default()),
         java_installation: payload
             .java_installation
@@ -388,6 +405,9 @@ pub(in crate::app) fn import_server(directory: String) -> Result<InitServerResul
             backup_max_age_days: 0,
             backup_scope: default_backup_scope(),
             auto_restart: false,
+            sleep_enabled: false,
+            sleep_idle_minutes: DEFAULT_SLEEP_IDLE_MINUTES,
+            sleep_motd: DEFAULT_SLEEP_MOTD.to_string(),
             custom_flags: default_custom_flags(),
             java_installation: None,
             provider: default_provider_for_file(&found_jar),
@@ -579,6 +599,9 @@ pub(in crate::app) fn repair_server_mserve_json(
         backup_max_age_days: existing_backup_max_age_days,
         backup_scope: existing_backup_scope,
         auto_restart: payload.auto_restart,
+        sleep_enabled: payload.sleep_enabled,
+        sleep_idle_minutes: resolve_sleep_idle_minutes(payload.sleep_idle_minutes),
+        sleep_motd: resolve_sleep_motd(payload.sleep_motd.as_deref()),
         custom_flags,
         java_installation: payload
             .java_installation

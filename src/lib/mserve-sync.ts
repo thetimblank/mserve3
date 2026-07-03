@@ -26,6 +26,9 @@ export type InitServerPayload = {
 	ram: number;
 	storage_limit: number;
 	auto_restart: boolean;
+	sleep_enabled?: boolean;
+	sleep_idle_minutes?: number;
+	sleep_motd?: string;
 	auto_backup: string[];
 	auto_backup_interval: number;
 	auto_agree_eula: boolean;

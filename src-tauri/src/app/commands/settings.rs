@@ -199,6 +199,17 @@ pub(in crate::app) fn update_server_settings(
     config.storage_limit = payload.storage_limit.max(1);
     config.auto_backup_interval = payload.auto_backup_interval.max(1);
     config.auto_restart = payload.auto_restart;
+    config.sleep_enabled = payload.sleep_enabled;
+    config.sleep_idle_minutes = payload
+        .sleep_idle_minutes
+        .unwrap_or(config.sleep_idle_minutes)
+        .max(1);
+    config.sleep_motd = payload
+        .sleep_motd
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map_or(config.sleep_motd, str::to_string);
     if let Some(policy) = payload.backup_policy.as_deref() {
         config.backup_policy = normalize_backup_policy(Some(policy));
     }

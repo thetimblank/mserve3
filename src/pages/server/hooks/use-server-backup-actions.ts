@@ -1,7 +1,7 @@
 import React from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
-import type { Server, ServerUpdate } from '@/data/servers';
+import { isStoppedStatus, type Server, type ServerUpdate } from '@/data/servers';
 import type { AutoBackupMode, BackupPolicy, BackupScopeItem } from '@/lib/mserve-schema';
 import { getBackupNameFromPath } from '../server-utils';
 import type { CreateServerBackupResult, RestoreServerBackupResult } from '../server-types';
@@ -55,7 +55,7 @@ export const useServerBackupActions = ({
 	const handleDeleteBackup = React.useCallback(
 		async (backupDirectory: string) => {
 			if (!server) return;
-			if (isBusy || server.status === 'online') return;
+			if (isBusy || !isStoppedStatus(server.status)) return;
 
 			setIsBusy(true);
 			try {
@@ -78,7 +78,7 @@ export const useServerBackupActions = ({
 	const handleCreateBackup = React.useCallback(
 		async (name?: string) => {
 			if (!server) return;
-			if (isBusy || server.status === 'online') return;
+			if (isBusy || !isStoppedStatus(server.status)) return;
 			setIsBusy(true);
 			try {
 				const result = await invoke<CreateServerBackupResult>('create_server_backup', {
@@ -190,7 +190,7 @@ export const useServerBackupActions = ({
 
 	const handleClearAllBackups = React.useCallback(async () => {
 		if (!server) return;
-		if (isBusy || server.status === 'online') return;
+		if (isBusy || !isStoppedStatus(server.status)) return;
 
 		const backupsToDelete = [...server.backups];
 		if (backupsToDelete.length === 0) {
@@ -228,7 +228,7 @@ export const useServerBackupActions = ({
 	const handleRestoreBackup = React.useCallback(
 		async (backupDirectory: string) => {
 			if (!server) return;
-			if (isBusy || server.status === 'online') return;
+			if (isBusy || !isStoppedStatus(server.status)) return;
 
 			setIsBusy(true);
 			let loadingToastId: string | number | undefined;

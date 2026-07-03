@@ -30,7 +30,7 @@ import {
 	startingServerStats,
 } from '@/lib/server-telemetry';
 import { isJavaVersionError, stripAnsi } from '@/lib/utils';
-import { planJavaFallback, resolveServerJavaExecutable } from '@/lib/java-resolution';
+import { planJavaFallback } from '@/lib/java-resolution';
 import { setServerJavaInstallation, type JavaRuntimeInfo } from '@/lib/java-runtime-service';
 import type {
 	ServerOutputEvent,
@@ -38,10 +38,6 @@ import type {
 	ServerRuntimeStateEvent,
 	ServerTelemetryEvent,
 } from '@/pages/server/server-types';
-
-// Minimum gap between auto-restart attempts so a server that crashes on boot
-// doesn't spin in a tight restart loop.
-const AUTO_RESTART_COOLDOWN_MS = 15000;
 
 // Per-server bookkeeping for the background lifecycle handling.
 type RuntimeEntry = {
@@ -178,6 +174,13 @@ export const ServerRuntimeMonitor: React.FC = () => {
 				setServerStatus(server.id, 'closing');
 				return;
 			}
+			if (state === 'sleeping') {
+				// The backend now holds the port with a wake listener; reflect it and
+				// keep the entry so a later wake/crash is handled normally.
+				setServerStatus(server.id, 'sleeping');
+				updateServerStats(server.id, offlineServerStats());
+				return;
+			}
 
 			// offline or crashed.
 			const noPinnedJava = (server.java_installation ?? '').trim() === '';
@@ -207,34 +210,21 @@ export const ServerRuntimeMonitor: React.FC = () => {
 				return;
 			}
 
-			// Auto-restart any unrequested close (crash or in-game stop) when enabled.
-			const now = Date.now();
-			if (
-				server.auto_restart &&
-				server.status !== 'closing' &&
-				now - entry.lastRestartAt > AUTO_RESTART_COOLDOWN_MS
-			) {
-				const resolution = resolveServerJavaExecutable({
-					provider: server.provider,
-					javaInstallation: server.java_installation,
-					globalDefault: javaDefaultRef.current,
-					runtimes: runtimesRef.current,
-				});
-				if (resolution.status === 'resolved') {
-					entry.lastRestartAt = now;
-					entry.everRunning = false;
-					startWith(server, resolution.executablePath);
-					return;
-				}
+			// Auto-restart (including crash-loop guarding) now lives in the Rust
+			// supervisor, so it keeps working with the app window closed. The monitor
+			// only reflects the resulting state.
+			if (state === 'crashed') {
+				setServerStatus(server.id, 'crashed');
+				updateServerStats(server.id, offlineServerStats());
+				toast.error(
+					exitCode != null ? `${server.name} crashed (exit code ${exitCode}).` : `${server.name} crashed.`,
+				);
+				entriesRef.current.delete(server.id);
+				return;
 			}
 
 			setServerStatus(server.id, 'offline');
 			updateServerStats(server.id, offlineServerStats());
-			if (state === 'crashed') {
-				toast.error(
-					exitCode != null ? `${server.name} crashed (exit code ${exitCode}).` : `${server.name} crashed.`,
-				);
-			}
 			entriesRef.current.delete(server.id);
 		})
 			.then((cleanup) => {

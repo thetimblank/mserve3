@@ -16,6 +16,7 @@ import { useJavaDownload } from '@/data/java-download';
 import { planJavaFallback, resolveServerJavaExecutable } from '@/lib/java-resolution';
 import { setServerJavaInstallation } from '@/lib/java-runtime-service';
 import {
+	type CrashInfo,
 	type CreateServerBackupResult,
 	type ScanServerContentsResult,
 	type ServerOutputEvent,
@@ -23,7 +24,7 @@ import {
 	type ServerRuntimeStateEvent,
 	type ServerTelemetryEvent,
 } from '../server-types';
-import { didRequestStop, isStopCommand, makeCloseBackupKey, mapScannedBackups } from '../server-utils';
+import { isStopCommand, makeCloseBackupKey, mapScannedBackups } from '../server-utils';
 import { claimServerRuntime, releaseServerRuntime } from '@/lib/server-runtime-registry';
 import { isProxyProvider } from '@/lib/server-provider';
 
@@ -116,7 +117,7 @@ export const useServerRuntime = ({
 	const hasOnCloseBackup = autoBackupModes.includes('on_close');
 	const hasIntervalBackup = autoBackupModes.includes('interval');
 	const autoBackupIntervalMinutes = Math.max(1, server?.auto_backup_interval ?? 1);
-	const isAutoRestartEnabled = Boolean(server?.auto_restart);
+	const [lastCrash, setLastCrash] = React.useState<CrashInfo | null>(null);
 
 	const showError = React.useCallback(
 		(error: unknown, fallback: string) => {
@@ -155,6 +156,25 @@ export const useServerRuntime = ({
 		runtimeRef.current.everRunning = false;
 		updateServerStats(serverId, offlineServerStats());
 	}, [serverId, setServerStatus, updateServerStats]);
+
+	/** Like {@link setOfflineState} but parks the server in the `crashed` status
+	 * and records the crash details for the crash panel. */
+	const setCrashedState = React.useCallback(
+		(crash: CrashInfo) => {
+			setServerStatus(serverId, 'crashed');
+			runtimeRef.current.startAt = null;
+			runtimeRef.current.manualStopRequested = false;
+			runtimeRef.current.stopRequested = false;
+			runtimeRef.current.restartRequested = false;
+			runtimeRef.current.everRunning = false;
+			updateServerStats(serverId, offlineServerStats());
+			setLastCrash(crash);
+		},
+		[serverId, setServerStatus, updateServerStats],
+	);
+
+	/** Clears the crash panel (user dismissed it) without changing status. */
+	const dismissCrash = React.useCallback(() => setLastCrash(null), []);
 
 	const setStartingState = React.useCallback(() => {
 		runtimeRef.current.startAt = new Date();
@@ -471,7 +491,7 @@ export const useServerRuntime = ({
 		listen<ServerRuntimeStateEvent>('server-runtime-state', (event) => {
 			if (!active) return;
 			if (event.payload.directory !== serverDirectory) return;
-			const { state, exitCode, startedAt, serverPort } = event.payload;
+			const { state, exitCode, startedAt, serverPort, stderrTail } = event.payload;
 
 			// The supervisor knows the port the server is actually bound to (it may
 			// have been reassigned on start when the configured one was taken).
@@ -485,6 +505,7 @@ export const useServerRuntime = ({
 				runtimeRef.current.javaFallbackInProgress = false;
 				runtimeRef.current.javaAttemptMajors = [];
 				runtimeRef.current.isAutoRestarting = false;
+				setLastCrash(null);
 				runtimeRef.current.stopRequested = false;
 				runtimeRef.current.restartRequested = false;
 				runtimeRef.current.manualStopRequested = false;
@@ -515,6 +536,7 @@ export const useServerRuntime = ({
 
 			if (state === 'starting') {
 				if (!runtimeRef.current.startAt) runtimeRef.current.startAt = new Date();
+				setLastCrash(null);
 				setServerStatus(serverId, 'starting');
 				return;
 			}
@@ -524,13 +546,33 @@ export const useServerRuntime = ({
 				return;
 			}
 
-			// offline or crashed.
+			if (state === 'sleeping') {
+				// The process is down but mserve holds the port with a wake listener.
+				// Treat it like a graceful close (run the on-close backup) but land in
+				// the sleeping status rather than offline.
+				void (async () => {
+					const closeBackupKey = makeCloseBackupKey(serverId, exitCode);
+					if (
+						!runtimeRef.current.forceKilled &&
+						hasOnCloseBackup &&
+						runtimeRef.current.lastOnCloseBackupKey !== closeBackupKey
+					) {
+						runtimeRef.current.lastOnCloseBackupKey = closeBackupKey;
+						await createAutomaticBackup('on_close');
+					}
+					runtimeRef.current.startAt = null;
+					runtimeRef.current.stopRequested = false;
+					setServerStatus(serverId, 'sleeping');
+					updateServerStats(serverId, offlineServerStats());
+				})();
+				return;
+			}
+
+			// offline or crashed. (Backend auto-restart — including crash-loop
+			// guarding — lives in the Rust supervisor now, so it keeps working with
+			// the app window closed. The frontend only reflects the resulting state
+			// and, for boot-time Java errors, still owns the version step-down.)
 			void (async () => {
-				const stopWasRequested = didRequestStop(
-					runtimeRef.current.stopRequested,
-					runtimeRef.current.restartRequested,
-					runtimeRef.current.manualStopRequested,
-				);
 				const closeBackupKey = makeCloseBackupKey(serverId, exitCode);
 
 				if (
@@ -547,38 +589,18 @@ export const useServerRuntime = ({
 					return;
 				}
 
-				if (
-					!stopWasRequested &&
-					isAutoRestartEnabled &&
-					!runtimeRef.current.isAutoRestarting &&
-					!runtimeRef.current.javaGiveUp
-				) {
-					runtimeRef.current.isAutoRestarting = true;
-					setStartingState();
-					appendTerminalLine('[system] Server closed. Auto restart is enabled, starting again...');
-					try {
-						const resolution = resolveJava();
-						if (resolution.status !== 'resolved') {
-							throw new Error('No Java runtime available to auto-restart.');
-						}
-						await startWithJava(resolution.executablePath, resolution.majorVersion);
-						await syncServerContents();
-						runtimeRef.current.isAutoRestarting = false;
-						return;
-					} catch {
-						runtimeRef.current.isAutoRestarting = false;
-					}
-				}
+				runtimeRef.current.forceKilled = false;
 
-				if (state === 'crashed' && !stopWasRequested) {
+				if (state === 'crashed') {
 					appendTerminalLine(
 						exitCode != null
 							? `[system] Server crashed (exit code ${exitCode}).`
 							: '[system] Server crashed.',
 					);
+					setCrashedState({ exitCode, stderrTail: stderrTail ?? [], at: new Date() });
+					return;
 				}
 
-				runtimeRef.current.forceKilled = false;
 				setOfflineState();
 			})();
 		})
@@ -599,17 +621,13 @@ export const useServerRuntime = ({
 		appendTerminalLine,
 		createAutomaticBackup,
 		hasOnCloseBackup,
-		isAutoRestartEnabled,
-		resolveJava,
 		server?.java_installation,
 		serverDirectory,
 		serverId,
 		serverTelemetryPort,
+		setCrashedState,
 		setOfflineState,
 		setServerStatus,
-		setStartingState,
-		startWithJava,
-		syncServerContents,
 		updateServer,
 		updateServerStats,
 	]);
@@ -856,5 +874,7 @@ export const useServerRuntime = ({
 		handleRestart,
 		handleForceKill,
 		handleTerminalCommandSubmit,
+		lastCrash,
+		dismissCrash,
 	};
 };

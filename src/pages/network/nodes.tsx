@@ -34,6 +34,8 @@ const STATUS_DOT: Record<ServerStatus, string> = {
 	offline: 'bg-muted-foreground/40',
 	starting: 'bg-amber-500',
 	closing: 'bg-amber-500',
+	crashed: 'bg-red-500',
+	sleeping: 'bg-indigo-400',
 };
 
 const StatusDot = ({ status }: { status: ServerStatus }) => (

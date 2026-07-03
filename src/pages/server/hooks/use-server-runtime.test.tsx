@@ -122,9 +122,37 @@ describe('useServerRuntime — event-driven lifecycle', () => {
 		);
 	});
 
-	it('reports a crash and goes offline when no stop was requested', async () => {
-		const { spies } = renderRuntime(makeServer({ auto_restart: false }));
+	it('reports a crash and enters the crashed status', async () => {
+		const { result, spies } = renderRuntime(makeServer({ auto_restart: false }));
 		await waitFor(() => expect(invokeMock).toHaveBeenCalled());
+
+		await act(async () => {
+			emitTauriEvent('server-runtime-state', {
+				directory: DIR,
+				state: 'crashed',
+				pid: null,
+				startedAt: null,
+				exitCode: 1,
+				stderrTail: ['java.lang.OutOfMemoryError'],
+			});
+		});
+
+		await waitFor(() =>
+			expect(spies.appendTerminalLine).toHaveBeenCalledWith(expect.stringContaining('crashed')),
+		);
+		expect(spies.setServerStatus).toHaveBeenCalledWith('srv-1', 'crashed');
+		// Crash details (exit code + stderr tail) are exposed for the crash panel.
+		await waitFor(() => expect(result.current.lastCrash).not.toBeNull());
+		expect(result.current.lastCrash?.exitCode).toBe(1);
+		expect(result.current.lastCrash?.stderrTail).toEqual(['java.lang.OutOfMemoryError']);
+	});
+
+	it('does NOT auto-restart on crash — that now lives in the backend supervisor', async () => {
+		mockInvoke('start_server', () => undefined);
+		// auto_restart enabled: the old frontend would have called start_server here.
+		const { spies } = renderRuntime(makeServer({ auto_restart: true }));
+		await waitFor(() => expect(invokeMock).toHaveBeenCalled());
+		invokeMock.mockClear();
 
 		await act(async () => {
 			emitTauriEvent('server-runtime-state', {
@@ -137,10 +165,8 @@ describe('useServerRuntime — event-driven lifecycle', () => {
 			});
 		});
 
-		await waitFor(() =>
-			expect(spies.appendTerminalLine).toHaveBeenCalledWith(expect.stringContaining('crashed')),
-		);
-		expect(spies.setServerStatus).toHaveBeenCalledWith('srv-1', 'offline');
+		await waitFor(() => expect(spies.setServerStatus).toHaveBeenCalledWith('srv-1', 'crashed'));
+		expect(invokeMock).not.toHaveBeenCalledWith('start_server', expect.anything());
 	});
 
 	it('ignores events for a different server directory', async () => {

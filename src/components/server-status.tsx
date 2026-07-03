@@ -1,5 +1,5 @@
 import { Server } from '@/data/servers';
-import { Circle, LoaderCircle } from 'lucide-react';
+import { Circle, CircleAlert, LoaderCircle, Moon } from 'lucide-react';
 import React from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import clsx from 'clsx';
@@ -131,6 +131,22 @@ const ServerStatus: React.FC<Props> = ({ server, size = 'md' }) => {
 				<div className={`text-yellow-500 flex items-center flex-col animate-pulse ${classes.container}`}>
 					<LoaderCircle className={`animate-spin ${classes.visual}`} />
 					<p className={`font-bold ${classes.status}`}>Closing</p>
+				</div>
+			)}
+			{server.status === 'crashed' && (
+				<div className={`text-red-500 flex items-center flex-col ${classes.container}`}>
+					<div className={`${classes.visual} flex flex-col items-center justify-center`}>
+						<CircleAlert className={`absolute text-red-500 ${classes.ring}`} />
+					</div>
+					<p className={`font-bold ${classes.status}`}>Crashed</p>
+				</div>
+			)}
+			{server.status === 'sleeping' && (
+				<div className={`text-indigo-400 flex items-center flex-col ${classes.container}`}>
+					<div className={`${classes.visual} flex flex-col items-center justify-center`}>
+						<Moon className={`absolute text-indigo-400 ${classes.icon}`} />
+					</div>
+					<p className={`font-bold ${classes.status}`}>Sleeping</p>
 				</div>
 			)}
 		</>

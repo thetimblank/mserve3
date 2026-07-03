@@ -62,10 +62,10 @@ Using semver `vmajor.minor.fix` e.g. `v4.0.12`
 - ~~Rework backup system to have all of the features the user would expect, e.g. different retention policies, better/smart limits, etc. Think about other stuff that would go into this system. Make it a smart backup system. Also obviously remove backups for any proxies. you may want to also let users choose what they backup, maybe perworld, also plugin configs, etc, just do what's best here for UX.~~ ✅
 - ~~add tunneling instead of just port forwarding~~
 - ~~more help pages and explanations (think of features normal users may be confused about, also add page to just have like "I want a survival SMP" and auto-prefill settings [might be good for onboarding], etc.)~~ ✅
-- Home page upgrade: better statistics (storage size, etc.), also add something useful and like "insights", cleanup the ui and make it a dashboard people come to remember and find genuine use out of. add other features they should expect and some beyond.
-- Add a Server crashed state (UI) and crash protection if possible or even a thing.
-- Server bot protection and enhance security
-- sleep mode and settings controlling sleep mode. (like when no more users are logged in afte X time, also auto boot up when someone joins, etc)
+- ~~Home page upgrade: better statistics (storage size, etc.), also add something useful and like "insights", cleanup the ui and make it a dashboard people come to remember and find genuine use out of. add other features they should expect and some beyond.~~ ✅
+- ~~Add a Server crashed state (UI) and crash protection if possible or even a thing.~~ ✅
+- ~~Server bot protection and enhance security~~ ✅
+- ~~sleep mode and settings controlling sleep mode. (like when no more users are logged in afte X time, also auto boot up when someone joins, etc)~~ ✅
 - rework MC settings for non-advanced users (Like the server.properties, velocity.toml, etc. make these more user friendly for non-advanced users)
 - ~~onboarding (advanced/beginner, theme, what is goal, etc)~~ ✅
 - ~~move help pages below servers in sidebar~~ ✅
@@ -78,6 +78,7 @@ Using semver `vmajor.minor.fix` e.g. `v4.0.12`
 
 Bugs/Fixes
 
+- ~~Fix swap server jar going off screen~~ ✅
 - ~~Proxies have a backup settings tab, remove the backups page in the settings tab entirely (since it has now moved to the backups tab)~~ ✅
 - ~~Ram not showing up on modpack screen~~ ✅
 - ~~Auto-java detection not working on stuff like 26.1.2 (Uses J17, then J21, but never gets to J25.) Also, J17 is just wrong for this, not sure why it shows that for 26.1.2~~ ✅

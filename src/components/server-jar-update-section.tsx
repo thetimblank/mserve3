@@ -18,10 +18,7 @@ import { downloadAndResolveJarRow } from '@/lib/jar-download-service';
 import { createProvider } from '@/lib/server-provider';
 import { getServerNameFromDirectory } from '@/lib/mserve-server-mapper';
 import { type ServerUpdateTarget } from '@/lib/server-update-service';
-import {
-	buildUpdateServerSettingsPayload,
-	resolveNewDirectory,
-} from '@/pages/server/server-utils';
+import { buildUpdateServerSettingsPayload, resolveNewDirectory } from '@/pages/server/server-utils';
 import type {
 	ServerSettingsForm,
 	UpdateServerSettingsPayload,
@@ -47,6 +44,9 @@ const buildUpdatePayload = (
 		auto_backup: server.auto_backup,
 		auto_backup_interval: server.auto_backup_interval,
 		auto_restart: server.auto_restart,
+		sleep_enabled: server.sleep_enabled,
+		sleep_idle_minutes: server.sleep_idle_minutes,
+		sleep_motd: server.sleep_motd,
 		custom_flags: server.custom_flags,
 		java_installation: server.java_installation ?? '',
 		provider,
@@ -82,24 +82,19 @@ const ServerJarUpdateSection: React.FC<Props> = ({ server, disabled }) => {
 			setIsUpdating(true);
 			try {
 				if (options.backup) {
-					await toast.promise(
-						invoke('create_server_backup', { directory: server.directory }),
-						{
-							loading: 'Creating backup before updating...',
-							success: 'Backup created.',
-							error: (err) =>
-								err instanceof Error ? err.message : 'Failed to create backup.',
-						},
-					);
+					toast.promise(invoke('create_server_backup', { directory: server.directory }), {
+						loading: 'Creating backup before updating...',
+						success: 'Backup created.',
+						error: (err) => (err instanceof Error ? err.message : 'Failed to create backup.'),
+					});
 				}
 
 				const updatePromise = (async () => {
 					const { result } = await downloadAndResolveJarRow(target.row);
 					const payload = buildUpdatePayload(server, target, result.path);
-					const settingsResult = await invoke<UpdateServerSettingsResult>(
-						'update_server_settings',
-						{ payload },
-					);
+					const settingsResult = await invoke<UpdateServerSettingsResult>('update_server_settings', {
+						payload,
+					});
 					return settingsResult;
 				})();
 
@@ -150,7 +145,12 @@ const ServerJarUpdateSection: React.FC<Props> = ({ server, disabled }) => {
 	const { message, hasUpdate, latestLabel, isError } = React.useMemo(() => {
 		switch (entry.status) {
 			case 'checking':
-				return { message: 'Checking for updates...', hasUpdate: false, latestLabel: null, isError: false };
+				return {
+					message: 'Checking for updates...',
+					hasUpdate: false,
+					latestLabel: null,
+					isError: false,
+				};
 			case 'error':
 				return { message: entry.error, hasUpdate: false, latestLabel: null, isError: true };
 			case 'result': {
@@ -160,7 +160,7 @@ const ServerJarUpdateSection: React.FC<Props> = ({ server, disabled }) => {
 				}
 				if (check.status === 'up-to-date') {
 					return {
-						message: `Up to date (${check.currentLabel}).`,
+						message: `Up to date.`,
 						hasUpdate: false,
 						latestLabel: null,
 						isError: false,
@@ -181,9 +181,7 @@ const ServerJarUpdateSection: React.FC<Props> = ({ server, disabled }) => {
 	}, [entry]);
 
 	const currentLabel =
-		entry.status === 'result' && entry.check.status !== 'unsupported'
-			? entry.check.currentLabel
-			: null;
+		entry.status === 'result' && entry.check.status !== 'unsupported' ? entry.check.currentLabel : null;
 
 	return (
 		<section className='space-y-3 max-w-lg'>
@@ -197,35 +195,29 @@ const ServerJarUpdateSection: React.FC<Props> = ({ server, disabled }) => {
 					)}
 				</p>
 				<p className='text-sm text-muted-foreground'>
-					Check the provider for a newer build and install it. The new jar is swapped in over the existing
-					one.
+					Check the provider for a newer build and install it. The new jar is swapped in over the
+					existing one.
 				</p>
 			</div>
 
 			<div>
-				{currentLabel && <p className='font-medium'>Current version: {currentLabel}</p>}
+				<p className='font-medium'>{currentLabel ?? 'Checking'}</p>
 				<p className={`text-sm ${isError ? 'text-destructive' : 'text-muted-foreground'}`}>{message}</p>
 			</div>
 
 			<div className='flex flex-wrap items-center gap-3'>
 				<Button variant='secondary' onClick={handleCheck} disabled={isChecking || isUpdating}>
 					<RefreshCcw className={isChecking ? 'animate-spin size-4' : 'size-4'} />
-					{isChecking ? 'Checking...' : 'Check for updates'}
+					{isChecking ? 'Checking...' : 'Check for Updates'}
 				</Button>
 				<Button onClick={handleUpdateClick} disabled={!hasUpdate || actionsDisabled}>
-					{isUpdating ? (
-						<Loader className='animate-spin size-4' />
-					) : (
-						<Download className='size-4' />
-					)}
+					{isUpdating ? <Loader className='animate-spin size-4' /> : <Download className='size-4' />}
 					{isUpdating ? 'Updating...' : latestLabel ? `Update to ${latestLabel}` : 'Update'}
 				</Button>
 			</div>
 
 			{hasUpdate && !isOffline && (
-				<p className='text-sm text-muted-foreground'>
-					The server must be offline to install an update.
-				</p>
+				<p className='text-sm text-muted-foreground'>The server must be offline to install an update.</p>
 			)}
 
 			<AlertDialog open={confirmTarget !== null} onOpenChange={(open) => !open && setConfirmTarget(null)}>
@@ -252,8 +244,7 @@ const ServerJarUpdateSection: React.FC<Props> = ({ server, disabled }) => {
 							<ArrowUpCircle className='size-4' />
 							Proceed
 						</Button>
-						<Button
-							onClick={() => confirmTarget && void runUpdate(confirmTarget, { backup: true })}>
+						<Button onClick={() => confirmTarget && void runUpdate(confirmTarget, { backup: true })}>
 							<CircleCheck className='size-4' />
 							Backup &amp; Proceed
 						</Button>

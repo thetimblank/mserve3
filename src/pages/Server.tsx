@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { invoke } from '@tauri-apps/api/core';
-import { useServers } from '@/data/servers';
+import { isStoppedStatus, useServers } from '@/data/servers';
 import { useUser } from '@/data/user';
 import { useNetworks } from '@/data/networks';
 import { Button } from '@/components/ui/button';
@@ -39,6 +39,7 @@ import { useServerTerminal } from './server/hooks/use-server-terminal';
 import { useServerBackupActions } from './server/hooks/use-server-backup-actions';
 import { useServerRuntime } from './server/hooks/use-server-runtime';
 import ServerOverviewPanel from './server/server-overview-panel';
+import CrashDetailsPanel from './server/crash-details-panel';
 import ServerStatisticsTab from './server/server-statistics-tab';
 import { getServerProviderCapabilities } from '@/lib/server-provider-capabilities';
 import type { ServerContentTab } from './server/server-types';
@@ -138,6 +139,8 @@ const Server: React.FC = () => {
 		handleRestart,
 		handleForceKill,
 		handleTerminalCommandSubmit,
+		lastCrash,
+		dismissCrash,
 	} = useServerRuntime({
 		server,
 		serverId,
@@ -218,7 +221,7 @@ const Server: React.FC = () => {
 				: [];
 
 		const otherServers = servers.filter(
-			(s) => otherServerIds.includes(s.id) && s.status === 'offline',
+			(s) => otherServerIds.includes(s.id) && isStoppedStatus(s.status),
 		);
 
 		for (const other of otherServers) {
@@ -359,6 +362,16 @@ const Server: React.FC = () => {
 
 				{activeTab === 'overview' && (
 					<div className='flex flex-col flex-1'>
+						{lastCrash && server.status === 'crashed' && (
+							<div className='mb-4'>
+								<CrashDetailsPanel
+									crash={lastCrash}
+									isBusy={isBusy}
+									onRestart={handleStartClick}
+									onDismiss={dismissCrash}
+								/>
+							</div>
+						)}
 						<ServerOverviewPanel
 							server={server}
 							javaInstallationDefault={user.java_installation_default}

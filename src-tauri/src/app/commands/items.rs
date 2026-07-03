@@ -1,10 +1,12 @@
 use super::super::support::{
     add_path_to_zip, copy_dir_filtered, extract_zip_to_directory, home_dir,
     is_simple_relative_name, item_roots, list_backups, list_datapacks, list_mods, list_plugins,
-    list_worlds, remove_item_to_trash, resolve_item_locations, toggle_item_activation,
+    list_worlds, path_size_bytes, remove_item_to_trash, resolve_item_locations,
+    toggle_item_activation,
 };
 use super::super::{
-    ExportWorldResult, ItemActionPayload, ServerScanResult, ToggleItemPayload, UploadItemPayload,
+    ExportWorldResult, ItemActionPayload, ServerScanResult, ServerStorageInfo, ToggleItemPayload,
+    UploadItemPayload,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -155,4 +157,43 @@ pub(in crate::app) fn scan_server_contents(directory: String) -> Result<ServerSc
 #[tauri::command]
 pub(in crate::app) fn set_server_item_active(payload: ToggleItemPayload) -> Result<(), String> {
     toggle_item_activation(payload)
+}
+
+/// Batched disk-usage rollup for the dashboard: total directory size plus the
+/// worlds and backups split, for every server directory in one call. Missing
+/// directories report zeros rather than failing the whole batch.
+#[tauri::command]
+pub(in crate::app) fn get_servers_storage(directories: Vec<String>) -> Vec<ServerStorageInfo> {
+    directories
+        .into_iter()
+        .map(|directory| {
+            let directory_path = PathBuf::from(directory.trim());
+            if !directory_path.is_dir() {
+                return ServerStorageInfo {
+                    directory,
+                    total_bytes: 0,
+                    worlds_bytes: 0,
+                    backups_bytes: 0,
+                };
+            }
+
+            let total_bytes = path_size_bytes(&directory_path);
+            let worlds_bytes = list_worlds(&directory_path)
+                .iter()
+                .filter(|world| world.activated)
+                .fold(0_u64, |total, world| {
+                    total.saturating_add(world.size.unwrap_or(0))
+                });
+            let backups_bytes = list_backups(&directory_path)
+                .iter()
+                .fold(0_u64, |total, backup| total.saturating_add(backup.size));
+
+            ServerStorageInfo {
+                directory,
+                total_bytes,
+                worlds_bytes,
+                backups_bytes,
+            }
+        })
+        .collect()
 }

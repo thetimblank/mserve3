@@ -44,7 +44,8 @@ export type ServerRuntimeState =
 	| 'online'
 	| 'stopping'
 	| 'crashed'
-	| 'running-external';
+	| 'running-external'
+	| 'sleeping';
 
 /** A single live telemetry reading from the backend supervisor. */
 export type TelemetrySample = {
@@ -91,6 +92,13 @@ export type ServerRuntimeSnapshot = {
 	serverPort: number | null;
 };
 
+/** Details of the most recent unexpected server exit, shown in the crash panel. */
+export type CrashInfo = {
+	exitCode: number | null;
+	stderrTail: string[];
+	at: Date;
+};
+
 /** A bucket-averaged history point for the (future) telemetry timeline graph. */
 export type TelemetryHistoryPoint = {
 	timestamp: number;
@@ -109,6 +117,9 @@ export type UpdateServerSettingsPayload = {
 	auto_backup: AutoBackupMode[];
 	auto_backup_interval: number;
 	auto_restart: boolean;
+	sleep_enabled: boolean;
+	sleep_idle_minutes: number;
+	sleep_motd: string;
 	custom_flags: string[];
 	java_installation?: string;
 	provider: Provider;
@@ -172,6 +183,9 @@ export type ServerSettingsForm = {
 	auto_backup: AutoBackupMode[];
 	auto_backup_interval: number;
 	auto_restart: boolean;
+	sleep_enabled: boolean;
+	sleep_idle_minutes: number;
+	sleep_motd: string;
 	custom_flags: string[];
 	java_installation: string;
 	provider: Provider;

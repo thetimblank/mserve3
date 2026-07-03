@@ -12,6 +12,8 @@ export interface UserData {
 	auto_check_server_updates: boolean;
 	completed_setup_hosting_ports: number[];
 	initial_setup_hosting_tutorial_completed: boolean;
+	/** Dashboard section ids the user has hidden (see DASHBOARD_SECTION_IDS). */
+	dashboard_hidden_sections: string[];
 	/** True once the first-launch welcome tour has been finished or skipped. */
 	onboarding_completed: boolean;
 	created_at: Date;
@@ -51,6 +53,23 @@ const normalizePortList = (ports?: number[]) =>
 
 const toTrimmedString = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : '');
 
+/** Dashboard sections the user can show/hide, in display order. */
+export const DASHBOARD_SECTION_IDS = [
+	'metrics',
+	'attention',
+	'storage',
+	'activity',
+	'online',
+	'most-used',
+	'networks',
+] as const;
+export type DashboardSectionId = (typeof DASHBOARD_SECTION_IDS)[number];
+
+const normalizeDashboardHiddenSections = (value: unknown): string[] => {
+	if (!Array.isArray(value)) return [];
+	return DASHBOARD_SECTION_IDS.filter((id) => value.includes(id));
+};
+
 const normalizeJavaDefault = (value: unknown): string => {
 	const trimmed = typeof value === 'string' ? value.trim() : '';
 	if (!trimmed) return '';
@@ -71,6 +90,7 @@ export const createDefaultUserData = (): UserData => {
 		auto_check_server_updates: true,
 		completed_setup_hosting_ports: [],
 		initial_setup_hosting_tutorial_completed: false,
+		dashboard_hidden_sections: [],
 		onboarding_completed: false,
 		created_at: now,
 		updated_at: now,
@@ -94,6 +114,7 @@ export const normalizeUserData = (user: Partial<UserData> | null | undefined): U
 		auto_check_server_updates: user?.auto_check_server_updates ?? true,
 		completed_setup_hosting_ports: normalizePortList(user?.completed_setup_hosting_ports),
 		initial_setup_hosting_tutorial_completed: user?.initial_setup_hosting_tutorial_completed ?? false,
+		dashboard_hidden_sections: normalizeDashboardHiddenSections(user?.dashboard_hidden_sections),
 		onboarding_completed: user?.onboarding_completed ?? false,
 		created_at: toDate(user?.created_at ?? fallback.created_at),
 		updated_at: toDate(user?.updated_at ?? fallback.updated_at),

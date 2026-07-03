@@ -40,6 +40,12 @@ struct InitServerPayload {
     ram: f64,
     storage_limit: u32,
     auto_restart: bool,
+    #[serde(default)]
+    sleep_enabled: bool,
+    #[serde(default)]
+    sleep_idle_minutes: Option<u32>,
+    #[serde(default)]
+    sleep_motd: Option<String>,
     auto_backup: Vec<String>,
     auto_backup_interval: u32,
     auto_agree_eula: bool,
@@ -68,6 +74,12 @@ struct RepairMserveJsonPayload {
     auto_backup: Vec<String>,
     auto_backup_interval: u32,
     auto_restart: bool,
+    #[serde(default)]
+    sleep_enabled: bool,
+    #[serde(default)]
+    sleep_idle_minutes: Option<u32>,
+    #[serde(default)]
+    sleep_motd: Option<String>,
     custom_flags: Vec<String>,
     java_installation: Option<String>,
     provider: Option<MserveProvider>,
@@ -93,6 +105,12 @@ struct SyncedMserveConfig {
     /// What a backup contains: any of "worlds", "plugins", "mods", "configs".
     backup_scope: Vec<String>,
     auto_restart: bool,
+    /// Sleep mode: park the server and hold its port with a wake listener after
+    /// `sleep_idle_minutes` with no players; a join attempt boots it back up.
+    sleep_enabled: bool,
+    sleep_idle_minutes: u32,
+    /// MOTD shown in the server list while sleeping (legacy-§ color codes).
+    sleep_motd: String,
     custom_flags: Vec<String>,
     java_installation: Option<String>,
     provider: MserveProvider,
@@ -155,6 +173,12 @@ struct UpdateServerSettingsPayload {
     auto_backup: Vec<String>,
     auto_backup_interval: u32,
     auto_restart: bool,
+    #[serde(default)]
+    sleep_enabled: bool,
+    #[serde(default)]
+    sleep_idle_minutes: Option<u32>,
+    #[serde(default)]
+    sleep_motd: Option<String>,
     custom_flags: Vec<String>,
     java_installation: Option<String>,
     provider: MserveProvider,
@@ -216,6 +240,12 @@ struct RuntimeServerConfig {
     backup_max_count: Option<u32>,
     backup_max_age_days: Option<u32>,
     backup_scope: Option<Vec<String>>,
+    #[serde(default)]
+    auto_restart: bool,
+    #[serde(default)]
+    sleep_enabled: bool,
+    sleep_idle_minutes: Option<u32>,
+    sleep_motd: Option<String>,
 }
 
 /// playit.gg global account status, surfaced to the tunnel settings UI.
@@ -246,11 +276,16 @@ enum LifecycleState {
     Stopping,
     Crashed,
     RunningExternal,
+    /// Process is down but mserve holds the server port with a wake listener:
+    /// pings get a "sleeping" MOTD and a join attempt boots the real server.
+    Sleeping,
 }
 
 impl LifecycleState {
     /// True while the server is (or may be) up — i.e. not `offline`/`crashed`.
     /// Active runtimes claim their host:port and count as "running" in the UI.
+    /// `Sleeping` is active: the wake listener owns the port, so the port must
+    /// stay claimed against sibling starts and external adoption.
     fn is_active(self) -> bool {
         !matches!(self, LifecycleState::Offline | LifecycleState::Crashed)
     }
@@ -337,6 +372,24 @@ struct ServerRuntime {
     playit_stop: Option<tokio_util::sync::CancellationToken>,
     /// Public tunnel address once the agent is online (for the runtime snapshot).
     tunnel_address: Option<String>,
+    /// The java executable this run was spawned with, so backend-initiated
+    /// restarts/wakes don't depend on the frontend re-resolving Java.
+    /// `None` for adopted servers.
+    java_executable: Option<String>,
+    /// Mirrors mserve.json `auto_restart` at spawn time; owned children only.
+    auto_restart: bool,
+    /// The run reached Online at least once. Gates backend auto-restart so
+    /// boot failures (wrong Java, bad config) stay with the frontend retry.
+    ever_online: bool,
+    /// Sleep-mode config mirrored from mserve.json at spawn time.
+    sleep_enabled: bool,
+    sleep_idle_minutes: u32,
+    sleep_motd: String,
+    /// The supervisor initiated an idle stop: the terminal state becomes
+    /// `Sleeping` (wake listener) instead of `Offline`.
+    sleep_requested: bool,
+    /// Shutdown flag for the wake listener while `state == Sleeping`.
+    sleep_stop: Option<Arc<std::sync::atomic::AtomicBool>>,
 }
 
 #[derive(Default, Clone)]
@@ -528,6 +581,16 @@ struct ServerScanResult {
     backups: Vec<ScannedBackup>,
     worlds_size_bytes: u64,
     backups_size_bytes: u64,
+}
+
+/// Disk-usage rollup for one server directory, batched for the dashboard.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ServerStorageInfo {
+    directory: String,
+    total_bytes: u64,
+    worlds_bytes: u64,
+    backups_bytes: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -793,6 +856,8 @@ pub fn run() {
             scan_managed_server_config_files,
             read_managed_server_config_file,
             write_managed_server_config_file,
+            apply_server_properties,
+            get_servers_storage,
             read_networks_config,
             write_networks_config,
             read_server_network_file,

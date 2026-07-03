@@ -12,7 +12,9 @@ import {
 	LocationSettingsSection,
 	ProviderTelemetrySettingsSection,
 	GeneralSettingsSection,
+	SleepModeSettingsSection,
 } from '@/components/edit-server-properties-form';
+import SecuritySettingsSection from './security/security-settings-section';
 import ServerConfigFileEditor from '@/components/server-config-file-editor';
 import { TunnelSettingsSection } from './tunnel-settings-section';
 import { useUser } from '@/data/user';
@@ -30,7 +32,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Container } from '@/components/ui/container';
 import { Input } from '@/components/ui/input';
-import { Server, useServers } from '@/data/servers';
+import { isStoppedStatus, Server, useServers } from '@/data/servers';
 import type { JavaRuntimeInfo } from '@/lib/java-runtime-service';
 import { repairServerMserveJson, syncServerMserveJson } from '@/lib/mserve-sync';
 import { requestMserveRepair } from '@/lib/mserve-repair-controller';
@@ -56,6 +58,8 @@ type FormSectionId =
 	| 'rename'
 	| 'performance'
 	| 'java'
+	| 'sleep'
+	| 'security'
 	| 'provider-telemetry'
 	| 'server-jar'
 	| 'tunnel'
@@ -86,6 +90,37 @@ const GENERAL_SECTION: SectionConfig = {
 	description: 'Server name.',
 	keywords: ['name', 'rename', 'title', 'general', 'ram', 'memory', 'xmx', 'xms', 'performance', 'heap'],
 	render: () => <GeneralSettingsSection />,
+};
+
+const SLEEP_SECTION: SectionConfig = {
+	id: 'sleep',
+	title: 'Sleep Mode',
+	description: 'Sleep an idle server and wake it automatically when a player joins.',
+	keywords: ['sleep', 'idle', 'wake', 'lazymc', 'power', 'motd', 'afk', 'auto stop', 'hibernate'],
+	render: () => <SleepModeSettingsSection />,
+};
+
+const SECURITY_SECTION: SectionConfig = {
+	id: 'security',
+	title: 'Security',
+	description: 'Audit exposure and bot-attack surface, with one-click hardening.',
+	keywords: [
+		'security',
+		'bot',
+		'ddos',
+		'whitelist',
+		'online mode',
+		'rcon',
+		'protection',
+		'audit',
+		'anti-bot',
+		'antibot',
+		'harden',
+		'exploit',
+	],
+	render: (props) => (
+		<SecuritySettingsSection server={props.server} onContentChanged={props.syncServerContents} />
+	),
 };
 
 const JAVA_SECTION: SectionConfig = {
@@ -198,7 +233,7 @@ const matchesSection = (section: SectionConfig, query: string) => {
 };
 
 const DangerZoneSection: React.FC<SectionProps> = ({ server, isBusy, onRemoveServer, onDeleteServer }) => {
-	const disabled = isBusy || server.status === 'online';
+	const disabled = isBusy || !isStoppedStatus(server.status);
 
 	return (
 		<div className='space-y-4'>
@@ -327,7 +362,7 @@ export default function ServerSettingsPanel({
 	}, [cacheKey, refreshManagedConfigFiles]);
 
 	const handleManualSync = React.useCallback(async () => {
-		if (isBusy || server.status !== 'offline') return;
+		if (isBusy || !isStoppedStatus(server.status)) return;
 
 		setIsBusy(true);
 		try {
@@ -410,7 +445,7 @@ export default function ServerSettingsPanel({
 	}, [clearTerminalSession, isBusy, navigate, removeServer, server.directory, server.id, setIsBusy]);
 
 	const handleRemoveServer = React.useCallback(async () => {
-		if (isBusy || server.status === 'online') return;
+		if (isBusy || !isStoppedStatus(server.status)) return;
 
 		setIsBusy(true);
 		try {
@@ -433,17 +468,19 @@ export default function ServerSettingsPanel({
 	]);
 
 	const baseSections = React.useMemo(() => {
-		const sections: SectionConfig[] = [
-			GENERAL_SECTION,
-			JAVA_SECTION,
-			PROVIDER_TELEMETRY_SECTION,
-			TUNNEL_SECTION,
-		];
+		const sections: SectionConfig[] = [GENERAL_SECTION, JAVA_SECTION];
+		// Sleep mode wakes a server from its own port and the security audit reads
+		// server.properties; proxies (velocity.toml, member orchestration) get
+		// neither in v1.
+		if (providerKind !== 'proxy') {
+			sections.push(SLEEP_SECTION, SECURITY_SECTION);
+		}
+		sections.push(PROVIDER_TELEMETRY_SECTION, TUNNEL_SECTION);
 		if (user.advanced_mode) {
 			sections.push(LOCATION_SECTION);
 		}
 		return sections;
-	}, [user.advanced_mode]);
+	}, [providerKind, user.advanced_mode]);
 
 	const visibleManagedConfigDefinitions = React.useMemo(() => {
 		const statusMap = new Map(managedConfigFileStatuses.map((entry) => [entry.fileName, entry.exists]));
@@ -510,7 +547,7 @@ export default function ServerSettingsPanel({
 		isBusy,
 		setIsBusy,
 		syncServerContents,
-		isLocked: isBusy || server.status !== 'offline',
+		isLocked: isBusy || !isStoppedStatus(server.status),
 		onRemoveServer: handleRemoveServer,
 		onDeleteServer: handleDelete,
 		onConfigFilesChanged: refreshManagedConfigFiles,

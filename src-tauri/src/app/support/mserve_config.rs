@@ -416,6 +416,12 @@ fn sanitize_provider(raw: Option<&serde_json::Value>, fallback_file: &str) -> Ms
     )
 }
 
+/// Default sleeping-server MOTD (legacy-§ colors), shared by config defaults and
+/// the runtime so a sleep-enabled server with no custom MOTD renders consistently.
+pub(in crate::app) const DEFAULT_SLEEP_MOTD: &str = "§eSleeping §7— join to wake this server";
+/// Default idle window (minutes with no players) before a server sleeps.
+pub(in crate::app) const DEFAULT_SLEEP_IDLE_MINUTES: u32 = 15;
+
 pub(in crate::app) fn default_synced_config(directory: &Path) -> SyncedMserveConfig {
     let fallback_file =
         find_first_jar_file_name(directory).unwrap_or_else(|| "server.jar".to_string());
@@ -431,6 +437,9 @@ pub(in crate::app) fn default_synced_config(directory: &Path) -> SyncedMserveCon
         backup_max_age_days: 0,
         backup_scope: default_backup_scope(),
         auto_restart: false,
+        sleep_enabled: false,
+        sleep_idle_minutes: DEFAULT_SLEEP_IDLE_MINUTES,
+        sleep_motd: DEFAULT_SLEEP_MOTD.to_string(),
         custom_flags: default_custom_flags(),
         java_installation: None,
         provider: default_provider_for_file(&fallback_file),
@@ -594,6 +603,27 @@ pub(in crate::app) fn sanitize_mserve_value_config(
         .and_then(serde_json::Value::as_bool)
         .unwrap_or(false);
 
+    let normalized_sleep_enabled = object
+        .get("sleep_enabled")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+
+    let normalized_sleep_idle_minutes = object
+        .get("sleep_idle_minutes")
+        .and_then(serde_json::Value::as_u64)
+        .map(|value| (value as u32).max(1))
+        .unwrap_or(DEFAULT_SLEEP_IDLE_MINUTES);
+
+    let normalized_sleep_motd = object
+        .get("sleep_motd")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map_or_else(
+            || DEFAULT_SLEEP_MOTD.to_string(),
+            std::string::ToString::to_string,
+        );
+
     let normalized_custom_flags = sanitize_custom_flags(object.get("custom_flags"));
 
     let normalized_java_installation = object
@@ -654,6 +684,9 @@ pub(in crate::app) fn sanitize_mserve_value_config(
     config.backup_max_age_days = normalized_backup_max_age_days;
     config.backup_scope = normalized_backup_scope;
     config.auto_restart = normalized_auto_restart;
+    config.sleep_enabled = normalized_sleep_enabled;
+    config.sleep_idle_minutes = normalized_sleep_idle_minutes;
+    config.sleep_motd = normalized_sleep_motd;
     config.custom_flags = normalized_custom_flags;
     config.java_installation = normalized_java_installation;
     config.provider = normalized_provider;
@@ -680,6 +713,9 @@ pub(in crate::app) fn synced_mserve_json_value(config: &SyncedMserveConfig) -> s
         "backup_max_age_days": config.backup_max_age_days,
         "backup_scope": config.backup_scope,
         "auto_restart": config.auto_restart,
+        "sleep_enabled": config.sleep_enabled,
+        "sleep_idle_minutes": config.sleep_idle_minutes.max(1),
+        "sleep_motd": config.sleep_motd,
         "custom_flags": config.custom_flags,
         "java_installation": config.java_installation,
         "provider": config.provider,
@@ -725,6 +761,9 @@ pub(in crate::app) fn validate_mserve_json_keys(
         "backup_max_age_days",
         "backup_scope",
         "auto_restart",
+        "sleep_enabled",
+        "sleep_idle_minutes",
+        "sleep_motd",
         "custom_flags",
         "java_installation",
         "provider",
@@ -1039,6 +1078,54 @@ mod tests {
         let object = json!({
             "id": "srv-1", "file": "server.jar", "ram": 4.0, "storage_limit": 200,
             "tunnel_enabled": true, "tunnel_id": "x", "tunnel_address": "y",
+        });
+        let map = object.as_object().unwrap().clone();
+        assert!(validate_mserve_json_keys(&map).is_ok());
+    }
+
+    #[test]
+    fn sleep_fields_default_when_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = sanitize_mserve_value_config(dir.path(), &serde_json::Map::new());
+        assert!(!config.sleep_enabled);
+        assert_eq!(config.sleep_idle_minutes, DEFAULT_SLEEP_IDLE_MINUTES);
+        assert_eq!(config.sleep_motd, DEFAULT_SLEEP_MOTD);
+    }
+
+    #[test]
+    fn sleep_fields_round_trip_and_clamp() {
+        let dir = tempfile::tempdir().unwrap();
+        let object = json!({
+            "sleep_enabled": true,
+            "sleep_idle_minutes": 0, // clamps up to 1
+            "sleep_motd": "  Nap time  ",
+        });
+        let map = object.as_object().unwrap().clone();
+        let config = sanitize_mserve_value_config(dir.path(), &map);
+        assert!(config.sleep_enabled);
+        assert_eq!(config.sleep_idle_minutes, 1);
+        assert_eq!(config.sleep_motd, "Nap time");
+
+        let value = synced_mserve_json_value(&config);
+        assert_eq!(value["sleep_enabled"], json!(true));
+        assert_eq!(value["sleep_idle_minutes"], json!(1));
+        assert_eq!(value["sleep_motd"], json!("Nap time"));
+    }
+
+    #[test]
+    fn blank_sleep_motd_falls_back_to_default() {
+        let dir = tempfile::tempdir().unwrap();
+        let object = json!({ "sleep_motd": "   " });
+        let map = object.as_object().unwrap().clone();
+        let config = sanitize_mserve_value_config(dir.path(), &map);
+        assert_eq!(config.sleep_motd, DEFAULT_SLEEP_MOTD);
+    }
+
+    #[test]
+    fn sleep_keys_are_allowed() {
+        let object = json!({
+            "id": "srv-1", "file": "server.jar", "ram": 4.0, "storage_limit": 200,
+            "sleep_enabled": true, "sleep_idle_minutes": 10, "sleep_motd": "z",
         });
         let map = object.as_object().unwrap().clone();
         assert!(validate_mserve_json_keys(&map).is_ok());

@@ -4,6 +4,7 @@ mod core;
 mod items;
 #[cfg(target_os = "linux")]
 mod linux_firewall;
+mod mc_protocol;
 mod mserve_config;
 // Namespaced (not glob re-exported) so its generically-named helpers
 // (`read_secret`, `start_tunnel`, …) stay under `support::playit::`.
@@ -13,6 +14,7 @@ mod rcon;
 mod runtime_io;
 mod scan;
 mod server_properties;
+mod sleep_listener;
 mod supervisor;
 mod telemetry;
 mod telemetry_store;

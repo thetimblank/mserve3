@@ -310,8 +310,15 @@ fn launch_tunnel(
     });
 }
 
-/// Core start routine, shared by the `start_server` command and the restart flow.
-fn start_server_internal(
+/// The default sleeping-server MOTD, shown in the client server list while a
+/// server naps. Shares the canonical string with the config layer.
+pub(in crate::app) fn default_sleep_motd() -> String {
+    super::super::support::DEFAULT_SLEEP_MOTD.to_string()
+}
+
+/// Core start routine, shared by the `start_server` command, the restart flow,
+/// backend auto-restart (supervisor), and sleep-mode wake (sleep listener).
+pub(in crate::app) fn start_server_internal(
     directory: String,
     java_executable: Option<String>,
     processes: Processes,
@@ -325,8 +332,10 @@ fn start_server_internal(
     let config = get_runtime_config(&directory_path)?;
     let key = server_key(&directory);
 
-    // Refuse to start over a live process; otherwise drop any stale record.
-    {
+    // Refuse to start over a live process; otherwise drop any stale record. A
+    // sleeping entry means the wake listener owns the port — signal it to stop
+    // and wait for the port to free before we bind it (this is the "wake" path).
+    let sleeping_port = {
         let mut guard = processes.lock().map_err(|_| "Runtime lock failed.")?;
         if let Some(existing) = guard.get_mut(&key) {
             let alive = existing
@@ -336,7 +345,23 @@ fn start_server_internal(
             if alive {
                 return Err("Server is already running.".to_string());
             }
+            let was_sleeping = matches!(existing.state, LifecycleState::Sleeping);
+            let port = existing.server_port;
+            if let Some(flag) = existing.sleep_stop.take() {
+                flag.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
             guard.remove(&key);
+            was_sleeping.then_some(port)
+        } else {
+            None
+        }
+    };
+    if let Some(port) = sleeping_port {
+        for _ in 0..15 {
+            if !probe_port("127.0.0.1", port, Duration::from_millis(200)) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(200));
         }
     }
 
@@ -421,6 +446,18 @@ fn start_server_internal(
         stop_requested_at: None,
         playit_stop: None,
         tunnel_address: None,
+        java_executable: Some(java_executable.clone()),
+        auto_restart: config.auto_restart,
+        ever_online: false,
+        sleep_enabled: config.sleep_enabled && !is_proxy,
+        sleep_idle_minutes: config.sleep_idle_minutes.unwrap_or(15).max(1),
+        sleep_motd: config
+            .sleep_motd
+            .clone()
+            .filter(|motd| !motd.trim().is_empty())
+            .unwrap_or_else(default_sleep_motd),
+        sleep_requested: false,
+        sleep_stop: None,
     };
 
     {
@@ -510,6 +547,35 @@ pub(in crate::app) fn get_server_start_command(
 
 /// Flags a runtime as gracefully stopping (idempotent). Already-terminal
 /// (offline/crashed) runtimes are left as-is so their state isn't resurrected.
+/// True when a console command is a graceful shutdown (`stop`), matching the
+/// frontend's `isStopCommand`. Used so a console-typed stop is recorded as a
+/// requested close (no crash, no auto-restart). The leading slash is already
+/// stripped by the caller.
+fn is_stop_command(command: &str) -> bool {
+    command.trim().eq_ignore_ascii_case("stop")
+}
+
+/// Signals a sleeping server's wake listener to shut down (releasing the port).
+/// No-op for a server that isn't sleeping.
+fn stop_sleep_listener(runtime: &mut ServerRuntime) {
+    if let Some(flag) = runtime.sleep_stop.take() {
+        flag.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// Builds an offline `server-runtime-state` event for a directory/port.
+fn offline_state_event(directory: String, server_port: u16) -> ServerRuntimeStateEvent {
+    ServerRuntimeStateEvent {
+        directory,
+        state: LifecycleState::Offline,
+        pid: None,
+        started_at: None,
+        exit_code: None,
+        stderr_tail: Vec::new(),
+        server_port: Some(server_port),
+    }
+}
+
 fn mark_stopping(runtime: &mut ServerRuntime) {
     runtime.stop_requested = true;
     runtime.stop_requested_at = Some(Instant::now());
@@ -525,12 +591,24 @@ fn mark_stopping(runtime: &mut ServerRuntime) {
 pub(in crate::app) fn stop_server(
     directory: String,
     state: State<'_, RuntimeState>,
+    app: tauri::AppHandle,
 ) -> Result<String, String> {
     let key = server_key(&directory);
     let mut guard = state.processes.lock().map_err(|_| "Runtime lock failed.")?;
     let runtime = guard
         .get_mut(&key)
         .ok_or_else(|| "Server is not running.".to_string())?;
+
+    // A sleeping server has no process — just tear the wake listener down and
+    // report it offline (this is "stop sleeping").
+    if matches!(runtime.state, LifecycleState::Sleeping) {
+        stop_sleep_listener(runtime);
+        let event = offline_state_event(runtime.directory.clone(), runtime.server_port);
+        guard.remove(&key);
+        drop(guard);
+        let _ = app.emit("server-runtime-state", event);
+        return Ok("Server is no longer sleeping.".to_string());
+    }
 
     mark_stopping(runtime);
 
@@ -610,6 +688,16 @@ pub(in crate::app) fn force_kill_server(
         let Some(runtime) = guard.get_mut(&key) else {
             return Ok("No running server process found.".to_string());
         };
+        // Sleeping: mserve itself holds the port with the wake listener. Never
+        // fall through to the port-kill path (it would target mserve's own PID).
+        if matches!(runtime.state, LifecycleState::Sleeping) {
+            stop_sleep_listener(runtime);
+            let event = offline_state_event(runtime.directory.clone(), runtime.server_port);
+            guard.remove(&key);
+            drop(guard);
+            let _ = app.emit("server-runtime-state", event);
+            return Ok("Server is no longer sleeping.".to_string());
+        }
         mark_stopping(runtime);
         if let Some(child) = runtime.child.as_mut() {
             kill_child_process_group(child);
@@ -660,7 +748,9 @@ pub(in crate::app) fn get_running_server_directories(
     };
     guard
         .values()
-        .filter(|r| r.state.is_active())
+        // Sleeping servers have no live process (just a wake listener), so they
+        // don't count toward the "servers are running, close anyway?" warning.
+        .filter(|r| r.state.is_active() && !matches!(r.state, LifecycleState::Sleeping))
         .map(|r| r.directory.clone())
         .collect()
 }
@@ -683,6 +773,8 @@ pub(in crate::app) fn force_kill_all_servers(state: State<'_, RuntimeState>) -> 
     let mut guard = state.processes.lock().map_err(|_| "Runtime lock failed.")?;
     for runtime in guard.values_mut() {
         mark_stopping(runtime);
+        // Release any wake listener so its port is freed on shutdown.
+        stop_sleep_listener(runtime);
         if let Some(stop) = runtime.playit_stop.take() {
             playit::stop_agent(&stop);
         }
@@ -711,6 +803,12 @@ pub(in crate::app) fn send_server_command(
     let runtime = guard
         .get_mut(&key)
         .ok_or_else(|| "Server is not running.".to_string())?;
+
+    // A console `stop`/`end` is a requested shutdown: mark it so the supervisor
+    // treats the ensuing exit as intentional (no `crashed`, no auto-restart).
+    if is_stop_command(&normalized) {
+        mark_stopping(runtime);
+    }
 
     if let Some(stdin) = runtime.stdin.as_mut() {
         writeln!(stdin, "{normalized}").map_err(|err| err.to_string())?;
@@ -797,6 +895,14 @@ fn register_external(
         stop_requested_at: None,
         playit_stop: None,
         tunnel_address: None,
+        java_executable: None,
+        auto_restart: false,
+        ever_online: false,
+        sleep_enabled: false,
+        sleep_idle_minutes: 15,
+        sleep_motd: default_sleep_motd(),
+        sleep_requested: false,
+        sleep_stop: None,
     };
 
     {

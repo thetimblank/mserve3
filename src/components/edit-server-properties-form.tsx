@@ -4,7 +4,7 @@ import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { Download, FolderOpen, Info, Loader, RefreshCcw, Save, Trash } from 'lucide-react';
 import { toast } from 'sonner';
 import clsx from 'clsx';
-import { type Server, useServers } from '@/data/servers';
+import { isStoppedStatus, type Server, useServers } from '@/data/servers';
 import { useUser } from '@/data/user';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -41,6 +41,7 @@ import JarDownloadModal, {
 	type DownloadedJarSelection,
 } from '@/pages/create-server/slides/components/JarDownloadModal';
 import ServerJarUpdateSection from '@/components/server-jar-update-section';
+import { HelpButton } from './help/help-button';
 
 const TELEMETRY_LABELS: Record<TelemetryKey, string> = {
 	list: 'Players list polling',
@@ -75,6 +76,9 @@ const buildFormFromServer = (server: Server): ServerSettingsForm => ({
 	auto_backup: server.auto_backup,
 	auto_backup_interval: Math.max(1, server.auto_backup_interval),
 	auto_restart: server.auto_restart,
+	sleep_enabled: server.sleep_enabled,
+	sleep_idle_minutes: Math.max(1, Number(server.sleep_idle_minutes) || 15),
+	sleep_motd: server.sleep_motd,
 	custom_flags: server.custom_flags,
 	java_installation: server.java_installation ?? '',
 	provider: createProvider(server.provider, { file: server.file }),
@@ -156,17 +160,21 @@ export const EditServerSettingsProvider: React.FC<EditServerSettingsProviderProp
 		() => getDefaultProviderCommandSupport(settingsForm.provider.name),
 		[settingsForm.provider.name],
 	);
-	const isFormLocked = Boolean(disabled || isSaving || server.status !== 'offline');
-	const isOffline = server.status === 'offline';
+	const isStopped = isStoppedStatus(server.status);
+	const isFormLocked = Boolean(disabled || isSaving || !isStopped);
+	const isOffline = isStopped;
 
 	const hasUnsavedChanges = React.useMemo(() => {
-		// When online, backup settings are saved via their own inline button — the
+		// When running, backup settings are saved via their own inline button — the
 		// global unsaved-changes toast only applies to offline-only settings.
-		if (server.status !== 'offline') return false;
+		if (!isStoppedStatus(server.status)) return false;
 		if (settingsForm.ram !== clampRamGb(server.ram)) return true;
 		if (settingsForm.storage_limit !== Math.max(1, Number(server.storage_limit) || 200)) return true;
 		if (settingsForm.auto_backup_interval !== Math.max(1, server.auto_backup_interval)) return true;
 		if (settingsForm.auto_restart !== server.auto_restart) return true;
+		if (settingsForm.sleep_enabled !== server.sleep_enabled) return true;
+		if (settingsForm.sleep_idle_minutes !== server.sleep_idle_minutes) return true;
+		if (settingsForm.sleep_motd !== server.sleep_motd) return true;
 		if (!sameStringList(settingsForm.auto_backup, server.auto_backup)) return true;
 		if (!sameStringList(settingsForm.custom_flags, server.custom_flags)) return true;
 		if ((settingsForm.java_installation || '').trim() !== (server.java_installation || '').trim()) {
@@ -183,6 +191,9 @@ export const EditServerSettingsProvider: React.FC<EditServerSettingsProviderProp
 		server.auto_backup,
 		server.auto_backup_interval,
 		server.auto_restart,
+		server.sleep_enabled,
+		server.sleep_idle_minutes,
+		server.sleep_motd,
 		server.custom_flags,
 		server.directory,
 		server.java_installation,
@@ -343,6 +354,9 @@ export const EditServerSettingsProvider: React.FC<EditServerSettingsProviderProp
 				auto_backup: payload.auto_backup,
 				auto_backup_interval: payload.auto_backup_interval,
 				auto_restart: payload.auto_restart,
+				sleep_enabled: payload.sleep_enabled,
+				sleep_idle_minutes: payload.sleep_idle_minutes,
+				sleep_motd: payload.sleep_motd,
 				java_installation: payload.java_installation,
 				custom_flags: payload.custom_flags,
 				provider: createProvider(result.provider, { file: result.file }),
@@ -516,7 +530,11 @@ export const GeneralSettingsSection: React.FC = () => {
 				<SettingsErrorNote />
 			</div>
 			<div className='space-y-2 max-w-lg'>
-				<p className='text-xl'>RAM</p>
+				<div className='flex items-center gap-2'>
+					<p className='text-xl'>RAM</p>
+					<HelpButton topic='ram' />
+				</div>
+
 				<RamSelector
 					provider={settingsForm.provider}
 					ram={settingsForm.ram}
@@ -550,8 +568,70 @@ export const GeneralSettingsSection: React.FC = () => {
 							updateSettingsField('auto_restart', typeof checked === 'boolean' ? checked : false)
 						}
 					/>
-					Auto restart server when it closes
+					Auto restart server when it crashes or closes unexpectedly
 				</Label>
+				<p className='text-sm text-muted-foreground'>
+					Handled by mserve in the background, so it keeps working even with this window closed. Pauses
+					automatically after repeated crashes in a short window so a broken server can’t loop forever.
+				</p>
+			</div>
+		</SectionShell>
+	);
+};
+
+export const SleepModeSettingsSection: React.FC = () => {
+	const { settingsForm, updateSettingsField, isFormLocked } = useEditServerSettings();
+	const enabled = settingsForm.sleep_enabled;
+
+	return (
+		<SectionShell className='space-y-8'>
+			<div className='space-y-2 max-w-lg'>
+				<p className='text-xl'>Sleep Mode</p>
+				<Label className='flex items-center gap-3'>
+					<Checkbox
+						checked={enabled}
+						onCheckedChange={(checked) =>
+							updateSettingsField('sleep_enabled', typeof checked === 'boolean' ? checked : false)
+						}
+					/>
+					Sleep the server when no one is playing
+				</Label>
+				<p className='text-sm text-muted-foreground'>
+					After the server sits empty for a while, mserve stops it to free up memory and holds its port.
+					Players still see it in their server list, and the moment someone tries to join it boots back
+					up automatically. Sleep state is in-memory, so it resets if mserve is closed.
+				</p>
+			</div>
+
+			<div className='space-y-2 max-w-xs'>
+				<Label htmlFor='sleep-idle-minutes'>Idle minutes before sleeping</Label>
+				<Input
+					id='sleep-idle-minutes'
+					type='number'
+					min={1}
+					value={settingsForm.sleep_idle_minutes}
+					disabled={!enabled || isFormLocked}
+					onChange={(event) =>
+						updateSettingsField(
+							'sleep_idle_minutes',
+							Math.max(1, Math.round(Number(event.target.value) || 1)),
+						)
+					}
+				/>
+			</div>
+
+			<div className='space-y-2 max-w-lg'>
+				<Label htmlFor='sleep-motd'>Sleeping server list message (MOTD)</Label>
+				<Input
+					id='sleep-motd'
+					placeholder='§eSleeping — join to wake this server'
+					value={settingsForm.sleep_motd}
+					disabled={!enabled || isFormLocked}
+					onChange={(event) => updateSettingsField('sleep_motd', event.target.value)}
+				/>
+				<p className='text-sm text-muted-foreground'>
+					Shown in the multiplayer list while asleep. Supports legacy “§” color codes.
+				</p>
 			</div>
 		</SectionShell>
 	);
