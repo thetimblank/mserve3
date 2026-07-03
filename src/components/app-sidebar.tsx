@@ -1,4 +1,4 @@
-import { Coffee, Home, LayoutGrid, Network, Server, Settings, Wifi } from 'lucide-react';
+import { Coffee, Home, LayoutGrid, MessageSquareText, Network, Server, Settings, Wifi } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import clsx from 'clsx';
 import CreateServer from '@/components/create-server';
@@ -34,6 +34,12 @@ const main = [
 		title: 'Server Network',
 		url: '/network',
 		icon: Network,
+	},
+	{
+		title: 'Feedback',
+		url: '/feedback',
+		icon: MessageSquareText,
+		bottom: true,
 	},
 	{
 		title: 'Settings',

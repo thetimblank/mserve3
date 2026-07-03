@@ -28,6 +28,8 @@ import { OnboardingOverlay } from '@/components/onboarding/onboarding-overlay';
 import { CloseWarningDialog } from '@/components/close-warning-dialog';
 import CreateServerPage from './pages/CreateServer';
 import { CreateServerProvider } from './pages/create-server/CreateServerContext';
+import Feedback from './pages/Feedback';
+import { initSentry, reportError } from './lib/sentry';
 
 class AppErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
 	constructor(props: { children: React.ReactNode }) {
@@ -41,6 +43,7 @@ class AppErrorBoundary extends React.Component<{ children: React.ReactNode }, { 
 
 	componentDidCatch(error: Error) {
 		console.error('Application failed to render', error);
+		reportError(error, { boundary: 'AppErrorBoundary' });
 	}
 
 	render() {
@@ -118,6 +121,7 @@ const RootLayout: React.FC = () => {
 															<Route path='/network' element={<NetworkPage />} />
 															<Route path='/servers/new' element={<CreateServerPage />} />
 															<Route path='/servers/:serverId/:tab?' element={<Server />} />
+															<Route path='/feedback' element={<Feedback />} />
 															<Route path='/settings' element={<Settings />} />
 														</Routes>
 													</SidebarInset>
@@ -134,6 +138,8 @@ const RootLayout: React.FC = () => {
 		</BrowserRouter>
 	);
 };
+
+initSentry();
 
 void invoke('complete_startup').catch(() => {
 	// Ignore failures so startup does not block in browser-only contexts.

@@ -56,7 +56,7 @@ Using semver `vmajor.minor.fix` e.g. `v4.0.12`
 ### v4
 
 - ~~full Linux support (firewall via firewalld/ufw, Java detection/download, process management, .deb/.rpm/AppImage releases + updater)~~ ✅
-- Add smarter error reporting and feedback. Setup sentry for simple tracking, then a Report a bug and a Feedback form as its own tab above settings in the side bar. (Put a text area and optional screen shot, and maybe steps to reproduce or some instructions). Simply link it to a discord web hook or something similar where i can just see it, doesn't have to be crazy for now. Also, any way to tell the user that reported something that their bug got fixed?
+- ~~Add smarter error reporting and feedback. Setup sentry for simple tracking, then a Report a bug and a Feedback form as its own tab above settings in the side bar. (Put a text area and optional screen shot, and maybe steps to reproduce or some instructions). Simply link it to a discord web hook or something similar where i can just see it, doesn't have to be crazy for now. Also, any way to tell the user that reported something that their bug got fixed?~~ ✅
 - ~~Fully finish and clean up the "setup networks" page. it should have all the features users should expect and work flawlessly. clean up the UI to be more intuitive as well, currently its kind of a mess with undeeded warnings, etc. Keep the canvas, you can obviously still modify it though.~~ ✅
 - ~~add a full in-app plugin and modpack browser similar to prism launcher. (Modrinth browser for plugins/mods/datapacks in the server tabs + modpack installs in the create wizard, incl. Fabric/Forge/NeoForge server support)~~ ✅
 - ~~Rework backup system to have all of the features the user would expect, e.g. different retention policies, better/smart limits, etc. Think about other stuff that would go into this system. Make it a smart backup system. Also obviously remove backups for any proxies. you may want to also let users choose what they backup, maybe perworld, also plugin configs, etc, just do what's best here for UX.~~ ✅
@@ -74,6 +74,7 @@ Using semver `vmajor.minor.fix` e.g. `v4.0.12`
 - improve some UI like the plugins, datapacks, and backups pages, and more
 - relocate some settings to better match the function, e.g. backups settings are now in the backups tab.
 - make --nogui forced when not in advanced mode (?)
+- test on ubuntu
 
 Bugs/Fixes
 
