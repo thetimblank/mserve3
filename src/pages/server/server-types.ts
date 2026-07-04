@@ -51,6 +51,8 @@ export type ServerRuntimeState =
 export type TelemetrySample = {
 	timestamp: number;
 	online: boolean;
+	/** Process down but the port is held in sleep mode. Excludes `online`. */
+	sleeping: boolean;
 	playersOnline: number | null;
 	playersMax: number | null;
 	serverVersion: string | null;
@@ -103,6 +105,8 @@ export type CrashInfo = {
 export type TelemetryHistoryPoint = {
 	timestamp: number;
 	online: boolean;
+	/** Bucket classified as sleep mode (port held, process down). Excludes `online`. */
+	sleeping: boolean;
 	playersOnline: number | null;
 	tps: number | null;
 	ramBytes: number | null;

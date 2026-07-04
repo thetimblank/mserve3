@@ -10,7 +10,7 @@ import { BarChart3, TrendingUp } from 'lucide-react';
 
 import type { Server } from '@/data/servers';
 import { Card } from '@/components/ui/card';
-import { METRIC_COLORS } from '@/pages/server/stats/stats-utils';
+import { METRIC_COLORS, SLEEPING_COLOR } from '@/pages/server/stats/stats-utils';
 import TelemetrySparkline from '@/pages/server/stats/telemetry-sparkline';
 
 import type { DashboardActivity } from './use-dashboard-activity';
@@ -39,6 +39,7 @@ const MostUsedServers: React.FC<Props> = ({ servers, activity, limit = 5 }) => {
 						const server = serversById.get(entry.serverId);
 						if (!server) return null;
 						const availabilityPct = Math.round(entry.availability * 100);
+						const sleepingPct = Math.round(entry.sleeping * 100);
 						return (
 							<m.div
 								key={entry.serverId}
@@ -61,12 +62,19 @@ const MostUsedServers: React.FC<Props> = ({ servers, activity, limit = 5 }) => {
 											</span>
 										</div>
 										<div className='mt-2 flex items-center gap-3'>
-											<div className='h-1.5 flex-1 overflow-hidden rounded-full bg-muted'>
+											<div className='flex h-1.5 flex-1 overflow-hidden rounded-full bg-muted'>
 												<div
-													className='h-full rounded-full'
+													className='h-full'
 													style={{
 														width: `${availabilityPct}%`,
 														backgroundColor: METRIC_COLORS.online,
+													}}
+												/>
+												<div
+													className='h-full'
+													style={{
+														width: `${sleepingPct}%`,
+														background: SLEEPING_COLOR,
 													}}
 												/>
 											</div>
@@ -88,6 +96,22 @@ const MostUsedServers: React.FC<Props> = ({ servers, activity, limit = 5 }) => {
 							</m.div>
 						);
 					})
+				)}
+				{ranked.length > 0 && (
+					<div className='flex items-center gap-4 p-4 text-xs text-muted-foreground'>
+						<span className='flex items-center gap-1.5'>
+							<span className='size-2 rounded-full' style={{ background: METRIC_COLORS.online }} />
+							Online
+						</span>
+						<span className='flex items-center gap-1.5'>
+							<span className='size-2 rounded-full' style={{ background: SLEEPING_COLOR }} />
+							Sleeping
+						</span>
+						<span className='flex items-center gap-1.5'>
+							<span className='size-2 rounded-full bg-muted-foreground/40' />
+							Offline
+						</span>
+					</div>
 				)}
 			</Card>
 		</section>

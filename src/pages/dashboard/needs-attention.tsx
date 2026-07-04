@@ -139,8 +139,8 @@ const NeedsAttention: React.FC<{ servers: Server[] }> = ({ servers }) => {
 					iconClass: 'text-destructive',
 					message: (
 						<span>
-							<span className='font-medium'>{server.name}</span> has a critical security issue
-							(e.g. online-mode off).
+							<span className='font-medium'>{server.name}</span> has a critical security issue (e.g.
+							online-mode off).
 						</span>
 					),
 					actionLabel: 'Review',
@@ -174,7 +174,7 @@ const NeedsAttention: React.FC<{ servers: Server[] }> = ({ servers }) => {
 	}, [servers, securityCriticals, startContext, navigate]);
 
 	return (
-		<DashboardSection title='Needs attention' description='Servers that could use a look.'>
+		<DashboardSection title='Could use a look'>
 			{items.length === 0 ? (
 				<div className='flex items-center gap-2 text-sm text-muted-foreground'>
 					<CheckCircle2 className='size-4 text-emerald-500' />
@@ -187,14 +187,10 @@ const NeedsAttention: React.FC<{ servers: Server[] }> = ({ servers }) => {
 						return (
 							<div
 								key={item.id}
-								className='flex items-center gap-3 rounded-md border border-border/60 bg-background/40 px-3 py-2'>
+								className='flex items-center gap-3 rounded-md bg-background/40 px-3 py-2'>
 								<Icon className={`size-4 shrink-0 ${item.iconClass}`} />
 								<p className='min-w-0 flex-1 text-sm'>{item.message}</p>
-								<Button
-									size='sm'
-									variant='secondary'
-									className='shrink-0'
-									onClick={item.onAction}>
+								<Button size='sm' variant='secondary' className='shrink-0' onClick={item.onAction}>
 									{item.actionLabel}
 								</Button>
 							</div>

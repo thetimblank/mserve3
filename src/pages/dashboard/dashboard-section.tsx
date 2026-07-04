@@ -17,13 +17,10 @@ type Props = {
 
 const DashboardSection: React.FC<Props> = ({ title, description, action, className, children }) => (
 	<m.section
-		initial={{ y: 12, opacity: 0 }}
-		animate={{ y: 0, opacity: 1 }}
-		transition={{ type: 'spring', duration: 0.45, bounce: 0 }}
-		className={cn(
-			'rounded-xl border border-border/60 bg-card/80 p-5 backdrop-blur-sm',
-			className,
-		)}>
+		initial={{ scale: 0.95, y: 8, opacity: 0 }}
+		animate={{ scale: 1, y: 0, opacity: 1 }}
+		transition={{ type: 'spring', duration: 0.4, bounce: 0 }}
+		className={cn('bg-card text-card-foreground rounded-xl dark:bg-secondary/40 py-6 px-5', className)}>
 		{(title || action) && (
 			<div className='mb-4 flex items-start justify-between gap-3'>
 				<div className='space-y-0.5'>

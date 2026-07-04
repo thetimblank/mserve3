@@ -390,6 +390,7 @@ pub(in crate::app) fn spawn_supervisor(
                                 let params = SleepListenerParams {
                                     key: key.clone(),
                                     directory: runtime.directory.clone(),
+                                    server_id: runtime.server_id.clone(),
                                     server_port: runtime.server_port,
                                     motd: runtime.sleep_motd.clone(),
                                     java_executable: runtime.java_executable.clone(),
@@ -557,6 +558,7 @@ pub(in crate::app) fn spawn_supervisor(
                 Some(TelemetrySample {
                     timestamp: chrono::Utc::now().timestamp_millis(),
                     online: true,
+                    sleeping: false,
                     players_online: status.players_online,
                     players_max: status.players_max,
                     server_version: status.server_version.clone(),

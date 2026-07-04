@@ -4,6 +4,7 @@
  * a {@link file://./help-button.tsx} anywhere in the app. Big/advanced topics
  * additionally deep-link to their full interactive page via `learnMore`.
  */
+import type { ReactNode } from 'react';
 import {
 	Archive,
 	ArrowDownUp,
@@ -30,10 +31,15 @@ import {
 	type LucideIcon,
 } from 'lucide-react';
 
+import { ConnectionAddresses } from './help-connection-addresses';
+
 export type HelpSlide = {
 	icon: LucideIcon;
 	title: string;
-	body: string;
+	/** Plain-text explanation. Optional when `content` supplies the slide body instead. */
+	body?: string;
+	/** Live/interactive content rendered below (or instead of) `body`. */
+	content?: ReactNode;
 };
 
 export type HelpTopic = {
@@ -51,7 +57,8 @@ export type HelpTopicId =
 	| 'auto-restart'
 	| 'providers'
 	| 'tunneling'
-	| 'port-forwarding';
+	| 'port-forwarding'
+	| 'connecting';
 
 export const HELP_TOPICS: Record<HelpTopicId, HelpTopic> = {
 	backups: {
@@ -240,5 +247,37 @@ export const HELP_TOPICS: Record<HelpTopicId, HelpTopic> = {
 			},
 		],
 		learnMore: { label: 'Open the hosting setup', to: '/setup' },
+	},
+	connecting: {
+		title: 'Connecting to your server',
+		slides: [
+			{
+				icon: Wifi,
+				title: "Why can't people connect?",
+				body: "It almost always comes down to one thing: the address your friend is using isn't reachable from where they are. Which address works depends on whether they're on your network or out on the internet.",
+			},
+			{
+				icon: Network,
+				title: 'Local IP vs. public IP',
+				body: 'Your local IP only works for other devices on the same Wi-Fi/network as this computer — great for family or roommates. Your public IP is how the internet sees you, and it only works once the port is forwarded or a tunnel is running.',
+			},
+			{
+				icon: Globe,
+				title: 'Your addresses',
+				body: "Here's what to share, blurred by default. Local for people on your network, public for everyone else.",
+				content: <ConnectionAddresses />,
+			},
+			{
+				icon: ArrowDownUp,
+				title: 'Two ways to open your server',
+				body: 'Port forwarding is direct and fast but needs router access and exposes your public IP. Tunneling (playit.gg) needs zero router setup and hides your IP, at the cost of a small routing detour. Either one lets outside friends in.',
+			},
+			{
+				icon: ShieldCheck,
+				title: 'Still stuck?',
+				body: 'Check that: the server is actually online, your OS firewall allows the port, the port forward (or tunnel) is set up correctly, and your friend is using the address that matches their situation — local or public.',
+			},
+		],
+		learnMore: { label: 'Open the full hosting guide', to: '/setup' },
 	},
 };

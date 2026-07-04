@@ -24,6 +24,7 @@ export const normalizeBackupScope = (raw: unknown): BackupScopeItem[] => {
 export type ProviderName =
 	| 'paper'
 	| 'folia'
+	| 'purpur'
 	| 'spigot'
 	| 'vanilla'
 	| 'velocity'

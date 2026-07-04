@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { Renderer, Program, Mesh, Triangle, Vec2 } from 'ogl';
 
 const vertex = `
@@ -17,6 +17,7 @@ uniform float uNoise;
 uniform float uScan;
 uniform float uScanFreq;
 uniform float uWarp;
+uniform float uLightMode;
 #define iTime uTime
 #define iResolution uResolution
 
@@ -25,6 +26,37 @@ float rand(vec2 c){return fract(sin(dot(c,vec2(12.9898,78.233)))*43758.5453);}
 
 mat3 rgb2yiq=mat3(0.299,0.587,0.114,0.596,-0.274,-0.322,0.211,-0.523,0.312);
 mat3 yiq2rgb=mat3(1.0,0.956,0.621,1.0,-0.272,-0.647,1.0,-1.106,1.703);
+
+vec3 rgb2hsl(vec3 c){
+    float maxc=max(max(c.r,c.g),c.b);
+    float minc=min(min(c.r,c.g),c.b);
+    float l=(maxc+minc)*0.5;
+    float h=0.0,s=0.0;
+    if(maxc!=minc){
+        float d=maxc-minc;
+        s=l>0.5?d/(2.0-maxc-minc):d/(maxc+minc);
+        if(maxc==c.r) h=(c.g-c.b)/d+(c.g<c.b?6.0:0.0);
+        else if(maxc==c.g) h=(c.b-c.r)/d+2.0;
+        else h=(c.r-c.g)/d+4.0;
+        h/=6.0;
+    }
+    return vec3(h,s,l);
+}
+float hue2rgb(float p,float q,float t){
+    if(t<0.0)t+=1.0;
+    if(t>1.0)t-=1.0;
+    if(t<1.0/6.0)return p+(q-p)*6.0*t;
+    if(t<1.0/2.0)return q;
+    if(t<2.0/3.0)return p+(q-p)*(2.0/3.0-t)*6.0;
+    return p;
+}
+vec3 hsl2rgb(vec3 hsl){
+    float h=hsl.x,s=hsl.y,l=hsl.z;
+    if(s==0.0) return vec3(l);
+    float q=l<0.5?l*(1.0+s):l+s-l*s;
+    float p=2.0*l-q;
+    return vec3(hue2rgb(p,q,h+1.0/3.0),hue2rgb(p,q,h),hue2rgb(p,q,h-1.0/3.0));
+}
 
 vec3 hueShiftRGB(vec3 col,float deg){
     vec3 yiq=rgb2yiq*col;
@@ -66,6 +98,11 @@ void mainImage(out vec4 fragColor,in vec2 fragCoord){
 void main(){
     vec4 col;mainImage(col,gl_FragCoord.xy);
     col.rgb=hueShiftRGB(col.rgb,uHueShift);
+    if(uLightMode>0.5){
+        vec3 hsl=rgb2hsl(col.rgb);
+        hsl.z=1.0-hsl.z;
+        col.rgb=hsl2rgb(hsl);
+    }
     float scanline_val=sin(gl_FragCoord.y*uScanFreq)*0.5+0.5;
     col.rgb*=1.-(scanline_val*scanline_val)*uScan;
     col.rgb+=(rand(gl_FragCoord.xy+uTime)-0.5)*uNoise;
@@ -93,6 +130,15 @@ export default function DarkVeil({
 	resolutionScale = 1,
 }: Props) {
 	const ref = useRef<HTMLCanvasElement>(null);
+	const [isLight, setIsLight] = useState(() => !document.documentElement.classList.contains('dark'));
+
+	useEffect(() => {
+		const root = document.documentElement;
+		const observer = new MutationObserver(() => setIsLight(!root.classList.contains('dark')));
+		observer.observe(root, { attributes: true, attributeFilter: ['class'] });
+		return () => observer.disconnect();
+	}, []);
+
 	useEffect(() => {
 		const canvas = ref.current as HTMLCanvasElement;
 		const parent = canvas.parentElement as HTMLElement;
@@ -116,6 +162,7 @@ export default function DarkVeil({
 				uScan: { value: scanlineIntensity },
 				uScanFreq: { value: scanlineFrequency },
 				uWarp: { value: warpAmount },
+				uLightMode: { value: isLight ? 1 : 0 },
 			},
 		});
 
@@ -141,6 +188,7 @@ export default function DarkVeil({
 			program.uniforms.uScan.value = scanlineIntensity;
 			program.uniforms.uScanFreq.value = scanlineFrequency;
 			program.uniforms.uWarp.value = warpAmount;
+			program.uniforms.uLightMode.value = isLight ? 1 : 0;
 			renderer.render({ scene: mesh });
 			frame = requestAnimationFrame(loop);
 		};
@@ -151,6 +199,6 @@ export default function DarkVeil({
 			cancelAnimationFrame(frame);
 			window.removeEventListener('resize', resize);
 		};
-	}, [hueShift, noiseIntensity, scanlineIntensity, speed, scanlineFrequency, warpAmount, resolutionScale]);
+	}, [hueShift, noiseIntensity, scanlineIntensity, speed, scanlineFrequency, warpAmount, resolutionScale, isLight]);
 	return <canvas ref={ref} className='w-full h-full block' />;
 }

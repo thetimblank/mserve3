@@ -74,6 +74,20 @@ const PROVIDER_DESCRIPTORS: ProviderDescriptor[] = [
 		selectable: true,
 	},
 	{
+		name: 'purpur',
+		aliases: ['purpur'],
+		description: 'Feature-rich Paper fork with extensive gameplay & performance configuration',
+		kind: 'plugin',
+		tab: 'plugin',
+		stable_name: 'Stable',
+		unstable_name: 'Unstable',
+		supports_list_command: true,
+		supports_tps_command: true,
+		supports_version_command: true,
+		default_jdk_versions: [21],
+		selectable: true,
+	},
+	{
 		name: 'vanilla',
 		aliases: ['vanilla', 'minecraft', 'mojang', 'minecraft_server', 'server'],
 		description: 'Official Mojang server software for pure vanilla gameplay',
@@ -160,9 +174,11 @@ const PROVIDER_DESCRIPTORS: ProviderDescriptor[] = [
 		selectable: false,
 	},
 	{
+		// Waterfall is aliased here for import detection only — it is EOL and has no
+		// download API; BungeeCord is the maintained proxy we actually offer.
 		name: 'bungeecord',
 		aliases: ['bungeecord', 'bungee', 'waterfall'],
-		description: 'BungeeCord proxy (detected from existing jars)',
+		description: 'Classic BungeeCord proxy for connecting multiple backend servers',
 		kind: 'proxy',
 		tab: 'proxies',
 		stable_name: 'Stable',
@@ -171,7 +187,7 @@ const PROVIDER_DESCRIPTORS: ProviderDescriptor[] = [
 		supports_tps_command: false,
 		supports_version_command: true,
 		default_jdk_versions: [17, 21],
-		selectable: false,
+		selectable: true,
 	},
 ];
 

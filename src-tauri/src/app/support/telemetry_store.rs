@@ -47,7 +47,8 @@ pub(in crate::app) fn init_telemetry_store(db_path: &Path) -> Result<(), String>
 // functions above/below are thin wrappers that grab the shared connection.
 // ---------------------------------------------------------------------------
 
-/// Creates the samples table + index if they don't exist.
+/// Creates the samples table + index if they don't exist, then applies
+/// incremental column migrations for databases created by older versions.
 fn create_schema(connection: &Connection) -> Result<(), String> {
     connection
         .execute_batch(
@@ -65,7 +66,16 @@ fn create_schema(connection: &Connection) -> Result<(), String> {
             CREATE INDEX IF NOT EXISTS idx_samples_server_ts
                 ON telemetry_samples (server_id, ts);",
         )
-        .map_err(|err| err.to_string())
+        .map_err(|err| err.to_string())?;
+
+    // `sleeping` distinguishes sleep-mode buckets from plain offline. Added
+    // after the initial release, so `ADD COLUMN` may fail with "duplicate
+    // column" on an already-migrated DB — that's expected and ignored.
+    let _ = connection.execute(
+        "ALTER TABLE telemetry_samples ADD COLUMN sleeping INTEGER NOT NULL DEFAULT 0",
+        [],
+    );
+    Ok(())
 }
 
 /// Deletes samples older than `cutoff` (epoch ms). Best-effort.
@@ -80,12 +90,13 @@ fn prune_older_than(connection: &Connection, cutoff: i64) {
 fn write_sample(connection: &Connection, server_id: &str, sample: &TelemetrySample) {
     let _ = connection.execute(
         "INSERT INTO telemetry_samples
-            (server_id, ts, online, players_online, players_max, tps, ram_bytes, ram_pct, cpu_pct)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            (server_id, ts, online, sleeping, players_online, players_max, tps, ram_bytes, ram_pct, cpu_pct)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         params![
             server_id,
             sample.timestamp,
             i64::from(sample.online),
+            i64::from(sample.sleeping),
             sample.players_online,
             sample.players_max,
             sample.tps,
@@ -129,6 +140,7 @@ fn read_range(
     let Ok(mut statement) = connection.prepare(
         "SELECT (ts / ?1) * ?1 AS bucket,
                 AVG(CASE WHEN online != 0 THEN 1.0 ELSE 0.0 END),
+                AVG(CASE WHEN sleeping != 0 THEN 1.0 ELSE 0.0 END),
                 AVG(players_online),
                 AVG(tps),
                 AVG(ram_bytes),
@@ -145,16 +157,24 @@ fn read_range(
     let real_points: HashMap<i64, TelemetryHistoryPoint> =
         match statement.query_map(params![bucket_size, server_id, from_ts, to_ts], |row| {
             let online_avg: f64 = row.get::<_, Option<f64>>(1)?.unwrap_or(0.0);
+            let sleeping_avg: f64 = row.get::<_, Option<f64>>(2)?.unwrap_or(0.0);
+            // Classify the bucket by its dominant state. online/sleeping/offline
+            // are mutually exclusive per sample, so the three averages sum to 1;
+            // pick the largest, preferring online > sleeping > offline on ties.
+            let offline_avg = (1.0 - online_avg - sleeping_avg).max(0.0);
+            let online = online_avg >= sleeping_avg && online_avg >= offline_avg;
+            let sleeping = !online && sleeping_avg >= offline_avg;
             Ok(TelemetryHistoryPoint {
                 timestamp: row.get::<_, i64>(0)?,
-                online: online_avg >= 0.5,
+                online,
+                sleeping,
                 players_online: row
-                    .get::<_, Option<f64>>(2)?
+                    .get::<_, Option<f64>>(3)?
                     .map(|value| value.round() as u32),
-                tps: row.get::<_, Option<f64>>(3)?,
-                ram_bytes: row.get::<_, Option<f64>>(4)?.map(|value| value as u64),
-                ram_used: row.get::<_, Option<f64>>(5)?,
-                cpu_used: row.get::<_, Option<f64>>(6)?,
+                tps: row.get::<_, Option<f64>>(4)?,
+                ram_bytes: row.get::<_, Option<f64>>(5)?.map(|value| value as u64),
+                ram_used: row.get::<_, Option<f64>>(6)?,
+                cpu_used: row.get::<_, Option<f64>>(7)?,
             })
         }) {
             Ok(iterator) => iterator
@@ -181,6 +201,7 @@ fn read_range(
             result.push(TelemetryHistoryPoint {
                 timestamp: bucket,
                 online: false,
+                sleeping: false,
                 players_online: None,
                 tps: None,
                 ram_bytes: None,
@@ -354,6 +375,30 @@ mod tests {
         assert_eq!(points.len(), 1);
         assert_eq!(points[0].timestamp, 10_000);
         assert!(points[0].online);
+    }
+
+    fn sleeping_sample(ts: i64) -> TelemetrySample {
+        TelemetrySample {
+            timestamp: ts,
+            online: false,
+            sleeping: true,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn sleeping_buckets_read_as_sleeping_not_offline() {
+        let db = in_memory();
+        // Online at t=0, sleeping at t=10_000, nothing (true offline) at t=20_000.
+        write_sample(&db, "srv", &sample(0, true, Some(1), None));
+        write_sample(&db, "srv", &sleeping_sample(10_000));
+
+        let points = read_range(&db, "srv", 0, 30_000, 3);
+        assert_eq!(points.len(), 3);
+        assert!(points[0].online && !points[0].sleeping);
+        assert!(!points[1].online && points[1].sleeping);
+        // Synthesized gap: neither online nor sleeping.
+        assert!(!points[2].online && !points[2].sleeping);
     }
 
     #[test]

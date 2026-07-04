@@ -52,6 +52,13 @@ const parseVersionParts = (
 		return { family: rawProviderVersion, build: null };
 	}
 
+	if (id === 'bungeecord') {
+		// Rolling proxy: no Minecraft/family version, just an incrementing Jenkins
+		// build number. A constant family lets same-family build comparison apply.
+		const build = Number(rawProviderVersion);
+		return { family: 'latest', build: Number.isFinite(build) ? build : null };
+	}
+
 	if (id === 'vanilla') {
 		// Vanilla has no build; `provider_version` is just the channel kind.
 		return { family: minecraftVersion.trim(), build: null };
@@ -94,7 +101,8 @@ const isMajorMinecraftChange = (
 	currentFamily: string,
 	latestFamily: string,
 ): boolean => {
-	if (providerId.toString().trim().toLowerCase() === 'velocity') return false;
+	const proxyId = providerId.toString().trim().toLowerCase();
+	if (proxyId === 'velocity' || proxyId === 'bungeecord') return false;
 	if (currentFamily === latestFamily) return false;
 
 	const current = parseNumericVersion(currentFamily);

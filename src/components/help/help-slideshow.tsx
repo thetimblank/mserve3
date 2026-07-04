@@ -86,7 +86,10 @@ export const HelpSlideshow: React.FC<HelpSlideshowProps> = ({ topic, open, onOpe
 								<Icon className='size-8' />
 							</span>
 							<h2 className='mb-3 text-xl font-bold'>{slide.title}</h2>
-							<p className='text-sm leading-relaxed text-muted-foreground'>{slide.body}</p>
+							{slide.body && (
+								<p className='text-sm leading-relaxed text-muted-foreground'>{slide.body}</p>
+							)}
+							{slide.content && <div className='mt-3 w-full'>{slide.content}</div>}
 						</m.div>
 					</AnimatePresence>
 				</div>

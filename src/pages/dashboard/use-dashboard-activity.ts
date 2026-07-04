@@ -27,8 +27,10 @@ export type PlayerTrend = 'up' | 'down' | 'flat';
 
 export type ServerActivity = {
 	serverId: string;
-	/** 0..1 fraction of buckets the server was online. */
+	/** 0..1 fraction of buckets the server was online. Sleep counts as down. */
 	availability: number;
+	/** 0..1 fraction of buckets the server was asleep (port held, process down). */
+	sleeping: number;
 	avgPlayers: number;
 	peakPlayers: number;
 	/** online → offline transitions in the window. */
@@ -89,6 +91,7 @@ export const buildHourBuckets = (points: TelemetryHistoryPoint[]): number[] => {
 const summarize = (serverId: string, points: TelemetryHistoryPoint[]): ServerActivity => {
 	const chart = toChartData(points);
 	let onlineCount = 0;
+	let sleepingCount = 0;
 	let playerSum = 0;
 	let playerSamples = 0;
 	let peakPlayers = 0;
@@ -97,7 +100,10 @@ const summarize = (serverId: string, points: TelemetryHistoryPoint[]): ServerAct
 
 	for (const point of points) {
 		if (point.online) onlineCount += 1;
-		if (prevOnline && !point.online) interruptions += 1;
+		if (point.sleeping) sleepingCount += 1;
+		// A graceful sleep isn't downtime, so only count online → plain-offline
+		// transitions as interruptions (proxy for crashes).
+		if (prevOnline && !point.online && !point.sleeping) interruptions += 1;
 		prevOnline = point.online;
 
 		if (point.playersOnline != null) {
@@ -107,7 +113,9 @@ const summarize = (serverId: string, points: TelemetryHistoryPoint[]): ServerAct
 		}
 	}
 
+	// Sleep is deliberately excluded from availability — it reads as "down".
 	const availability = points.length > 0 ? onlineCount / points.length : 0;
+	const sleeping = points.length > 0 ? sleepingCount / points.length : 0;
 	const avgPlayers = playerSamples > 0 ? playerSum / playerSamples : 0;
 	// Weight live activity (players) above mere uptime, but reward both.
 	const score = avgPlayers * 12 + peakPlayers * 3 + availability * 10;
@@ -115,6 +123,7 @@ const summarize = (serverId: string, points: TelemetryHistoryPoint[]): ServerAct
 	return {
 		serverId,
 		availability,
+		sleeping,
 		avgPlayers,
 		peakPlayers,
 		interruptions,

@@ -25,6 +25,7 @@ import {
 import { Link } from 'react-router-dom';
 import { invoke } from '@tauri-apps/api/core';
 import { Button } from '@/components/ui/button';
+import { HelpButton } from '@/components/help/help-button';
 import OpenFolderButton from '@/components/open-folder-button';
 import ServerStatus from '@/components/server-status';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -230,6 +231,7 @@ const ServerOverviewPanel: React.FC<Props> = ({
 							<div className='flex items-center gap-2 rounded-md bg-card dark:bg-secondary/50 border-2 dark:border-none px-3 py-1 text-sm'>
 								<Wifi className='size-4 shrink-0 text-sky-500' />
 								<p className='text-muted-foreground select-none'>Connect:</p>
+								<HelpButton topic='connecting' />
 								<p>
 									<span className='font-mono text-sky-500'>
 										{publicIp == null ? (

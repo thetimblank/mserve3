@@ -40,6 +40,7 @@ describe('mapSampleToStats', () => {
 	const base: TelemetrySample = {
 		timestamp: 0,
 		online: true,
+		sleeping: false,
 		playersOnline: 2,
 		playersMax: 20,
 		serverVersion: '1.21',

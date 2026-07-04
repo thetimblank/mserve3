@@ -17,7 +17,7 @@ import { DASHBOARD_SECTION_IDS, type DashboardSectionId, useUser } from '@/data/
 
 const SECTION_LABELS: Record<DashboardSectionId, string> = {
 	metrics: 'Headline stats',
-	attention: 'Needs attention',
+	attention: 'Could use a look',
 	storage: 'Storage breakdown',
 	activity: 'Activity insights',
 	online: 'Running servers',

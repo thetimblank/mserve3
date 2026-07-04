@@ -19,11 +19,11 @@ import {
 	DEFAULT_TIME_RANGE,
 	METRIC_COLORS,
 	TIME_RANGES,
+	availabilityChartConfig,
 	cpuChartConfig,
 	formatBytes,
 	getTimeRange,
 	maxPointsForRange,
-	onlineChartConfig,
 	playersChartConfig,
 	ramBytesChartConfig,
 	ramPctChartConfig,
@@ -40,7 +40,8 @@ type Props = {
 const pctTick = (value: number) => `${Math.round(value)}%`;
 const countTick = (value: number) => String(Math.round(value));
 const tpsTick = (value: number) => value.toFixed(1);
-const onlineTick = (value: number) => (value >= 0.5 ? 'Online' : 'Offline');
+const availabilityTick = (value: number) =>
+	value >= 1 ? 'Online' : value >= 0.5 ? 'Sleeping' : 'Offline';
 
 /** Latest non-null reading of a metric, formatted for the card badge. */
 const latestBadge = (
@@ -134,14 +135,14 @@ const ServerStatisticsTab: React.FC<Props> = ({ server }) => {
 					className='xl:col-span-2'
 					title='Availability'
 					icon={<Power className='size-4' />}
-					config={onlineChartConfig}
+					config={availabilityChartConfig}
 					data={data}
-					dataKey='online'
+					dataKey='availability'
 					color={METRIC_COLORS.online}
 					rangeMs={range.ms}
-					valueFormatter={onlineTick}
+					valueFormatter={availabilityTick}
 					yDomain={[0, 1]}
-					yTicks={[0, 1]}
+					yTicks={[0, 0.5, 1]}
 					stepped
 				/>
 

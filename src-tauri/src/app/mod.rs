@@ -315,6 +315,9 @@ struct TelemetrySample {
     /// Unix epoch milliseconds.
     timestamp: i64,
     online: bool,
+    /// True when the process is down but mserve holds the port in sleep mode.
+    /// Mutually exclusive with `online`; a plain-offline sample has both false.
+    sleeping: bool,
     players_online: Option<u32>,
     players_max: Option<u32>,
     server_version: Option<String>,
@@ -336,6 +339,9 @@ struct TelemetrySample {
 struct TelemetryHistoryPoint {
     timestamp: i64,
     online: bool,
+    /// Bucket read as sleep mode: process down but the port held by the wake
+    /// listener. Never true together with `online`.
+    sleeping: bool,
     players_online: Option<u32>,
     tps: Option<f64>,
     ram_bytes: Option<u64>,

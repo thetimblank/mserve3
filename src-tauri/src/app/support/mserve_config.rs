@@ -112,6 +112,9 @@ fn normalize_provider_name(raw: &str) -> Option<String> {
         return None;
     }
 
+    if normalized.contains("purpur") {
+        return Some("purpur".to_string());
+    }
     if normalized.contains("paper") {
         return Some("paper".to_string());
     }
@@ -953,6 +956,10 @@ mod tests {
         assert_eq!(
             infer_provider_from_jar_file("folia-1.20.4-15.jar").as_deref(),
             Some("folia")
+        );
+        assert_eq!(
+            infer_provider_from_jar_file("purpur-1.21.8-2497.jar").as_deref(),
+            Some("purpur")
         );
         assert_eq!(
             infer_provider_from_jar_file("velocity-3.3.0-SNAPSHOT.jar").as_deref(),

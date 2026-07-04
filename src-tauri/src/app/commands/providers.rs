@@ -660,6 +660,126 @@ fn resolve_fabric(
 }
 
 // ---------------------------------------------------------------------------
+// Purpur (api.purpurmc.org) — a Paper fork, so plugin-kind + /tps telemetry
+// ---------------------------------------------------------------------------
+
+const PURPUR_BASE: &str = "https://api.purpurmc.org/v2/purpur";
+
+#[derive(Deserialize)]
+struct PurpurProjectResponse {
+    /// Oldest-first list of supported Minecraft versions (e.g. "1.21.8").
+    versions: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct PurpurVersionResponse {
+    builds: PurpurBuilds,
+}
+
+#[derive(Deserialize)]
+struct PurpurBuilds {
+    latest: String,
+}
+
+fn purpur_list_entries(
+    client: &reqwest::blocking::Client,
+    include_unstable: bool,
+) -> Result<Vec<ProviderVersionEntry>, String> {
+    let text = fetch_cached(client, PURPUR_BASE, "purpur.json", LIST_CACHE_TTL_SECS)?;
+    let response: PurpurProjectResponse =
+        serde_json::from_str(&text).map_err(|err| err.to_string())?;
+
+    let mut entries = Vec::new();
+    // The API lists versions oldest-first; reverse so the picker shows newest
+    // Minecraft versions at the top, matching every other provider.
+    for version in response.versions.into_iter().rev() {
+        let unstable = version_is_unstable(&version);
+        if unstable && !include_unstable {
+            continue;
+        }
+        entries.push(ProviderVersionEntry {
+            provider: "purpur".to_string(),
+            tab: "plugin".to_string(),
+            minecraft_version: version.clone(),
+            version,
+            stability: if unstable { "unstable" } else { "stable" }.to_string(),
+        });
+    }
+
+    Ok(entries)
+}
+
+fn resolve_purpur(
+    client: &reqwest::blocking::Client,
+    version: &str,
+) -> Result<ResolvedProvider, String> {
+    let text = fetch_text(client, &format!("{PURPUR_BASE}/{version}"))?;
+    let response: PurpurVersionResponse =
+        serde_json::from_str(&text).map_err(|err| err.to_string())?;
+    let build = response.builds.latest;
+
+    Ok(ResolvedProvider {
+        name: "purpur".to_string(),
+        file: format!("purpur-{version}-{build}.jar"),
+        download_url: format!("{PURPUR_BASE}/{version}/{build}/download"),
+        provider_version: build,
+        minecraft_version: version.to_string(),
+        jdk_versions: Vec::new(),
+        stable: !version_is_unstable(version),
+        size_bytes: None,
+        sha256: None,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// BungeeCord (ci.md-5.net Jenkins) — a rolling proxy with a single latest jar
+// ---------------------------------------------------------------------------
+
+const BUNGEE_LATEST_BUILD: &str =
+    "https://ci.md-5.net/job/BungeeCord/lastSuccessfulBuild/buildNumber";
+const BUNGEE_ARTIFACT: &str = "https://ci.md-5.net/job/BungeeCord/lastSuccessfulBuild/artifact/bootstrap/target/BungeeCord.jar";
+
+/// BungeeCord publishes only a single rolling "latest" build (no per-version
+/// history), so the picker gets one entry. This never touches the network — the
+/// build number is resolved lazily on download.
+fn bungee_list_entries() -> Vec<ProviderVersionEntry> {
+    vec![ProviderVersionEntry {
+        provider: "bungeecord".to_string(),
+        tab: "proxies".to_string(),
+        version: "latest".to_string(),
+        minecraft_version: "proxy".to_string(),
+        stability: "stable".to_string(),
+    }]
+}
+
+fn resolve_bungeecord(client: &reqwest::blocking::Client) -> Result<ResolvedProvider, String> {
+    // Best-effort: label the jar with its Jenkins build number so the update
+    // checker can spot a newer build later. Falls back to "latest" offline.
+    let build = fetch_cached(
+        client,
+        BUNGEE_LATEST_BUILD,
+        "bungeecord-build.txt",
+        LIST_CACHE_TTL_SECS,
+    )
+    .ok()
+    .map(|text| text.trim().to_string())
+    .filter(|text| !text.is_empty() && text.chars().all(|ch| ch.is_ascii_digit()))
+    .unwrap_or_else(|| "latest".to_string());
+
+    Ok(ResolvedProvider {
+        name: "bungeecord".to_string(),
+        file: "BungeeCord.jar".to_string(),
+        download_url: BUNGEE_ARTIFACT.to_string(),
+        provider_version: build,
+        minecraft_version: "proxy".to_string(),
+        jdk_versions: Vec::new(),
+        stable: true,
+        size_bytes: None,
+        sha256: None,
+    })
+}
+
+// ---------------------------------------------------------------------------
 // Commands
 // ---------------------------------------------------------------------------
 
@@ -679,9 +799,14 @@ pub(in crate::app) fn list_provider_versions(
                 "plugin",
                 include_unstable,
             )?);
+            entries.extend(purpur_list_entries(&client, include_unstable)?);
             Ok(entries)
         }
-        "proxies" => fill_list_entries(&client, "velocity", "proxies", include_unstable),
+        "proxies" => {
+            let mut entries = fill_list_entries(&client, "velocity", "proxies", include_unstable)?;
+            entries.extend(bungee_list_entries());
+            Ok(entries)
+        }
         "vanilla" => vanilla_list_entries(&client, include_unstable),
         "modded" => fabric_list_entries(&client, include_unstable),
         other => Err(format!("Unsupported provider tab: {other}.")),
@@ -703,6 +828,8 @@ pub(in crate::app) fn resolve_provider_version(
         "paper" | "folia" | "velocity" => {
             resolve_fill(&client, &provider, version, payload.stability.as_deref())
         }
+        "purpur" => resolve_purpur(&client, version),
+        "bungeecord" => resolve_bungeecord(&client),
         "vanilla" => resolve_vanilla(&client, version),
         "fabric" => resolve_fabric(&client, version),
         other => Err(format!("Unsupported provider: {other}.")),
@@ -778,6 +905,33 @@ mod tests {
         let json = r#"{"id": 1, "channel": "STABLE", "downloads": {}}"#;
         let build: FillBuild = serde_json::from_str(json).unwrap();
         assert!(pick_download(&build).is_err());
+    }
+
+    #[test]
+    fn purpur_project_lists_newest_first() {
+        // The API returns versions oldest-first; the picker must show newest first.
+        let json = r#"{"project":"purpur","versions":["1.20.6","1.21","1.21.8","26.1.2"]}"#;
+        let response: PurpurProjectResponse = serde_json::from_str(json).unwrap();
+        let ordered: Vec<String> = response.versions.into_iter().rev().collect();
+        assert_eq!(ordered.first().unwrap(), "26.1.2");
+        assert_eq!(ordered.last().unwrap(), "1.20.6");
+    }
+
+    #[test]
+    fn purpur_version_exposes_latest_build() {
+        let json = r#"{"project":"purpur","version":"1.21.8","builds":{"latest":"2497","all":["2496","2497"]}}"#;
+        let response: PurpurVersionResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.builds.latest, "2497");
+    }
+
+    #[test]
+    fn bungee_list_has_single_rolling_entry() {
+        let entries = bungee_list_entries();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].provider, "bungeecord");
+        assert_eq!(entries[0].tab, "proxies");
+        assert_eq!(entries[0].version, "latest");
+        assert_eq!(entries[0].minecraft_version, "proxy");
     }
 
     #[test]

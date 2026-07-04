@@ -61,6 +61,10 @@ export { formatBytes };
 export type ChartPoint = {
 	timestamp: number;
 	online: number;
+	/** 1 while the server was asleep (port held, process down), else 0. */
+	sleeping: number;
+	/** Tri-state availability height: 1 online, 0.5 sleeping, 0 offline. */
+	availability: number;
 	playersOnline: number | null;
 	tps: number | null;
 	ramBytes: number | null;
@@ -72,6 +76,8 @@ export const toChartData = (points: TelemetryHistoryPoint[]): ChartPoint[] =>
 	points.map((point) => ({
 		timestamp: point.timestamp,
 		online: point.online ? 1 : 0,
+		sleeping: point.sleeping ? 1 : 0,
+		availability: point.online ? 1 : point.sleeping ? 0.5 : 0,
 		playersOnline: point.playersOnline,
 		tps: point.tps,
 		ramBytes: point.ramBytes,
@@ -88,6 +94,9 @@ export const METRIC_COLORS = {
 	online: 'var(--chart-5)',
 } as const;
 
+/** Sleep-mode accent, matching the indigo "Sleeping" status badge. */
+export const SLEEPING_COLOR = 'var(--color-indigo-400)';
+
 export const cpuChartConfig: ChartConfig = { cpuUsed: { label: 'CPU', color: METRIC_COLORS.cpu } };
 export const ramPctChartConfig: ChartConfig = { ramUsed: { label: 'RAM', color: METRIC_COLORS.ram } };
 export const ramBytesChartConfig: ChartConfig = { ramBytes: { label: 'RAM', color: METRIC_COLORS.ram } };
@@ -95,4 +104,6 @@ export const playersChartConfig: ChartConfig = {
 	playersOnline: { label: 'Players', color: METRIC_COLORS.players },
 };
 export const tpsChartConfig: ChartConfig = { tps: { label: 'TPS', color: METRIC_COLORS.tps } };
-export const onlineChartConfig: ChartConfig = { online: { label: 'Online', color: METRIC_COLORS.online } };
+export const availabilityChartConfig: ChartConfig = {
+	availability: { label: 'Availability', color: METRIC_COLORS.online },
+};

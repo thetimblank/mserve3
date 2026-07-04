@@ -26,6 +26,7 @@ import Setup from './pages/Setup';
 import MserveRepairDialog from '@/components/mserve-repair-dialog';
 import { OnboardingOverlay } from '@/components/onboarding/onboarding-overlay';
 import { CloseWarningDialog } from '@/components/close-warning-dialog';
+import { NativeContextMenu } from '@/components/native-context-menu';
 import CreateServerPage from './pages/CreateServer';
 import { CreateServerProvider } from './pages/create-server/CreateServerContext';
 import Feedback from './pages/Feedback';
@@ -96,6 +97,7 @@ const RootLayout: React.FC = () => {
 	return (
 		<BrowserRouter>
 			<Toaster />
+			<NativeContextMenu />
 			<Animations>
 				<ThemeProvider defaultTheme='dark' storageKey='vite-ui-theme'>
 					<SidebarProvider className='h-svh overflow-hidden pt-10'>

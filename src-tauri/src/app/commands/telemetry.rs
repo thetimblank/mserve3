@@ -38,6 +38,9 @@ pub(in crate::app) async fn get_server_telemetry(
     Ok(TelemetrySample {
         timestamp: chrono::Utc::now().timestamp_millis(),
         online: ping.online,
+        // Authoritative sleep state comes from the lifecycle/store, not a one-off
+        // ping; a live sample never claims sleep on its own.
+        sleeping: false,
         players_online: ping.players_online,
         players_max: ping.players_max,
         server_version: ping.server_version,

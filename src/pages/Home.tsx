@@ -12,7 +12,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useServers } from '@/data/servers';
 import { useNetworks } from '@/data/networks';
 import { useUser, type DashboardSectionId } from '@/data/user';
-import { useTheme } from '@/components/theme-provider';
 
 import DashboardMetrics from './dashboard/dashboard-metrics';
 import OnlineServers from './dashboard/online-servers';
@@ -36,7 +35,6 @@ const Home: React.FC = () => {
 	const { servers, isReady } = useServers();
 	const { networks } = useNetworks();
 	const { user } = useUser();
-	const { theme } = useTheme();
 	const activity = useDashboardActivity(servers);
 	const storage = useDashboardStorage(servers);
 
@@ -47,16 +45,12 @@ const Home: React.FC = () => {
 	const shows = (id: DashboardSectionId) => !hidden.has(id);
 
 	const reducedMotion = user.accessibility.reduced_motion;
-	const isLight = theme === 'light';
 
 	return (
-		<main className='relative h-full w-full overflow-y-auto app-scroll-area'>
+		<main className='relative h-full w-full overflow-y-auto app-scroll-area dark:bg-black'>
 			{/* DarkVeil backdrop — sits behind all content, never intercepts clicks. */}
 			<div aria-hidden className='pointer-events-none absolute inset-0 z-0 overflow-hidden'>
-				<DarkVeil speed={reducedMotion ? 0 : 1} hueShift={isLight ? 30 : 0} />
-				<div
-					className={isLight ? 'absolute inset-0 bg-background/88' : 'absolute inset-0 bg-background/72'}
-				/>
+				<DarkVeil speed={reducedMotion ? 0 : 1} />
 			</div>
 
 			<div className='relative z-10 p-8 lg:p-12'>

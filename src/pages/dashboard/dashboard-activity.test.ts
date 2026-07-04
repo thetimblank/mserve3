@@ -5,6 +5,7 @@ import type { TelemetryHistoryPoint } from '@/pages/server/server-types';
 const point = (timestamp: number, playersOnline: number | null): TelemetryHistoryPoint => ({
 	timestamp,
 	online: playersOnline != null,
+	sleeping: false,
 	playersOnline,
 	tps: null,
 	ramBytes: null,

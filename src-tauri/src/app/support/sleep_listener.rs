@@ -6,20 +6,23 @@
 //!
 //! std sockets only (no async) so it builds identically on Windows and Linux.
 
-use super::super::{LifecycleState, ServerOutputEvent, ServerRuntime, ServerRuntimeStateEvent};
+use super::super::{
+    LifecycleState, ServerOutputEvent, ServerRuntime, ServerRuntimeStateEvent, TelemetrySample,
+};
 use super::mc_protocol::{
     build_login_disconnect_packet, build_status_packet, build_status_response_json, read_handshake,
     read_varint_from_stream, with_packet_length,
 };
 use super::server_properties::read_property;
 use super::telemetry::probe_port;
+use super::telemetry_store;
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::Emitter;
 
 type Processes = Arc<Mutex<HashMap<String, ServerRuntime>>>;
@@ -29,6 +32,9 @@ type Processes = Arc<Mutex<HashMap<String, ServerRuntime>>>;
 const CONNECTION_TIMEOUT: Duration = Duration::from_secs(3);
 /// Idle sleep between non-blocking accept polls.
 const ACCEPT_POLL: Duration = Duration::from_millis(150);
+/// How often to persist a "sleeping" telemetry sample while the listener holds
+/// the port, so the availability history can tell sleep apart from plain offline.
+const SLEEP_SAMPLE_INTERVAL: Duration = Duration::from_secs(30);
 /// Message shown to a joining player while the server boots.
 const WAKE_MESSAGE: &str = "§eWaking the server up…\n§7Rejoin in ~30 seconds.";
 
@@ -36,6 +42,7 @@ const WAKE_MESSAGE: &str = "§eWaking the server up…\n§7Rejoin in ~30 seconds
 pub(in crate::app) struct SleepListenerParams {
     pub key: String,
     pub directory: String,
+    pub server_id: String,
     pub server_port: u16,
     pub motd: String,
     pub java_executable: Option<String>,
@@ -88,6 +95,11 @@ fn run_accept_loop(
     params: SleepListenerParams,
     shutdown: Arc<AtomicBool>,
 ) {
+    // Record an initial sleeping sample immediately so the sleep window shows up
+    // in availability history without waiting a full interval, then on a cadence.
+    record_sleeping_sample(&params.server_id);
+    let mut last_sample = Instant::now();
+
     loop {
         if shutdown.load(Ordering::Relaxed) {
             return;
@@ -96,6 +108,11 @@ fn run_accept_loop(
         // (stopped, woken, replaced) — belt and braces against a leaked thread.
         if !still_sleeping(&processes, &params.key, params.generation) {
             return;
+        }
+
+        if last_sample.elapsed() >= SLEEP_SAMPLE_INTERVAL {
+            record_sleeping_sample(&params.server_id);
+            last_sample = Instant::now();
         }
 
         match listener.accept() {
@@ -117,6 +134,21 @@ fn run_accept_loop(
             }
         }
     }
+}
+
+/// Persists one `sleeping` telemetry sample (process down, port held) so the
+/// availability chart can render sleep as its own state. Best-effort; a stable
+/// `server_id` is required (empty ids are skipped by the store).
+fn record_sleeping_sample(server_id: &str) {
+    telemetry_store::insert_sample(
+        server_id,
+        &TelemetrySample {
+            timestamp: chrono::Utc::now().timestamp_millis(),
+            online: false,
+            sleeping: true,
+            ..Default::default()
+        },
+    );
 }
 
 /// True while the map still holds our sleeping runtime at the same generation.

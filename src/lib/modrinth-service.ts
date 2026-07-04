@@ -219,6 +219,9 @@ export const getModrinthProjectPageUrl = (projectType: ModrinthProjectType, slug
 /** Modrinth loader facets that can run content for a given server provider. */
 const PLUGIN_LOADERS_BY_PROVIDER: Record<string, string[]> = {
 	paper: ['paper', 'spigot', 'bukkit'],
+	// Purpur is a Paper fork, so it runs the whole Paper/Spigot/Bukkit stack plus
+	// any Purpur-tagged plugins.
+	purpur: ['purpur', 'paper', 'spigot', 'bukkit'],
 	// Folia needs explicit support; paper plugins are not guaranteed to work.
 	folia: ['folia'],
 	spigot: ['spigot', 'bukkit'],
