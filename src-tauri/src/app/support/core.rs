@@ -18,7 +18,8 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 ///
 /// Always use this instead of `Command::new` for any process the app spawns.
 pub(in crate::app) fn no_window_command<S: AsRef<OsStr>>(program: S) -> Command {
-    let command = Command::new(program);
+    #[cfg_attr(not(target_os = "windows"), allow(unused_mut))]
+    let mut command = Command::new(program);
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;

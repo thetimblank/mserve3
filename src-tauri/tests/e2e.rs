@@ -9,28 +9,94 @@
 //!   cargo test --test e2e -- --ignored            (all)
 //!   cargo test --test e2e -- --ignored paper      (one)
 //!
+//! The cases serialize themselves through a process-wide lock (a real server can't
+//! share ports/RAM/console with another), so they are safe to run under the default
+//! multi-threaded harness — but `--nocapture` output stays readable regardless.
+//!
 //! Prerequisites (the `e2e-nightly` workflow provides these):
-//!   * a JVM — `MSERVE_E2E_JAVA` (path to java[.exe]) or `JAVA_HOME`.
+//!   * a JVM — `MSERVE_E2E_JAVA` (path to java[.exe]) or `JAVA_HOME`. Install a
+//!     recent JDK (25+) so the newest provider jars can boot.
 //!   * network access to the PaperMC / Mojang APIs.
 //!   * for the modded case — `MSERVE_E2E_CUSTOM_JAR` pointing at a Fabric/Forge
 //!     server jar (acquiring those needs an installer run, out of scope here).
 //!
-//! A case with an unmet prerequisite prints a SKIP line and passes, so the matrix
-//! degrades gracefully on a machine that can't satisfy every provider.
+//! Graceful degradation: a case with an unmet prerequisite (no JVM, no compatible
+//! release, a jar the host JVM is too old to run) prints a loud SKIP and passes —
+//! *unless* `MSERVE_E2E_REQUIRE=1`, which turns every skip into a hard failure so
+//! CI can't go green having booted nothing.
 
-use std::io::{Read, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command};
+use std::process::{Child, Command, Stdio};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+
+use serde::Deserialize;
+use serde::de::{MapAccess, Visitor};
+
+// --------------------------------------------------------------------------
+// skip / serialization plumbing
+// --------------------------------------------------------------------------
+
+/// Prints a loud SKIP and returns from the calling test — or panics when
+/// `MSERVE_E2E_REQUIRE=1`, so a CI run that meant to boot servers can't pass by
+/// skipping everything.
+macro_rules! skip_or_fail {
+    ($case:expr, $($arg:tt)*) => {{
+        let reason = format!($($arg)*);
+        if std::env::var("MSERVE_E2E_REQUIRE").is_ok() {
+            panic!("[e2e:{}] REQUIRED but unmet — {}", $case, reason);
+        }
+        eprintln!("[e2e:{}] SKIP — {}", $case, reason);
+        return;
+    }};
+}
+
+/// Waits for the server to actually answer Server-List-Ping and evaluates to the
+/// reported version string, turning a "host JVM too old for this jar" crash into a
+/// skip rather than a red failure.
+macro_rules! online_or_skip {
+    ($case:expr, $server:expr) => {
+        match wait_for_online(&mut $server, BOOT_TIMEOUT) {
+            Boot::Ready(version) => version,
+            Boot::Exited => {
+                if $server.java_too_old() {
+                    skip_or_fail!(
+                        $case,
+                        "host JVM is too old to run this jar (needs a newer Java major)"
+                    );
+                }
+                panic!(
+                    "[{}] server process exited before coming online (see log above)",
+                    $case
+                );
+            }
+            Boot::Timeout => panic!(
+                "[{}] server never answered Server-List-Ping within the deadline",
+                $case
+            ),
+        }
+    };
+}
+
+/// Process-wide serialization: real servers contend for RAM, ports, RCON and the
+/// console, so exactly one case runs at a time even under multi-threaded cargo.
+/// Recovers from poisoning so one panicking case doesn't wedge the rest.
+static SERIAL: Mutex<()> = Mutex::new(());
+fn serial_guard() -> std::sync::MutexGuard<'static, ()> {
+    SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 // --------------------------------------------------------------------------
 // prerequisites & small utilities
 // --------------------------------------------------------------------------
 
-/// Resolves a usable `java` executable, or `None` (with a SKIP message) when the
-/// host has no JVM configured for the matrix.
-fn java_executable(case: &str) -> Option<PathBuf> {
+/// Resolves a usable `java` executable, or `None` when the host has no JVM
+/// configured for the matrix (the caller decides skip vs. fail).
+fn java_executable() -> Option<PathBuf> {
     if let Ok(explicit) = std::env::var("MSERVE_E2E_JAVA") {
         let path = PathBuf::from(explicit);
         if path.exists() {
@@ -44,8 +110,30 @@ fn java_executable(case: &str) -> Option<PathBuf> {
             return Some(path);
         }
     }
-    eprintln!("[e2e:{case}] SKIP — no JVM (set MSERVE_E2E_JAVA or JAVA_HOME).");
     None
+}
+
+/// Parses the major version out of `java -version` text (stderr), handling both
+/// the modern (`"21.0.3"`) and legacy (`"1.8.0_401"`) version schemes.
+fn parse_java_major(text: &str) -> Option<u32> {
+    let start = text.find("version \"")? + "version \"".len();
+    let rest = &text[start..];
+    let end = rest.find('"')?;
+    let version = &rest[..end];
+    let first: u32 = version.split(['.', '_']).next()?.parse().ok()?;
+    if first == 1 {
+        // 1.8-style → the real major is the second component.
+        version.split('.').nth(1)?.parse().ok()
+    } else {
+        Some(first)
+    }
+}
+
+/// Runs `java -version` and returns the host JVM's major version.
+fn java_major(java: &Path) -> Option<u32> {
+    let output = Command::new(java).arg("-version").output().ok()?;
+    // `java -version` writes to stderr on every mainstream JVM.
+    parse_java_major(&String::from_utf8_lossy(&output.stderr))
 }
 
 fn cache_dir() -> PathBuf {
@@ -102,50 +190,150 @@ fn download_cached(client: &reqwest::blocking::Client, url: &str, file_name: &st
 
 const FILL_BASE: &str = "https://fill.papermc.io/v3";
 
-/// Resolves the newest stable `server:default` jar for a Fill project (paper/velocity).
-fn resolve_fill_jar(client: &reqwest::blocking::Client, project: &str) -> (String, String) {
-    let project_json = get_json(client, &format!("{FILL_BASE}/projects/{project}"));
-    let versions = project_json["versions"]
-        .as_object()
-        .expect("versions object");
-    let newest_family = versions.keys().next().expect("a version family");
-    let newest_version = versions[newest_family][0]
-        .as_str()
-        .expect("a version string")
-        .to_string();
-
-    let builds = get_json(
-        client,
-        &format!("{FILL_BASE}/projects/{project}/versions/{newest_version}/builds"),
-    );
-    let download = &builds[0]["downloads"]["server:default"];
-    let url = download["url"].as_str().expect("download url").to_string();
-    (url, format!("{project}-{newest_version}.jar"))
+/// A version string carrying a pre-release marker — mirrors the app's filter so
+/// the matrix boots a genuine stable release, not a snapshot.
+fn version_is_unstable(version: &str) -> bool {
+    let lowered = version.to_lowercase();
+    [
+        "snapshot",
+        "-rc",
+        "rc-",
+        "-pre",
+        "pre-",
+        "-exp",
+        "experimental",
+        "beta",
+        "alpha",
+    ]
+    .iter()
+    .any(|marker| lowered.contains(marker))
 }
 
-/// Resolves the latest vanilla release server jar from the Mojang manifest.
-fn resolve_vanilla_jar(client: &reqwest::blocking::Client) -> (String, String) {
+/// Preserves the *document order* of the Fill `versions` object (newest-first).
+/// A plain `serde_json::Value` would land the object in a `BTreeMap` and re-sort
+/// the keys lexicographically ("1.10" < "1.8"), which is how this matrix used to
+/// silently boot an ancient release. This mirrors `providers.rs`.
+struct OrderedFamilies(Vec<(String, Vec<String>)>);
+
+impl<'de> Deserialize<'de> for OrderedFamilies {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct FamilyVisitor;
+        impl<'de> Visitor<'de> for FamilyVisitor {
+            type Value = OrderedFamilies;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("a versions object")
+            }
+            fn visit_map<M>(self, mut access: M) -> Result<Self::Value, M::Error>
+            where
+                M: MapAccess<'de>,
+            {
+                let mut families = Vec::new();
+                while let Some((family, versions)) = access.next_entry::<String, Vec<String>>()? {
+                    families.push((family, versions));
+                }
+                Ok(OrderedFamilies(families))
+            }
+        }
+        deserializer.deserialize_map(FamilyVisitor)
+    }
+}
+
+#[derive(Deserialize)]
+struct FillProject {
+    versions: OrderedFamilies,
+}
+
+#[derive(Deserialize)]
+struct FillBuild {
+    id: u64,
+    channel: String,
+    downloads: std::collections::BTreeMap<String, FillDownload>,
+}
+
+#[derive(Deserialize)]
+struct FillDownload {
+    url: String,
+}
+
+/// Resolves the newest stable `server:default` jar for a Fill project (paper/velocity),
+/// honouring document order instead of lexicographic key order.
+fn resolve_fill_jar(client: &reqwest::blocking::Client, project: &str) -> (String, String) {
+    let text = client
+        .get(format!("{FILL_BASE}/projects/{project}"))
+        .send()
+        .expect("GET fill project")
+        .text()
+        .expect("fill project body");
+    let project_data: FillProject = serde_json::from_str(&text).expect("parse fill project");
+
+    let all_versions = || project_data.versions.0.iter().flat_map(|(_, v)| v.iter());
+    let version = all_versions()
+        .find(|v| !version_is_unstable(v))
+        .or_else(|| all_versions().next())
+        .expect("a version")
+        .clone();
+
+    let builds_text = client
+        .get(format!(
+            "{FILL_BASE}/projects/{project}/versions/{version}/builds"
+        ))
+        .send()
+        .expect("GET fill builds")
+        .text()
+        .expect("fill builds body");
+    let builds: Vec<FillBuild> = serde_json::from_str(&builds_text).expect("parse fill builds");
+
+    // Builds are newest-first; prefer the newest STABLE build, else the newest overall.
+    let chosen = builds
+        .iter()
+        .find(|b| b.channel.eq_ignore_ascii_case("STABLE"))
+        .or_else(|| builds.first())
+        .expect("a build");
+    let download = chosen
+        .downloads
+        .get("server:default")
+        .or_else(|| chosen.downloads.values().next())
+        .expect("a download");
+
+    (
+        download.url.clone(),
+        format!("{project}-{version}-{}.jar", chosen.id),
+    )
+}
+
+/// Resolves the newest vanilla *release* whose required Java major the host JVM can
+/// actually run (Mojang publishes `javaVersion.majorVersion` per version). Walking
+/// newest-first and stopping at the first compatible release means the matrix always
+/// boots a real server instead of crashing on a jar built for a newer JDK.
+fn resolve_vanilla_jar(
+    client: &reqwest::blocking::Client,
+    host_java_major: u32,
+) -> Option<(String, String)> {
     let manifest = get_json(
         client,
         "https://launchermeta.mojang.com/mc/game/version_manifest_v2.json",
     );
-    let latest = manifest["latest"]["release"]
-        .as_str()
-        .expect("latest release");
-    let version_url = manifest["versions"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|v| v["id"].as_str() == Some(latest))
-        .and_then(|v| v["url"].as_str())
-        .expect("version url")
-        .to_string();
-    let detail = get_json(client, &version_url);
-    let url = detail["downloads"]["server"]["url"]
-        .as_str()
-        .expect("server download url")
-        .to_string();
-    (url, format!("vanilla-{latest}.jar"))
+    let versions = manifest["versions"].as_array()?;
+    for version in versions {
+        if version["type"].as_str() != Some("release") {
+            continue;
+        }
+        let id = version["id"].as_str()?;
+        let url = version["url"].as_str()?;
+        let detail = get_json(client, url);
+        let Some(server_url) = detail["downloads"]["server"]["url"].as_str() else {
+            continue;
+        };
+        // 0 = unknown (pre-1.17 versions omit it); treat as always compatible.
+        let required = detail["javaVersion"]["majorVersion"].as_u64().unwrap_or(0) as u32;
+        if required == 0 || required <= host_java_major {
+            return Some((server_url.to_string(), format!("vanilla-{id}.jar")));
+        }
+    }
+    None
 }
 
 // --------------------------------------------------------------------------
@@ -158,6 +346,28 @@ struct RunningServer {
     game_port: u16,
     rcon_port: u16,
     rcon_password: String,
+    logs: Arc<Mutex<String>>,
+}
+
+impl RunningServer {
+    /// Heuristic: did the server refuse to boot because the host JVM is too old for
+    /// this jar? Covers both the raw JVM signal (`UnsupportedClassVersionError`) and
+    /// providers like Paper that run their own pre-flight Java check and exit with a
+    /// friendly message instead of letting the class loader throw.
+    fn java_too_old(&self) -> bool {
+        self.logs
+            .lock()
+            .map(|logs| {
+                let lower = logs.to_ascii_lowercase();
+                lower.contains("unsupportedclassversionerror")
+                    || lower.contains("class file version")
+                    || lower.contains("requires running the server with java")
+                    || (lower.contains("requires")
+                        && lower.contains("java")
+                        && (lower.contains("or above") || lower.contains("or newer")))
+            })
+            .unwrap_or(false)
+    }
 }
 
 impl Drop for RunningServer {
@@ -168,8 +378,31 @@ impl Drop for RunningServer {
     }
 }
 
+/// Drains a child stream into a shared log buffer on its own thread, echoing each
+/// line with a `[case]` prefix so `--nocapture` stays readable and the server's
+/// stdout never bleeds into (or reads from) the test's console.
+fn spawn_drain<R: Read + Send + 'static>(reader: R, logs: Arc<Mutex<String>>, case: String) {
+    std::thread::spawn(move || {
+        let mut buf = BufReader::new(reader);
+        let mut line = String::new();
+        loop {
+            line.clear();
+            match buf.read_line(&mut line) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {
+                    eprint!("[{case}] {line}");
+                    if let Ok(mut logs) = logs.lock() {
+                        logs.push_str(&line);
+                    }
+                }
+            }
+        }
+    });
+}
+
 /// Writes eula + server.properties (with loopback RCON, offline mode, the chosen
-/// ports) and spawns the JVM. Mirrors how mserve provisions a server.
+/// ports) and spawns the JVM. Mirrors how mserve provisions a server. stdin is
+/// null and stdout/stderr are captured, so the server can never touch the console.
 fn boot_server(java: &Path, jar: &Path, case: &str) -> RunningServer {
     let dir = cache_dir().join(format!("run-{case}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -194,13 +427,42 @@ fn boot_server(java: &Path, jar: &Path, case: &str) -> RunningServer {
     )
     .expect("write server.properties");
 
-    let child = Command::new(java)
+    // Velocity ignores server.properties — it binds the port from velocity.toml
+    // (defaulting to 25577). Pin it to our ephemeral port so the online probe and
+    // SLP target the address the proxy actually listens on. Non-proxy servers
+    // simply ignore this file. Velocity migrates a stale config-version in place,
+    // preserving `bind`, so this stays correct across Velocity releases.
+    std::fs::write(
+        dir.join("velocity.toml"),
+        format!(
+            "config-version = \"2.7\"\n\
+             bind = \"0.0.0.0:{game_port}\"\n\
+             motd = \"e2e\"\n\
+             show-max-players = 5\n\
+             online-mode = false\n\
+             player-info-forwarding-mode = \"none\"\n"
+        ),
+    )
+    .expect("write velocity.toml");
+
+    let mut child = Command::new(java)
         .current_dir(&dir)
         .args(["-Xmx1G", "-Xms512M", "-jar"])
         .arg(jar)
         .arg("nogui")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .expect("spawn jvm");
+
+    let logs = Arc::new(Mutex::new(String::new()));
+    if let Some(stdout) = child.stdout.take() {
+        spawn_drain(stdout, Arc::clone(&logs), case.to_string());
+    }
+    if let Some(stderr) = child.stderr.take() {
+        spawn_drain(stderr, Arc::clone(&logs), case.to_string());
+    }
 
     RunningServer {
         child,
@@ -208,24 +470,63 @@ fn boot_server(java: &Path, jar: &Path, case: &str) -> RunningServer {
         game_port,
         rcon_port,
         rcon_password,
+        logs,
     }
 }
 
-/// Blocks until the game port accepts a connection or the deadline passes.
-fn wait_until_online(port: u16, timeout: Duration) -> bool {
+/// The three ways a boot can end: the server answered Server-List-Ping (truly
+/// serving, not merely a bound socket), the process died first, or the deadline
+/// passed.
+enum Boot {
+    Ready(String),
+    Exited,
+    Timeout,
+}
+
+/// Blocks until the server actually answers Server-List-Ping, the child exits, or
+/// the deadline passes. A bare TCP accept is *not* enough — Minecraft binds its
+/// listen socket during world-gen, well before it will answer a status ping, so a
+/// plain connect probe reports "online" far too early. Polling the real protocol
+/// is the authoritative readiness signal (and still catches a fast class-version
+/// crash within a couple of seconds via `try_wait`).
+fn wait_for_online(server: &mut RunningServer, timeout: Duration) -> Boot {
     let deadline = Instant::now() + timeout;
-    while Instant::now() < deadline {
-        if TcpStream::connect_timeout(
-            &format!("127.0.0.1:{port}").parse().unwrap(),
-            Duration::from_millis(500),
-        )
-        .is_ok()
-        {
-            return true;
+    loop {
+        if let Some(version) = slp_version(server.game_port) {
+            return Boot::Ready(version);
+        }
+        if let Ok(Some(_)) = server.child.try_wait() {
+            return Boot::Exited;
+        }
+        if Instant::now() >= deadline {
+            return Boot::Timeout;
         }
         std::thread::sleep(Duration::from_secs(2));
     }
-    false
+}
+
+/// Polls the provider's TPS command(s) over RCON until one yields a numeric reading,
+/// the child exits, or the deadline passes. RCON only comes up once the server is
+/// fully started, so — like readiness — this needs to retry rather than assume.
+fn wait_for_tps(server: &mut RunningServer, commands: &[&str], timeout: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
+    loop {
+        let got = commands.iter().any(|cmd| {
+            rcon_command(server.rcon_port, &server.rcon_password, cmd)
+                .map(|r| r.chars().any(|c| c.is_ascii_digit()))
+                .unwrap_or(false)
+        });
+        if got {
+            return true;
+        }
+        if let Ok(Some(_)) = server.child.try_wait() {
+            return false;
+        }
+        if Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(Duration::from_secs(2));
+    }
 }
 
 // --------------------------------------------------------------------------
@@ -355,31 +656,22 @@ fn graceful_stop(server: &mut RunningServer, timeout: Duration) -> bool {
 }
 
 const BOOT_TIMEOUT: Duration = Duration::from_secs(180);
+const TPS_TIMEOUT: Duration = Duration::from_secs(90);
 const STOP_TIMEOUT: Duration = Duration::from_secs(45);
 
 /// Shared assertions for a server that should report TPS over RCON (paper/vanilla/modded).
 fn assert_boots_with_tps(case: &str, jar: PathBuf, java: PathBuf, tps_commands: &[&str]) {
     let mut server = boot_server(&java, &jar, case);
-    assert!(
-        wait_until_online(server.game_port, BOOT_TIMEOUT),
-        "[{case}] server never bound its port"
-    );
-
-    let version = slp_version(server.game_port);
-    assert!(version.is_some(), "[{case}] SLP returned no version");
+    let version = online_or_skip!(case, server);
     eprintln!(
         "[e2e:{case}] online, version = {version:?} (dir: {})",
         server.dir.display()
     );
 
-    // At least one of the provider's TPS commands should yield a numeric reading.
-    let got_tps = tps_commands.iter().any(|cmd| {
-        rcon_command(server.rcon_port, &server.rcon_password, cmd)
-            .map(|r| r.chars().any(|c| c.is_ascii_digit()))
-            .unwrap_or(false)
-    });
+    // At least one of the provider's TPS commands should eventually yield a numeric
+    // reading (RCON comes up a beat after the status listener).
     assert!(
-        got_tps,
+        wait_for_tps(&mut server, tps_commands, TPS_TIMEOUT),
         "[{case}] no TPS reading from RCON {tps_commands:?}"
     );
 
@@ -396,8 +688,9 @@ fn assert_boots_with_tps(case: &str, jar: PathBuf, java: PathBuf, tps_commands: 
 #[test]
 #[ignore = "real-server E2E; run with --ignored"]
 fn paper_boots_online_and_reports_tps() {
-    let Some(java) = java_executable("paper") else {
-        return;
+    let _serial = serial_guard();
+    let Some(java) = java_executable() else {
+        skip_or_fail!("paper", "no JVM (set MSERVE_E2E_JAVA or JAVA_HOME)");
     };
     let client = http_client();
     let (url, name) = resolve_fill_jar(&client, "paper");
@@ -409,11 +702,19 @@ fn paper_boots_online_and_reports_tps() {
 #[test]
 #[ignore = "real-server E2E; run with --ignored"]
 fn vanilla_boots_online_and_reports_via_tick_query() {
-    let Some(java) = java_executable("vanilla") else {
-        return;
+    let _serial = serial_guard();
+    let Some(java) = java_executable() else {
+        skip_or_fail!("vanilla", "no JVM (set MSERVE_E2E_JAVA or JAVA_HOME)");
     };
+    // Unknown host major → assume newest; a class-version crash then skips cleanly.
+    let host_major = java_major(&java).unwrap_or(u32::MAX);
     let client = http_client();
-    let (url, name) = resolve_vanilla_jar(&client);
+    let Some((url, name)) = resolve_vanilla_jar(&client, host_major) else {
+        skip_or_fail!(
+            "vanilla",
+            "no release compatible with host Java {host_major}"
+        );
+    };
     let jar = download_cached(&client, &url, &name);
     // Modern vanilla answers `tick query`; older has neither — try both, the
     // assertion tolerates whichever the resolved version supports.
@@ -423,24 +724,22 @@ fn vanilla_boots_online_and_reports_via_tick_query() {
 #[test]
 #[ignore = "real-server E2E; run with --ignored"]
 fn velocity_proxy_answers_slp_without_tps() {
-    let Some(java) = java_executable("velocity") else {
-        return;
+    let _serial = serial_guard();
+    let Some(java) = java_executable() else {
+        skip_or_fail!("velocity", "no JVM (set MSERVE_E2E_JAVA or JAVA_HOME)");
     };
     let client = http_client();
     let (url, name) = resolve_fill_jar(&client, "velocity");
     let jar = download_cached(&client, &url, &name);
 
     let mut server = boot_server(&java, &jar, "velocity");
-    assert!(
-        wait_until_online(server.game_port, BOOT_TIMEOUT),
-        "[velocity] proxy never bound its port"
-    );
     // A proxy answers SLP (so telemetry online/version works) but exposes no TPS.
-    assert!(
-        slp_version(server.game_port).is_some(),
-        "[velocity] SLP returned no version"
+    // Reaching Ready here *is* the SLP assertion.
+    let version = online_or_skip!("velocity", server);
+    eprintln!(
+        "[e2e:velocity] online, version = {version:?} (dir: {})",
+        server.dir.display()
     );
-    eprintln!("[e2e:velocity] online (dir: {})", server.dir.display());
 
     // Velocity is shut down via its console `end`/`shutdown`; force-kill is the
     // reliable cross-version stop here (mserve does the same after the grace).
@@ -451,10 +750,13 @@ fn velocity_proxy_answers_slp_without_tps() {
 #[test]
 #[ignore = "real-server E2E; run with --ignored"]
 fn modded_custom_jar_boots_online() {
-    let Some(java) = java_executable("modded") else {
-        return;
+    let _serial = serial_guard();
+    let Some(java) = java_executable() else {
+        skip_or_fail!("modded", "no JVM (set MSERVE_E2E_JAVA or JAVA_HOME)");
     };
     let Ok(custom) = std::env::var("MSERVE_E2E_CUSTOM_JAR") else {
+        // A modded jar can't be fetched unattended (installer run required), so this
+        // case is *optionally* provided — an always-skip, never a REQUIRE failure.
         eprintln!("[e2e:modded] SKIP — set MSERVE_E2E_CUSTOM_JAR to a Fabric/Forge server jar.");
         return;
     };
@@ -466,15 +768,11 @@ fn modded_custom_jar_boots_online() {
     );
 
     let mut server = boot_server(&java, &jar, "modded");
-    assert!(
-        wait_until_online(server.game_port, BOOT_TIMEOUT),
-        "[modded] custom jar never bound its port"
+    let version = online_or_skip!("modded", server);
+    eprintln!(
+        "[e2e:modded] online, version = {version:?} (dir: {})",
+        server.dir.display()
     );
-    assert!(
-        slp_version(server.game_port).is_some(),
-        "[modded] SLP returned no version"
-    );
-    eprintln!("[e2e:modded] online (dir: {})", server.dir.display());
     let _ = graceful_stop(&mut server, STOP_TIMEOUT);
 }
 
@@ -484,8 +782,9 @@ fn modded_custom_jar_boots_online() {
 #[test]
 #[ignore = "real-server E2E; run with --ignored"]
 fn bogus_jar_exits_nonzero() {
-    let Some(java) = java_executable("crash") else {
-        return;
+    let _serial = serial_guard();
+    let Some(java) = java_executable() else {
+        skip_or_fail!("crash", "no JVM (set MSERVE_E2E_JAVA or JAVA_HOME)");
     };
     let dir = cache_dir().join(format!("run-crash-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -497,7 +796,47 @@ fn bogus_jar_exits_nonzero() {
         .current_dir(&dir)
         .args(["-jar"])
         .arg(&bogus)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .status()
         .expect("spawn jvm");
     assert!(!status.success(), "a bogus jar should exit non-zero");
+}
+
+// --------------------------------------------------------------------------
+// unit coverage for the resolver/parse helpers (run in the fast suite)
+// --------------------------------------------------------------------------
+
+#[cfg(test)]
+mod helper_tests {
+    use super::*;
+
+    #[test]
+    fn fill_versions_keep_document_order_not_lexicographic() {
+        // The exact shape that used to mis-sort: "1.10" would beat "1.8" under a
+        // BTreeMap. Document order must win, so the newest family stays first.
+        let json = r#"{"versions":{"1.21":["1.21.4","1.21.3"],"1.20":["1.20.6"],"1.8":["1.8.8"]}}"#;
+        let project: FillProject = serde_json::from_str(json).unwrap();
+        let first = project.versions.0.first().unwrap();
+        assert_eq!(first.0, "1.21");
+        assert_eq!(first.1[0], "1.21.4");
+    }
+
+    #[test]
+    fn java_major_parses_modern_and_legacy() {
+        assert_eq!(
+            parse_java_major("openjdk version \"21.0.3\" 2024-04-16"),
+            Some(21)
+        );
+        assert_eq!(parse_java_major("java version \"25\" 2025-09-16"), Some(25));
+        assert_eq!(parse_java_major("java version \"1.8.0_401\""), Some(8));
+        assert_eq!(parse_java_major("no version here"), None);
+    }
+
+    #[test]
+    fn unstable_markers_are_filtered() {
+        assert!(version_is_unstable("1.21-pre1"));
+        assert!(version_is_unstable("23w31a-snapshot"));
+        assert!(!version_is_unstable("1.21.4"));
+    }
 }

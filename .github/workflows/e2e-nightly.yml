@@ -38,11 +38,13 @@ jobs:
               workspaces: src-tauri
 
          # The L4 harness reads JAVA_HOME to find the JVM that boots the servers.
-         - name: Setup Java (Temurin 21)
+         # Use a recent JDK so the newest Paper/vanilla jars (which track the latest
+         # Java major) actually boot instead of skipping on an UnsupportedClassVersionError.
+         - name: Setup Java (Temurin 25)
            uses: actions/setup-java@v4
            with:
               distribution: temurin
-              java-version: 21
+              java-version: 25
 
          - name: Install frontend dependencies
            run: npm ci
@@ -53,4 +55,9 @@ jobs:
 
          - name: Run real-server E2E matrix
            working-directory: src-tauri
+           # REQUIRE=1 turns a "no JVM / jar too new for this JDK" skip into a hard
+           # failure, so a green nightly means servers genuinely booted (the modded
+           # case, which needs an unavailable custom jar, skips regardless).
+           env:
+              MSERVE_E2E_REQUIRE: '1'
            run: cargo test --test e2e -- --ignored --nocapture
