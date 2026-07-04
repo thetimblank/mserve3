@@ -174,7 +174,10 @@ mod unix_lifetime {
         unsafe {
             libc::atexit(kill_tracked_groups);
             for signal in [libc::SIGTERM, libc::SIGINT, libc::SIGHUP] {
-                libc::signal(signal, terminating_signal_handler as libc::sighandler_t);
+                libc::signal(
+                    signal,
+                    terminating_signal_handler as *const () as libc::sighandler_t,
+                );
             }
         }
     }

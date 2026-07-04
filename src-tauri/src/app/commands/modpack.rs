@@ -133,7 +133,16 @@ fn safe_relative_path(raw: &str) -> Option<PathBuf> {
     let mut clean = PathBuf::new();
     for component in path.components() {
         match component {
-            Component::Normal(part) => clean.push(part),
+            Component::Normal(part) => {
+                // Reject Windows drive-letter segments (e.g. "C:") even when
+                // running on a platform whose `Path` parser doesn't treat
+                // them as a `Prefix` component (Linux), since archives are
+                // portable across the Windows/Linux hosts mserve supports.
+                if part.to_str().map_or(true, |s| s.contains(':')) {
+                    return None;
+                }
+                clean.push(part);
+            }
             Component::CurDir => {}
             _ => return None,
         }
