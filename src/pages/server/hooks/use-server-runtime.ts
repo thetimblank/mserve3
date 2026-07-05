@@ -755,6 +755,37 @@ export const useServerRuntime = ({
 		}
 	}, [appendTerminalLine, isBusy, serverDirectory, serverId, setIsBusy, setOfflineState, setServerStatus]);
 
+	const handleSleep = React.useCallback(async () => {
+		if (!serverDirectory) return;
+		if (isBusy) return;
+
+		runtimeRef.current.manualStopRequested = true;
+		runtimeRef.current.stopRequested = true;
+		runtimeRef.current.forceKilled = false;
+		setIsBusy(true);
+		setServerStatus(serverId, 'closing');
+		appendTerminalLine('[system] Putting server to sleep...');
+
+		try {
+			await invoke('sleep_server', { directory: serverDirectory });
+			// Leave the status `closing`; the `server-runtime-state` event (sleeping,
+			// or offline if sleep mode failed to start) corrects it once the process
+			// actually exits.
+		} catch (err) {
+			// The backend rejected the request before touching the process — it's
+			// still online, so revert status and the bookkeeping flags set above
+			// rather than leaving them stuck (mirrors setOfflineState's cleanup).
+			runtimeRef.current.manualStopRequested = false;
+			runtimeRef.current.stopRequested = false;
+			runtimeRef.current.forceKilled = false;
+			setServerStatus(serverId, 'online');
+			const message = showError(err, 'Failed to put server to sleep.');
+			appendTerminalLine(`[system] ${message}`);
+		} finally {
+			setIsBusy(false);
+		}
+	}, [appendTerminalLine, isBusy, serverDirectory, serverId, setIsBusy, setServerStatus, showError]);
+
 	const handleRestart = React.useCallback(async () => {
 		if (!serverDirectory) return;
 		if (isBusy) return;
@@ -871,6 +902,7 @@ export const useServerRuntime = ({
 		handleItemsChanged,
 		handleStart,
 		handleStop,
+		handleSleep,
 		handleRestart,
 		handleForceKill,
 		handleTerminalCommandSubmit,

@@ -15,6 +15,7 @@ import {
 	EyeOff,
 	Globe,
 	MemoryStick,
+	Moon,
 	OctagonX,
 	Package,
 	RefreshCcw,
@@ -51,6 +52,7 @@ type Props = {
 	isBusy: boolean;
 	onStart: () => void;
 	onStop: () => void;
+	onSleep: () => void;
 	onRestart: () => void;
 	onForceKill: () => void;
 };
@@ -94,10 +96,12 @@ const ServerOverviewPanel: React.FC<Props> = ({
 	isBusy,
 	onStart,
 	onStop,
+	onSleep,
 	onRestart,
 	onForceKill,
 }) => {
 	const isOffline = server.status === 'offline';
+	const isSleeping = server.status === 'sleeping';
 	const isProxy = isProxyProvider(server.provider);
 	const capabilities = getServerProviderCapabilities(server.provider);
 	const { user } = useUser();
@@ -214,16 +218,28 @@ const ServerOverviewPanel: React.FC<Props> = ({
 									<p>Restart</p>
 								</Button>
 							)}
+							{server.status === 'online' && !isProxy && (
+								<Button variant='secondary' onClick={onSleep} disabled={isBusy}>
+									<Moon />
+									<p>Sleep</p>
+								</Button>
+							)}
 							{isOffline && (
 								<Button onClick={onStart} disabled={isBusy}>
 									<CircleCheck />
 									<p>Serve</p>
 								</Button>
 							)}
+							{isSleeping && (
+								<Button onClick={onStart} disabled={isBusy}>
+									<Moon />
+									<p>Awake</p>
+								</Button>
+							)}
 							{!isOffline && (
 								<Button variant='destructive-secondary' onClick={onForceKill} disabled={isBusy}>
 									<OctagonX />
-									<p>Force Kill</p>
+									<p>{isSleeping ? 'Shutdown' : 'Force Kill'}</p>
 								</Button>
 							)}
 							<OpenFolderButton directory={server.directory} disabled={isBusy} />

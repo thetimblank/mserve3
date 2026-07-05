@@ -886,6 +886,7 @@ pub fn run() {
             start_server,
             get_server_start_command,
             stop_server,
+            sleep_server,
             restart_server,
             force_kill_server,
             force_kill_all_servers,

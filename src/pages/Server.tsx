@@ -136,6 +136,7 @@ const Server: React.FC = () => {
 		handleItemsChanged,
 		handleStart,
 		handleStop,
+		handleSleep,
 		handleRestart,
 		handleForceKill,
 		handleTerminalCommandSubmit,
@@ -379,6 +380,7 @@ const Server: React.FC = () => {
 							isBusy={isBusy}
 							onStart={handleStartClick}
 							onStop={handleStop}
+							onSleep={handleSleep}
 							onRestart={handleRestart}
 							onForceKill={handleForceKill}
 						/>

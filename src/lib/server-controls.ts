@@ -85,6 +85,25 @@ export const forceKillServer = async ({
 	}
 };
 
+/**
+ * Manually parks an online, non-proxy server in sleep mode right now, bypassing
+ * the per-server auto-sleep toggle (a manual request always wins). Leaves status
+ * `closing`; the authoritative `server-runtime-state` event (sleeping, or offline
+ * if the server couldn't be spawned into sleep mode) corrects it once the process
+ * actually exits.
+ */
+export const sleepServer = async ({ server, setServerStatus }: ServerControlContext): Promise<boolean> => {
+	setServerStatus(server.id, 'closing');
+	try {
+		await invoke('sleep_server', { directory: server.directory });
+		return true;
+	} catch (err) {
+		setServerStatus(server.id, 'online');
+		toast.error(err instanceof Error ? err.message : 'Failed to put server to sleep.');
+		return false;
+	}
+};
+
 export const restartServer = async ({
 	server,
 	javaExecutable,
