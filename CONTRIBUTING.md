@@ -114,7 +114,7 @@ Keep the subject line under 72 characters. If the change needs more explanation,
 - New structs that cross the IPC boundary need `#[derive(serde::Serialize, serde::Deserialize)]` and `#[serde(rename_all = "camelCase")]`.
 - `cargo fmt` is enforced by CI — run it before pushing.
 - Clippy warnings are not yet a hard gate, but don't introduce new ones intentionally. The goal is to get to `-D warnings` soon.
-- This app is Windows-only today. Don't add POSIX-only code paths (e.g., `std::os::unix`) without a `#[cfg]` guard and a corresponding Windows path.
+- This app targets **Windows and Linux**. Keep platform-specific behavior (firewall, process lifetime, Java scanning/download, etc.) isolated behind `#[cfg]` branches with both a Windows and a Linux path — don't add one platform's code without the other. macOS is best-effort only.
 
 ### General
 
@@ -143,6 +143,6 @@ See [docs/testing.md](docs/testing.md) for the full picture.
 - **Don't commit directly to `main`** for anything non-trivial. Even solo, a branch + PR gives you a CI gate and a paper trail.
 - **Don't skip CI.** If the build is red, fix it before asking for a review.
 - **Don't bump versions manually.** Use the `/release` skill (Claude Code) or follow the exact three-file rule in [CLAUDE.md](CLAUDE.md). Partial bumps break the OTA updater.
-- **Don't add platform abstractions for Linux/Mac prematurely.** Linux support is a v4 goal; until then, Windows-specific code is fine.
+- **Don't add macOS-specific code paths.** Windows and Linux are both first-class targets; macOS is best-effort only and doesn't need dedicated `#[cfg]` branches.
 - **Don't add a dependency** just to save a few lines. Evaluate maintenance burden and binary size, especially on the Rust side.
 - **Don't open a PR without a linked issue** for features or non-obvious fixes. "I'll explain in the PR" is not a substitute for upfront alignment.
