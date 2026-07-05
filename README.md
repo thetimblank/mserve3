@@ -55,25 +55,25 @@ Using semver `vmajor.minor.fix` e.g. `v4.0.12`
 
 ### v4
 
+- only show the connect card (the one with the ip) when a server is online in each overview page. this goes for the tunnel as well.
+- Let users enable sleep servers manually, when server is sleeping also let them start the server or stop it (Instead of "Force kill" when sleeping, just make it say Stop).
+- make --nogui forced when not in advanced mode (?)
+- change default sizing of mserve (Larger, Centered). should be screen size aware (if important)
+- full motd editor for sleep mode in the per server settings.
+
 - rework MC settings for non-advanced users (Like the server.properties, velocity.toml, etc. make these more user friendly for non-advanced users)
+- relocate some settings to better match the function, e.g. backups settings are now in the backups tab.
+
 - improve current help pages and maybe add some more smaller ones
 - improve some UI like the plugins, datapacks, and backups pages, and more
-- relocate some settings to better match the function, e.g. backups settings are now in the backups tab.
-- make --nogui forced when not in advanced mode (?)
-- test on ubuntu
-- Let users enable sleep servers manually, when server is sleeping also let them start the server or stop it (Instead of "Force kill" when sleeping, just make it say Stop).
-- only show the connect card (the one with the ip) when a server is online in each overview page. this goes for the tunnel as well.
-- full motd editor for sleep mode in the per server settings.
 - clean up all of the animations
 - Verify error reporting
-- change default sizing of mserve (Larger, Centered). should be screen size aware (if important)
 
 Bugs
 
 - Add &r at end of the first line/content to fix motd formatting
 - Better sleeping UX for player (Works, but server says its stopped and doesnt ping at all while its waking/starting)
-- On each server main overview page, when the user clicks the button for update available, it does not bring them to the correct settings page. It'll just bring them to the general page. Please fix this and put them to the page corresponding to the update. In this case, it is the Java page.
-- when a server is on, the backup settings restore to default (remove all saved changes) every couple of seconds
+- When a server is on, the backup settings restore to default (remove all saved changes) every couple of seconds
 
 Supported Providers
 
@@ -82,7 +82,6 @@ Supported Providers
 - ~~Bungee~~ ✅
 - Spigot (import/detection only — no redistributable jar; requires BuildTools)
 - ~~Purpur~~ ✅
-- ~~Waterfall~~ (EOL, removed upstream — imports still detected, use Velocity/BungeeCord instead)
 
 ---
 

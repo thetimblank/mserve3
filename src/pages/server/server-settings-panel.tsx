@@ -61,7 +61,6 @@ type FormSectionId =
 	| 'sleep'
 	| 'security'
 	| 'provider-telemetry'
-	| 'server-jar'
 	| 'tunnel'
 	| 'location';
 
