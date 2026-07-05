@@ -633,6 +633,42 @@ pub(in crate::app) fn stop_server(
     Ok("Stopping server.".to_string())
 }
 
+/// Manually parks an owned, non-proxy, online server in sleep mode right now —
+/// the same graceful-stop-into-`Sleeping` path the idle timer takes, except it
+/// bypasses the `sleep_enabled` config gate entirely: a manual request always
+/// wins. The supervisor classifies the exit via `sleep_requested` and spawns the
+/// wake listener exactly as it does for an idle-triggered sleep.
+#[tauri::command]
+pub(in crate::app) fn sleep_server(
+    directory: String,
+    state: State<'_, RuntimeState>,
+) -> Result<String, String> {
+    let key = server_key(&directory);
+    let mut guard = state.processes.lock().map_err(|_| "Runtime lock failed.")?;
+    let runtime = guard
+        .get_mut(&key)
+        .ok_or_else(|| "Server is not running.".to_string())?;
+
+    if !matches!(runtime.state, LifecycleState::Online) {
+        return Err("Server must be online to sleep.".to_string());
+    }
+    if runtime.is_proxy {
+        return Err("Proxy servers don't support sleep mode.".to_string());
+    }
+    if runtime.child.is_none() {
+        return Err(
+            "This server was started outside mserve and can't be put to sleep — use Stop or Force Kill instead."
+                .to_string(),
+        );
+    }
+
+    runtime.sleep_requested = true;
+    mark_stopping(runtime);
+    send_stop_via_stdin(runtime);
+
+    Ok("Putting server to sleep.".to_string())
+}
+
 #[tauri::command]
 pub(in crate::app) fn restart_server(
     directory: String,

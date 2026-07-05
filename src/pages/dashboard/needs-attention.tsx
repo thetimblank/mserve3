@@ -124,7 +124,7 @@ const NeedsAttention: React.FC<{ servers: Server[] }> = ({ servers }) => {
 							<span className='font-medium'>{server.name}</span> is sleeping to save resources.
 						</span>
 					),
-					actionLabel: 'Wake',
+					actionLabel: 'Awake',
 					onAction: () => void resolveAndStartServer(server, startContext),
 				});
 			}

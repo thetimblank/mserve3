@@ -7,9 +7,11 @@ import { ArrowUpRight, CircleCheck, Folder, Moon, OctagonX, RefreshCcw, Trash2 }
 import type { Server } from '@/data/servers';
 import { isStoppedStatus, useServers } from '@/data/servers';
 import { useServerJavaResolver } from '@/data/java-download';
+import { isProxyProvider } from '@/lib/server-provider';
 import {
 	forceKillServer,
 	restartServer,
+	sleepServer,
 	startServer,
 	stopServer,
 	type ServerControlContext,
@@ -71,6 +73,7 @@ export const ServerNodeMenu: React.FC<ServerNodeMenuProps> = ({ server, role, on
 	const canStart = isStoppedStatus(status) || isSleeping;
 	const canStop = status === 'online' || status === 'starting' || isSleeping;
 	const canRestart = status === 'online' || status === 'starting';
+	const canSleep = status === 'online' && !isProxyProvider(server.provider);
 	const canForceKill = !isStoppedStatus(status);
 
 	const openFolder = async () => {
@@ -95,7 +98,7 @@ export const ServerNodeMenu: React.FC<ServerNodeMenuProps> = ({ server, role, on
 						<ContextMenuItem onSelect={() => void handleStart()}>
 							{isSleeping ? (
 								<>
-									<Moon /> Wake
+									<Moon /> Awake
 								</>
 							) : (
 								<>
@@ -109,6 +112,11 @@ export const ServerNodeMenu: React.FC<ServerNodeMenuProps> = ({ server, role, on
 							<RefreshCcw /> Restart
 						</ContextMenuItem>
 					)}
+					{canSleep && (
+						<ContextMenuItem onSelect={() => void sleepServer(context())}>
+							<Moon /> Sleep
+						</ContextMenuItem>
+					)}
 					{canStop && (
 						<ContextMenuItem onSelect={() => void stopServer(context())}>
 							<OctagonX /> {isSleeping ? 'Stop sleeping' : 'Stop'}
@@ -116,7 +124,7 @@ export const ServerNodeMenu: React.FC<ServerNodeMenuProps> = ({ server, role, on
 					)}
 					{canForceKill && (
 						<ContextMenuItem variant='destructive' onSelect={() => void forceKillServer(context())}>
-							<OctagonX /> Force kill
+							<OctagonX /> {isSleeping ? 'Shutdown' : 'Force kill'}
 						</ContextMenuItem>
 					)}
 					<ContextMenuSeparator />

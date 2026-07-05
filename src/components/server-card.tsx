@@ -22,11 +22,13 @@ import { formatUptime, getPrimaryMinecraftVersion } from '@/lib/utils';
 import {
 	forceKillServer,
 	restartServer,
+	sleepServer,
 	startServer,
 	stopServer,
 	type ServerControlContext,
 } from '@/lib/server-controls';
 import { useServerJavaResolver } from '@/data/java-download';
+import { isProxyProvider } from '@/lib/server-provider';
 
 interface Props {
 	server: Server;
@@ -71,6 +73,7 @@ const ServerCard: React.FC<Props> = ({ server, delay }) => {
 
 	const handleStart = () => void runStartControl(startServer);
 	const handleStop = () => void runControl(stopServer);
+	const handleSleep = () => void runControl(sleepServer);
 	const handleRestart = () => void runStartControl(restartServer);
 	const handleForceKill = () => void runControl(forceKillServer);
 
@@ -159,7 +162,7 @@ const ServerCard: React.FC<Props> = ({ server, delay }) => {
 						{!isStoppedStatus(server.status) && (
 							<Button variant='destructive-secondary' onClick={handleForceKill} disabled={isBusy}>
 								<OctagonX />
-								<p>Force Kill</p>
+								<p>{server.status === 'sleeping' ? 'Shutdown' : 'Force Kill'}</p>
 							</Button>
 						)}
 						{(server.status === 'online' ||
@@ -176,6 +179,12 @@ const ServerCard: React.FC<Props> = ({ server, delay }) => {
 								<p>Restart</p>
 							</Button>
 						)}
+						{server.status === 'online' && !isProxyProvider(server.provider) && (
+							<Button variant='secondary' onClick={handleSleep} disabled={isBusy}>
+								<Moon />
+								<p>Sleep</p>
+							</Button>
+						)}
 						{isStoppedStatus(server.status) && (
 							<Button variant='secondary' onClick={handleStart} disabled={isBusy}>
 								<CircleCheck />
@@ -185,7 +194,7 @@ const ServerCard: React.FC<Props> = ({ server, delay }) => {
 						{server.status === 'sleeping' && (
 							<Button variant='secondary' onClick={handleStart} disabled={isBusy}>
 								<Moon />
-								<p>Wake</p>
+								<p>Awake</p>
 							</Button>
 						)}
 						<OpenFolderButton directory={server.directory} disabled={isBusy} />
