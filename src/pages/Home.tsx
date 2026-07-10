@@ -1,26 +1,16 @@
 import React from 'react';
 import { m } from 'motion/react';
-import { Link } from 'react-router-dom';
-import { LayoutGrid } from 'lucide-react';
 
 import CreateServer from '@/components/create-server';
 import ImportServer from '@/components/import-server';
 import Logo from '@/components/logo';
 import DarkVeil from '@/components/dark-veil-effect';
-import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useServers } from '@/data/servers';
 import { useNetworks } from '@/data/networks';
-import { useUser, type DashboardSectionId } from '@/data/user';
+import { useUser } from '@/data/user';
 
-import DashboardMetrics from './dashboard/dashboard-metrics';
-import OnlineServers from './dashboard/online-servers';
-import MostUsedServers from './dashboard/most-used-servers';
-import DashboardNetworks from './dashboard/dashboard-networks';
-import StorageInsights from './dashboard/storage-insights';
-import ActivityInsights from './dashboard/activity-insights';
-import NeedsAttention from './dashboard/needs-attention';
-import DashboardCustomizeMenu from './dashboard/dashboard-customize-menu';
+import DashboardBento from './dashboard/dashboard-bento';
 import { useDashboardActivity } from './dashboard/use-dashboard-activity';
 import { useDashboardStorage } from './dashboard/use-dashboard-storage';
 
@@ -38,12 +28,6 @@ const Home: React.FC = () => {
 	const activity = useDashboardActivity(servers);
 	const storage = useDashboardStorage(servers);
 
-	const hidden = React.useMemo(
-		() => new Set(user.dashboard_hidden_sections),
-		[user.dashboard_hidden_sections],
-	);
-	const shows = (id: DashboardSectionId) => !hidden.has(id);
-
 	const reducedMotion = user.accessibility.reduced_motion;
 
 	return (
@@ -56,7 +40,8 @@ const Home: React.FC = () => {
 				{!isReady && (
 					<div className='space-y-6'>
 						<Skeleton className='h-10 w-72' />
-						<div className='grid grid-cols-2 gap-4 lg:grid-cols-5'>
+						<div className='grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-6'>
+							<Skeleton className='h-28' />
 							<Skeleton className='h-28' />
 							<Skeleton className='h-28' />
 							<Skeleton className='h-28' />
@@ -93,7 +78,7 @@ const Home: React.FC = () => {
 							transition={{ type: 'spring', duration: 0.5, bounce: 0 }}
 							className='flex flex-wrap items-center justify-between gap-4'>
 							<div className='flex items-center gap-4'>
-								<Logo className='size-10' delay={0.2} />
+								<Logo size='lg' delay={0.2} />
 								<div>
 									<h1 className='text-3xl font-bold leading-tight'>{greeting()}</h1>
 									<p className='text-sm text-muted-foreground'>
@@ -102,45 +87,14 @@ const Home: React.FC = () => {
 									</p>
 								</div>
 							</div>
-							<div className='flex items-center gap-2'>
-								<DashboardCustomizeMenu />
-								<Button asChild variant='outline'>
-									<Link to='/servers'>
-										<LayoutGrid /> All servers
-									</Link>
-								</Button>
-							</div>
 						</m.header>
 
-						{shows('metrics') && (
-							<DashboardMetrics servers={servers} activity={activity} storage={storage} />
-						)}
-
-						{shows('attention') && <NeedsAttention servers={servers} />}
-
-						{(shows('storage') || shows('activity')) && (
-							<div className='grid gap-6 lg:grid-cols-2'>
-								{shows('storage') && <StorageInsights servers={servers} storage={storage} />}
-								{shows('activity') && <ActivityInsights servers={servers} activity={activity} />}
-							</div>
-						)}
-
-						{(shows('online') || shows('most-used')) && (
-							<div className='grid gap-6 xl:grid-cols-5'>
-								{shows('online') && (
-									<div className='xl:col-span-3'>
-										<OnlineServers servers={servers} />
-									</div>
-								)}
-								{shows('most-used') && (
-									<div className='xl:col-span-2'>
-										<MostUsedServers servers={servers} activity={activity} />
-									</div>
-								)}
-							</div>
-						)}
-
-						{shows('networks') && <DashboardNetworks networks={networks} servers={servers} />}
+						<DashboardBento
+							servers={servers}
+							networks={networks}
+							activity={activity}
+							storage={storage}
+						/>
 					</div>
 				)}
 			</div>

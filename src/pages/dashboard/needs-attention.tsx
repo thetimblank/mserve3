@@ -18,8 +18,10 @@ import { Button } from '@/components/ui/button';
 import { parsePropertiesMap } from '@/components/server-config-file-editor/properties-config';
 import { auditServerProperties } from '@/lib/server-security-audit';
 import { resolveAndStartServer } from '@/lib/server-actions';
+import { formatBytes } from '@/pages/server/server-utils';
 
 import DashboardSection from './dashboard-section';
+import type { DashboardStorage } from './use-dashboard-storage';
 
 type AttentionItem = {
 	id: string;
@@ -45,7 +47,10 @@ const newestBackupAt = (server: Server): number | null => {
 /** Session cache of per-server critical security counts, keyed by directory. */
 const securityCache = new Map<string, number>();
 
-const NeedsAttention: React.FC<{ servers: Server[] }> = ({ servers }) => {
+const NeedsAttention: React.FC<{ servers: Server[]; storage?: DashboardStorage }> = ({
+	servers,
+	storage,
+}) => {
 	const navigate = useNavigate();
 	const { setServerStatus, updateServerStats } = useServers();
 	const { user } = useUser();
@@ -170,11 +175,33 @@ const NeedsAttention: React.FC<{ servers: Server[] }> = ({ servers }) => {
 			}
 		}
 
+		// Backup bloat: backups eating more than half a server's footprint (moved
+		// here from the storage card to keep that card minimal).
+		for (const server of servers) {
+			const info = storage?.byDirectory.get(server.directory);
+			if (!info || info.backupsBytes <= 0) continue;
+			if (info.backupsBytes > info.totalBytes * 0.5) {
+				list.push({
+					id: `bloat-${server.id}`,
+					icon: Archive,
+					iconClass: 'text-amber-500',
+					message: (
+						<span>
+							<span className='font-medium'>{server.name}</span> backups are{' '}
+							{formatBytes(info.backupsBytes)} of {formatBytes(info.totalBytes)} — review retention.
+						</span>
+					),
+					actionLabel: 'Backups',
+					onAction: () => navigate(`/servers/${encodeURIComponent(server.id)}/backups`),
+				});
+			}
+		}
+
 		return list;
-	}, [servers, securityCriticals, startContext, navigate]);
+	}, [servers, storage, securityCriticals, startContext, navigate]);
 
 	return (
-		<DashboardSection title='Could use a look'>
+		<DashboardSection className='h-full' title='Could use a look'>
 			{items.length === 0 ? (
 				<div className='flex items-center gap-2 text-sm text-muted-foreground'>
 					<CheckCircle2 className='size-4 text-emerald-500' />

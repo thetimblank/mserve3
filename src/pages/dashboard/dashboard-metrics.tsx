@@ -19,9 +19,11 @@ type Props = {
 	servers: Server[];
 	activity: DashboardActivity;
 	storage: DashboardStorage;
+	/** Optional trailing tile rendered in the same grid (the Edit Layout tile). */
+	trailing?: React.ReactNode;
 };
 
-const DashboardMetrics: React.FC<Props> = ({ servers, activity, storage }) => {
+const DashboardMetrics: React.FC<Props> = ({ servers, activity, storage, trailing }) => {
 	const summary = React.useMemo(() => {
 		const online = servers.filter((server) => server.status === 'online');
 		const playersOnline = online.reduce((sum, server) => sum + (server.stats.players_online ?? 0), 0);
@@ -56,7 +58,7 @@ const DashboardMetrics: React.FC<Props> = ({ servers, activity, storage }) => {
 			: 'offline drops · last 7 days';
 
 	return (
-		<div className='grid grid-cols-2 gap-4 lg:grid-cols-3 2xl:grid-cols-5'>
+		<div className='grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-6'>
 			<StatCard
 				icon={<ServerIcon />}
 				label='Servers online'
@@ -97,6 +99,7 @@ const DashboardMetrics: React.FC<Props> = ({ servers, activity, storage }) => {
 				color={METRIC_COLORS.cpu}
 				delay={0.18}
 			/>
+			{trailing}
 		</div>
 	);
 };

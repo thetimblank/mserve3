@@ -38,7 +38,10 @@ const ActivityInsights: React.FC<Props> = ({ servers, activity }) => {
 
 	if (activity.isLoading) {
 		return (
-			<DashboardSection title='Activity insights' description='Player patterns over the last 7 days.'>
+			<DashboardSection
+				className='h-full'
+				title='Activity insights'
+				description='Player patterns over the last 7 days.'>
 				<Skeleton className='h-28 w-full' />
 			</DashboardSection>
 		);
@@ -46,6 +49,7 @@ const ActivityInsights: React.FC<Props> = ({ servers, activity }) => {
 
 	return (
 		<DashboardSection
+			className='h-full'
 			title='Activity insights'
 			description='Player patterns over the last 7 days. Sleeping windows read as offline.'>
 			{!hasActivity ? (

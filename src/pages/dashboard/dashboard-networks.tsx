@@ -12,6 +12,8 @@ import type { Server } from '@/data/servers';
 import { Card } from '@/components/ui/card';
 import { getNetworkServerIds, type ManagedNetwork } from '@/lib/network-schema';
 
+import DashboardSection from './dashboard-section';
+
 type Props = {
 	networks: ManagedNetwork[];
 	servers: Server[];
@@ -24,17 +26,16 @@ const DashboardNetworks: React.FC<Props> = ({ networks, servers }) => {
 	);
 
 	return (
-		<section className='flex flex-col gap-3'>
-			<div className='flex items-center justify-between'>
-				<h2 className='text-sm font-semibold tracking-wide text-muted-foreground uppercase'>
-					Server networks
-				</h2>
+		<DashboardSection
+			className='h-full'
+			title='Networks'
+			action={
 				<Link
 					to='/network'
 					className='flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground'>
 					Manage <ArrowUpRight className='size-3.5' />
 				</Link>
-			</div>
+			}>
 			{networks.length === 0 ? (
 				<Link to='/network' className='group block'>
 					<Card className='flex-row items-center gap-3 border-dashed p-5 text-muted-foreground transition-colors group-hover:border-primary/50 group-hover:text-foreground'>
@@ -43,7 +44,7 @@ const DashboardNetworks: React.FC<Props> = ({ networks, servers }) => {
 					</Card>
 				</Link>
 			) : (
-				<div className='grid gap-3 sm:grid-cols-2 xl:grid-cols-3'>
+				<div className='grid gap-3 sm:grid-cols-2'>
 					{networks.map((network, index) => {
 						const ids = getNetworkServerIds(network);
 						const onlineCount = ids.filter((id) => onlineIds.has(id)).length;
@@ -83,7 +84,7 @@ const DashboardNetworks: React.FC<Props> = ({ networks, servers }) => {
 					})}
 				</div>
 			)}
-		</section>
+		</DashboardSection>
 	);
 };
 

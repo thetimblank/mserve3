@@ -1,11 +1,11 @@
 /**
  * Storage breakdown: the largest servers by disk footprint with a worlds-vs-
- * backups split, plus "backup bloat" callouts where backups dominate a server's
- * footprint. Sizes come from the batched `get_servers_storage` command.
+ * backups split. Kept intentionally minimal — the all-servers total lives on the
+ * "Storage used" metric tile, and backup-bloat callouts moved to "Could use a
+ * look". Sizes come from the batched `get_servers_storage` command.
  */
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { HardDrive, TriangleAlert } from 'lucide-react';
 
 import type { Server } from '@/data/servers';
 import { formatBytes } from '@/pages/server/server-utils';
@@ -36,14 +36,9 @@ const StorageInsights: React.FC<Props> = ({ servers, storage }) => {
 
 	const maxTotal = rows[0]?.info.totalBytes ?? 0;
 
-	// Backups eating more than half a server's footprint = worth surfacing.
-	const bloat = rows.filter(
-		(row) => row.info.backupsBytes > row.info.totalBytes * 0.5 && row.info.backupsBytes > 0,
-	);
-
 	if (storage.isLoading && rows.length === 0) {
 		return (
-			<DashboardSection title='Storage breakdown' description='Disk footprint per server.'>
+			<DashboardSection className='h-full' title='Storage breakdown' description='Largest servers by disk use'>
 				<div className='space-y-3'>
 					<Skeleton className='h-6 w-full' />
 					<Skeleton className='h-6 w-4/5' />
@@ -54,9 +49,7 @@ const StorageInsights: React.FC<Props> = ({ servers, storage }) => {
 	}
 
 	return (
-		<DashboardSection
-			title='Storage breakdown'
-			description={`${formatBytes(storage.totalBytes)} across all servers · worlds vs backups`}>
+		<DashboardSection className='h-full' title='Storage breakdown' description='Largest servers by disk use'>
 			{rows.length === 0 ? (
 				<p className='text-sm text-muted-foreground'>No server files measured yet.</p>
 			) : (
@@ -78,6 +71,7 @@ const StorageInsights: React.FC<Props> = ({ servers, storage }) => {
 									</span>
 								</div>
 								<div
+									title='Worlds vs backups'
 									className='flex h-2 overflow-hidden rounded-full bg-muted'
 									style={{ width: `${Math.max(width, 6)}%` }}>
 									<div style={{ width: `${worldsPct}%`, background: METRIC_COLORS.players }} />
@@ -86,36 +80,6 @@ const StorageInsights: React.FC<Props> = ({ servers, storage }) => {
 							</Link>
 						);
 					})}
-					<div className='flex items-center gap-4 pt-1 text-xs text-muted-foreground'>
-						<span className='flex items-center gap-1.5'>
-							<span className='size-2 rounded-full' style={{ background: METRIC_COLORS.players }} />
-							Worlds
-						</span>
-						<span className='flex items-center gap-1.5'>
-							<span className='size-2 rounded-full' style={{ background: METRIC_COLORS.ram }} />
-							Backups
-						</span>
-						<span className='flex items-center gap-1.5'>
-							<HardDrive className='size-3' /> Other
-						</span>
-					</div>
-				</div>
-			)}
-
-			{bloat.length > 0 && (
-				<div className='mt-4 space-y-1.5 border-t border-border/60 pt-3'>
-					{bloat.map(({ server, info }) => (
-						<Link
-							key={server.id}
-							to={`/servers/${encodeURIComponent(server.id)}/backups`}
-							className='flex items-center gap-2 text-xs text-amber-500 hover:underline'>
-							<TriangleAlert className='size-3.5 shrink-0' />
-							<span>
-								{server.name}: backups are {formatBytes(info.backupsBytes)} of{' '}
-								{formatBytes(info.totalBytes)} — review retention.
-							</span>
-						</Link>
-					))}
 				</div>
 			)}
 		</DashboardSection>

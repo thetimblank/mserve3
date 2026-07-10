@@ -12,8 +12,10 @@ export interface UserData {
 	auto_check_server_updates: boolean;
 	completed_setup_hosting_ports: number[];
 	initial_setup_hosting_tutorial_completed: boolean;
-	/** Dashboard section ids the user has hidden (see DASHBOARD_SECTION_IDS). */
-	dashboard_hidden_sections: string[];
+	/** Ordered list of dashboard bento card ids (see DASHBOARD_CARD_IDS). */
+	dashboard_card_order: string[];
+	/** Dashboard bento card ids the user has hidden (see DASHBOARD_CARD_IDS). */
+	dashboard_hidden_cards: string[];
 	/** True once the first-launch welcome tour has been finished or skipped. */
 	onboarding_completed: boolean;
 	created_at: Date;
@@ -53,21 +55,36 @@ const normalizePortList = (ports?: number[]) =>
 
 const toTrimmedString = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : '');
 
-/** Dashboard sections the user can show/hide, in display order. */
-export const DASHBOARD_SECTION_IDS = [
-	'metrics',
-	'attention',
-	'storage',
-	'activity',
-	'online',
-	'most-used',
-	'networks',
-] as const;
-export type DashboardSectionId = (typeof DASHBOARD_SECTION_IDS)[number];
+/**
+ * The rearrangeable/hideable bento cards on the dashboard, in default display
+ * order. The headline metric tiles and the "Edit Layout" tile are a fixed anchor
+ * zone and deliberately not part of this set. Bumping this list is safe: the
+ * normalizers below drop unknown ids and append any newly-added ones.
+ */
+export const DASHBOARD_CARD_IDS = ['servers', 'storage', 'activity', 'attention', 'networks'] as const;
+export type DashboardCardId = (typeof DASHBOARD_CARD_IDS)[number];
 
-const normalizeDashboardHiddenSections = (value: unknown): string[] => {
+/** Normalize a persisted order: keep known ids in their saved order, then append
+ *  any card ids that weren't stored yet (e.g. after an app update adds a card). */
+const normalizeDashboardCardOrder = (value: unknown): string[] => {
+	const stored = Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : [];
+	const seen = new Set<string>();
+	const order: string[] = [];
+	for (const id of stored) {
+		if ((DASHBOARD_CARD_IDS as readonly string[]).includes(id) && !seen.has(id)) {
+			seen.add(id);
+			order.push(id);
+		}
+	}
+	for (const id of DASHBOARD_CARD_IDS) {
+		if (!seen.has(id)) order.push(id);
+	}
+	return order;
+};
+
+const normalizeDashboardHiddenCards = (value: unknown): string[] => {
 	if (!Array.isArray(value)) return [];
-	return DASHBOARD_SECTION_IDS.filter((id) => value.includes(id));
+	return DASHBOARD_CARD_IDS.filter((id) => value.includes(id));
 };
 
 const normalizeJavaDefault = (value: unknown): string => {
@@ -90,7 +107,8 @@ export const createDefaultUserData = (): UserData => {
 		auto_check_server_updates: true,
 		completed_setup_hosting_ports: [],
 		initial_setup_hosting_tutorial_completed: false,
-		dashboard_hidden_sections: [],
+		dashboard_card_order: [...DASHBOARD_CARD_IDS],
+		dashboard_hidden_cards: [],
 		onboarding_completed: false,
 		created_at: now,
 		updated_at: now,
@@ -114,7 +132,8 @@ export const normalizeUserData = (user: Partial<UserData> | null | undefined): U
 		auto_check_server_updates: user?.auto_check_server_updates ?? true,
 		completed_setup_hosting_ports: normalizePortList(user?.completed_setup_hosting_ports),
 		initial_setup_hosting_tutorial_completed: user?.initial_setup_hosting_tutorial_completed ?? false,
-		dashboard_hidden_sections: normalizeDashboardHiddenSections(user?.dashboard_hidden_sections),
+		dashboard_card_order: normalizeDashboardCardOrder(user?.dashboard_card_order),
+		dashboard_hidden_cards: normalizeDashboardHiddenCards(user?.dashboard_hidden_cards),
 		onboarding_completed: user?.onboarding_completed ?? false,
 		created_at: toDate(user?.created_at ?? fallback.created_at),
 		updated_at: toDate(user?.updated_at ?? fallback.updated_at),
