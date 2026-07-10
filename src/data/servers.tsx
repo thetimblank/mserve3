@@ -309,7 +309,8 @@ export const normalizeServer = (server: Server): Server => {
 		// Defaulted for servers persisted before sleep mode existed.
 		sleep_enabled: server.sleep_enabled ?? false,
 		sleep_idle_minutes: Math.max(1, Math.round(Number(server.sleep_idle_minutes) || 15)),
-		sleep_motd: server.sleep_motd?.trim() || '§eSleeping §7— join to wake this server',
+		// Not trimmed: leading spaces are the MOTD editor's alignment padding.
+		sleep_motd: server.sleep_motd?.trim() ? server.sleep_motd : '§eSleeping §7— join to wake this server',
 		java_installation: server.java_installation?.trim() || undefined,
 		custom_flags: server.custom_flags,
 		created_at: toIsoDateString(server.created_at),

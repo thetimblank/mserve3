@@ -294,6 +294,19 @@ export const getStoredMotdValue = (value: string, format: MotdFormat) => {
 	return applyMotdAlignmentEscape(encoded);
 };
 
+// mserve.json stores a MOTD verbatim — real newlines, real leading spaces, real
+// `§`. The editor speaks the server.properties convention instead, where a leading
+// backslash escapes indentation, so translate across that boundary.
+export const getEditableLiteralMotdValue = (value: string) => {
+	const [firstLine = '', ...rest] = clampMotdLines(normalizeLineBreaks(value)).split('\n');
+	return [applyMotdAlignmentEscape(firstLine), ...rest].join('\n');
+};
+
+export const getStoredLiteralMotdValue = (value: string) => {
+	const [firstLine = '', ...rest] = clampMotdLines(normalizeLineBreaks(value)).split('\n');
+	return [stripMotdAlignmentEscape(firstLine), ...rest].join('\n');
+};
+
 const parseLegacyPreviewLine = (line: string): MotdPreviewLine => {
 	const runs: MotdPreviewRun[] = [];
 	let style = baseStyle();

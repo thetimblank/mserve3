@@ -617,11 +617,11 @@ pub(in crate::app) fn sanitize_mserve_value_config(
         .map(|value| (value as u32).max(1))
         .unwrap_or(DEFAULT_SLEEP_IDLE_MINUTES);
 
+    // Kept verbatim — leading spaces are the MOTD editor's alignment padding.
     let normalized_sleep_motd = object
         .get("sleep_motd")
         .and_then(|value| value.as_str())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
+        .filter(|value| !value.trim().is_empty())
         .map_or_else(
             || DEFAULT_SLEEP_MOTD.to_string(),
             std::string::ToString::to_string,
@@ -1105,18 +1105,19 @@ mod tests {
         let object = json!({
             "sleep_enabled": true,
             "sleep_idle_minutes": 0, // clamps up to 1
-            "sleep_motd": "  Nap time  ",
+            // Leading spaces are alignment padding from the MOTD editor, not noise.
+            "sleep_motd": "  Nap time",
         });
         let map = object.as_object().unwrap().clone();
         let config = sanitize_mserve_value_config(dir.path(), &map);
         assert!(config.sleep_enabled);
         assert_eq!(config.sleep_idle_minutes, 1);
-        assert_eq!(config.sleep_motd, "Nap time");
+        assert_eq!(config.sleep_motd, "  Nap time");
 
         let value = synced_mserve_json_value(&config);
         assert_eq!(value["sleep_enabled"], json!(true));
         assert_eq!(value["sleep_idle_minutes"], json!(1));
-        assert_eq!(value["sleep_motd"], json!("Nap time"));
+        assert_eq!(value["sleep_motd"], json!("  Nap time"));
     }
 
     #[test]

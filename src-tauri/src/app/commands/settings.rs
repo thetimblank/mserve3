@@ -233,11 +233,11 @@ pub(in crate::app) fn update_server_settings(
         .sleep_idle_minutes
         .unwrap_or(config.sleep_idle_minutes)
         .max(1);
+    // Kept verbatim — leading spaces are the MOTD editor's alignment padding.
     config.sleep_motd = payload
         .sleep_motd
         .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
+        .filter(|value| !value.trim().is_empty())
         .map_or(config.sleep_motd, str::to_string);
     if let Some(policy) = payload.backup_policy.as_deref() {
         config.backup_policy = normalize_backup_policy(Some(policy));

@@ -710,7 +710,9 @@ fn show_main_window(app: &tauri::AppHandle) {
         tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("index.html".into()))
             .title("MSERVE")
             .decorations(false)
-            .inner_size(1200.0, 800.0)
+            .inner_size(DEFAULT_WINDOW_SIZE.0, DEFAULT_WINDOW_SIZE.1)
+            .min_inner_size(940.0, 640.0)
+            .center()
             .build();
 }
 
@@ -772,10 +774,76 @@ fn setup_tray(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> 
     Ok(())
 }
 
-/// One-time app setup: open the telemetry store and schedule the splash → main
-/// window handoff. Extracted from the builder chain for the same reason as
-/// [`on_main_window_event`].
+/// Fallback main-window size (logical px), used when no monitor can be queried.
+/// Kept in sync with the `main` window entry in `tauri.conf.json`.
+const DEFAULT_WINDOW_SIZE: (f64, f64) = (1440.0, 900.0);
+/// Fraction of the monitor's work area the window fills on first launch.
+const WINDOW_WORK_AREA_FRACTION: (f64, f64) = (0.78, 0.82);
+/// Bounds on the computed size, so a 4K monitor doesn't produce an absurd window
+/// and a small laptop still gets a usable one.
+const WINDOW_SIZE_BOUNDS: (f64, f64, f64, f64) = (1120.0, 700.0, 1720.0, 1080.0);
+/// Breathing room left around the window on small displays.
+const WINDOW_WORK_AREA_MARGIN: f64 = 48.0;
+
+/// Size the main window relative to the monitor it opened on and center it.
+///
+/// Only runs on first launch: once `tauri-plugin-window-state` has written its
+/// state file, that plugin owns size/position and we must not clobber the user's
+/// last layout. The plugin restores state during window creation (before
+/// `setup`), so this runs afterwards and would otherwise override it.
+fn size_main_window_for_display(app: &tauri::App) {
+    let has_saved_state = app
+        .path()
+        .app_config_dir()
+        .map(|dir| {
+            dir.join(tauri_plugin_window_state::DEFAULT_FILENAME)
+                .exists()
+        })
+        .unwrap_or(false);
+    if has_saved_state {
+        return;
+    }
+
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+
+    let monitor = window
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| window.primary_monitor().ok().flatten());
+
+    let (width, height) = match monitor {
+        Some(monitor) => {
+            let scale = monitor.scale_factor();
+            let area = monitor.work_area().size.to_logical::<f64>(scale);
+            let (fw, fh) = WINDOW_WORK_AREA_FRACTION;
+            let (min_w, min_h, max_w, max_h) = WINDOW_SIZE_BOUNDS;
+            (
+                (area.width * fw)
+                    .clamp(min_w, max_w)
+                    .min(area.width - WINDOW_WORK_AREA_MARGIN)
+                    .max(1.0),
+                (area.height * fh)
+                    .clamp(min_h, max_h)
+                    .min(area.height - WINDOW_WORK_AREA_MARGIN)
+                    .max(1.0),
+            )
+        }
+        None => DEFAULT_WINDOW_SIZE,
+    };
+
+    let _ = window.set_size(tauri::LogicalSize::new(width, height));
+    let _ = window.center();
+}
+
+/// One-time app setup: size the main window, open the telemetry store and
+/// schedule the splash → main window handoff. Extracted from the builder chain
+/// for the same reason as [`on_main_window_event`].
 fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    size_main_window_for_display(app);
+
     // Open the telemetry time-series database in the app data dir.
     if let Ok(data_dir) = app.path().app_data_dir()
         && let Err(err) = support::init_telemetry_store(&data_dir.join("telemetry.db"))

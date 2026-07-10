@@ -21,10 +21,11 @@ fn resolve_sleep_idle_minutes(minutes: Option<u32>) -> u32 {
     minutes.unwrap_or(DEFAULT_SLEEP_IDLE_MINUTES).max(1)
 }
 
-/// Trims an optional MOTD from a payload, falling back to the default when blank.
+/// Resolves an optional MOTD from a payload, falling back to the default when blank.
+/// Whitespace is preserved verbatim: leading spaces are how the MOTD editor centers
+/// and right-aligns a line.
 fn resolve_sleep_motd(motd: Option<&str>) -> String {
-    motd.map(str::trim)
-        .filter(|value| !value.is_empty())
+    motd.filter(|value| !value.trim().is_empty())
         .map_or_else(|| DEFAULT_SLEEP_MOTD.to_string(), str::to_string)
 }
 

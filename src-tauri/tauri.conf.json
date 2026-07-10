@@ -14,8 +14,11 @@
 			{
 				"label": "main",
 				"title": "MSERVE",
-				"width": 1200,
-				"height": 800,
+				"width": 1440,
+				"height": 900,
+				"minWidth": 940,
+				"minHeight": 640,
+				"center": true,
 				"decorations": false,
 				"visible": false,
 				"zoomHotkeysEnabled": true
@@ -26,6 +29,7 @@
 				"url": "/splashscreen.html",
 				"width": 1200,
 				"height": 800,
+				"center": true,
 				"decorations": false,
 				"resizable": false
 			}

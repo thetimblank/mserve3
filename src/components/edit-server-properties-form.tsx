@@ -24,6 +24,8 @@ import {
 import { type JavaRuntimeInfo } from '@/lib/java-runtime-service';
 import { javaResolutionLabel, resolveServerJavaExecutable } from '@/lib/java-resolution';
 import { clampRamGb } from '@/lib/ram-utils';
+import { getEditableLiteralMotdValue, getStoredLiteralMotdValue } from '@/lib/motd-format';
+import MotdEditor from '@/components/motd-editor';
 import { examplePaths } from '@/lib/platform';
 import { getServerNameFromDirectory } from '@/lib/mserve-server-mapper';
 import {
@@ -580,7 +582,7 @@ export const GeneralSettingsSection: React.FC = () => {
 };
 
 export const SleepModeSettingsSection: React.FC = () => {
-	const { settingsForm, updateSettingsField, isFormLocked } = useEditServerSettings();
+	const { settingsForm, updateSettingsField, isFormLocked, advancedMode } = useEditServerSettings();
 	const enabled = settingsForm.sleep_enabled;
 
 	return (
@@ -620,19 +622,17 @@ export const SleepModeSettingsSection: React.FC = () => {
 				/>
 			</div>
 
-			<div className='space-y-2 max-w-lg'>
-				<Label htmlFor='sleep-motd'>Sleeping server list message (MOTD)</Label>
-				<Input
-					id='sleep-motd'
-					placeholder='§eSleeping — join to wake this server'
-					value={settingsForm.sleep_motd}
-					disabled={!enabled || isFormLocked}
-					onChange={(event) => updateSettingsField('sleep_motd', event.target.value)}
-				/>
-				<p className='text-sm text-muted-foreground'>
-					Shown in the multiplayer list while asleep. Supports legacy “§” color codes.
-				</p>
-			</div>
+			<MotdEditor
+				label='Sleeping server list message (MOTD)'
+				description='Shown in the multiplayer list while the server is asleep.'
+				value={getEditableLiteralMotdValue(settingsForm.sleep_motd)}
+				onChange={(nextValue) =>
+					updateSettingsField('sleep_motd', getStoredLiteralMotdValue(nextValue))
+				}
+				format='legacy'
+				advancedMode={advancedMode}
+				disabled={!enabled || isFormLocked}
+			/>
 		</SectionShell>
 	);
 };
