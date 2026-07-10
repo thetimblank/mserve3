@@ -3,7 +3,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
 import type { Server, ServerStatus, ServerUpdate } from '@/data/servers';
-import { isJavaVersionError, stripAnsi } from '@/lib/utils';
+import { isJavaVersionError, isNoguiUnsupportedError, stripAnsi } from '@/lib/utils';
+import { hasNoguiFlag, setServerCustomFlags, stripNoguiFlags } from '@/lib/server-flags-service';
 import {
 	mapRuntimeStateToStatus,
 	mapSampleToStats,
@@ -67,6 +68,9 @@ type RuntimeState = {
 	javaFallbackInProgress: boolean;
 	javaDownloadAttempted: boolean;
 	javaGiveUp: boolean;
+	// Unsupported-`--nogui` strip-and-retry state.
+	noguiErrorFlagged: boolean;
+	noguiStripAttempted: boolean;
 };
 
 const initialRuntimeState = (): RuntimeState => ({
@@ -89,6 +93,8 @@ const initialRuntimeState = (): RuntimeState => ({
 	javaFallbackInProgress: false,
 	javaDownloadAttempted: false,
 	javaGiveUp: false,
+	noguiErrorFlagged: false,
+	noguiStripAttempted: false,
 });
 
 export const useServerRuntime = ({
@@ -222,6 +228,8 @@ export const useServerRuntime = ({
 		runtime.javaDownloadAttempted = false;
 		runtime.javaGiveUp = false;
 		runtime.currentJavaExecutable = null;
+		runtime.noguiErrorFlagged = false;
+		runtime.noguiStripAttempted = false;
 	}, []);
 
 	// Spawns the server with a specific Java executable and records the attempt so
@@ -314,6 +322,59 @@ export const useServerRuntime = ({
 		setOfflineState,
 		startWithJava,
 		user.java_installation_default,
+	]);
+
+	// Reacts to a boot failure caused by a jar that rejects `--nogui`: drop the
+	// flag from the server's config and start once more. Deliberately driven by
+	// the terminal `crashed` state rather than the log line alone, so a server
+	// that merely warns about the flag and keeps running is left untouched.
+	// Returns true when a retry was dispatched.
+	const handleNoguiUnsupported = React.useCallback(async (): Promise<boolean> => {
+		if (!serverDirectory || !serverId) return false;
+		if (runtimeRef.current.manualStopRequested) return false;
+		// One strip per start cycle — if it still won't boot, that's a real crash.
+		if (runtimeRef.current.noguiStripAttempted) return false;
+
+		const currentFlags = server?.custom_flags ?? [];
+		if (!hasNoguiFlag(currentFlags)) return false;
+
+		// We can only retry with the runtime we just launched with; without it a
+		// fresh Java resolution belongs to the normal start path, not this fallback.
+		const javaExecutable = runtimeRef.current.currentJavaExecutable;
+		if (!javaExecutable) return false;
+
+		runtimeRef.current.noguiStripAttempted = true;
+		appendTerminalLine("[system] This server doesn't support '--nogui'. Removing it and trying again...");
+
+		const nextFlags = stripNoguiFlags(currentFlags);
+		try {
+			await setServerCustomFlags(serverDirectory, nextFlags);
+			updateServer(serverId, { custom_flags: nextFlags });
+		} catch (err) {
+			appendTerminalLine(
+				`[system] ${err instanceof Error ? err.message : "Failed to remove '--nogui' from the server config."}`,
+			);
+			return false;
+		}
+
+		try {
+			await startWithJava(javaExecutable, null);
+			return true;
+		} catch (err) {
+			setOfflineState();
+			appendTerminalLine(
+				`[system] ${err instanceof Error ? err.message : "Failed to restart without '--nogui'."}`,
+			);
+			return false;
+		}
+	}, [
+		appendTerminalLine,
+		server?.custom_flags,
+		serverDirectory,
+		serverId,
+		setOfflineState,
+		startWithJava,
+		updateServer,
 	]);
 
 	const syncServerContents = React.useCallback(async () => {
@@ -458,6 +519,12 @@ export const useServerRuntime = ({
 				void handleJavaVersionError();
 			}
 
+			// Only flagged here; the strip-and-retry runs once the server actually
+			// dies (see the `crashed` branch of the lifecycle listener).
+			if (isNoguiUnsupportedError(cleaned) && !runtimeRef.current.everRunning) {
+				runtimeRef.current.noguiErrorFlagged = true;
+			}
+
 			if (!cleaned) {
 				return;
 			}
@@ -504,6 +571,7 @@ export const useServerRuntime = ({
 				runtimeRef.current.awaitingReady = false;
 				runtimeRef.current.javaFallbackInProgress = false;
 				runtimeRef.current.javaAttemptMajors = [];
+				runtimeRef.current.noguiErrorFlagged = false;
 				runtimeRef.current.isAutoRestarting = false;
 				setLastCrash(null);
 				runtimeRef.current.stopRequested = false;
@@ -592,6 +660,13 @@ export const useServerRuntime = ({
 				runtimeRef.current.forceKilled = false;
 
 				if (state === 'crashed') {
+					// A boot failure blamed on `--nogui`: drop the flag and retry once
+					// before surfacing this as a crash.
+					if (runtimeRef.current.noguiErrorFlagged && !runtimeRef.current.everRunning) {
+						runtimeRef.current.noguiErrorFlagged = false;
+						if (await handleNoguiUnsupported()) return;
+					}
+
 					appendTerminalLine(
 						exitCode != null
 							? `[system] Server crashed (exit code ${exitCode}).`
@@ -620,6 +695,7 @@ export const useServerRuntime = ({
 	}, [
 		appendTerminalLine,
 		createAutomaticBackup,
+		handleNoguiUnsupported,
 		hasOnCloseBackup,
 		server?.java_installation,
 		serverDirectory,

@@ -37,6 +37,30 @@ export const isJavaVersionError = (line: string): boolean => {
 	return JAVA_VERSION_ERROR_PATTERNS.some((pattern) => pattern.test(cleaned));
 };
 
+/** The flag as a standalone token, in either the `--nogui` or bare `nogui` spelling. */
+const NOGUI_TOKEN_PATTERN = /(?:^|[^\w-])-{0,2}nogui\b/i;
+
+const UNRECOGNIZED_OPTION_PATTERNS: RegExp[] = [
+	// joptsimple (vanilla/Paper): "'nogui' is not a recognized option"
+	/is not a recognized option/i,
+	// picocli / Forge / getopt: "Unrecognized option: --nogui", "Unknown option: '--nogui'"
+	/(?:unrecognized|unknown|unsupported|invalid|illegal)\s+(?:option|argument|flag|parameter)s?\b/i,
+	/no such option/i,
+];
+
+/**
+ * Detects the family of launcher errors that mean "this jar does not accept the
+ * `--nogui` flag", which drives the automatic strip-and-retry. Requires *both* an
+ * unrecognized-option phrase and the flag itself as a standalone token, so
+ * neither a plugin complaining about some other option nor a startup line that
+ * merely echoes `--nogui` can trigger a restart.
+ */
+export const isNoguiUnsupportedError = (line: string): boolean => {
+	const cleaned = stripAnsi(line);
+	if (!NOGUI_TOKEN_PATTERN.test(cleaned)) return false;
+	return UNRECOGNIZED_OPTION_PATTERNS.some((pattern) => pattern.test(cleaned));
+};
+
 export const parseVersion = (line: string, providerKind: RuntimeProviderKind = 'unknown') => {
 	const pluginMatch = line.match(/This server is running\s+.+?\s+version\s+(.+)$/i);
 	if (pluginMatch) {

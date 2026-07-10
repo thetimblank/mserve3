@@ -878,6 +878,7 @@ pub fn run() {
             update_server_settings,
             update_server_backup_settings,
             set_server_java_installation,
+            set_server_custom_flags,
             restore_server_backup,
             delete_server_backup,
             set_server_backup_locked,

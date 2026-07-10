@@ -108,6 +108,35 @@ pub(in crate::app) fn set_server_java_installation(
     Ok(())
 }
 
+/// Persists just the per-server extra Java flags in mserve.json without touching
+/// any other settings. Used by the automatic start-failure fallback to drop a
+/// `--nogui` that the server's jar rejects.
+#[tauri::command]
+pub(in crate::app) fn set_server_custom_flags(
+    directory: String,
+    custom_flags: Vec<String>,
+) -> Result<(), String> {
+    let directory_path = PathBuf::from(directory.trim());
+    if !directory_path.exists() || !directory_path.is_dir() {
+        return Err("Server directory does not exist.".to_string());
+    }
+
+    let mserve_path = directory_path.join("mserve.json");
+    if !mserve_path.exists() {
+        return Err("mserve.json not found in server directory.".to_string());
+    }
+
+    let config_text = fs::read_to_string(&mserve_path).map_err(|err| err.to_string())?;
+    let object = parse_mserve_top_level_object(&config_text)
+        .map_err(|_| "Invalid mserve.json format.".to_string())?;
+
+    let mut config = sanitize_mserve_value_config(&directory_path, &object);
+    config.custom_flags = normalize_custom_flags(custom_flags);
+
+    write_synced_mserve_json(&directory_path, &config)?;
+    Ok(())
+}
+
 #[tauri::command]
 pub(in crate::app) fn update_server_settings(
     payload: UpdateServerSettingsPayload,

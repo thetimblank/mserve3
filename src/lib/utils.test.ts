@@ -3,6 +3,7 @@ import {
 	stripAnsi,
 	parseListPlayers,
 	isJavaVersionError,
+	isNoguiUnsupportedError,
 	parseVersion,
 	getPrimaryMinecraftVersion,
 	formatUptime,
@@ -47,6 +48,35 @@ describe('isJavaVersionError', () => {
 	});
 	it('sees through ANSI coloring', () => {
 		expect(isJavaVersionError('\x1b[31mUnsupportedClassVersionError\x1b[0m')).toBe(true);
+	});
+});
+
+describe('isNoguiUnsupportedError', () => {
+	it('detects the joptsimple "is not a recognized option" message', () => {
+		expect(isNoguiUnsupportedError("'nogui' is not a recognized option")).toBe(true);
+		expect(isNoguiUnsupportedError('"--nogui" is not a recognized option')).toBe(true);
+	});
+	it('detects "Unrecognized option: --nogui"', () => {
+		expect(isNoguiUnsupportedError('Unrecognized option: --nogui')).toBe(true);
+	});
+	it('detects "Unknown option: \'--nogui\'"', () => {
+		expect(isNoguiUnsupportedError("Unknown option: '--nogui'")).toBe(true);
+	});
+	it('detects "no such option: --nogui"', () => {
+		expect(isNoguiUnsupportedError('no such option: --nogui')).toBe(true);
+	});
+	it('sees through ANSI coloring', () => {
+		expect(isNoguiUnsupportedError('\x1b[31mUnrecognized option: --nogui\x1b[0m')).toBe(true);
+	});
+	it('does not flag an unrecognized option that is not --nogui', () => {
+		expect(isNoguiUnsupportedError('Unrecognized option: --forceUpgrade')).toBe(false);
+	});
+	it('does not flag lines that merely mention nogui', () => {
+		expect(isNoguiUnsupportedError('Starting server with --nogui')).toBe(false);
+		expect(isNoguiUnsupportedError('Loading properties, nogui mode enabled')).toBe(false);
+	});
+	it('does not flag unrelated stack traces', () => {
+		expect(isNoguiUnsupportedError('java.lang.NullPointerException at Foo.bar')).toBe(false);
 	});
 });
 

@@ -188,6 +188,123 @@ describe('useServerRuntime — event-driven lifecycle', () => {
 		expect(spies.setServerStatus).not.toHaveBeenCalled();
 	});
 
+	it("strips an unsupported '--nogui' on a boot crash and retries once", async () => {
+		mockInvoke('get_server_start_command', () => 'java -Xmx4G -jar server.jar --nogui');
+		mockInvoke('start_server', () => undefined);
+		mockInvoke('set_server_custom_flags', () => undefined);
+		mockInvoke('scan_server_contents', () => ({ plugins: [], worlds: [], datapacks: [], backups: [] }));
+
+		const { result, spies } = renderRuntime(makeServer());
+		await waitFor(() => expect(invokeMock).toHaveBeenCalled());
+
+		await act(async () => {
+			await result.current.handleStart();
+		});
+		invokeMock.mockClear();
+
+		// The jar rejects the flag, then dies without ever coming online.
+		await act(async () => {
+			emitTauriEvent('server-output', {
+				directory: DIR,
+				stream: 'stderr',
+				line: 'Unrecognized option: --nogui',
+			});
+			emitTauriEvent('server-runtime-state', {
+				directory: DIR,
+				state: 'crashed',
+				pid: null,
+				startedAt: null,
+				exitCode: 1,
+				stderrTail: [],
+			});
+		});
+
+		// The flag is dropped from mserve.json + the local store, and the server
+		// is started again rather than being surfaced as a crash.
+		await waitFor(() =>
+			expect(invokeMock).toHaveBeenCalledWith('set_server_custom_flags', {
+				directory: DIR,
+				customFlags: [],
+			}),
+		);
+		expect(spies.updateServer).toHaveBeenCalledWith('srv-1', { custom_flags: [] });
+		await waitFor(() =>
+			expect(invokeMock).toHaveBeenCalledWith(
+				'start_server',
+				expect.objectContaining({ directory: DIR, javaExecutable: 'C:/jdk21/bin/java.exe' }),
+			),
+		);
+		expect(spies.setServerStatus).not.toHaveBeenCalledWith('srv-1', 'crashed');
+	});
+
+	it('does not strip when the server has no --nogui flag to remove', async () => {
+		mockInvoke('get_server_start_command', () => 'java -jar server.jar');
+		mockInvoke('start_server', () => undefined);
+		mockInvoke('set_server_custom_flags', () => undefined);
+		mockInvoke('scan_server_contents', () => ({ plugins: [], worlds: [], datapacks: [], backups: [] }));
+
+		const { result, spies } = renderRuntime(makeServer({ custom_flags: [] }));
+		await waitFor(() => expect(invokeMock).toHaveBeenCalled());
+
+		await act(async () => {
+			await result.current.handleStart();
+		});
+		invokeMock.mockClear();
+
+		await act(async () => {
+			emitTauriEvent('server-output', {
+				directory: DIR,
+				stream: 'stderr',
+				line: 'Unrecognized option: --nogui',
+			});
+			emitTauriEvent('server-runtime-state', {
+				directory: DIR,
+				state: 'crashed',
+				pid: null,
+				startedAt: null,
+				exitCode: 1,
+				stderrTail: [],
+			});
+		});
+
+		await waitFor(() => expect(spies.setServerStatus).toHaveBeenCalledWith('srv-1', 'crashed'));
+		expect(invokeMock).not.toHaveBeenCalledWith('set_server_custom_flags', expect.anything());
+	});
+
+	it('does not strip when the server only warns about --nogui and stays up', async () => {
+		mockInvoke('get_server_start_command', () => 'java -jar server.jar --nogui');
+		mockInvoke('start_server', () => undefined);
+		mockInvoke('set_server_custom_flags', () => undefined);
+		mockInvoke('scan_server_contents', () => ({ plugins: [], worlds: [], datapacks: [], backups: [] }));
+
+		const { result, spies } = renderRuntime(makeServer());
+		await waitFor(() => expect(invokeMock).toHaveBeenCalled());
+
+		await act(async () => {
+			await result.current.handleStart();
+		});
+		invokeMock.mockClear();
+
+		await act(async () => {
+			emitTauriEvent('server-output', {
+				directory: DIR,
+				stream: 'stderr',
+				line: 'Unrecognized option: --nogui',
+			});
+			emitTauriEvent('server-runtime-state', {
+				directory: DIR,
+				state: 'online',
+				pid: 123,
+				startedAt: new Date().toISOString(),
+				exitCode: null,
+				stderrTail: [],
+			});
+		});
+
+		expect(spies.setServerStatus).toHaveBeenCalledWith('srv-1', 'online');
+		expect(invokeMock).not.toHaveBeenCalledWith('set_server_custom_flags', expect.anything());
+	});
+
 	it('handleStart resolves Java and invokes start_server', async () => {
 		mockInvoke('get_server_start_command', () => 'java -Xmx4G -jar server.jar');
 		mockInvoke('start_server', () => undefined);

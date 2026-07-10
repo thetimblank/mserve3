@@ -48,8 +48,7 @@ const Home: React.FC = () => {
 
 	return (
 		<main className='relative h-full w-full overflow-y-auto app-scroll-area dark:bg-black'>
-			{/* DarkVeil backdrop — sits behind all content, never intercepts clicks. */}
-			<div aria-hidden className='pointer-events-none absolute inset-0 z-0 overflow-hidden'>
+			<div aria-hidden className='pointer-events-none fixed inset-0 z-0 overflow-hidden opacity-50'>
 				<DarkVeil speed={reducedMotion ? 0 : 1} />
 			</div>
 

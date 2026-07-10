@@ -29,9 +29,10 @@ import {
 	offlineServerStats,
 	startingServerStats,
 } from '@/lib/server-telemetry';
-import { isJavaVersionError, stripAnsi } from '@/lib/utils';
-import { planJavaFallback } from '@/lib/java-resolution';
+import { isJavaVersionError, isNoguiUnsupportedError, stripAnsi } from '@/lib/utils';
+import { planJavaFallback, resolveServerJavaExecutable } from '@/lib/java-resolution';
 import { setServerJavaInstallation, type JavaRuntimeInfo } from '@/lib/java-runtime-service';
+import { hasNoguiFlag, setServerCustomFlags, stripNoguiFlags } from '@/lib/server-flags-service';
 import type {
 	ServerOutputEvent,
 	ServerRuntimeSnapshot,
@@ -48,6 +49,9 @@ type RuntimeEntry = {
 	attemptedMajors: number[];
 	didFallback: boolean;
 	lastExecutable: string | null;
+	// Unsupported-`--nogui` strip-and-retry state.
+	noguiErrorFlagged: boolean;
+	noguiStripAttempted: boolean;
 };
 
 export const ServerRuntimeMonitor: React.FC = () => {
@@ -77,13 +81,16 @@ export const ServerRuntimeMonitor: React.FC = () => {
 				attemptedMajors: [],
 				didFallback: false,
 				lastExecutable: null,
+				noguiErrorFlagged: false,
+				noguiStripAttempted: false,
 			};
 			entriesRef.current.set(id, entry);
 		}
 		return entry;
 	}, []);
 
-	// Flag wrong-Java errors as they stream so the crash handler can step down.
+	// Flag wrong-Java and unsupported-`--nogui` errors as they stream so the crash
+	// handler can step down / strip the flag.
 	React.useEffect(() => {
 		let active = true;
 		let unlisten: UnlistenFn | null = null;
@@ -95,10 +102,20 @@ export const ServerRuntimeMonitor: React.FC = () => {
 			const server = serversRef.current.find((item) => item.directory === event.payload.directory);
 			if (!server) return;
 			if (isServerRuntimeClaimed(server.id)) return;
+
+			const line = stripAnsi(event.payload.line);
+
+			// Unlike the Java step-down, this applies regardless of a pinned Java —
+			// the flag is rejected by the jar, not the runtime.
+			if (isNoguiUnsupportedError(line)) {
+				const entry = getEntry(server.id);
+				if (!entry.everRunning) entry.noguiErrorFlagged = true;
+			}
+
 			// A pinned Java is the user's explicit choice — never auto-step-down.
 			if ((server.java_installation ?? '').trim() !== '') return;
 
-			if (isJavaVersionError(stripAnsi(event.payload.line))) {
+			if (isJavaVersionError(line)) {
 				const entry = getEntry(server.id);
 				if (!entry.everRunning) entry.javaErrorFlagged = true;
 			}
@@ -148,6 +165,7 @@ export const ServerRuntimeMonitor: React.FC = () => {
 			if (state === 'online' || state === 'running-external') {
 				entry.everRunning = true;
 				entry.javaErrorFlagged = false;
+				entry.noguiErrorFlagged = false;
 				setServerStatus(server.id, 'online');
 				updateServerStats(server.id, {
 					online: true,
@@ -184,6 +202,44 @@ export const ServerRuntimeMonitor: React.FC = () => {
 
 			// offline or crashed.
 			const noPinnedJava = (server.java_installation ?? '').trim() === '';
+
+			// Unsupported `--nogui`: drop the flag and retry once, before the crash
+			// is surfaced. Only when it never came up and we saw the error.
+			if (
+				state === 'crashed' &&
+				entry.noguiErrorFlagged &&
+				!entry.noguiStripAttempted &&
+				!entry.everRunning &&
+				hasNoguiFlag(server.custom_flags ?? [])
+			) {
+				entry.noguiErrorFlagged = false;
+				entry.noguiStripAttempted = true;
+
+				const resolution = resolveServerJavaExecutable({
+					provider: server.provider,
+					javaInstallation: server.java_installation,
+					globalDefault: javaDefaultRef.current,
+					runtimes: runtimesRef.current,
+				});
+
+				if (resolution.status === 'resolved') {
+					const nextFlags = stripNoguiFlags(server.custom_flags ?? []);
+					const executablePath = resolution.executablePath;
+					void setServerCustomFlags(server.directory, nextFlags)
+						.then(() => {
+							if (!active) return;
+							updateServer(server.id, { custom_flags: nextFlags });
+							toast.info(`${server.name} doesn't support '--nogui' — removed it and restarted.`);
+							startWith(server, executablePath);
+						})
+						.catch(() => {
+							if (!active) return;
+							setServerStatus(server.id, 'crashed');
+							updateServerStats(server.id, offlineServerStats());
+						});
+					return;
+				}
+			}
 
 			// Wrong-Java step-down: only when it never came up and we saw the error.
 			if (state === 'crashed' && entry.javaErrorFlagged && !entry.everRunning && noPinnedJava) {

@@ -55,11 +55,9 @@ Using semver `vmajor.minor.fix` e.g. `v4.0.12`
 
 ### v4
 
-- only show the connect card (the one with the ip) when a server is online in each overview page. this goes for the tunnel as well.
-- Let users enable sleep servers manually, when server is sleeping also let them start the server or stop it (Instead of "Force kill" when sleeping, just make it say Stop).
-- make --nogui forced when not in advanced mode (?)
-- change default sizing of mserve (Larger, Centered). should be screen size aware (if important)
-- full motd editor for sleep mode in the per server settings.
+- ~~make --nogui forced when not in advanced mode (?), make sure, if the server crashes or doesn't start because of an error saying "--nogui" not recognized (or something similar), that this option should be removed and then try to start again.~~ ✅ — a boot crash blamed on `--nogui` now strips the flag and retries once. Forcing it wasn't needed: the flags editor is already advanced-only, so non-advanced users can't remove the flag in the first place.
+- change the default sizing of mserve (Larger, Centered). should be screen size aware (if important)
+- add the same full motd editor to the sleep mode motd in the per server settings.
 
 - rework MC settings for non-advanced users (Like the server.properties, velocity.toml, etc. make these more user friendly for non-advanced users)
 - relocate some settings to better match the function, e.g. backups settings are now in the backups tab.

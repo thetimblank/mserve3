@@ -24,14 +24,14 @@ const StatCard: React.FC<Props> = ({ icon, label, value, hint, color, delay = 0,
 		animate={{ scale: 1, y: 0, opacity: 1 }}
 		transition={{ type: 'spring', duration: 0.4, bounce: 0, delay }}>
 		<Card className={cn('relative gap-0 overflow-hidden p-5', className)}>
-			<div className='flex items-center gap-2 text-xs font-medium tracking-wide text-muted-foreground uppercase'>
+			<div className='flex items-center gap-2 text-nowrap text-xs font-medium tracking-wide text-muted-foreground uppercase'>
 				<span className='[&_svg]:size-4' style={color ? { color } : undefined}>
 					{icon}
 				</span>
 				{label}
 			</div>
-			<div className='mt-2 text-3xl font-bold tabular-nums'>{value}</div>
-			{hint != null && <div className='mt-1 text-xs text-muted-foreground'>{hint}</div>}
+			<div className='mt-2 text-3xl font-bold tabular-nums text-nowrap'>{value}</div>
+			{hint != null && <div className='mt-1 text-xs text-muted-foreground text-nowrap'>{hint}</div>}
 		</Card>
 	</m.div>
 );

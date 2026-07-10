@@ -114,7 +114,8 @@ const ServerOverviewPanel: React.FC<Props> = ({
 
 	const tunnel = useServerTunnel(server.directory);
 	const tunnelAddress = tunnel.address ?? server.tunnel_address ?? null;
-	const showTunnel = tunnel.enabled && tunnel.status === 'online' && tunnelAddress != null;
+	const showTunnel =
+		server.status === 'online' && tunnel.enabled && tunnel.status === 'online' && tunnelAddress != null;
 
 	const [publicIp, setPublicIp] = React.useState<string | null>(null);
 	const [ipHidden, setIpHidden] = React.useState(true);
@@ -244,61 +245,63 @@ const ServerOverviewPanel: React.FC<Props> = ({
 							)}
 							<OpenFolderButton directory={server.directory} disabled={isBusy} />
 							{/* Connection address */}
-							<div className='flex items-center gap-2 rounded-md bg-card dark:bg-secondary/50 border-2 dark:border-none px-3 py-1 text-sm'>
-								<Wifi className='size-4 shrink-0 text-sky-500' />
-								<p className='text-muted-foreground select-none'>Connect:</p>
-								<HelpButton topic='connecting' />
-								<p>
-									<span className='font-mono text-sky-500'>
-										{publicIp == null ? (
-											<span className='blur-sm select-none text-muted-foreground'>
-												Loading....
-											</span>
-										) : ipHidden ? (
-											<span className='blur-sm select-none'>XXX.XXX.X.X</span>
-										) : (
-											publicIp
+							{server.status === 'online' && (
+								<div className='flex items-center gap-2 rounded-md bg-card dark:bg-secondary/50 border-2 dark:border-none px-3 py-1 text-sm'>
+									<Wifi className='size-4 shrink-0 text-sky-500' />
+									<p className='text-muted-foreground select-none'>Connect:</p>
+									<HelpButton topic='connecting' />
+									<p>
+										<span className='font-mono text-sky-500'>
+											{publicIp == null ? (
+												<span className='blur-sm select-none text-muted-foreground'>
+													Loading....
+												</span>
+											) : ipHidden ? (
+												<span className='blur-sm select-none'>XXX.XXX.X.X</span>
+											) : (
+												publicIp
+											)}
+										</span>
+										{showConnectPort && (
+											<span className='font-mono text-sky-500'>:{connectPort}</span>
 										)}
-									</span>
-									{showConnectPort && (
-										<span className='font-mono text-sky-500'>:{connectPort}</span>
-									)}
-								</p>
-								<div className='flex'>
-									<Tooltip>
-										<TooltipTrigger asChild>
-											<Button
-												variant='ghost'
-												size='sm'
-												className='h-6 w-6 p-0 text-muted-foreground hover:text-foreground'
-												onClick={() => setIpHidden((h) => !h)}>
-												{ipHidden ? (
-													<Eye className='size-3.5' />
-												) : (
-													<EyeOff className='size-3.5' />
-												)}
-											</Button>
-										</TooltipTrigger>
-										<TooltipContent>{ipHidden ? 'Show IP' : 'Hide IP'}</TooltipContent>
-									</Tooltip>
-									<Tooltip>
-										<TooltipTrigger asChild>
-											<Button
-												variant='ghost'
-												size='sm'
-												className='h-6 w-6 p-0 text-muted-foreground hover:text-foreground'
-												onClick={() => copyToClipboard(connectAddress)}>
-												{copied ? (
-													<ClipboardCheck className='size-3.5' />
-												) : (
-													<Clipboard className='size-3.5' />
-												)}
-											</Button>
-										</TooltipTrigger>
-										<TooltipContent>{copied ? 'Copied IP' : 'Copy IP'}</TooltipContent>
-									</Tooltip>
+									</p>
+									<div className='flex'>
+										<Tooltip>
+											<TooltipTrigger asChild>
+												<Button
+													variant='ghost'
+													size='sm'
+													className='h-6 w-6 p-0 text-muted-foreground hover:text-foreground'
+													onClick={() => setIpHidden((h) => !h)}>
+													{ipHidden ? (
+														<Eye className='size-3.5' />
+													) : (
+														<EyeOff className='size-3.5' />
+													)}
+												</Button>
+											</TooltipTrigger>
+											<TooltipContent>{ipHidden ? 'Show IP' : 'Hide IP'}</TooltipContent>
+										</Tooltip>
+										<Tooltip>
+											<TooltipTrigger asChild>
+												<Button
+													variant='ghost'
+													size='sm'
+													className='h-6 w-6 p-0 text-muted-foreground hover:text-foreground'
+													onClick={() => copyToClipboard(connectAddress)}>
+													{copied ? (
+														<ClipboardCheck className='size-3.5' />
+													) : (
+														<Clipboard className='size-3.5' />
+													)}
+												</Button>
+											</TooltipTrigger>
+											<TooltipContent>{copied ? 'Copied IP' : 'Copy IP'}</TooltipContent>
+										</Tooltip>
+									</div>
 								</div>
-							</div>
+							)}
 							{/* Public tunnel address (playit.gg) */}
 							{showTunnel && (
 								<div className='flex items-center gap-2 rounded-md bg-card dark:bg-secondary/50 border-2 dark:border-none px-3 py-1 text-sm'>
