@@ -5,9 +5,18 @@ import { toast } from 'sonner';
 import { ArrowUpRight, CircleCheck, Folder, Moon, OctagonX, RefreshCcw, Trash2 } from 'lucide-react';
 
 import type { Server } from '@/data/servers';
-import { isStoppedStatus, useServers } from '@/data/servers';
+import {
+	canForceKillStatus,
+	canRestartStatus,
+	canSleepServer,
+	canStartStatus,
+	canStopStatus,
+	forceKillActionLabel,
+	startActionLabel,
+	stopActionLabel,
+	useServers,
+} from '@/data/servers';
 import { useServerJavaResolver } from '@/data/java-download';
-import { isProxyProvider } from '@/lib/server-provider';
 import {
 	forceKillServer,
 	restartServer,
@@ -70,11 +79,11 @@ export const ServerNodeMenu: React.FC<ServerNodeMenuProps> = ({ server, role, on
 	const isSleeping = status === 'sleeping';
 	// Waking a sleeping server is just a start (the backend tears down its wake
 	// listener), so it lives under the same "start" affordance.
-	const canStart = isStoppedStatus(status) || isSleeping;
-	const canStop = status === 'online' || status === 'starting' || isSleeping;
-	const canRestart = status === 'online' || status === 'starting';
-	const canSleep = status === 'online' && !isProxyProvider(server.provider);
-	const canForceKill = !isStoppedStatus(status);
+	const canStart = canStartStatus(status);
+	const canStop = canStopStatus(status);
+	const canRestart = canRestartStatus(status);
+	const canSleep = canSleepServer(server);
+	const canForceKill = canForceKillStatus(status);
 
 	const openFolder = async () => {
 		try {
@@ -96,15 +105,7 @@ export const ServerNodeMenu: React.FC<ServerNodeMenuProps> = ({ server, role, on
 					</ContextMenuItem>
 					{canStart && (
 						<ContextMenuItem onSelect={() => void handleStart()}>
-							{isSleeping ? (
-								<>
-									<Moon /> Awake
-								</>
-							) : (
-								<>
-									<CircleCheck /> Start
-								</>
-							)}
+							{isSleeping ? <Moon /> : <CircleCheck />} {startActionLabel(status)}
 						</ContextMenuItem>
 					)}
 					{canRestart && (
@@ -119,12 +120,12 @@ export const ServerNodeMenu: React.FC<ServerNodeMenuProps> = ({ server, role, on
 					)}
 					{canStop && (
 						<ContextMenuItem onSelect={() => void stopServer(context())}>
-							<OctagonX /> {isSleeping ? 'Stop sleeping' : 'Stop'}
+							<OctagonX /> {stopActionLabel(status)}
 						</ContextMenuItem>
 					)}
 					{canForceKill && (
 						<ContextMenuItem variant='destructive' onSelect={() => void forceKillServer(context())}>
-							<OctagonX /> {isSleeping ? 'Shutdown' : 'Force kill'}
+							<OctagonX /> {forceKillActionLabel(status)}
 						</ContextMenuItem>
 					)}
 					<ContextMenuSeparator />
