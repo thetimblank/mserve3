@@ -54,14 +54,24 @@ case unless `MSERVE_E2E_REQUIRE=1`. Run it explicitly or via the
 
 ## CI
 
-- [ci.yml](../.github/workflows/ci.yml) â€” every PR/push (`windows-latest` +
-  `ubuntu-latest`): build + typecheck, Vitest, `cargo fmt --check`,
-  `cargo clippy --all-targets -- -D warnings`, `cargo test`.
+- [ci.yml](../.github/workflows/ci.yml) — every PR/push, as parallel jobs gated on
+  what changed (docs/`*.md`-only changes run nothing):
+  - **Frontend** (`ubuntu-latest`, when anything outside `src-tauri/` changes):
+    build + typecheck, Vitest.
+  - **Rust tests** (`windows-latest` + `ubuntu-latest`, when `src-tauri/` changes):
+    `cargo test`. No Node needed — debug builds don't embed `dist/`.
+  - **Rust lint** (same OSes/trigger): `cargo fmt --check` (Linux),
+    `cargo clippy --all-targets -- -D warnings`.
+  - Rust caches are written only from `main` (PRs restore them) and built without
+    debuginfo to keep them small. Editing `ci.yml` itself runs every job.
 - [e2e-nightly.yml](../.github/workflows/e2e-nightly.yml) â€” schedule + manual: the L4
-  matrix.
+  matrix. Shares the Windows test cache with `ci.yml`, keeping it warm daily.
 
 ## Local pre-push hook
 
 `npm install` runs `scripts/install-git-hooks.mjs`, which points `core.hooksPath` at
-[.githooks/](../.githooks/). The `pre-push` hook runs the same checks as `ci.yml`
-(build, Vitest, `cargo fmt --check`, clippy, `cargo test`) and blocks the push on failure. Bypass with `git push --no-verify`.
+[.githooks/](../.githooks/). The `pre-push` hook runs the fast suite and blocks the
+push on failure, applying the same path rules as CI to the commits being pushed:
+`tsc` + Vitest only if the frontend changed (the full `vite build` is left to CI),
+`cargo fmt --check` + clippy + `cargo test` only if `src-tauri/` changed. Bypass with
+`git push --no-verify`.
