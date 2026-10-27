@@ -3,8 +3,9 @@
 //! The app owns the server files, so the most reliable way to get a universal
 //! command/telemetry channel is to provision RCON ourselves: ensure
 //! `enable-rcon=true`, a free `rcon.port`, and a strong random `rcon.password`.
-//! We only ever connect to RCON over `127.0.0.1`. This replaces the old approach
-//! of writing commands to stdin and scraping interleaved stdout.
+//! The server binds RCON like its game port (`server-ip`, or all interfaces), so
+//! the password is the only thing protecting it on the LAN. This replaces the old
+//! approach of writing commands to stdin and scraping interleaved stdout.
 
 use super::super::RconConfig;
 use rand::Rng;

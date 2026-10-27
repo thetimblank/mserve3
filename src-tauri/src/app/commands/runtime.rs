@@ -1,10 +1,12 @@
 use super::super::support::playit;
 use super::super::support::{
-    RconClient, emit_output_reader, ensure_rcon_enabled, get_runtime_config,
+    RconClient, emit_output_reader, emit_system_line, ensure_rcon_enabled, get_runtime_config,
     infer_provider_version, isolate_in_own_process_group, kill_child_process_group,
-    kill_process_tree, next_generation, no_window_command, pid_listening_on_port, probe_port,
-    read_rcon_config, resolve_telemetry_target, send_stop_via_stdin, server_key, set_server_port,
-    spawn_supervisor, terminate_runtime, tie_child_to_app_lifetime,
+    kill_process_tree, next_generation, no_window_command, offline_state_event, patch_mserve_json,
+    pid_listening_on_port, probe_port, read_rcon_config, release_child_from_app_lifetime,
+    remove_if_current, resolve_telemetry_target, server_key, set_server_port, spawn_supervisor,
+    state_event, stop_request, terminate_runtime, tie_child_to_app_lifetime, wait_for_port_release,
+    write_stdin_line,
 };
 use super::super::{
     LifecycleState, RuntimeServerConfig, RuntimeState, ServerRuntime, ServerRuntimeSnapshot,
@@ -12,7 +14,6 @@ use super::super::{
 };
 use std::collections::{HashMap, VecDeque};
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
@@ -165,6 +166,25 @@ fn provider_is_proxy(config: &RuntimeServerConfig) -> bool {
     name.contains("velocity") || name.contains("bungee") || name.contains("waterfall")
 }
 
+/// Console commands that shut a server down, per provider; the first is the one
+/// sent for a graceful stop. BungeeCord/Waterfall only know `end`; Velocity's
+/// `shutdown` also answers to `end` and `stop`. Mirrored by `isStopCommand` in
+/// `src/pages/server/server-utils.ts`.
+fn shutdown_commands_for(config: &RuntimeServerConfig) -> &'static [&'static str] {
+    let name = config
+        .provider
+        .as_ref()
+        .map(|provider| provider.name.to_lowercase())
+        .unwrap_or_default();
+    if name.contains("velocity") {
+        &["shutdown", "end", "stop"]
+    } else if name.contains("bungee") || name.contains("waterfall") {
+        &["end"]
+    } else {
+        &["stop"]
+    }
+}
+
 fn resolve_server_id(config: &RuntimeServerConfig, key: &str) -> String {
     config
         .id
@@ -178,12 +198,16 @@ type Processes = Arc<Mutex<HashMap<String, ServerRuntime>>>;
 const DEFAULT_MC_PORT: u16 = 25565;
 
 /// Returns the lowest port >= `start_port` that is not already in active use by
-/// a managed server in the processes map.
-fn find_next_available_port(processes: &HashMap<String, ServerRuntime>, start_port: u16) -> u16 {
+/// another managed server (`exclude_key` is the caller's own entry).
+fn find_next_available_port(
+    processes: &HashMap<String, ServerRuntime>,
+    start_port: u16,
+    exclude_key: &str,
+) -> u16 {
     let in_use: std::collections::HashSet<u16> = processes
-        .values()
-        .filter(|r| r.state.is_active())
-        .map(|r| r.server_port)
+        .iter()
+        .filter(|(key, r)| key.as_str() != exclude_key && r.state.is_active())
+        .map(|(_, r)| r.server_port)
         .collect();
 
     let mut port = start_port;
@@ -193,44 +217,116 @@ fn find_next_available_port(processes: &HashMap<String, ServerRuntime>, start_po
     port
 }
 
-/// True when an active managed runtime already occupies `host:port`. Guards
-/// both sequential port assignment on start and adoption of external servers
-/// (so one answering port can never be attributed to two servers).
-fn is_port_claimed(processes: &HashMap<String, ServerRuntime>, host: &str, port: u16) -> bool {
+/// True when an active managed runtime other than `exclude_key` already occupies
+/// `host:port`. Guards both sequential port assignment on start and adoption of
+/// external servers (so one answering port can never be attributed to two
+/// servers).
+fn is_port_claimed(
+    processes: &HashMap<String, ServerRuntime>,
+    host: &str,
+    port: u16,
+    exclude_key: &str,
+) -> bool {
+    processes.iter().any(|(key, r)| {
+        key.as_str() != exclude_key
+            && r.host == host
+            && r.server_port == port
+            && r.state.is_active()
+    })
+}
+
+/// A runtime record for `config` with no process attached: the start path
+/// reserves the key with one of these and fills the child in once it spawned;
+/// adoption keeps it process-less.
+fn new_runtime(
+    directory: String,
+    key: &str,
+    config: &RuntimeServerConfig,
+    host: String,
+    server_port: u16,
+    generation: u64,
+    state: LifecycleState,
+) -> ServerRuntime {
+    ServerRuntime {
+        directory,
+        child: None,
+        stdin: None,
+        pid: None,
+        started_at: chrono::Utc::now(),
+        state,
+        exit_code: None,
+        stderr_tail: VecDeque::new(),
+        rcon: None,
+        host,
+        server_port,
+        is_proxy: provider_is_proxy(config),
+        shutdown_commands: shutdown_commands_for(config),
+        server_id: resolve_server_id(config, key),
+        configured_ram: config.ram,
+        provider_version: infer_provider_version(config),
+        tps_state: TpsCommandState::Unknown,
+        latest_sample: None,
+        generation,
+        stop_requested: false,
+        stop_requested_at: None,
+        playit_stop: None,
+        tunnel_address: None,
+        java_executable: None,
+        auto_restart: false,
+        ever_online: false,
+        sleep_enabled: false,
+        sleep_idle_minutes: 15,
+        sleep_motd: default_sleep_motd(),
+        sleep_requested: false,
+        sleep_stop: None,
+    }
+}
+
+/// A start in progress: the key is claimed (see `start_server_internal`) but the
+/// JVM isn't attached yet. `Stopping` means a stop/force-kill cancelled it.
+fn is_start_reservation(runtime: &ServerRuntime) -> bool {
+    runtime.child.is_none()
+        && runtime.pid.is_none()
+        && runtime.java_executable.is_some()
+        && matches!(
+            runtime.state,
+            LifecycleState::Starting | LifecycleState::Stopping
+        )
+}
+
+/// A server mserve found running but didn't spawn: owned runtimes (including
+/// start reservations and sleeping servers) always record their Java executable.
+fn is_adopted(runtime: &ServerRuntime) -> bool {
+    runtime.child.is_none() && runtime.java_executable.is_none()
+}
+
+const ADOPTED_SERVER_ERROR: &str = "This server was started outside mserve. Stop it there (or use Force Kill) before starting it from mserve.";
+
+/// Directories of the servers whose process mserve owns (or is spawning), i.e.
+/// the ones a real quit kills. Sleeping servers have no process (just a wake
+/// listener) and adopted servers aren't mserve's to kill, so neither counts
+/// toward the close warning.
+pub(in crate::app) fn owned_running_server_directories(
+    processes: &HashMap<String, ServerRuntime>,
+) -> Vec<String> {
     processes
         .values()
-        .any(|r| r.host == host && r.server_port == port && r.state.is_active())
+        .filter(|r| r.child.is_some() || is_start_reservation(r))
+        .map(|r| r.directory.clone())
+        .collect()
 }
 
-/// Patches the `telemetry_port` field in `mserve.json` so subsequent starts
-/// (and the next frontend sync) use the correct port.
-fn patch_mserve_json_port(directory: &std::path::Path, port: u16) -> Result<(), String> {
-    let path = directory.join("mserve.json");
-    let raw = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    let mut value: serde_json::Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
-    if let Some(obj) = value.as_object_mut() {
-        obj.insert("telemetry_port".to_string(), serde_json::json!(port));
-    }
-    let out = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
-    std::fs::write(&path, out).map_err(|e| e.to_string())
-}
-
-/// Persists the provisioned playit tunnel id + public address into `mserve.json`
-/// so a later start reuses the same tunnel instead of allocating a new one.
-fn patch_mserve_json_tunnel(
-    directory: &std::path::Path,
-    tunnel_id: &str,
-    address: &str,
-) -> Result<(), String> {
-    let path = directory.join("mserve.json");
-    let raw = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    let mut value: serde_json::Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
-    if let Some(obj) = value.as_object_mut() {
-        obj.insert("tunnel_id".to_string(), serde_json::json!(tunnel_id));
-        obj.insert("tunnel_address".to_string(), serde_json::json!(address));
-    }
-    let out = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
-    std::fs::write(&path, out).map_err(|e| e.to_string())
+/// Runs blocking command work (spawns, port probes, RCON, bounded waits) on the
+/// blocking pool. Synchronous Tauri commands execute on the main thread, so doing
+/// this inline would freeze the window.
+async fn run_blocking<T, F>(work: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|err| err.to_string())?
 }
 
 /// Brings up this server's playit tunnel asynchronously (when enabled) so server
@@ -299,8 +395,15 @@ fn launch_tunnel(
                     return;
                 }
 
-                let _ =
-                    patch_mserve_json_tunnel(&directory_path, &handle.tunnel_id, &handle.address);
+                // Persist the tunnel id + public address so a later start reuses
+                // the same tunnel instead of allocating a new one.
+                let _ = patch_mserve_json(
+                    &directory_path,
+                    &[
+                        ("tunnel_id", serde_json::json!(handle.tunnel_id)),
+                        ("tunnel_address", serde_json::json!(handle.address)),
+                    ],
+                );
                 playit::emit_tunnel_state(&app, &directory, "online", Some(handle.address), None);
             }
             Err(err) => {
@@ -314,6 +417,26 @@ fn launch_tunnel(
 /// server naps. Shares the canonical string with the config layer.
 pub(in crate::app) fn default_sleep_motd() -> String {
     super::super::support::DEFAULT_SLEEP_MOTD.to_string()
+}
+
+/// Drops a failed start's reservation (only while it is still ours) and reports
+/// the server offline — unless a newer runtime has taken the key since.
+fn release_reservation(
+    processes: &Processes,
+    key: &str,
+    generation: u64,
+    directory: &str,
+    server_port: u16,
+    app: &tauri::AppHandle,
+) {
+    let removed = remove_if_current(processes, key, generation).is_some();
+    let replaced = processes.lock().is_ok_and(|guard| guard.contains_key(key));
+    if removed || !replaced {
+        let _ = app.emit(
+            "server-runtime-state",
+            offline_state_event(directory.to_string(), server_port),
+        );
+    }
 }
 
 /// Core start routine, shared by the `start_server` command, the restart flow,
@@ -331,13 +454,24 @@ pub(in crate::app) fn start_server_internal(
 
     let config = get_runtime_config(&directory_path)?;
     let key = server_key(&directory);
+    let java_executable = resolve_java_executable(&config, java_executable.as_deref())?;
+    ensure_java_executable_exists(&java_executable)?;
+    let (host, configured_port) = resolve_telemetry_target(&config, &directory_path);
+    let is_proxy = provider_is_proxy(&config);
+    let generation = next_generation();
 
-    // Refuse to start over a live process; otherwise drop any stale record. A
-    // sleeping entry means the wake listener owns the port — signal it to stop
-    // and wait for the port to free before we bind it (this is the "wake" path).
-    let sleeping_port = {
+    // Claim the key in the same critical section as the "already running" check,
+    // so concurrent starters (this command, a restart thread, auto-restart, a
+    // wake) can never both spawn a JVM for one server. A sleeping entry means the
+    // wake listener owns the port — signal it to stop; the port-free wait below
+    // is the "wake" path.
+    let (sleeping_port, server_port) = {
         let mut guard = processes.lock().map_err(|_| "Runtime lock failed.")?;
+        let mut sleeping_port = None;
         if let Some(existing) = guard.get_mut(&key) {
+            if is_start_reservation(existing) {
+                return Err("Server is already starting.".to_string());
+            }
             let alive = existing
                 .child
                 .as_mut()
@@ -345,185 +479,191 @@ pub(in crate::app) fn start_server_internal(
             if alive {
                 return Err("Server is already running.".to_string());
             }
-            let was_sleeping = matches!(existing.state, LifecycleState::Sleeping);
-            let port = existing.server_port;
-            if let Some(flag) = existing.sleep_stop.take() {
-                flag.store(true, std::sync::atomic::Ordering::Relaxed);
+            if is_adopted(existing) {
+                return Err(ADOPTED_SERVER_ERROR.to_string());
             }
-            guard.remove(&key);
-            was_sleeping.then_some(port)
+            if matches!(existing.state, LifecycleState::Sleeping) {
+                sleeping_port = Some(existing.server_port);
+            }
+            stop_sleep_listener(existing);
+            if let Some(stop) = existing.playit_stop.take() {
+                playit::stop_agent(&stop);
+            }
+        }
+
+        // Sequential port assignment: if the resolved port is already claimed by
+        // another active managed server, step up to the next free port. Decided
+        // under the same lock that publishes the reservation (which carries the
+        // port), so two siblings starting together can't both pick the same one.
+        let server_port = if is_port_claimed(&guard, &host, configured_port, &key) {
+            find_next_available_port(&guard, DEFAULT_MC_PORT, &key)
         } else {
-            None
-        }
-    };
-    if let Some(port) = sleeping_port {
-        for _ in 0..15 {
-            if !probe_port("127.0.0.1", port, Duration::from_millis(200)) {
-                break;
-            }
-            std::thread::sleep(Duration::from_millis(200));
-        }
-    }
+            configured_port
+        };
 
-    let args = resolve_server_start_args(&directory_path, &config);
-    let java_executable = resolve_java_executable(&config, java_executable.as_deref())?;
-    ensure_java_executable_exists(&java_executable)?;
-    let command_str = build_server_start_command(&directory_path, &config, &java_executable);
-    eprintln!("[Server] Executing: {command_str}");
-
-    let is_proxy = provider_is_proxy(&config);
-    let (host, mut server_port) = resolve_telemetry_target(&config, &directory_path);
-
-    // Sequential port assignment: if the resolved port is already claimed by
-    // another active managed server, step up to the next free port and persist
-    // the change so future starts and the frontend stay in sync.
-    {
-        let guard = processes.lock().map_err(|_| "Runtime lock failed.")?;
-        if is_port_claimed(&guard, &host, server_port) {
-            let next_port = find_next_available_port(&guard, DEFAULT_MC_PORT);
-            drop(guard);
-            set_server_port(&directory_path, next_port)
-                .unwrap_or_else(|e| eprintln!("[Server] Could not update server-port: {e}"));
-            patch_mserve_json_port(&directory_path, next_port)
-                .unwrap_or_else(|e| eprintln!("[Server] Could not patch mserve.json port: {e}"));
-            server_port = next_port;
-        }
-    }
-
-    // Provision a reliable RCON channel for non-proxy servers.
-    let rcon = if is_proxy {
-        None
-    } else {
-        ensure_rcon_enabled(&directory_path).ok()
-    };
-
-    let mut command = no_window_command(&java_executable);
-    command
-        .args(args)
-        .current_dir(&directory_path)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    isolate_in_own_process_group(&mut command);
-    let mut child = command
-        .spawn()
-        .map_err(|err| format!("Failed to start java process: {err}"))?;
-
-    // Bind the server (and everything it spawns) to mserve's lifetime so an
-    // mserve crash or "End task" can never leave an orphaned java process
-    // squatting on the port.
-    tie_child_to_app_lifetime(&child);
-
-    let stdin = child.stdin.take();
-    let stdout = child.stdout.take();
-    let stderr = child.stderr.take();
-    let pid = child.id();
-    let started_at = chrono::Utc::now();
-    let generation = next_generation();
-    let server_id = resolve_server_id(&config, &key);
-    let provider_version = infer_provider_version(&config);
-
-    let runtime = ServerRuntime {
-        directory: directory.clone(),
-        child: Some(child),
-        stdin,
-        pid: Some(pid),
-        started_at,
-        state: LifecycleState::Starting,
-        exit_code: None,
-        stderr_tail: VecDeque::new(),
-        rcon,
-        host,
-        server_port,
-        is_proxy,
-        server_id,
-        configured_ram: config.ram,
-        provider_version,
-        tps_state: TpsCommandState::Unknown,
-        latest_sample: None,
-        generation,
-        stop_requested: false,
-        stop_requested_at: None,
-        playit_stop: None,
-        tunnel_address: None,
-        java_executable: Some(java_executable.clone()),
-        auto_restart: config.auto_restart,
-        ever_online: false,
-        sleep_enabled: config.sleep_enabled && !is_proxy,
-        sleep_idle_minutes: config.sleep_idle_minutes.unwrap_or(15).max(1),
-        sleep_motd: config
+        let mut reservation = new_runtime(
+            directory.clone(),
+            &key,
+            &config,
+            host.clone(),
+            server_port,
+            generation,
+            LifecycleState::Starting,
+        );
+        reservation.java_executable = Some(java_executable.clone());
+        reservation.auto_restart = config.auto_restart;
+        reservation.sleep_enabled = config.sleep_enabled && !is_proxy;
+        reservation.sleep_idle_minutes = config.sleep_idle_minutes.unwrap_or(15).max(1);
+        reservation.sleep_motd = config
             .sleep_motd
             .clone()
             .filter(|motd| !motd.trim().is_empty())
-            .unwrap_or_else(default_sleep_motd),
-        sleep_requested: false,
-        sleep_stop: None,
+            .unwrap_or_else(default_sleep_motd);
+        guard.insert(key.clone(), reservation);
+        (sleeping_port, server_port)
     };
 
-    {
-        let mut guard = processes.lock().map_err(|_| "Runtime lock failed.")?;
-        guard.insert(key.clone(), runtime);
-    }
+    let spawn = || -> Result<u16, String> {
+        if let Some(port) = sleeping_port {
+            wait_for_port_release(&directory_path, port);
+        }
 
-    if let Some(stdout) = stdout {
-        emit_output_reader(
-            stdout,
-            directory.clone(),
-            key.clone(),
-            "stdout",
+        let args = resolve_server_start_args(&directory_path, &config);
+        let command_str = build_server_start_command(&directory_path, &config, &java_executable);
+        eprintln!("[Server] Executing: {command_str}");
+
+        // Persist a reassigned port so future starts and the frontend stay in sync.
+        if server_port != configured_port {
+            set_server_port(&directory_path, server_port)
+                .unwrap_or_else(|e| eprintln!("[Server] Could not update server-port: {e}"));
+            patch_mserve_json(
+                &directory_path,
+                &[("telemetry_port", serde_json::json!(server_port))],
+            )
+            .unwrap_or_else(|e| eprintln!("[Server] Could not patch mserve.json port: {e}"));
+        }
+
+        // Provision a reliable RCON channel for non-proxy servers.
+        let rcon = if is_proxy {
+            None
+        } else {
+            ensure_rcon_enabled(&directory_path).ok()
+        };
+
+        let mut command = no_window_command(&java_executable);
+        command
+            .args(args)
+            .current_dir(&directory_path)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        isolate_in_own_process_group(&mut command);
+        let mut child = command
+            .spawn()
+            .map_err(|err| format!("Failed to start java process: {err}"))?;
+
+        // Bind the server (and everything it spawns) to mserve's lifetime so an
+        // mserve crash or "End task" can never leave an orphaned java process
+        // squatting on the port.
+        tie_child_to_app_lifetime(&child);
+
+        let stdin = child.stdin.take().map(|stdin| Arc::new(Mutex::new(stdin)));
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+        let pid = child.id();
+        let started_at = chrono::Utc::now();
+
+        // Attach the child to our reservation — unless a stop, force-kill or
+        // delete cancelled the start while we were spawning.
+        let mut cancelled = Some(child);
+        if let Ok(mut guard) = processes.lock()
+            && let Some(runtime) = guard.get_mut(&key)
+            && runtime.generation == generation
+            && !runtime.stop_requested
+        {
+            runtime.child = cancelled.take();
+            runtime.stdin = stdin;
+            runtime.pid = Some(pid);
+            runtime.started_at = started_at;
+            runtime.rcon = rcon;
+            runtime.server_port = server_port;
+        }
+        if let Some(mut child) = cancelled {
+            kill_child_process_group(&child);
+            let _ = child.kill();
+            let _ = child.wait();
+            release_child_from_app_lifetime(pid);
+            return Err("The start was cancelled.".to_string());
+        }
+
+        if let Some(stdout) = stdout {
+            emit_output_reader(
+                stdout,
+                directory.clone(),
+                key.clone(),
+                "stdout",
+                app.clone(),
+                processes.clone(),
+            );
+        }
+        if let Some(stderr) = stderr {
+            emit_output_reader(
+                stderr,
+                directory.clone(),
+                key.clone(),
+                "stderr",
+                app.clone(),
+                processes.clone(),
+            );
+        }
+
+        // Bring up the playit tunnel (if enabled) off the start path — it
+        // provisions over the network and must not block or fail the server start.
+        launch_tunnel(
             app.clone(),
             processes.clone(),
-        );
-    }
-    if let Some(stderr) = stderr {
-        emit_output_reader(
-            stderr,
-            directory.clone(),
             key.clone(),
-            "stderr",
-            app.clone(),
-            processes.clone(),
+            directory.clone(),
+            &config,
+            server_port,
+            generation,
         );
+
+        spawn_supervisor(processes.clone(), app.clone(), key.clone(), generation);
+
+        let _ = app.emit(
+            "server-runtime-state",
+            ServerRuntimeStateEvent {
+                directory: directory.clone(),
+                state: LifecycleState::Starting,
+                pid: Some(pid),
+                started_at: Some(started_at.to_rfc3339()),
+                exit_code: None,
+                stderr_tail: Vec::new(),
+                server_port: Some(server_port),
+            },
+        );
+        Ok(server_port)
+    };
+
+    match spawn() {
+        Ok(_) => Ok("Server started.".to_string()),
+        Err(err) => {
+            release_reservation(&processes, &key, generation, &directory, server_port, &app);
+            Err(err)
+        }
     }
-
-    // Bring up the playit tunnel (if enabled) off the start path — it provisions
-    // over the network and must not block or fail the server start.
-    launch_tunnel(
-        app.clone(),
-        processes.clone(),
-        key.clone(),
-        directory.clone(),
-        &config,
-        server_port,
-        generation,
-    );
-
-    spawn_supervisor(processes, app.clone(), key, generation);
-
-    let _ = app.emit(
-        "server-runtime-state",
-        ServerRuntimeStateEvent {
-            directory,
-            state: LifecycleState::Starting,
-            pid: Some(pid),
-            started_at: Some(started_at.to_rfc3339()),
-            exit_code: None,
-            stderr_tail: Vec::new(),
-            server_port: Some(server_port),
-        },
-    );
-
-    Ok("Server started.".to_string())
 }
 
 #[tauri::command]
-pub(in crate::app) fn start_server(
+pub(in crate::app) async fn start_server(
     directory: String,
     java_executable: Option<String>,
     state: State<'_, RuntimeState>,
     app: tauri::AppHandle,
 ) -> Result<String, String> {
-    start_server_internal(directory, java_executable, state.processes.clone(), app)
+    let processes = state.processes.clone();
+    run_blocking(move || start_server_internal(directory, java_executable, processes, app)).await
 }
 
 #[tauri::command]
@@ -545,14 +685,21 @@ pub(in crate::app) fn get_server_start_command(
     ))
 }
 
-/// Flags a runtime as gracefully stopping (idempotent). Already-terminal
-/// (offline/crashed) runtimes are left as-is so their state isn't resurrected.
-/// True when a console command is a graceful shutdown (`stop`), matching the
-/// frontend's `isStopCommand`. Used so a console-typed stop is recorded as a
-/// requested close (no crash, no auto-restart). The leading slash is already
-/// stripped by the caller.
-fn is_stop_command(command: &str) -> bool {
-    command.trim().eq_ignore_ascii_case("stop")
+/// True when a console command is a graceful shutdown for this server (see
+/// [`shutdown_commands_for`]), matching the frontend's `isStopCommand`. Used so a
+/// console-typed stop is recorded as a requested close (no crash, no
+/// auto-restart). Proxies take a trailing reason (`end <message>`); game servers
+/// only a bare `stop`. The leading slash is already stripped by the caller.
+fn is_stop_command(command: &str, shutdown_commands: &[&str], is_proxy: bool) -> bool {
+    let command = command.trim();
+    let word = if is_proxy {
+        command.split_whitespace().next().unwrap_or_default()
+    } else {
+        command
+    };
+    shutdown_commands
+        .iter()
+        .any(|candidate| candidate.eq_ignore_ascii_case(word))
 }
 
 /// Signals a sleeping server's wake listener to shut down (releasing the port).
@@ -563,19 +710,26 @@ fn stop_sleep_listener(runtime: &mut ServerRuntime) {
     }
 }
 
-/// Builds an offline `server-runtime-state` event for a directory/port.
-fn offline_state_event(directory: String, server_port: u16) -> ServerRuntimeStateEvent {
-    ServerRuntimeStateEvent {
-        directory,
-        state: LifecycleState::Offline,
-        pid: None,
-        started_at: None,
-        exit_code: None,
-        stderr_tail: Vec::new(),
-        server_port: Some(server_port),
+/// Tears down a sleeping server's wake listener and the tunnel agent that kept
+/// fronting it, returning the offline event to emit once the entry is removed.
+fn release_sleeping(runtime: &mut ServerRuntime) -> ServerRuntimeStateEvent {
+    stop_sleep_listener(runtime);
+    if let Some(stop) = runtime.playit_stop.take() {
+        playit::stop_agent(&stop);
     }
+    runtime.tunnel_address = None;
+    offline_state_event(runtime.directory.clone(), runtime.server_port)
 }
 
+/// Emits an offline lifecycle event plus the matching tunnel-offline event.
+fn emit_offline(app: &tauri::AppHandle, event: ServerRuntimeStateEvent) {
+    let directory = event.directory.clone();
+    let _ = app.emit("server-runtime-state", event);
+    playit::emit_tunnel_state(app, &directory, "offline", None, None);
+}
+
+/// Flags a runtime as gracefully stopping (idempotent). Already-terminal
+/// (offline/crashed) runtimes are left as-is so their state isn't resurrected.
 fn mark_stopping(runtime: &mut ServerRuntime) {
     runtime.stop_requested = true;
     runtime.stop_requested_at = Some(Instant::now());
@@ -587,14 +741,34 @@ fn mark_stopping(runtime: &mut ServerRuntime) {
     }
 }
 
-#[tauri::command]
-pub(in crate::app) fn stop_server(
-    directory: String,
-    state: State<'_, RuntimeState>,
-    app: tauri::AppHandle,
+/// After an out-of-lock RCON shutdown, marks the runtime stopping — if it is still
+/// the same runtime — and reports it.
+fn mark_stopping_if_current(
+    processes: &Processes,
+    key: &str,
+    generation: u64,
+    app: &tauri::AppHandle,
+) {
+    let event = processes.lock().ok().and_then(|mut guard| {
+        let runtime = guard.get_mut(key)?;
+        if runtime.generation != generation {
+            return None;
+        }
+        mark_stopping(runtime);
+        Some(state_event(runtime))
+    });
+    if let Some(event) = event {
+        let _ = app.emit("server-runtime-state", event);
+    }
+}
+
+fn stop_server_blocking(
+    directory: &str,
+    processes: &Processes,
+    app: &tauri::AppHandle,
 ) -> Result<String, String> {
-    let key = server_key(&directory);
-    let mut guard = state.processes.lock().map_err(|_| "Runtime lock failed.")?;
+    let key = server_key(directory);
+    let mut guard = processes.lock().map_err(|_| "Runtime lock failed.")?;
     let runtime = guard
         .get_mut(&key)
         .ok_or_else(|| "Server is not running.".to_string())?;
@@ -602,19 +776,31 @@ pub(in crate::app) fn stop_server(
     // A sleeping server has no process — just tear the wake listener down and
     // report it offline (this is "stop sleeping").
     if matches!(runtime.state, LifecycleState::Sleeping) {
-        stop_sleep_listener(runtime);
-        let event = offline_state_event(runtime.directory.clone(), runtime.server_port);
+        let event = release_sleeping(runtime);
         guard.remove(&key);
         drop(guard);
-        let _ = app.emit("server-runtime-state", event);
+        emit_offline(app, event);
         return Ok("Server is no longer sleeping.".to_string());
     }
 
-    mark_stopping(runtime);
+    // Still spawning: flag the reservation; the start path kills the fresh JVM
+    // instead of attaching it.
+    if is_start_reservation(runtime) {
+        mark_stopping(runtime);
+        let event = state_event(runtime);
+        drop(guard);
+        let _ = app.emit("server-runtime-state", event);
+        return Ok("Cancelling the start.".to_string());
+    }
 
     // Prefer stdin for owned servers (output shows in the terminal); fall back to
     // RCON for adopted servers. The supervisor detects exit and emits `offline`.
-    if send_stop_via_stdin(runtime) {
+    if let Some(stop) = stop_request(runtime) {
+        mark_stopping(runtime);
+        let event = state_event(runtime);
+        drop(guard);
+        let _ = app.emit("server-runtime-state", event);
+        stop.send();
         return Ok("Stopping server.".to_string());
     }
 
@@ -625,12 +811,32 @@ pub(in crate::app) fn stop_server(
         );
     };
     let host = runtime.host.clone();
+    let generation = runtime.generation;
+    let command = runtime.shutdown_commands.first().copied().unwrap_or("stop");
     drop(guard);
-    RconClient::connect(&host, rcon.port, &rcon.password, Duration::from_millis(900))
-        .and_then(|mut client| client.command("stop"))
-        .map_err(|err| format!("Could not reach the server over RCON to stop it ({err})."))?;
+    let mut client =
+        RconClient::connect(&host, rcon.port, &rcon.password, Duration::from_millis(900))
+            .map_err(|err| format!("Could not reach the server over RCON to stop it ({err})."))?;
+    // Connected: the shutdown is going out. A server that stops quickly can drop
+    // the socket before replying, so a missing reply doesn't mean it ignored us.
+    mark_stopping_if_current(processes, &key, generation, app);
+    if let Err(err) = client.command(command) {
+        return Err(format!(
+            "Sent the stop over RCON but got no reply ({err}); the server may still be shutting down."
+        ));
+    }
 
     Ok("Stopping server.".to_string())
+}
+
+#[tauri::command]
+pub(in crate::app) async fn stop_server(
+    directory: String,
+    state: State<'_, RuntimeState>,
+    app: tauri::AppHandle,
+) -> Result<String, String> {
+    let processes = state.processes.clone();
+    run_blocking(move || stop_server_blocking(&directory, &processes, &app)).await
 }
 
 /// Manually parks an owned, non-proxy, online server in sleep mode right now —
@@ -639,12 +845,22 @@ pub(in crate::app) fn stop_server(
 /// wins. The supervisor classifies the exit via `sleep_requested` and spawns the
 /// wake listener exactly as it does for an idle-triggered sleep.
 #[tauri::command]
-pub(in crate::app) fn sleep_server(
+pub(in crate::app) async fn sleep_server(
     directory: String,
     state: State<'_, RuntimeState>,
+    app: tauri::AppHandle,
 ) -> Result<String, String> {
-    let key = server_key(&directory);
-    let mut guard = state.processes.lock().map_err(|_| "Runtime lock failed.")?;
+    let processes = state.processes.clone();
+    run_blocking(move || sleep_server_blocking(&directory, &processes, &app)).await
+}
+
+fn sleep_server_blocking(
+    directory: &str,
+    processes: &Processes,
+    app: &tauri::AppHandle,
+) -> Result<String, String> {
+    let key = server_key(directory);
+    let mut guard = processes.lock().map_err(|_| "Runtime lock failed.")?;
     let runtime = guard
         .get_mut(&key)
         .ok_or_else(|| "Server is not running.".to_string())?;
@@ -664,35 +880,59 @@ pub(in crate::app) fn sleep_server(
 
     runtime.sleep_requested = true;
     mark_stopping(runtime);
-    send_stop_via_stdin(runtime);
+    let event = state_event(runtime);
+    let stop = stop_request(runtime);
+    drop(guard);
+    let _ = app.emit("server-runtime-state", event);
+    if let Some(stop) = stop {
+        stop.send();
+    }
 
     Ok("Putting server to sleep.".to_string())
 }
 
 #[tauri::command]
-pub(in crate::app) fn restart_server(
+pub(in crate::app) async fn restart_server(
     directory: String,
     java_executable: Option<String>,
     state: State<'_, RuntimeState>,
     app: tauri::AppHandle,
 ) -> Result<String, String> {
-    let key = server_key(&directory);
     let processes = state.processes.clone();
+    run_blocking(move || restart_server_blocking(directory, java_executable, processes, app)).await
+}
+
+fn restart_server_blocking(
+    directory: String,
+    java_executable: Option<String>,
+    processes: Processes,
+    app: tauri::AppHandle,
+) -> Result<String, String> {
+    let key = server_key(&directory);
 
     // Signal a graceful stop on the running process (if any).
-    {
+    let stopping = {
         let mut guard = processes.lock().map_err(|_| "Runtime lock failed.")?;
-        if let Some(runtime) = guard.get_mut(&key)
-            && runtime.child.is_some()
-        {
-            mark_stopping(runtime);
-            send_stop_via_stdin(runtime);
+        match guard.get_mut(&key) {
+            Some(runtime) if is_adopted(runtime) => {
+                return Err(ADOPTED_SERVER_ERROR.to_string());
+            }
+            Some(runtime) if runtime.child.is_some() => {
+                mark_stopping(runtime);
+                Some((state_event(runtime), stop_request(runtime)))
+            }
+            _ => None,
+        }
+    };
+    if let Some((event, stop)) = stopping {
+        let _ = app.emit("server-runtime-state", event);
+        if let Some(stop) = stop {
+            stop.send();
         }
     }
 
     // Wait for the old process to exit (supervisor escalates to a kill at grace),
     // then start fresh, off the command thread.
-    let app_clone = app.clone();
     std::thread::spawn(move || {
         for _ in 0..200 {
             let done = match processes.lock() {
@@ -704,50 +944,65 @@ pub(in crate::app) fn restart_server(
             }
             std::thread::sleep(Duration::from_millis(200));
         }
-        let _ = start_server_internal(directory, java_executable, processes, app_clone);
+        if let Err(err) =
+            start_server_internal(directory.clone(), java_executable, processes, app.clone())
+        {
+            emit_system_line(&app, &directory, format!("Restart failed: {err}"));
+        }
     });
 
     Ok("Restarting server.".to_string())
 }
 
-#[tauri::command]
-pub(in crate::app) fn force_kill_server(
-    directory: String,
-    state: State<'_, RuntimeState>,
-    app: tauri::AppHandle,
+fn force_kill_server_blocking(
+    directory: &str,
+    processes: &Processes,
+    app: &tauri::AppHandle,
 ) -> Result<String, String> {
-    let key = server_key(&directory);
+    let key = server_key(directory);
 
     // Owned child: kill it directly; the supervisor reports the exit.
-    let external = {
-        let mut guard = state.processes.lock().map_err(|_| "Runtime lock failed.")?;
+    let (directory, server_port, generation) = {
+        let mut guard = processes.lock().map_err(|_| "Runtime lock failed.")?;
         let Some(runtime) = guard.get_mut(&key) else {
             return Ok("No running server process found.".to_string());
         };
         // Sleeping: mserve itself holds the port with the wake listener. Never
         // fall through to the port-kill path (it would target mserve's own PID).
         if matches!(runtime.state, LifecycleState::Sleeping) {
-            stop_sleep_listener(runtime);
-            let event = offline_state_event(runtime.directory.clone(), runtime.server_port);
+            let event = release_sleeping(runtime);
             guard.remove(&key);
             drop(guard);
-            let _ = app.emit("server-runtime-state", event);
+            emit_offline(app, event);
             return Ok("Server is no longer sleeping.".to_string());
         }
         mark_stopping(runtime);
+        let event = state_event(runtime);
+        // Still spawning: the start path kills the JVM when it sees the flag.
+        // (Never port-kill here: during a wake the port may still be mserve's.)
+        if is_start_reservation(runtime) {
+            drop(guard);
+            let _ = app.emit("server-runtime-state", event);
+            return Ok("Start cancelled.".to_string());
+        }
         if let Some(child) = runtime.child.as_mut() {
             kill_child_process_group(child);
             let _ = child.kill();
+            drop(guard);
+            let _ = app.emit("server-runtime-state", event);
             return Ok("Server process was force killed.".to_string());
         }
-        (runtime.directory.clone(), runtime.server_port)
+        (
+            runtime.directory.clone(),
+            runtime.server_port,
+            runtime.generation,
+        )
     };
 
     // Adopted (externally started) server: we hold no process handle, so kill
     // whatever is actually listening on its port. If nothing is, the process is
     // already gone. Either way the runtime record is stale — drop it and tell
     // the UI the server is offline (the supervisor exits once the entry is gone).
-    let (directory, server_port) = external;
     let result = match pid_listening_on_port(server_port) {
         Some(pid) => kill_process_tree(pid)
             .map(|()| format!("Force killed external server process (PID {pid})."))
@@ -755,40 +1010,22 @@ pub(in crate::app) fn force_kill_server(
         None => Ok("Server process no longer exists — cleared its runtime state.".to_string()),
     };
 
-    if let Ok(mut guard) = state.processes.lock() {
-        guard.remove(&key);
+    // Only clear the record we acted on; a start may have replaced it meanwhile.
+    if remove_if_current(processes, &key, generation).is_some() {
+        emit_offline(app, offline_state_event(directory, server_port));
     }
-    let _ = app.emit(
-        "server-runtime-state",
-        ServerRuntimeStateEvent {
-            directory,
-            state: LifecycleState::Offline,
-            pid: None,
-            started_at: None,
-            exit_code: None,
-            stderr_tail: Vec::new(),
-            server_port: Some(server_port),
-        },
-    );
 
     result
 }
 
 #[tauri::command]
-pub(in crate::app) fn get_running_server_directories(
+pub(in crate::app) async fn force_kill_server(
+    directory: String,
     state: State<'_, RuntimeState>,
-) -> Vec<String> {
-    let guard = match state.processes.lock() {
-        Ok(g) => g,
-        Err(e) => e.into_inner(),
-    };
-    guard
-        .values()
-        // Sleeping servers have no live process (just a wake listener), so they
-        // don't count toward the "servers are running, close anyway?" warning.
-        .filter(|r| r.state.is_active() && !matches!(r.state, LifecycleState::Sleeping))
-        .map(|r| r.directory.clone())
-        .collect()
+    app: tauri::AppHandle,
+) -> Result<String, String> {
+    let processes = state.processes.clone();
+    run_blocking(move || force_kill_server_blocking(&directory, &processes, &app)).await
 }
 
 /// Send the app to the background: destroy the main webview window so the
@@ -822,11 +1059,11 @@ pub(in crate::app) fn force_kill_all_servers(state: State<'_, RuntimeState>) -> 
     Ok(())
 }
 
-#[tauri::command]
-pub(in crate::app) fn send_server_command(
-    directory: String,
-    command: String,
-    state: State<'_, RuntimeState>,
+fn send_server_command_blocking(
+    directory: &str,
+    command: &str,
+    processes: &Processes,
+    app: &tauri::AppHandle,
 ) -> Result<(), String> {
     let trimmed = command.trim();
     if trimmed.is_empty() {
@@ -834,32 +1071,55 @@ pub(in crate::app) fn send_server_command(
     }
     let normalized = trimmed.trim_start_matches('/').to_string();
 
-    let key = server_key(&directory);
-    let mut guard = state.processes.lock().map_err(|_| "Runtime lock failed.")?;
+    let key = server_key(directory);
+    let mut guard = processes.lock().map_err(|_| "Runtime lock failed.")?;
     let runtime = guard
         .get_mut(&key)
         .ok_or_else(|| "Server is not running.".to_string())?;
 
-    // A console `stop`/`end` is a requested shutdown: mark it so the supervisor
-    // treats the ensuing exit as intentional (no `crashed`, no auto-restart).
-    if is_stop_command(&normalized) {
-        mark_stopping(runtime);
+    // A console shutdown command is a requested shutdown: mark it so the
+    // supervisor treats the ensuing exit as intentional (no `crashed`, no
+    // auto-restart).
+    let is_stop = is_stop_command(&normalized, runtime.shutdown_commands, runtime.is_proxy);
+
+    if let Some(stdin) = runtime.stdin.clone() {
+        let event = is_stop.then(|| {
+            mark_stopping(runtime);
+            state_event(runtime)
+        });
+        drop(guard);
+        if let Some(event) = event {
+            let _ = app.emit("server-runtime-state", event);
+        }
+        return write_stdin_line(&stdin, &normalized);
     }
 
-    if let Some(stdin) = runtime.stdin.as_mut() {
-        writeln!(stdin, "{normalized}").map_err(|err| err.to_string())?;
-        stdin.flush().map_err(|err| err.to_string())?;
-        Ok(())
-    } else if let Some(rcon) = runtime.rcon.clone() {
-        let host = runtime.host.clone();
-        drop(guard);
-        let mut client =
-            RconClient::connect(&host, rcon.port, &rcon.password, Duration::from_millis(900))?;
-        client.command(&normalized)?;
-        Ok(())
-    } else {
-        Err("Server is not running.".to_string())
+    let Some(rcon) = runtime.rcon.clone() else {
+        return Err("Server is not running.".to_string());
+    };
+    let host = runtime.host.clone();
+    let generation = runtime.generation;
+    drop(guard);
+    let mut client =
+        RconClient::connect(&host, rcon.port, &rcon.password, Duration::from_millis(900))?;
+    // Mark before sending: a shutdown command can close the socket before it
+    // replies (see `stop_server_blocking`).
+    if is_stop {
+        mark_stopping_if_current(processes, &key, generation, app);
     }
+    client.command(&normalized)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub(in crate::app) async fn send_server_command(
+    directory: String,
+    command: String,
+    state: State<'_, RuntimeState>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    let processes = state.processes.clone();
+    run_blocking(move || send_server_command_blocking(&directory, &command, &processes, &app)).await
 }
 
 fn snapshot_from(runtime: &ServerRuntime) -> ServerRuntimeSnapshot {
@@ -890,56 +1150,27 @@ fn offline_snapshot() -> ServerRuntimeSnapshot {
 /// (port answering). Lets the UI show it as `running-external` instead of offline.
 fn register_external(
     directory: String,
-    directory_path: PathBuf,
-    config: RuntimeServerConfig,
+    directory_path: &Path,
+    config: &RuntimeServerConfig,
     host: String,
     server_port: u16,
     processes: Processes,
     app: tauri::AppHandle,
 ) {
     let key = server_key(&directory);
-    let is_proxy = provider_is_proxy(&config);
-    let rcon = if is_proxy {
-        None
-    } else {
-        read_rcon_config(&directory_path)
-    };
-    let server_id = resolve_server_id(&config, &key);
-    let provider_version = infer_provider_version(&config);
     let generation = next_generation();
-
-    let runtime = ServerRuntime {
+    let mut runtime = new_runtime(
         directory,
-        child: None,
-        stdin: None,
-        pid: None,
-        started_at: chrono::Utc::now(),
-        state: LifecycleState::RunningExternal,
-        exit_code: None,
-        stderr_tail: VecDeque::new(),
-        rcon,
+        &key,
+        config,
         host,
         server_port,
-        is_proxy,
-        server_id,
-        configured_ram: config.ram,
-        provider_version,
-        tps_state: TpsCommandState::Unknown,
-        latest_sample: None,
         generation,
-        stop_requested: false,
-        stop_requested_at: None,
-        playit_stop: None,
-        tunnel_address: None,
-        java_executable: None,
-        auto_restart: false,
-        ever_online: false,
-        sleep_enabled: false,
-        sleep_idle_minutes: 15,
-        sleep_motd: default_sleep_motd(),
-        sleep_requested: false,
-        sleep_stop: None,
-    };
+        LifecycleState::RunningExternal,
+    );
+    if !runtime.is_proxy {
+        runtime.rcon = read_rcon_config(directory_path);
+    }
 
     {
         let Ok(mut guard) = processes.lock() else {
@@ -951,7 +1182,7 @@ fn register_external(
         // Don't adopt a host:port already owned by another managed server (see
         // the guard in `get_server_runtime`); this also closes the race between
         // two concurrent adoption probes for sibling servers sharing a port.
-        if is_port_claimed(&guard, &runtime.host, runtime.server_port) {
+        if is_port_claimed(&guard, &runtime.host, runtime.server_port, &key) {
             return;
         }
         guard.insert(key.clone(), runtime);
@@ -959,15 +1190,14 @@ fn register_external(
     spawn_supervisor(processes, app, key, generation);
 }
 
-#[tauri::command]
-pub(in crate::app) fn get_server_runtime(
+fn get_server_runtime_blocking(
     directory: String,
-    state: State<'_, RuntimeState>,
+    processes: &Processes,
     app: tauri::AppHandle,
 ) -> Result<ServerRuntimeSnapshot, String> {
     let key = server_key(&directory);
     {
-        let guard = state.processes.lock().map_err(|_| "Runtime lock failed.")?;
+        let guard = processes.lock().map_err(|_| "Runtime lock failed.")?;
         if let Some(runtime) = guard.get(&key) {
             return Ok(snapshot_from(runtime));
         }
@@ -987,8 +1217,8 @@ pub(in crate::app) fn get_server_runtime(
     // runtime already owns this address, this server is not the one answering —
     // report it offline rather than adopting another server's identity/stats.
     {
-        let guard = state.processes.lock().map_err(|_| "Runtime lock failed.")?;
-        if is_port_claimed(&guard, &host, server_port) {
+        let guard = processes.lock().map_err(|_| "Runtime lock failed.")?;
+        if is_port_claimed(&guard, &host, server_port, &key) {
             return Ok(offline_snapshot());
         }
     }
@@ -996,11 +1226,11 @@ pub(in crate::app) fn get_server_runtime(
     if probe_port(&host, server_port, Duration::from_millis(400)) {
         register_external(
             directory,
-            directory_path,
-            config,
+            &directory_path,
+            &config,
             host,
             server_port,
-            state.processes.clone(),
+            processes.clone(),
             app,
         );
         return Ok(ServerRuntimeSnapshot {
@@ -1017,19 +1247,14 @@ pub(in crate::app) fn get_server_runtime(
     Ok(offline_snapshot())
 }
 
-/// Patches just the `tunnel_enabled` flag in `mserve.json`.
-fn patch_mserve_json_tunnel_enabled(
-    directory: &std::path::Path,
-    enabled: bool,
-) -> Result<(), String> {
-    let path = directory.join("mserve.json");
-    let raw = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    let mut value: serde_json::Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
-    if let Some(obj) = value.as_object_mut() {
-        obj.insert("tunnel_enabled".to_string(), serde_json::json!(enabled));
-    }
-    let out = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
-    std::fs::write(&path, out).map_err(|e| e.to_string())
+#[tauri::command]
+pub(in crate::app) async fn get_server_runtime(
+    directory: String,
+    state: State<'_, RuntimeState>,
+    app: tauri::AppHandle,
+) -> Result<ServerRuntimeSnapshot, String> {
+    let processes = state.processes.clone();
+    run_blocking(move || get_server_runtime_blocking(directory, &processes, app)).await
 }
 
 /// Enables or disables public tunneling for a server. The flag is persisted to
@@ -1050,7 +1275,10 @@ pub(in crate::app) fn set_server_tunnel(
         return Err("Connect a playit.gg account before enabling tunneling.".to_string());
     }
 
-    patch_mserve_json_tunnel_enabled(&directory_path, enabled)?;
+    patch_mserve_json(
+        &directory_path,
+        &[("tunnel_enabled", serde_json::json!(enabled))],
+    )?;
 
     let key = server_key(&directory);
     let processes = state.processes.clone();
@@ -1127,26 +1355,80 @@ pub(in crate::app) fn get_server_tunnel(
     })
 }
 
-#[tauri::command]
-pub(in crate::app) fn delete_server(
-    directory: String,
-    state: State<'_, RuntimeState>,
+fn delete_server_blocking(
+    directory: &str,
+    processes: &Processes,
+    app: &tauri::AppHandle,
 ) -> Result<String, String> {
     let directory_path = PathBuf::from(directory.trim());
     if !directory_path.exists() {
         return Err("Server directory does not exist.".to_string());
     }
 
-    let key = server_key(&directory);
-    if let Some(mut runtime) = state
-        .processes
-        .lock()
-        .map_err(|_| "Runtime lock failed.")?
-        .remove(&key)
-    {
+    // Take the runtime out first: the graceful shutdown below can take ~5s and
+    // must not run with the `processes` lock held.
+    let key = server_key(directory);
+    let removed = {
+        let mut guard = processes.lock().map_err(|_| "Runtime lock failed.")?;
+        // A JVM may be spawning in this directory right now; trashing it
+        // underneath the spawn would race the start.
+        if guard.get(&key).is_some_and(is_start_reservation) {
+            return Err("The server is still starting. Stop it before deleting it.".to_string());
+        }
+        guard.remove(&key)
+    };
+    if let Some(mut runtime) = removed {
         let _ = terminate_runtime(&mut runtime);
+        emit_offline(
+            app,
+            offline_state_event(runtime.directory.clone(), runtime.server_port),
+        );
     }
 
     trash::delete(&directory_path).map_err(|err| err.to_string())?;
     Ok("Server moved to recycle bin.".to_string())
+}
+
+#[tauri::command]
+pub(in crate::app) async fn delete_server(
+    directory: String,
+    state: State<'_, RuntimeState>,
+    app: tauri::AppHandle,
+) -> Result<String, String> {
+    let processes = state.processes.clone();
+    run_blocking(move || delete_server_blocking(&directory, &processes, &app)).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_stop_command;
+
+    const GAME: &[&str] = &["stop"];
+    const BUNGEE: &[&str] = &["end"];
+    const VELOCITY: &[&str] = &["shutdown", "end", "stop"];
+
+    #[test]
+    fn game_servers_only_stop_on_a_bare_stop() {
+        assert!(is_stop_command("stop", GAME, false));
+        assert!(is_stop_command("  STOP ", GAME, false));
+        assert!(!is_stop_command("stop now", GAME, false));
+        assert!(!is_stop_command("end", GAME, false));
+    }
+
+    #[test]
+    fn bungeecord_stops_on_end_with_optional_reason() {
+        // Regression (R-027): `end` used to read as an unrequested exit, so the
+        // proxy auto-restarted right after the user shut it down.
+        assert!(is_stop_command("end", BUNGEE, true));
+        assert!(is_stop_command("end Maintenance", BUNGEE, true));
+        assert!(!is_stop_command("stop", BUNGEE, true));
+    }
+
+    #[test]
+    fn velocity_accepts_shutdown_and_its_aliases() {
+        assert!(is_stop_command("shutdown", VELOCITY, true));
+        assert!(is_stop_command("end", VELOCITY, true));
+        assert!(is_stop_command("stop", VELOCITY, true));
+        assert!(!is_stop_command("glist", VELOCITY, true));
+    }
 }

@@ -1,5 +1,7 @@
 import type { AutoBackupMode } from '@/data/servers';
+import type { Provider, ProviderName } from '@/lib/mserve-schema';
 import { clampRamGb, formatHeapSize } from '@/lib/ram-utils';
+import { isProxyProvider } from '@/lib/server-provider';
 import { getDurationParts } from '@/lib/utils';
 import type { ScannedBackupEntry, ServerSettingsForm, UpdateServerSettingsPayload } from './server-types';
 
@@ -92,7 +94,29 @@ export const didRequestStop = (
 export const makeCloseBackupKey = (serverId: string, exitCode: number | null) =>
 	`${serverId}:${exitCode ?? 'none'}`;
 
-export const isStopCommand = (command: string) => command.replace(/^\//, '').trim().toLowerCase() === 'stop';
+/**
+ * Console commands that shut a server down, per provider. Mirrors
+ * `shutdown_commands_for` in `src-tauri/src/app/commands/runtime.rs`:
+ * BungeeCord/Waterfall only know `end`; Velocity's `shutdown` also answers to
+ * `end` and `stop`.
+ */
+const shutdownCommandsFor = (providerName: string): string[] => {
+	const name = providerName.toLowerCase();
+	if (name.includes('velocity')) return ['shutdown', 'end', 'stop'];
+	if (name.includes('bungee') || name.includes('waterfall')) return ['end'];
+	return ['stop'];
+};
+
+/**
+ * True when a console command shuts the server down. Proxies take a trailing
+ * reason (`end <message>`); game servers only a bare `stop`.
+ */
+export const isStopCommand = (command: string, provider?: Provider | ProviderName | null) => {
+	const normalized = command.replace(/^\//, '').trim().toLowerCase();
+	const word = isProxyProvider(provider) ? (normalized.split(/\s+/)[0] ?? '') : normalized;
+	const providerName = (typeof provider === 'object' ? provider?.name : provider) ?? '';
+	return shutdownCommandsFor(providerName).includes(word);
+};
 
 export const getBackupNameFromPath = (backupDirectory: string) =>
 	backupDirectory.split(/[\\/]/).pop() || 'backup';

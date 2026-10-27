@@ -1,10 +1,12 @@
 use super::super::{RconConfig, RuntimeServerConfig, TpsCommandState};
 use super::mserve_config::{default_telemetry_host, detect_default_telemetry_port};
 use super::rcon::RconClient;
+use super::server_properties::read_property;
 use serde_json::Value;
 use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
-use std::sync::Mutex;
+use std::num::NonZeroUsize;
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
 
@@ -53,16 +55,30 @@ fn ram_percent_from_bytes(memory_bytes: u64, configured_ram_gb: Option<f64>) -> 
     Some(clamp_percentage(percentage))
 }
 
+/// The specific address a server is pinned to via `server-ip`, if any. A
+/// wildcard (or empty) value means "all interfaces", which loopback reaches.
+fn pinned_server_ip(directory: &std::path::Path) -> Option<String> {
+    read_property(directory, "server-ip")
+        .filter(|value| !matches!(value.as_str(), "0.0.0.0" | "::" | "[::]"))
+}
+
 pub(in crate::app) fn resolve_telemetry_target(
     config: &RuntimeServerConfig,
     directory: &std::path::Path,
 ) -> (String, u16) {
-    let host = config
+    let configured_host = config
         .telemetry_host
         .as_deref()
         .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map_or_else(default_telemetry_host, std::string::ToString::to_string);
+        .filter(|value| !value.is_empty());
+    let host = match configured_host {
+        // A deliberately customized telemetry host always wins.
+        Some(host) if host != default_telemetry_host() => host.to_string(),
+        // The default loopback target can't reach a server pinned to a specific
+        // `server-ip` (it only listens there), so follow the pin — otherwise the
+        // readiness probe never succeeds and the server sits in `starting`.
+        _ => pinned_server_ip(directory).unwrap_or_else(default_telemetry_host),
+    };
 
     let port = config
         .telemetry_port
@@ -83,6 +99,21 @@ pub(in crate::app) fn probe_port(host: &str, port: u16, timeout: Duration) -> bo
         return false;
     };
     TcpStream::connect_timeout(&address, timeout).is_ok()
+}
+
+/// Largest packet the protocol allows (a 3-byte VarInt length). Anything above
+/// this is garbage or hostile, and must not drive an allocation.
+const MAX_PACKET_LENGTH: i32 = 2_097_151;
+
+/// Validates a status-response length prefix before it sizes a buffer.
+fn status_packet_length(declared: i32) -> Result<usize, String> {
+    if declared <= 0 {
+        return Err("Status packet was empty.".to_string());
+    }
+    if declared > MAX_PACKET_LENGTH {
+        return Err("Status packet is too large.".to_string());
+    }
+    usize::try_from(declared).map_err(|_| "Invalid packet length.".to_string())
 }
 
 pub(in crate::app) fn collect_status_ping(
@@ -125,13 +156,7 @@ pub(in crate::app) fn collect_status_ping(
             .write_all(&with_packet_length(&status_request_payload))
             .map_err(|err| err.to_string())?;
 
-        let packet_length = read_varint_from_stream(&mut stream)?;
-        if packet_length <= 0 {
-            return Err("Status packet was empty.".to_string());
-        }
-
-        let packet_length =
-            usize::try_from(packet_length).map_err(|_| "Invalid packet length.".to_string())?;
+        let packet_length = status_packet_length(read_varint_from_stream(&mut stream)?)?;
         let mut packet = vec![0_u8; packet_length];
         stream
             .read_exact(&mut packet)
@@ -201,6 +226,17 @@ struct SharedSystem {
 }
 
 static SHARED_SYSTEM: Mutex<Option<SharedSystem>> = Mutex::new(None);
+
+/// Converts a summed per-core CPU figure (sysinfo reports 100% per fully busy
+/// core) into a share of the whole machine, 0–100.
+fn machine_cpu_percent(per_core_total: f64, logical_cpus: usize) -> f64 {
+    clamp_percentage(per_core_total / logical_cpus.max(1) as f64)
+}
+
+fn logical_cpu_count() -> usize {
+    static COUNT: OnceLock<usize> = OnceLock::new();
+    *COUNT.get_or_init(|| std::thread::available_parallelism().map_or(1, NonZeroUsize::get))
+}
 
 /// Walks parent links to decide whether `pid` is `root` or a descendant of it.
 /// Capped so a malformed/cyclic parent chain can never loop forever.
@@ -272,7 +308,7 @@ pub(in crate::app) fn collect_process_metrics(
         }
     }
 
-    let cpu_used = Some(clamp_percentage(cpu_total));
+    let cpu_used = Some(machine_cpu_percent(cpu_total, logical_cpu_count()));
     let ram_used = ram_percent_from_bytes(ram_bytes, configured_ram_gb);
 
     ProcessMetricsResult {
@@ -544,6 +580,82 @@ mod tests {
         // Non-positive / missing limits yield None rather than dividing by zero.
         assert_eq!(ram_percent_from_bytes(1024, Some(0.0)), None);
         assert_eq!(ram_percent_from_bytes(1024, None), None);
+    }
+
+    // --- SLP framing ---
+
+    #[test]
+    fn status_packet_length_is_bounded() {
+        // Regression (R-035): any positive VarInt (up to i32::MAX) used to size
+        // the read buffer, i.e. a ~2 GiB allocation from a hostile responder.
+        assert_eq!(status_packet_length(120), Ok(120));
+        assert_eq!(status_packet_length(MAX_PACKET_LENGTH), Ok(2_097_151));
+        assert!(status_packet_length(MAX_PACKET_LENGTH + 1).is_err());
+        assert!(status_packet_length(i32::MAX).is_err());
+        assert!(status_packet_length(0).is_err());
+        assert!(status_packet_length(-5).is_err());
+    }
+
+    // --- CPU normalization ---
+
+    #[test]
+    fn cpu_is_a_share_of_the_whole_machine() {
+        // Regression (R-032): 3 busy cores on an 8-core box used to clamp to 100%.
+        assert!((machine_cpu_percent(300.0, 8) - 37.5).abs() < 1e-9);
+        assert!((machine_cpu_percent(50.0, 1) - 50.0).abs() < 1e-9);
+        assert_eq!(machine_cpu_percent(900.0, 8), 100.0);
+        // A zero count can't divide by zero.
+        assert!((machine_cpu_percent(40.0, 0) - 40.0).abs() < 1e-9);
+    }
+
+    // --- telemetry target ---
+
+    fn temp_server_dir(properties: &str) -> std::path::PathBuf {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        static NEXT: AtomicU32 = AtomicU32::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "mserve-telemetry-target-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("server.properties"), properties).unwrap();
+        dir
+    }
+
+    #[test]
+    fn default_target_follows_a_pinned_server_ip() {
+        // Regression (R-033): a server bound only to its LAN IP was probed on
+        // 127.0.0.1 forever and never left `starting`.
+        let dir = temp_server_dir("server-ip=192.168.1.10\nserver-port=25570\n");
+        let config = RuntimeServerConfig {
+            telemetry_host: Some("127.0.0.1".to_string()),
+            ..RuntimeServerConfig::default()
+        };
+        assert_eq!(
+            resolve_telemetry_target(&config, &dir),
+            ("192.168.1.10".to_string(), 25570)
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn wildcard_server_ip_and_custom_hosts_are_left_alone() {
+        let dir = temp_server_dir("server-ip=0.0.0.0\n");
+        let default_config = RuntimeServerConfig::default();
+        assert_eq!(
+            resolve_telemetry_target(&default_config, &dir).0,
+            "127.0.0.1"
+        );
+
+        let pinned = temp_server_dir("server-ip=192.168.1.10\n");
+        let custom = RuntimeServerConfig {
+            telemetry_host: Some("10.0.0.5".to_string()),
+            ..RuntimeServerConfig::default()
+        };
+        assert_eq!(resolve_telemetry_target(&custom, &pinned).0, "10.0.0.5");
+        let _ = std::fs::remove_dir_all(dir);
+        let _ = std::fs::remove_dir_all(pinned);
     }
 
     // --- SLP status JSON parsing (via collect_status_ping's parser) ---
