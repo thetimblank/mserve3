@@ -67,26 +67,26 @@ sleep listener hands its port back to the real server (bind races).
 
 ## B. Backend config, setup, content (Rust)
 
-### [ ] B1 · mserve.json config (~1.16k)
+### [x] B1 · mserve.json config (~1.16k) — 2026-10-27, 2 findings (R-044, R-045); B2 owns the setup-side overlap (R-040–R-043). Writes go through the one write lock + temp/rename. Unknown keys are rejected on purpose (strict schema); R-040 covers what that does to the repair fallback. Concurrent whole-file writers vs `patch_mserve_json` are R-070.
 - `src-tauri/src/app/support/mserve_config.rs`
 
 Focus: read/normalize/write paths, provider inference heuristics, write-on-change, handling
 of unknown or legacy fields, and concurrent writers (settings vs. runtime).
 
-### [ ] B2 · Setup / import / repair (~640)
+### [x] B2 · Setup / import / repair (~640) — 2026-10-27, 4 findings (R-040–R-043). `inspect_server_directory` is gone (R-002, #8). EULA is written only on explicit consent. Import never touches existing files beyond mserve.json.
 - `src-tauri/src/app/commands/setup.rs`
 
 Focus: overlap with `mserve_config.rs`, what import does to an existing directory, the repair
 flow, EULA handling, and whether `inspect_server_directory` is dead (R-002).
 
-### [ ] B3 · Providers & jar download (~950)
+### [x] B3 · Providers & jar download (~950) — 2026-10-27, 5 findings (R-046–R-050). Per-provider code is distinct enough (different APIs) that only the Fabric pieces count as copy-paste. HTTP calls all have timeouts. Progress events match the TS type.
 - `src-tauri/src/app/commands/providers.rs`
 
 Focus: per-provider copy-paste (Paper/Purpur/Velocity/Vanilla/Fabric/BungeeCord/…), checksum
 verification, partial-download cleanup, progress event emission, HTTP timeouts, and error-string
 quality. Cross-check against `src/lib/server-provider.ts` / `jar-download-service.ts` (C5).
 
-### [ ] B4 · Modrinth & modpacks (~1.65k)
+### [x] B4 · Modrinth & modpacks (~1.65k) — 2026-10-27, 4 findings (R-051–R-053, R-075). `.mrpack` entries and overrides go through `safe_relative_path` (no zip-slip); sha512 is checked when present. The sidecar survives toggles (same key) and is cleared on delete.
 - `src-tauri/src/app/commands/modrinth.rs` (727)
 - `src-tauri/src/app/commands/modpack.rs` (818)
 - `src-tauri/src/app/support/content_meta.rs`
@@ -95,7 +95,7 @@ Focus: shared HTTP/download helpers between these two and providers.rs (B3), zip
 extraction, `overrides/` path validation, sha verification, and whether the
 `.mserve-content.json` sidecar stays consistent after a delete or toggle.
 
-### [ ] B5 · Items, scan, config files (~840)
+### [x] B5 · Items, scan, config files (~840) — 2026-10-27, 5 findings (R-054–R-058). The config-file allowlist is fixed and case-normalized; `apply_server_properties` has its own key allowlist.
 - `src-tauri/src/app/commands/items.rs`
 - `src-tauri/src/app/support/items.rs`
 - `src-tauri/src/app/support/scan.rs`
@@ -104,14 +104,14 @@ extraction, `overrides/` path validation, sha verification, and whether the
 Focus: traversal guards on every user-supplied name, active/inactive toggle semantics
 (and name collisions), export/upload overwrite behavior, and the config-file allowlist.
 
-### [ ] B6 · Backups (~1.1k)
+### [x] B6 · Backups (~1.1k) — 2026-10-27, 5 findings (R-059–R-063). Retention math (age → smart buckets → count → storage) matches its tests. Zip extraction uses `enclosed_name`. `session.lock` is skipped when copying.
 - `src-tauri/src/app/support/backups.rs` (968)
 - `src-tauri/src/app/commands/backups.rs`
 
 Focus: retention math, a restore while the server is running, partial-copy failure (is the
 original destroyed first?), locked files on Windows (session.lock), and symlink following.
 
-### [ ] B7 · Java detection & download (~700)
+### [x] B7 · Java detection & download (~700) — 2026-10-27, 2 findings (R-064, R-065), plus R-046–R-048 shared with B3. Windows/Linux/macOS install scans are at parity; version parsing handles `1.8`, `17` and `21.0.2`. The MC→Java table lives only in TS (C6 to confirm).
 - `src-tauri/src/app/commands/java.rs` (503)
 - `src-tauri/src/app/commands/java_download.rs`
 
@@ -119,7 +119,7 @@ Focus: Windows registry, PATH, and JAVA_HOME scan vs. the Linux scan; version pa
 tar.gz extraction safety; progress events; and Java-version mapping duplicated with
 `src/lib/java-*.ts` (C6).
 
-### [ ] B8 · Networking & firewall (~790)
+### [x] B8 · Networking & firewall (~790) — 2026-10-27, 3 findings (R-066–R-068). No injection: netsh/pkexec/firewall-cmd/ufw only ever see a `u16` port and fixed strings, and the network-file allowlist rejects traversal. The Velocity forwarding secret is written as-is (standard Velocity layout).
 - `src-tauri/src/app/commands/network.rs`
 - `src-tauri/src/app/commands/networks.rs`
 - `src-tauri/src/app/support/windows_firewall.rs`
@@ -128,7 +128,7 @@ tar.gz extraction safety; progress events; and Java-version mapping duplicated w
 Focus: argument injection into `netsh` / `pkexec` / `firewall-cmd` / `ufw`, cfg parity,
 `networks.json` atomic writes, and Velocity forwarding-secret handling.
 
-### [ ] B9 · Playit, settings, navigation (~860)
+### [x] B9 · Playit, settings, navigation (~860) — 2026-10-27, 3 findings (R-069–R-071). Agents stop with the server (supervisor/stop paths) and die with the process. The claim poll is bounded at 5 min. `delete_server` safety was covered in A4. `validate_path` only stats the path.
 - `src-tauri/src/app/support/playit.rs` (521)
 - `src-tauri/src/app/commands/playit.rs`
 - `src-tauri/src/app/commands/settings.rs`
@@ -138,7 +138,7 @@ Focus: agent thread lifecycle (shutdown on server stop or app exit), claim-state
 secret storage, `delete_server` safety (could it delete outside the server root?), and
 `validate_path`.
 
-### [ ] B10 · Rust tests, manifest, Tauri config (~1.2k)
+### [x] B10 · Rust tests, manifest, Tauri config (~1.2k) — 2026-10-27, 3 findings (R-072–R-074). Version is 3.5.1 in all three manifests. The updater uses minisign over an HTTPS GitHub endpoint. Capabilities hold no fs/shell scopes.
 - `src-tauri/src/app/support/testkit.rs`
 - `src-tauri/tests/e2e.rs` (842)
 - `src-tauri/Cargo.toml`
