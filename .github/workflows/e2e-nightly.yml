@@ -12,6 +12,11 @@ concurrency:
    group: e2e-nightly
    cancel-in-progress: true
 
+# Must match ci.yml so the rust-cache key (which hashes CARGO_* env) is shared.
+env:
+   CARGO_PROFILE_DEV_DEBUG: '0'
+   CARGO_PROFILE_TEST_DEBUG: '0'
+
 jobs:
    e2e:
       name: Real-server matrix
@@ -23,19 +28,16 @@ jobs:
          - name: Checkout
            uses: actions/checkout@v4
 
-         - name: Setup Node
-           uses: actions/setup-node@v4
-           with:
-              node-version: 20
-              cache: npm
-
          - name: Setup Rust
            uses: dtolnay/rust-toolchain@stable
 
+         # Same shared-key + env as ci.yml's rust-test job, so this daily run keeps
+         # the Windows dependency cache warm for PRs.
          - name: Cache Rust build
            uses: Swatinem/rust-cache@v2
            with:
               workspaces: src-tauri
+              shared-key: test
 
          # The L4 harness reads JAVA_HOME to find the JVM that boots the servers.
          # Use a recent JDK so the newest Paper/vanilla jars (which track the latest
@@ -45,13 +47,6 @@ jobs:
            with:
               distribution: temurin
               java-version: 25
-
-         - name: Install frontend dependencies
-           run: npm ci
-
-         # tauri-build reads the frontend dist during the backend build.
-         - name: Build frontend (for tauri-build)
-           run: npm run build
 
          - name: Run real-server E2E matrix
            working-directory: src-tauri

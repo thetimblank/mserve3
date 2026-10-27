@@ -13,6 +13,8 @@ issue, never push to `main`.** Those are always the user's call.
 If invoked with no description of what to change, ask first — everything
 below assumes the goal is already known.
 
+Do not say "🤖 Generated with Claude Code"
+
 ## 1. Preflight
 
 - `git status` — if the tree is dirty with unrelated changes, stop and ask

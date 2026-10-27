@@ -1,17 +1,67 @@
 #!/bin/sh
 # mserve pre-push gate: run the fast test suite (frontend + Rust unit/integration)
-# before anything reaches the remote. Mirrors the CI `ci.yml` fast job.
+# before anything reaches the remote. Mirrors the CI `ci.yml` jobs, including
+# its path filtering: only the halves of the repo the pushed commits touch are
+# checked, and docs-only pushes skip everything.
 #
 # Bypass in an emergency with:  git push --no-verify
 set -e
 
-echo "[pre-push] frontend typecheck + build (tsc && vite build)"
-npm run build
+zero=0000000000000000000000000000000000000000
 
-echo "[pre-push] frontend tests (vitest run)"
-npm run test:run
+# git feeds one "<local ref> <local sha> <remote ref> <remote sha>" line per ref.
+# Collect the files changed by everything being pushed; fall back to running all
+# checks whenever the range can't be determined.
+changed=""
+run_all=0
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+	[ "$local_sha" = "$zero" ] && continue # branch deletion: nothing to check
+	if [ "$remote_sha" = "$zero" ]; then
+		# New remote branch: compare against where it forked from main.
+		base=$(git merge-base "$local_sha" origin/main 2>/dev/null) || { run_all=1; continue; }
+	elif git cat-file -e "$remote_sha^{commit}" 2>/dev/null; then
+		base=$remote_sha
+	else
+		run_all=1 # remote tip not fetched locally (e.g. force-push over unseen work)
+		continue
+	fi
+	if diff=$(git diff --name-only "$base" "$local_sha" 2>/dev/null); then
+		changed="$changed
+$diff"
+	else
+		run_all=1
+	fi
+done
 
-echo "[pre-push] rust unit + integration tests (cargo test)"
-( cd src-tauri && cargo test )
+if [ "$run_all" = 1 ]; then
+	frontend=1
+	rust=1
+else
+	# Same rules as the `changes` job in ci.yml.
+	files=$(printf '%s\n' "$changed" | grep -v '^$' | grep -v '\.md$' || true)
+	frontend=0
+	rust=0
+	printf '%s\n' "$files" | grep -q '^src-tauri/' && rust=1
+	printf '%s\n' "$files" | grep -v -e '^src-tauri/' -e '^docs/' -e '^\.claude/' \
+		-e '^\.github/' -e '^\.githooks/' | grep -q . && frontend=1
+fi
+
+if [ "$frontend" = 1 ]; then
+	# Typecheck only; the full `vite build` runs in CI.
+	echo "[pre-push] frontend typecheck (tsc)"
+	npx tsc
+
+	echo "[pre-push] frontend tests (vitest run)"
+	npm run test:run
+else
+	echo "[pre-push] no frontend changes, skipping frontend checks"
+fi
+
+if [ "$rust" = 1 ]; then
+	echo "[pre-push] rust unit + integration tests (cargo test)"
+	( cd src-tauri && cargo test )
+else
+	echo "[pre-push] no src-tauri changes, skipping cargo test"
+fi
 
 echo "[pre-push] all fast checks passed"
