@@ -11,7 +11,7 @@ Out of scope: `package-lock.json`, `src-tauri/Cargo.lock`, `src/lib/fonts/*`,
 
 ## A. Backend core & runtime (Rust)
 
-### [ ] A1 · App bootstrap & state (~1.1k)
+### [x] A1 · App bootstrap & state (~1.1k) — 2026-10-27, 5 findings (R-011–R-015); seeds R-001/R-002 confirmed. Registered↔invoked diff: only R-001/R-002 are unmatched (no invoke targets an unregistered command except the `ping` mock in smoke.test.ts). Observation, not logged: mod.rs holds ~45 DTOs that would read better in their domain modules.
 - `src-tauri/src/main.rs`
 - `src-tauri/src/lib.rs`
 - `src-tauri/src/app/mod.rs` (991)
@@ -22,14 +22,14 @@ Focus: diff `generate_handler!` against every frontend `invoke` in both directio
 Do the struct/enum definitions in `mod.rs` belong in their domain modules? Plugin and state
 setup order. Exit/cleanup hooks on both platforms.
 
-### [ ] A2 · Supervisor (~940)
+### [x] A2 · Supervisor (~940) — 2026-10-27, 4 findings (R-016–R-019). Telemetry cadence (1s starting / 5s online), the 10s stop→kill escalation, and the crash-loop cap all match the docs. Generation is checked in phases 1 and 3; the gaps are in R-016 and R-018.
 - `src-tauri/src/app/support/supervisor.rs`
 
 Focus: is the mutex ever held across sleep, I/O, or emit? Is the `generation` token checked
 before *every* state write? starting→online probe logic, crash vs. clean exit, the ~10s stop
 then force-kill path, running-external adoption, and the telemetry cadence.
 
-### [ ] A3 · Process plumbing & IO (~730)
+### [x] A3 · Process plumbing & IO (~730) — 2026-10-27, 4 findings (R-020–R-023). Every spawn goes through `no_window_command`. Job object vs. pgid + atexit/signal parity is OK apart from R-022. The stderr tail is bounded at 25 lines.
 - `src-tauri/src/app/support/process.rs` (443)
 - `src-tauri/src/app/support/runtime_io.rs`
 - `src-tauri/src/app/support/core.rs`
@@ -38,14 +38,14 @@ Focus: job object (Windows) vs. process group + exit hook (Linux) parity. Could 
 hit an unrelated process? Is every spawn routed through `no_window_command`? Reader-thread
 termination, stderr ring-buffer bounds, and non-UTF-8 output handling.
 
-### [ ] A4 · Runtime commands (~1.15k)
+### [x] A4 · Runtime commands (~1.15k) — 2026-10-27, 8 findings (R-024–R-031). The `--nogui` retry lives in the frontend (E1/D2), not here. RCON is provisioned before spawn, and its errors are swallowed on purpose. Observation: the tunnel commands and `delete_server` would sit better outside `runtime.rs`.
 - `src-tauri/src/app/commands/runtime.rs`
 
 Focus: start/stop/restart/force-kill races (double-click, restart during stop), the automatic
 `--nogui` retry, RCON provisioning order, whether the tunnel commands belong here, and any
 logic duplicated with the supervisor.
 
-### [ ] A5 · Telemetry (~1.15k)
+### [x] A5 · Telemetry (~1.15k) — 2026-10-27, 3 findings (R-032–R-034). Timestamps are epoch ms on both sides (`Date.now()`). The TPS cache lives per runtime, so it resets on restart or provider change. Bucket gap-filling is covered by tests.
 - `src-tauri/src/app/support/telemetry.rs` (667)
 - `src-tauri/src/app/support/telemetry_store.rs` (417)
 - `src-tauri/src/app/commands/telemetry.rs`
@@ -55,7 +55,7 @@ CPU-sampling correctness, the SQLite single-connection mutex under contention, t
 pruning, bucket-averaging edge cases (empty or partial buckets), and the timestamp units
 the TS side expects.
 
-### [ ] A6 · Wire protocols (~860)
+### [x] A6 · Wire protocols (~860) — 2026-10-27, 5 findings (R-035–R-039). VarInt reads cap at 5 bytes without overflow panics. `server.properties` writes keep comments and order, and RCON provisioning only writes on change. The sleep listener releases its port synchronously before a wake.
 - `src-tauri/src/app/support/rcon.rs`
 - `src-tauri/src/app/support/mc_protocol.rs`
 - `src-tauri/src/app/support/server_properties.rs`
