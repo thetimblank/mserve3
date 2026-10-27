@@ -23,8 +23,8 @@ networks.
 
 ## Commands
 
-Run from the repo root unless noted. **There is no test suite and no linter
-config** — don't invent `npm test`/`npm run lint`; they don't exist yet.
+Run from the repo root unless noted. There is no `npm run lint` script; use the
+commands below.
 
 | Task | Command |
 | --- | --- |
@@ -72,19 +72,27 @@ the **run-debug** skill.
   `camelCase` in TS. Command *names* invoked from JS stay `snake_case`
   (e.g. `invoke('start_server', …)`).
 - **Lifecycle states** (serialized `kebab-case`): `offline`, `starting`, `online`,
-  `stopping`, `crashed`, `running-external`. This — not console scraping — is the
-  authoritative server status, set by the supervisor via TCP port probing.
-- **Backend → frontend events** (4 of them):
-  - `server-runtime-state` — lifecycle change (emitted by `support/supervisor.rs`)
+  `stopping`, `crashed`, `running-external`, `sleeping` (process parked, port held
+  by the wake listener). This — not console scraping — is the authoritative server
+  status, set by the supervisor via TCP port probing and by the runtime commands.
+- **Backend → frontend events** (9 of them):
+  - `server-runtime-state` — lifecycle change (`support/supervisor.rs`, `commands/runtime.rs`, `support/sleep_listener.rs`)
   - `server-telemetry` — a metrics sample (`support/supervisor.rs`)
-  - `server-output` — a stdout/stderr console line (`support/runtime_io.rs`)
+  - `server-output` — a stdout/stderr console line, or a `system` line explaining a backend action (`support/runtime_io.rs`)
   - `java-download-progress` — JDK download % (`commands/java_download.rs`)
+  - `server-jar-download-progress` — server jar download % (`commands/network.rs`)
+  - `modpack-install-progress` — `.mrpack` install stage/progress (`commands/modpack.rs`)
+  - `playit-claim-state` — playit.gg account claim flow (`support/playit.rs`)
+  - `playit-tunnel-state` — per-server tunnel status/address (`support/playit.rs`)
+  - `app-close-requested` — window close/tray quit, carrying the servers a quit would kill (`app/mod.rs`)
 - **Per-server config lives in `mserve.json`** in each server's directory (RAM,
   flags, provider, java path, backup policy…). The frontend mirrors a subset to
   `localStorage`; the backend owns the file. See `support/mserve_config.rs`.
 - **RCON is auto-provisioned:** on start, mserve writes `enable-rcon=true` + a
-  random port/password into `server.properties` (loopback only). Telemetry/commands
-  ride RCON + Server-List-Ping.
+  random port and 24-char password into `server.properties`. The server binds RCON
+  like the game port (`server-ip`, or all interfaces), so it is LAN-reachable and
+  protected only by that password; mserve connects to the telemetry host (loopback
+  by default, `server-ip` when pinned). Telemetry/commands ride RCON + Server-List-Ping.
 - **Java is explicit:** servers store an absolute path to the `java` binary. There
   is intentionally **no bare-`java` fallback** — a missing/incompatible runtime is a
   hard error, surfaced to the user.
