@@ -458,7 +458,7 @@ const ServerBackupsTab: React.FC<ServerBackupsTabProps> = ({
 
 			{isOnline && (
 				<p className='text-xs text-muted-foreground'>
-					Manual backups and restores are disabled while the server is online. Automatic backups keep running.
+					Manual backups and restores are disabled while the server is running. Automatic backups keep running.
 				</p>
 			)}
 

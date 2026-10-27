@@ -4,7 +4,6 @@
 //!
 //! Bound to loopback on an ephemeral port. Handler threads are detached and idle
 //! on a blocking `accept()` for the (short) lifetime of the test process.
-#![cfg(test)]
 #![allow(dead_code)]
 
 use std::collections::HashMap;

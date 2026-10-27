@@ -97,13 +97,17 @@ fn run_privileged(program: &str, args: &[&str]) -> Result<(), String> {
 /// path returns).
 pub(in crate::app) fn forward_port_linux_firewall(port: u16) -> Result<Vec<String>, String> {
     if firewalld_running() {
-        for protocol in ["tcp", "udp"] {
-            run_privileged(
-                "firewall-cmd",
-                &["--permanent", &format!("--add-port={port}/{protocol}")],
-            )?;
-        }
-        run_privileged("firewall-cmd", &["--reload"])?;
+        // One privileged call (one password prompt) for both rules + the reload.
+        // `port` is a u16, so the script has nothing to inject.
+        run_privileged(
+            "sh",
+            &[
+                "-c",
+                &format!(
+                    "firewall-cmd --permanent --add-port={port}/tcp --add-port={port}/udp && firewall-cmd --reload"
+                ),
+            ],
+        )?;
         return Ok(vec![
             format!("firewalld: {port}/tcp"),
             format!("firewalld: {port}/udp"),

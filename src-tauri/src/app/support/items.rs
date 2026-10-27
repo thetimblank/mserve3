@@ -1,9 +1,19 @@
 use super::super::{ItemActionPayload, ToggleItemPayload};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
+/// True for a bare file/folder name: exactly one normal path component, so it
+/// can't escape (or *be*) its slot root. Rejects `.`, `..` and separators; on
+/// Windows a drive-relative `C:x` parses as a prefix component and fails too.
 pub(in crate::app) fn is_simple_relative_name(name: &str) -> bool {
-    !name.is_empty() && !name.contains('/') && !name.contains('\\') && !name.contains("..")
+    if name.is_empty() || name.contains(['/', '\\']) || name.contains("..") {
+        return false;
+    }
+    let mut components = Path::new(name).components();
+    matches!(
+        (components.next(), components.next()),
+        (Some(Component::Normal(_)), None)
+    )
 }
 
 pub(in crate::app) fn item_roots(
@@ -86,6 +96,18 @@ pub(in crate::app) fn toggle_item_activation(payload: ToggleItemPayload) -> Resu
     if !from_path.exists() {
         return Err("Item not found in expected source location.".to_string());
     }
+    // `rename` silently replaces a same-named file, which would destroy the
+    // other copy (the scan only shows one of them).
+    if to_path.exists() {
+        return Err(format!(
+            "An item named \"{file}\" already exists in the {} folder. Remove one copy first.",
+            if payload.activate {
+                "active"
+            } else {
+                "disabled"
+            }
+        ));
+    }
 
     if let Some(parent) = to_path.parent() {
         fs::create_dir_all(parent).map_err(|err| err.to_string())?;
@@ -93,4 +115,48 @@ pub(in crate::app) fn toggle_item_activation(payload: ToggleItemPayload) -> Resu
 
     fs::rename(&from_path, &to_path).map_err(|err| err.to_string())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn simple_names_are_single_normal_components() {
+        assert!(is_simple_relative_name("world"));
+        assert!(is_simple_relative_name("WorldEdit-7.3.jar"));
+        assert!(is_simple_relative_name(".hidden"));
+        assert!(!is_simple_relative_name(""));
+        assert!(!is_simple_relative_name("."));
+        assert!(!is_simple_relative_name(".."));
+        assert!(!is_simple_relative_name("a/b"));
+        assert!(!is_simple_relative_name("a\\b"));
+        // Drive-relative on Windows; an ordinary name elsewhere.
+        assert_eq!(is_simple_relative_name("C:evil"), !cfg!(windows));
+    }
+
+    #[test]
+    fn toggle_refuses_to_overwrite_a_same_named_item() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("plugins")).unwrap();
+        fs::create_dir_all(dir.path().join("inactive").join("plugins")).unwrap();
+        fs::write(dir.path().join("plugins").join("Foo.jar"), b"new").unwrap();
+        fs::write(
+            dir.path().join("inactive").join("plugins").join("Foo.jar"),
+            b"old",
+        )
+        .unwrap();
+
+        let result = toggle_item_activation(ToggleItemPayload {
+            directory: dir.path().to_string_lossy().to_string(),
+            item_type: "plugin".to_string(),
+            file: "Foo.jar".to_string(),
+            activate: false,
+        });
+        assert!(result.is_err());
+        assert_eq!(
+            fs::read(dir.path().join("inactive").join("plugins").join("Foo.jar")).unwrap(),
+            b"old"
+        );
+    }
 }

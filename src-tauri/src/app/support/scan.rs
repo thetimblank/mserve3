@@ -82,10 +82,7 @@ pub(in crate::app) fn resolve_local_ip() -> Option<String> {
 /// Fetches the machine's public (internet-facing) IP from an external service.
 /// Returns `None` if the request fails or the response cannot be parsed.
 pub(in crate::app) fn resolve_public_ip() -> Option<String> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(6))
-        .build()
-        .ok()?;
+    let client = super::http_client(Duration::from_secs(6)).ok()?;
     let response = client.get("https://api.ipify.org").send().ok()?;
     if !response.status().is_success() {
         return None;
@@ -98,8 +95,11 @@ pub(in crate::app) fn resolve_public_ip() -> Option<String> {
     Some(trimmed.to_string())
 }
 
+/// Total size of a file or directory tree. Symlinks are not followed (a link
+/// back into the tree would otherwise be re-walked until the OS gives up, and a
+/// link to another disk isn't this server's storage).
 pub(in crate::app) fn path_size_bytes(path: &Path) -> u64 {
-    let Ok(metadata) = fs::metadata(path) else {
+    let Ok(metadata) = fs::symlink_metadata(path) else {
         return 0;
     };
 

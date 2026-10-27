@@ -29,7 +29,8 @@ src/app/
 │   ├── runtime.rs        start/stop/sleep/restart/force-kill, send command, runtime snapshot,
 │   │                     background mode, set/get_server_tunnel, delete_server
 │   ├── setup.rs          initialize/import a server, sync & repair mserve.json
-│   ├── providers.rs      list/resolve provider versions
+│   ├── providers.rs      list/resolve provider versions (+ the cached-fetch and Fabric
+│   │                     helpers that modrinth.rs/modpack.rs reuse)
 │   ├── java.rs           detect_java_runtimes (registry/PATH/JAVA_HOME scan)
 │   ├── java_download.rs   download_java_runtime (+ java-download-progress event)
 │   ├── network.rs        firewall port forwarding (per-OS dispatch), local/public IP,
@@ -56,6 +57,8 @@ src/app/
     ├── mc_protocol.rs     Minecraft VarInt/String codec, handshake + status packets
     ├── sleep_listener.rs  sleep-mode wake listener (holds the port, answers pings, wakes on join)
     ├── content_meta.rs    .mserve-content.json provenance sidecar for installed content
+    ├── download.rs        HTTP client, per-user scratch dir (not /tmp on Linux), verified
+    │                      streaming download that removes partial files
     ├── playit.rs          playit.gg tunneling: REST claim/tunnel + in-process agent
     │                      (set_server_tunnel/get_server_tunnel live in commands/runtime.rs;
     │                      emits playit-claim-state + playit-tunnel-state)
@@ -136,4 +139,7 @@ struct RuntimeState { processes: Arc<Mutex<HashMap<String, ServerRuntime>>> }
 - **Slow work off the main thread:** synchronous `#[tauri::command]`s run on the
   main thread. A command that spawns processes, probes ports, talks RCON, or waits
   must be `async` and wrap that work in `spawn_blocking` (see `run_blocking` in
-  `commands/runtime.rs`).
+  `commands.rs`).
+- **Downloads:** go through `support/download.rs` (`http_client`, `download_to_file`,
+  `scratch_dir`). Pass the provider's published hash as a `Checksum` whenever there is
+  one, and never stage files under a bare `std::env::temp_dir()`.

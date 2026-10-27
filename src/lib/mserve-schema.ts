@@ -138,7 +138,8 @@ export type MserveRepairPayload = Pick<
 > & {
 	create_directory_if_missing?: boolean;
 	auto_agree_eula?: boolean;
-	// Sleep-mode fields are optional here; the backend fills defaults when omitted.
+	// Sleep-mode fields are optional here; the backend keeps the existing
+	// mserve.json values (or the defaults) when they're omitted.
 	sleep_enabled?: boolean;
 	sleep_idle_minutes?: number;
 	sleep_motd?: string;

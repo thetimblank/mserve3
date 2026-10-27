@@ -4,10 +4,11 @@ use super::{
     normalize_backup_scope, path_size_bytes,
 };
 use chrono::Datelike;
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::fs;
-use std::io::{self, Read, Write};
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use walkdir::WalkDir;
 use zip::write::SimpleFileOptions;
 
@@ -37,6 +38,41 @@ const CONFIG_SCOPE_DIR: &str = "config";
 const SMART_KEEP_ALL_HOURS: i64 = 48;
 const SMART_DAILY_DAYS: i64 = 14;
 const SMART_WEEKLY_DAYS: i64 = 60;
+
+/// Server keys with a backup restore in progress. Starts are refused for them
+/// (checked under the runtime lock in `start_server_internal`).
+static RESTORING: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
+
+/// Marks a server as being restored until dropped.
+pub(in crate::app) struct RestoreClaim(String);
+
+impl Drop for RestoreClaim {
+    fn drop(&mut self) {
+        RESTORING
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&self.0);
+    }
+}
+
+/// Claims `key` for a restore. Callers hold the runtime lock while claiming, so
+/// a start can't slip in between their "is it stopped" check and the claim.
+pub(in crate::app) fn claim_restore(key: String) -> Result<RestoreClaim, String> {
+    let mut restoring = RESTORING
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if !restoring.insert(key.clone()) {
+        return Err("A backup restore is already running for this server.".to_string());
+    }
+    Ok(RestoreClaim(key))
+}
+
+pub(in crate::app) fn is_restoring(key: &str) -> bool {
+    RESTORING
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .contains(key)
+}
 
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 struct BackupSnapshotMetadata {
@@ -107,9 +143,9 @@ pub(in crate::app) fn set_backup_locked(
 ) -> Result<(), String> {
     let mut metadata =
         read_backup_metadata(backup_directory).unwrap_or_else(|| BackupSnapshotMetadata {
-            created_at: backup_created_at(backup_directory),
+            created_at: backup_created_at(backup_directory, None),
             size: path_size_bytes(backup_directory),
-            contents: detect_backup_contents(backup_directory),
+            contents: detect_backup_contents(backup_directory, None),
             ..BackupSnapshotMetadata::default()
         });
     metadata.locked = locked;
@@ -121,9 +157,9 @@ fn parse_created_at_millis(created_at: &str) -> i64 {
 }
 
 /// Best-effort creation timestamp: metadata first, filesystem mtime second.
-fn backup_created_at(backup_directory: &Path) -> String {
-    read_backup_metadata(backup_directory)
-        .map(|metadata| metadata.created_at)
+fn backup_created_at(backup_directory: &Path, metadata: Option<&BackupSnapshotMetadata>) -> String {
+    metadata
+        .map(|metadata| metadata.created_at.clone())
         .or_else(|| {
             fs::metadata(backup_directory)
                 .ok()
@@ -183,11 +219,7 @@ fn backup_source_paths(directory: &Path, scope: &[String]) -> Vec<(String, Vec<P
 }
 
 /// Estimated on-disk size of the next backup for this server's scope.
-pub(in crate::app) fn estimate_backup_size_bytes(directory: &Path) -> u64 {
-    let Ok(config) = resolve_backup_config(directory) else {
-        return 0;
-    };
-
+fn estimate_backup_size_bytes(directory: &Path, config: &BackupConfig) -> u64 {
     backup_source_paths(directory, &config.scope)
         .iter()
         .flat_map(|(_, paths)| paths.iter())
@@ -196,50 +228,111 @@ pub(in crate::app) fn estimate_backup_size_bytes(directory: &Path) -> u64 {
         })
 }
 
+/// Refuses a new backup up front, before anything is copied, when there's
+/// nothing to back up or it can't fit the storage limit even after retention
+/// deletes every backup it's allowed to (locked and `protected` ones stay).
+pub(in crate::app) fn ensure_backup_fits(
+    directory: &Path,
+    protected: &[PathBuf],
+) -> Result<(), String> {
+    let config = resolve_backup_config(directory)?;
+    let size = estimate_backup_size_bytes(directory, &config);
+    if size == 0 {
+        return Err("Nothing to back up: the selected backup contents are empty.".to_string());
+    }
+    if size > config.storage_limit_bytes {
+        return Err(format!(
+            "{STORAGE_LIMIT_ERROR_PREFIX}: the server contents are larger than the configured storage limit."
+        ));
+    }
+
+    let entries = collect_backup_entries(directory, protected);
+    let kept_size = entries
+        .iter()
+        .filter(|entry| entry.locked)
+        .fold(0_u64, |total, entry| total.saturating_add(entry.size));
+    if kept_size.saturating_add(size) > config.storage_limit_bytes {
+        return Err(if entries.iter().any(|entry| entry.user_locked) {
+            format!(
+                "{STORAGE_LIMIT_ERROR_PREFIX}: locked backups occupy the storage budget. Unlock or delete some, or raise the limit."
+            )
+        } else {
+            format!(
+                "{STORAGE_LIMIT_ERROR_PREFIX}: no removable backups remain to satisfy the configured storage limit."
+            )
+        });
+    }
+    Ok(())
+}
+
+/// One backup directory on disk, with its metadata read once.
+struct ScannedBackupDir {
+    path: PathBuf,
+    metadata: Option<BackupSnapshotMetadata>,
+    created_at: String,
+    size: u64,
+}
+
+/// Every backup directory under `<directory>/.backups`, in no particular order.
+fn scan_backup_dirs(directory: &Path) -> Vec<ScannedBackupDir> {
+    let Ok(dir_entries) = fs::read_dir(directory.join(".backups")) else {
+        return vec![];
+    };
+
+    dir_entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.is_dir())
+        .map(|path| {
+            let metadata = read_backup_metadata(&path);
+            let created_at = backup_created_at(&path, metadata.as_ref());
+            let size = metadata
+                .as_ref()
+                .map_or_else(|| path_size_bytes(&path), |value| value.size);
+            ScannedBackupDir {
+                path,
+                metadata,
+                created_at,
+                size,
+            }
+        })
+        .collect()
+}
+
 /// One existing backup, as seen by the retention engine.
 struct BackupEntry {
     path: PathBuf,
     created_at_millis: i64,
     size: u64,
+    /// Locked by the user, or protected by the caller; never deleted.
     locked: bool,
+    /// Locked by the user specifically (drives the storage-limit message).
+    user_locked: bool,
 }
 
 /// All backups on disk, oldest first. `protected` paths count as locked.
 fn collect_backup_entries(directory: &Path, protected: &[PathBuf]) -> Vec<BackupEntry> {
-    let backup_root = directory.join(".backups");
-    if !backup_root.is_dir() {
-        return vec![];
-    }
-
     let protected_canonical = protected
         .iter()
         .filter_map(|path| canonicalized_path(path))
         .collect::<Vec<PathBuf>>();
 
-    let mut entries = vec![];
-    if let Ok(dir_entries) = fs::read_dir(&backup_root) {
-        for entry in dir_entries.flatten() {
-            let path = entry.path();
-            if !path.is_dir() {
-                continue;
-            }
-
-            let metadata = read_backup_metadata(&path);
-            let created_at = backup_created_at(&path);
-            let is_protected = canonicalized_path(&path)
+    let mut entries = scan_backup_dirs(directory)
+        .into_iter()
+        .map(|backup| {
+            let is_protected = canonicalized_path(&backup.path)
                 .as_ref()
                 .is_some_and(|candidate| protected_canonical.iter().any(|item| item == candidate));
-
-            entries.push(BackupEntry {
-                created_at_millis: parse_created_at_millis(&created_at),
-                size: metadata
-                    .as_ref()
-                    .map_or_else(|| path_size_bytes(&path), |value| value.size),
-                locked: is_protected || metadata.as_ref().is_some_and(|value| value.locked),
-                path,
-            });
-        }
-    }
+            let user_locked = backup.metadata.as_ref().is_some_and(|value| value.locked);
+            BackupEntry {
+                created_at_millis: parse_created_at_millis(&backup.created_at),
+                size: backup.size,
+                locked: is_protected || user_locked,
+                user_locked,
+                path: backup.path,
+            }
+        })
+        .collect::<Vec<BackupEntry>>();
 
     entries.sort_by(|a, b| {
         a.created_at_millis
@@ -273,31 +366,15 @@ fn smart_retention_bucket(created_at_millis: i64, now_millis: i64) -> Option<Str
 }
 
 /// Applies the server's retention settings to its existing backups and deletes
-/// what falls out. `incoming_backup` is true when a new backup is about to be
-/// created, so caps leave room for it and the storage check includes its
-/// estimated size. Locked and `protected` backups are never deleted. Returns
-/// the number of deleted backups.
+/// what falls out. Locked and `protected` backups are never deleted; callers
+/// that just created a backup pass it as protected so it keeps its slot. Fails
+/// (deleting nothing) when the storage limit can't be met. Returns the number
+/// of deleted backups.
 pub(in crate::app) fn enforce_backup_retention(
     directory: &Path,
     protected_backups: &[PathBuf],
-    incoming_backup: bool,
 ) -> Result<usize, String> {
     let config = resolve_backup_config(directory)?;
-
-    let incoming_size = if incoming_backup {
-        let size = estimate_backup_size_bytes(directory);
-        if size == 0 {
-            return Err("Nothing to back up: the selected backup contents are empty.".to_string());
-        }
-        if size > config.storage_limit_bytes {
-            return Err(format!(
-                "{STORAGE_LIMIT_ERROR_PREFIX}: the server contents are larger than the configured storage limit."
-            ));
-        }
-        size
-    } else {
-        0
-    };
 
     let entries = collect_backup_entries(directory, protected_backups);
     let now_millis = chrono::Local::now().timestamp_millis();
@@ -334,10 +411,10 @@ pub(in crate::app) fn enforce_backup_retention(
         }
     }
 
-    // 3. Count cap (leaving a slot for the incoming backup). Locked backups
-    //    occupy slots but are never deleted, so the cap is best-effort.
+    // 3. Count cap. Locked backups occupy slots but are never deleted, so the
+    //    cap is best-effort.
     if config.max_count > 0 {
-        let allowed = (config.max_count as usize).saturating_sub(usize::from(incoming_backup));
+        let allowed = config.max_count as usize;
         let mut kept = 0_usize;
         for entry in entries.iter().rev() {
             if doomed.contains(&entry.path) {
@@ -362,7 +439,7 @@ pub(in crate::app) fn enforce_backup_retention(
         .fold(0_u64, |total, entry| total.saturating_add(entry.size));
 
     for entry in &entries {
-        if surviving_size.saturating_add(incoming_size) <= config.storage_limit_bytes {
+        if surviving_size <= config.storage_limit_bytes {
             break;
         }
         if entry.locked || doomed.contains(&entry.path) {
@@ -372,8 +449,8 @@ pub(in crate::app) fn enforce_backup_retention(
         surviving_size = surviving_size.saturating_sub(entry.size);
     }
 
-    if surviving_size.saturating_add(incoming_size) > config.storage_limit_bytes {
-        let has_locked = entries.iter().any(|entry| entry.locked);
+    if surviving_size > config.storage_limit_bytes {
+        let has_locked = entries.iter().any(|entry| entry.user_locked);
         return Err(if has_locked {
             format!(
                 "{STORAGE_LIMIT_ERROR_PREFIX}: locked backups occupy the storage budget. Unlock or delete some, or raise the limit."
@@ -394,7 +471,7 @@ pub(in crate::app) fn enforce_backup_retention(
     Ok(deleted_count)
 }
 
-pub(in crate::app) fn list_backup_worlds(backup_directory: &Path) -> Vec<PathBuf> {
+fn list_backup_worlds(backup_directory: &Path) -> Vec<PathBuf> {
     let mut worlds = vec![];
     if let Ok(entries) = fs::read_dir(backup_directory) {
         for entry in entries.flatten() {
@@ -409,11 +486,14 @@ pub(in crate::app) fn list_backup_worlds(backup_directory: &Path) -> Vec<PathBuf
 
 /// The scope items actually present inside an existing backup directory.
 /// Older backups without metadata are inferred from their layout.
-pub(in crate::app) fn detect_backup_contents(backup_directory: &Path) -> Vec<String> {
-    if let Some(metadata) = read_backup_metadata(backup_directory)
+fn detect_backup_contents(
+    backup_directory: &Path,
+    metadata: Option<&BackupSnapshotMetadata>,
+) -> Vec<String> {
+    if let Some(metadata) = metadata
         && !metadata.contents.is_empty()
     {
-        return metadata.contents;
+        return metadata.contents.clone();
     }
 
     let mut contents = vec![];
@@ -436,40 +516,24 @@ pub(in crate::app) fn detect_backup_contents(backup_directory: &Path) -> Vec<Str
 }
 
 pub(in crate::app) fn list_backups(directory: &Path) -> Vec<ScannedBackup> {
-    let backup_root = directory.join(".backups");
-    if !backup_root.exists() || !backup_root.is_dir() {
-        return vec![];
-    }
-
-    let mut backups = vec![];
-    if let Ok(entries) = fs::read_dir(&backup_root) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if !path.is_dir() {
-                continue;
-            }
-
-            let Some(_) = path.file_name().and_then(|name| name.to_str()) else {
-                continue;
-            };
-
-            let metadata = read_backup_metadata(&path);
-            let created_at = backup_created_at(&path);
-            let size = metadata
+    let mut backups = scan_backup_dirs(directory)
+        .into_iter()
+        .map(|backup| ScannedBackup {
+            contents: detect_backup_contents(&backup.path, backup.metadata.as_ref()),
+            directory: backup.path.to_string_lossy().to_string(),
+            created_at: backup.created_at,
+            size: backup.size,
+            name: backup
+                .metadata
                 .as_ref()
-                .map_or_else(|| path_size_bytes(&path), |value| value.size);
-
-            backups.push(ScannedBackup {
-                directory: path.to_string_lossy().to_string(),
-                created_at,
-                size,
-                name: metadata.as_ref().and_then(|value| value.name.clone()),
-                reason: metadata.as_ref().and_then(|value| value.reason.clone()),
-                locked: metadata.as_ref().is_some_and(|value| value.locked),
-                contents: detect_backup_contents(&path),
-            });
-        }
-    }
+                .and_then(|value| value.name.clone()),
+            reason: backup
+                .metadata
+                .as_ref()
+                .and_then(|value| value.reason.clone()),
+            locked: backup.metadata.as_ref().is_some_and(|value| value.locked),
+        })
+        .collect::<Vec<ScannedBackup>>();
 
     backups.sort_by(|a, b| {
         parse_created_at_millis(&b.created_at)
@@ -500,21 +564,25 @@ pub(in crate::app) fn create_backup_snapshot(
     let now = chrono::Local::now();
     let timestamp = now.format("%Y-%m-%d_%H.%M.%S").to_string();
     let created_at = now.to_rfc3339();
-    let backup_dir = backup_root.join(timestamp.clone());
-    fs::create_dir_all(&backup_dir).map_err(|err| err.to_string())?;
-
-    for (_, paths) in &sources {
-        for source in paths {
-            let Some(entry_name) = source.file_name() else {
-                continue;
-            };
-            let destination = backup_dir.join(entry_name);
-            if source.is_dir() {
-                copy_dir_filtered(source, &destination)?;
-            } else {
-                fs::copy(source, &destination).map_err(|err| err.to_string())?;
+    // `create_dir` (not `_all`) fails on an existing directory, so two backups
+    // in the same second get distinct folders instead of merging.
+    let mut backup_dir = backup_root.join(&timestamp);
+    let mut suffix = 1;
+    loop {
+        match fs::create_dir(&backup_dir) {
+            Ok(()) => break,
+            Err(err) if err.kind() == io::ErrorKind::AlreadyExists && suffix < 100 => {
+                suffix += 1;
+                backup_dir = backup_root.join(format!("{timestamp}-{suffix}"));
             }
+            Err(err) => return Err(err.to_string()),
         }
+    }
+
+    // A half-copied snapshot must never be listed (or restored) as a backup.
+    if let Err(err) = copy_backup_sources(&sources, &backup_dir) {
+        let _ = fs::remove_dir_all(&backup_dir);
+        return Err(err);
     }
 
     let contents = sources
@@ -536,7 +604,10 @@ pub(in crate::app) fn create_backup_snapshot(
         locked: false,
         contents: contents.clone(),
     };
-    write_backup_metadata(&backup_dir, &metadata)?;
+    if let Err(err) = write_backup_metadata(&backup_dir, &metadata) {
+        let _ = fs::remove_dir_all(&backup_dir);
+        return Err(err);
+    }
 
     Ok(ScannedBackup {
         directory: backup_dir.to_string_lossy().to_string(),
@@ -547,6 +618,32 @@ pub(in crate::app) fn create_backup_snapshot(
         locked: false,
         contents,
     })
+}
+
+fn copy_backup_sources(
+    sources: &[(String, Vec<PathBuf>)],
+    backup_dir: &Path,
+) -> Result<(), String> {
+    for (_, paths) in sources {
+        for source in paths {
+            let Some(entry_name) = source.file_name() else {
+                continue;
+            };
+            let destination = backup_dir.join(entry_name);
+            if source.is_dir() {
+                copy_dir_filtered(source, &destination)?;
+            } else {
+                fs::copy(source, &destination).map_err(|err| err.to_string())?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Removes a backup this process just created (used to roll back when the
+/// follow-up retention pass can't make room for it).
+pub(in crate::app) fn discard_backup(backup: &ScannedBackup) {
+    let _ = fs::remove_dir_all(&backup.directory);
 }
 
 /// Restores everything a backup contains back into the server directory:
@@ -618,7 +715,8 @@ pub(in crate::app) fn restore_backup_contents(
 pub(in crate::app) fn copy_dir_filtered(source: &Path, destination: &Path) -> Result<(), String> {
     fs::create_dir_all(destination).map_err(|err| err.to_string())?;
 
-    for entry in WalkDir::new(source).into_iter().flatten() {
+    for entry in WalkDir::new(source) {
+        let entry = entry.map_err(|err| format!("Failed to read {}: {err}", source.display()))?;
         let entry_path = entry.path();
         let relative = entry_path
             .strip_prefix(source)
@@ -777,10 +875,7 @@ pub(in crate::app) fn add_path_to_zip<W: Write + io::Seek>(
         .start_file(relative, options)
         .map_err(|err| err.to_string())?;
     let mut file = fs::File::open(path).map_err(|err| err.to_string())?;
-    let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer)
-        .map_err(|err| err.to_string())?;
-    writer.write_all(&buffer).map_err(|err| err.to_string())?;
+    io::copy(&mut file, writer).map_err(|err| err.to_string())?;
     Ok(())
 }
 
@@ -869,7 +964,7 @@ mod tests {
         let middle = make_backup(dir.path(), "b-middle", 2 * HOUR_MILLIS, false);
         let newest = make_backup(dir.path(), "c-newest", HOUR_MILLIS, false);
 
-        let deleted = enforce_backup_retention(dir.path(), &[], false).unwrap();
+        let deleted = enforce_backup_retention(dir.path(), &[]).unwrap();
         assert_eq!(deleted, 1);
         assert!(!oldest.exists());
         assert!(middle.exists());
@@ -892,7 +987,7 @@ mod tests {
         let unlocked_old = make_backup(dir.path(), "b-unlocked", 9 * DAY_MILLIS, false);
         let newest = make_backup(dir.path(), "c-newest", HOUR_MILLIS, false);
 
-        let deleted = enforce_backup_retention(dir.path(), &[], false).unwrap();
+        let deleted = enforce_backup_retention(dir.path(), &[]).unwrap();
         assert_eq!(deleted, 1);
         // The locked backup survives both the age and count caps (the cap is
         // best-effort when locked backups overflow it); the newest unlocked
@@ -928,7 +1023,7 @@ mod tests {
         let recent_one = make_backup(dir.path(), "c-recent1", 2 * HOUR_MILLIS, false);
         let recent_two = make_backup(dir.path(), "d-recent2", HOUR_MILLIS, false);
 
-        let deleted = enforce_backup_retention(dir.path(), &[], false).unwrap();
+        let deleted = enforce_backup_retention(dir.path(), &[]).unwrap();
         assert_eq!(deleted, 1);
         assert!(!old_early.exists());
         assert!(old_late.exists());
@@ -948,10 +1043,25 @@ mod tests {
         let doomed = make_backup(dir.path(), "b-doomed", 10 * DAY_MILLIS, false);
 
         let deleted =
-            enforce_backup_retention(dir.path(), std::slice::from_ref(&protected), false).unwrap();
+            enforce_backup_retention(dir.path(), std::slice::from_ref(&protected)).unwrap();
         assert_eq!(deleted, 1);
         assert!(protected.exists());
         assert!(!doomed.exists());
+    }
+
+    #[test]
+    fn same_second_backups_get_distinct_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        write_mserve_json(
+            dir.path(),
+            serde_json::json!({ "backup_scope": ["configs"] }),
+        );
+        fs::write(dir.path().join("server.properties"), "motd=x\n").unwrap();
+
+        let first = create_backup_snapshot(dir.path(), None, "manual").unwrap();
+        let second = create_backup_snapshot(dir.path(), None, "manual").unwrap();
+        assert_ne!(first.directory, second.directory);
+        assert_eq!(list_backups(dir.path()).len(), 2);
     }
 
     #[test]
@@ -962,7 +1072,7 @@ mod tests {
         fs::write(backup.join("world").join("level.dat"), b"nbt").unwrap();
         fs::create_dir_all(backup.join("plugins")).unwrap();
 
-        let contents = detect_backup_contents(&backup);
+        let contents = detect_backup_contents(&backup, None);
         assert_eq!(contents, vec!["worlds".to_string(), "plugins".to_string()]);
     }
 }

@@ -150,7 +150,22 @@ fn write_secret(app: &tauri::AppHandle, secret: &str) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
     }
-    std::fs::write(&path, secret.trim()).map_err(|err| err.to_string())
+
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    // The secret grants control of the playit account: owner-only on Unix.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        options.mode(0o600);
+        // `mode` only applies on creation; tighten a file left by older builds.
+        if path.exists() {
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
+                .map_err(|err| err.to_string())?;
+        }
+    }
+    let mut file = options.open(&path).map_err(|err| err.to_string())?;
+    std::io::Write::write_all(&mut file, secret.trim().as_bytes()).map_err(|err| err.to_string())
 }
 
 /// Removes the stored secret so the install can be re-claimed.

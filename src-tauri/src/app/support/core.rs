@@ -40,11 +40,31 @@ pub(in crate::app) fn read_optional_file(path: &Path) -> Result<Option<String>, 
 }
 
 /// Writes `content` to `path`, creating any missing parent directories first.
+/// Goes through a temp file + rename so a crash mid-write can't leave the file
+/// truncated. An existing file keeps its permissions, and a symlink is written
+/// through (its target is replaced, not the link).
 pub(in crate::app) fn write_file_creating_dirs(path: &Path, content: &str) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|err| err.to_string())?;
     }
-    fs::write(path, content.as_bytes()).map_err(|err| err.to_string())
+    let target = if path.exists() {
+        dunce::canonicalize(path).map_err(|err| err.to_string())?
+    } else {
+        path.to_path_buf()
+    };
+    let permissions = fs::metadata(&target).ok().map(|meta| meta.permissions());
+
+    let mut temp_name = target.file_name().unwrap_or_default().to_os_string();
+    temp_name.push(".tmp");
+    let temp_path = target.with_file_name(temp_name);
+    fs::write(&temp_path, content.as_bytes()).map_err(|err| err.to_string())?;
+    if let Some(permissions) = permissions {
+        let _ = fs::set_permissions(&temp_path, permissions);
+    }
+    fs::rename(&temp_path, &target).map_err(|err| {
+        let _ = fs::remove_file(&temp_path);
+        err.to_string()
+    })
 }
 
 pub(in crate::app) fn home_dir() -> PathBuf {

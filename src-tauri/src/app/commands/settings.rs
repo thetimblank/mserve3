@@ -1,11 +1,15 @@
 use super::super::support::{
-    home_dir, move_directory_with_fallback, normalize_backup_policy, normalize_backup_scope,
-    normalize_custom_flags, normalize_provider, parse_mserve_top_level_object,
-    sanitize_mserve_value_config, server_key, swap_files, write_synced_mserve_json,
+    home_dir, move_directory_with_fallback, normalize_auto_backup_modes, normalize_backup_policy,
+    normalize_backup_scope, normalize_custom_flags, normalize_provider,
+    parse_mserve_top_level_object, patch_mserve_json, sanitize_mserve_value_config, server_key,
+    swap_files, write_synced_mserve_json,
 };
 use super::super::{
     LifecycleState, RuntimeState, UpdateServerSettingsPayload, UpdateServerSettingsResult,
 };
+use super::run_blocking;
+use super::runtime::{emit_offline, release_sleeping};
+use serde_json::{Value, json};
 use std::fs;
 use std::path::PathBuf;
 use tauri::State;
@@ -17,6 +21,18 @@ pub(in crate::app) fn get_default_servers_root_path() -> Result<String, String> 
         .join("servers")
         .to_string_lossy()
         .to_string())
+}
+
+/// Resolves a server directory that already has an mserve.json.
+fn managed_server_directory(directory: &str) -> Result<PathBuf, String> {
+    let directory_path = PathBuf::from(directory.trim());
+    if !directory_path.exists() || !directory_path.is_dir() {
+        return Err("Server directory does not exist.".to_string());
+    }
+    if !directory_path.join("mserve.json").exists() {
+        return Err("mserve.json not found in server directory.".to_string());
+    }
+    Ok(directory_path)
 }
 
 /// Updates only the backup-related fields in mserve.json (`storage_limit`,
@@ -37,43 +53,34 @@ pub(in crate::app) fn update_server_backup_settings(
     backup_max_age_days: Option<u32>,
     backup_scope: Option<Vec<String>>,
 ) -> Result<(), String> {
-    let directory_path = PathBuf::from(directory.trim());
-    if !directory_path.exists() || !directory_path.is_dir() {
-        return Err("Server directory does not exist.".to_string());
-    }
+    let directory_path = managed_server_directory(&directory)?;
 
-    let mserve_path = directory_path.join("mserve.json");
-    if !mserve_path.exists() {
-        return Err("mserve.json not found in server directory.".to_string());
-    }
-
-    let config_text = fs::read_to_string(&mserve_path).map_err(|err| err.to_string())?;
-    let object = parse_mserve_top_level_object(&config_text)
-        .map_err(|_| "Invalid mserve.json format.".to_string())?;
-
-    let mut config = sanitize_mserve_value_config(&directory_path, &object);
-    config.storage_limit = storage_limit.max(1);
-    config.auto_backup = auto_backup
-        .into_iter()
-        .filter(|value| matches!(value.as_str(), "interval" | "on_close" | "on_start"))
-        .collect();
-    config.auto_backup_interval = auto_backup_interval.max(1);
-    config.auto_restart = auto_restart;
+    let mut updates: Vec<(&str, Value)> = vec![
+        ("storage_limit", json!(storage_limit.max(1))),
+        (
+            "auto_backup",
+            json!(normalize_auto_backup_modes(auto_backup)),
+        ),
+        ("auto_backup_interval", json!(auto_backup_interval.max(1))),
+        ("auto_restart", json!(auto_restart)),
+    ];
     if let Some(policy) = backup_policy {
-        config.backup_policy = normalize_backup_policy(Some(&policy));
+        updates.push((
+            "backup_policy",
+            json!(normalize_backup_policy(Some(&policy))),
+        ));
     }
     if let Some(max_count) = backup_max_count {
-        config.backup_max_count = max_count;
+        updates.push(("backup_max_count", json!(max_count)));
     }
     if let Some(max_age_days) = backup_max_age_days {
-        config.backup_max_age_days = max_age_days;
+        updates.push(("backup_max_age_days", json!(max_age_days)));
     }
     if let Some(scope) = backup_scope {
-        config.backup_scope = normalize_backup_scope(Some(&scope));
+        updates.push(("backup_scope", json!(normalize_backup_scope(Some(&scope)))));
     }
 
-    write_synced_mserve_json(&directory_path, &config)?;
-    Ok(())
+    patch_mserve_json(&directory_path, &updates)
 }
 
 /// Persists just the per-server Java pin in mserve.json without touching any
@@ -84,28 +91,16 @@ pub(in crate::app) fn set_server_java_installation(
     directory: String,
     java_installation: Option<String>,
 ) -> Result<(), String> {
-    let directory_path = PathBuf::from(directory.trim());
-    if !directory_path.exists() || !directory_path.is_dir() {
-        return Err("Server directory does not exist.".to_string());
-    }
-
-    let mserve_path = directory_path.join("mserve.json");
-    if !mserve_path.exists() {
-        return Err("mserve.json not found in server directory.".to_string());
-    }
-
-    let config_text = fs::read_to_string(&mserve_path).map_err(|err| err.to_string())?;
-    let object = parse_mserve_top_level_object(&config_text)
-        .map_err(|_| "Invalid mserve.json format.".to_string())?;
-
-    let mut config = sanitize_mserve_value_config(&directory_path, &object);
-    config.java_installation = java_installation
+    let directory_path = managed_server_directory(&directory)?;
+    let java_installation = java_installation
         .as_deref()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty());
-
-    write_synced_mserve_json(&directory_path, &config)?;
-    Ok(())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    patch_mserve_json(
+        &directory_path,
+        &[("java_installation", json!(java_installation))],
+    )
 }
 
 /// Persists just the per-server extra Java flags in mserve.json without touching
@@ -116,60 +111,89 @@ pub(in crate::app) fn set_server_custom_flags(
     directory: String,
     custom_flags: Vec<String>,
 ) -> Result<(), String> {
-    let directory_path = PathBuf::from(directory.trim());
-    if !directory_path.exists() || !directory_path.is_dir() {
-        return Err("Server directory does not exist.".to_string());
-    }
-
-    let mserve_path = directory_path.join("mserve.json");
-    if !mserve_path.exists() {
-        return Err("mserve.json not found in server directory.".to_string());
-    }
-
-    let config_text = fs::read_to_string(&mserve_path).map_err(|err| err.to_string())?;
-    let object = parse_mserve_top_level_object(&config_text)
-        .map_err(|_| "Invalid mserve.json format.".to_string())?;
-
-    let mut config = sanitize_mserve_value_config(&directory_path, &object);
-    config.custom_flags = normalize_custom_flags(custom_flags);
-
-    write_synced_mserve_json(&directory_path, &config)?;
-    Ok(())
+    let directory_path = managed_server_directory(&directory)?;
+    patch_mserve_json(
+        &directory_path,
+        &[("custom_flags", json!(normalize_custom_flags(custom_flags)))],
+    )
 }
 
 #[tauri::command]
-pub(in crate::app) fn update_server_settings(
+pub(in crate::app) async fn update_server_settings(
+    app: tauri::AppHandle,
     payload: UpdateServerSettingsPayload,
     state: State<'_, RuntimeState>,
 ) -> Result<UpdateServerSettingsResult, String> {
-    let current_directory = payload.directory.trim();
+    let current_directory = payload.directory.trim().to_string();
     if current_directory.is_empty() {
         return Err("Server directory is required.".to_string());
     }
 
-    let key = server_key(current_directory);
-    {
+    let key = server_key(&current_directory);
+    let sleeping_generation = {
         let mut processes = state.processes.lock().map_err(|_| "Runtime lock failed.")?;
-        if let Some(existing) = processes.get_mut(&key) {
-            let alive = existing
-                .child
-                .as_mut()
-                .is_some_and(|child| matches!(child.try_wait(), Ok(None)));
-            let active = alive
-                || matches!(
-                    existing.state,
-                    LifecycleState::Starting
-                        | LifecycleState::Online
-                        | LifecycleState::Stopping
-                        | LifecycleState::RunningExternal
-                );
-            if active {
-                return Err("Server must be offline before editing settings.".to_string());
+        match processes.get_mut(&key) {
+            Some(existing) => {
+                let alive = existing
+                    .child
+                    .as_mut()
+                    .is_some_and(|child| matches!(child.try_wait(), Ok(None)));
+                let active = alive
+                    || matches!(
+                        existing.state,
+                        LifecycleState::Starting
+                            | LifecycleState::Online
+                            | LifecycleState::Stopping
+                            | LifecycleState::RunningExternal
+                    );
+                if active {
+                    return Err("Server must be offline before editing settings.".to_string());
+                }
+                if existing.state == LifecycleState::Sleeping {
+                    // Torn down only once the update succeeds (below), so a
+                    // failed edit leaves the server asleep and wakeable.
+                    Some(existing.generation)
+                } else {
+                    processes.remove(&key);
+                    None
+                }
             }
-            processes.remove(&key);
+            None => None,
+        }
+    };
+
+    let directory = current_directory.clone();
+    let result = run_blocking(move || update_server_settings_blocking(&directory, payload)).await?;
+
+    // A sleeping server's wake listener (and tunnel) would keep the port and
+    // wake the old configuration, so shut them down now that it's changed.
+    if let Some(generation) = sleeping_generation {
+        let released = {
+            let mut processes = state.processes.lock().map_err(|_| "Runtime lock failed.")?;
+            match processes.get_mut(&key) {
+                Some(existing)
+                    if existing.generation == generation
+                        && existing.state == LifecycleState::Sleeping =>
+                {
+                    let event = release_sleeping(existing);
+                    processes.remove(&key);
+                    Some(event)
+                }
+                _ => None,
+            }
+        };
+        if let Some(event) = released {
+            emit_offline(&app, event);
         }
     }
 
+    Ok(result)
+}
+
+fn update_server_settings_blocking(
+    current_directory: &str,
+    payload: UpdateServerSettingsPayload,
+) -> Result<UpdateServerSettingsResult, String> {
     let mut directory_path = PathBuf::from(current_directory);
     if !directory_path.exists() || !directory_path.is_dir() {
         return Err("Server directory does not exist.".to_string());
@@ -216,11 +240,7 @@ pub(in crate::app) fn update_server_settings(
         }
     }
 
-    config.auto_backup = payload
-        .auto_backup
-        .into_iter()
-        .filter(|value| matches!(value.as_str(), "interval" | "on_close" | "on_start"))
-        .collect();
+    config.auto_backup = normalize_auto_backup_modes(payload.auto_backup);
 
     let custom_flags = normalize_custom_flags(payload.custom_flags);
 

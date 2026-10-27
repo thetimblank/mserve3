@@ -497,6 +497,21 @@ pub(in crate::app) fn find_first_jar_file_name(directory: &Path) -> Option<Strin
     None
 }
 
+/// Keeps the known auto-backup triggers (`interval`, `on_close`, `on_start`),
+/// deduped, in input order.
+pub(in crate::app) fn normalize_auto_backup_modes(
+    modes: impl IntoIterator<Item = String>,
+) -> Vec<String> {
+    let mut output: Vec<String> = Vec::new();
+    for mode in modes {
+        if matches!(mode.as_str(), "interval" | "on_close" | "on_start") && !output.contains(&mode)
+        {
+            output.push(mode);
+        }
+    }
+    output
+}
+
 pub(in crate::app) fn normalize_auto_backup(
     raw: Option<&serde_json::Value>,
 ) -> Option<Vec<String>> {
@@ -505,20 +520,11 @@ pub(in crate::app) fn normalize_auto_backup(
     };
 
     let items = value.as_array()?;
-
-    let mut output = Vec::new();
-    for item in items {
-        let Some(mode) = item.as_str() else {
-            continue;
-        };
-        if matches!(mode, "interval" | "on_close" | "on_start")
-            && !output.iter().any(|existing| existing == mode)
-        {
-            output.push(mode.to_string());
-        }
-    }
-
-    Some(output)
+    Some(normalize_auto_backup_modes(
+        items
+            .iter()
+            .filter_map(|item| item.as_str().map(str::to_string)),
+    ))
 }
 
 pub(in crate::app) fn normalize_custom_flags(
@@ -558,6 +564,11 @@ pub(in crate::app) fn sanitize_custom_flags(raw: Option<&serde_json::Value>) -> 
     normalize_custom_flags(flags)
 }
 
+/// Narrows a JSON integer to `u32`, saturating instead of wrapping.
+fn saturating_u32(value: u64) -> u32 {
+    u32::try_from(value).unwrap_or(u32::MAX)
+}
+
 pub(in crate::app) fn sanitize_mserve_value_config(
     directory: &Path,
     object: &serde_json::Map<String, serde_json::Value>,
@@ -589,7 +600,7 @@ pub(in crate::app) fn sanitize_mserve_value_config(
     let normalized_storage_limit = object
         .get("storage_limit")
         .and_then(serde_json::Value::as_u64)
-        .map_or(200, |value| value.max(1) as u32);
+        .map_or(200, |value| saturating_u32(value).max(1));
 
     let normalized_auto_backup =
         normalize_auto_backup(object.get("auto_backup")).unwrap_or_else(default_auto_backup);
@@ -597,7 +608,7 @@ pub(in crate::app) fn sanitize_mserve_value_config(
     let normalized_interval = object
         .get("auto_backup_interval")
         .and_then(serde_json::Value::as_u64)
-        .map_or(120, |value| value.max(1) as u32);
+        .map_or(120, |value| saturating_u32(value).max(1));
 
     let normalized_backup_policy =
         normalize_backup_policy(object.get("backup_policy").and_then(|value| value.as_str()));
@@ -605,12 +616,12 @@ pub(in crate::app) fn sanitize_mserve_value_config(
     let normalized_backup_max_count = object
         .get("backup_max_count")
         .and_then(serde_json::Value::as_u64)
-        .map_or(0, |value| u32::try_from(value).unwrap_or(u32::MAX));
+        .map_or(0, saturating_u32);
 
     let normalized_backup_max_age_days = object
         .get("backup_max_age_days")
         .and_then(serde_json::Value::as_u64)
-        .map_or(0, |value| u32::try_from(value).unwrap_or(u32::MAX));
+        .map_or(0, saturating_u32);
 
     let raw_backup_scope = object
         .get("backup_scope")
@@ -637,8 +648,9 @@ pub(in crate::app) fn sanitize_mserve_value_config(
     let normalized_sleep_idle_minutes = object
         .get("sleep_idle_minutes")
         .and_then(serde_json::Value::as_u64)
-        .map(|value| (value as u32).max(1))
-        .unwrap_or(DEFAULT_SLEEP_IDLE_MINUTES);
+        .map_or(DEFAULT_SLEEP_IDLE_MINUTES, |value| {
+            saturating_u32(value).max(1)
+        });
 
     // Kept verbatim — leading spaces are the MOTD editor's alignment padding.
     let normalized_sleep_motd = object
@@ -906,21 +918,10 @@ pub(in crate::app) fn resolve_repair_file(
             return Err("Server file must be a .jar file.".to_string());
         }
 
-        if let Ok((copied_file, _)) = copy_jar_to_server_directory(directory, trimmed) {
-            return Ok(copied_file);
-        }
-
-        let fallback_name = input_path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .map(str::trim)
-            .filter(|name| !name.is_empty() && name.to_lowercase().ends_with(".jar"))
-            .map_or_else(
-                || "server.jar".to_string(),
-                std::string::ToString::to_string,
-            );
-
-        return Ok(fallback_name);
+        // A jar that can't be copied in would leave mserve.json pointing at a
+        // file the server directory doesn't have, so surface the failure.
+        let (copied_file, _) = copy_jar_to_server_directory(directory, trimmed)?;
+        return Ok(copied_file);
     }
 
     if !trimmed.to_lowercase().ends_with(".jar") {
@@ -974,6 +975,36 @@ mod tests {
 
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn auto_backup_modes_keep_known_triggers_once() {
+        assert_eq!(
+            normalize_auto_backup_modes(vec![
+                "on_start".to_string(),
+                "bogus".to_string(),
+                "interval".to_string(),
+                "on_start".to_string(),
+            ]),
+            vec!["on_start".to_string(), "interval".to_string()]
+        );
+    }
+
+    #[test]
+    fn oversized_integers_saturate_instead_of_wrapping() {
+        let dir = tempfile::tempdir().unwrap();
+        let object =
+            json!({ "sleep_idle_minutes": 4_294_967_296_u64, "storage_limit": 4_294_967_296_u64 });
+        let config = sanitize_mserve_value_config(dir.path(), object.as_object().unwrap());
+        assert_eq!(config.sleep_idle_minutes, u32::MAX);
+        assert_eq!(config.storage_limit, u32::MAX);
+    }
+
+    #[test]
+    fn repair_file_errors_when_the_jar_cannot_be_copied() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("elsewhere").join("paper.jar");
+        assert!(resolve_repair_file(dir.path(), &missing.to_string_lossy()).is_err());
+    }
 
     #[test]
     fn normalize_custom_flags_trims_and_dedupes() {

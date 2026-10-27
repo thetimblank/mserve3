@@ -1,12 +1,15 @@
+use super::super::support::{http_client, scratch_dir};
 use super::super::{
     ListProviderVersionsPayload, ProviderVersionEntry, ResolveProviderVersionPayload,
     ResolvedProvider,
 };
+use super::run_blocking;
 use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
@@ -15,18 +18,12 @@ const MOJANG_MANIFEST: &str = "https://piston-meta.mojang.com/mc/game/version_ma
 const LIST_CACHE_TTL_SECS: u64 = 60 * 60; // 1 hour
 const VANILLA_RESOLVED_CACHE: &str = "vanilla-resolved.json";
 const MAX_RESOLVE_WORKERS: usize = 16;
+/// Timeout for metadata/API lookups (not file downloads).
+pub(in crate::app) const API_TIMEOUT: Duration = Duration::from_secs(30);
 
 // ---------------------------------------------------------------------------
 // HTTP helpers
 // ---------------------------------------------------------------------------
-
-pub(in crate::app) fn http_client() -> Result<reqwest::blocking::Client, String> {
-    reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .user_agent(concat!("mserve/", env!("CARGO_PKG_VERSION")))
-        .build()
-        .map_err(|err| err.to_string())
-}
 
 pub(in crate::app) fn fetch_text(
     client: &reqwest::blocking::Client,
@@ -46,16 +43,12 @@ pub(in crate::app) fn fetch_text(
 // Disk cache
 // ---------------------------------------------------------------------------
 
-fn cache_dir() -> PathBuf {
-    std::env::temp_dir().join("mserve").join("provider-cache")
-}
-
-fn cache_path(name: &str) -> PathBuf {
-    cache_dir().join(name)
+fn cache_path(name: &str) -> Option<PathBuf> {
+    scratch_dir("provider-cache").ok().map(|dir| dir.join(name))
 }
 
 fn read_cache_fresh(name: &str, ttl_secs: u64) -> Option<String> {
-    let path = cache_path(name);
+    let path = cache_path(name)?;
     let modified = fs::metadata(&path).ok()?.modified().ok()?;
     let age = SystemTime::now().duration_since(modified).ok()?;
     if age.as_secs() > ttl_secs {
@@ -65,13 +58,23 @@ fn read_cache_fresh(name: &str, ttl_secs: u64) -> Option<String> {
 }
 
 fn read_cache_any(name: &str) -> Option<String> {
-    fs::read_to_string(cache_path(name)).ok()
+    fs::read_to_string(cache_path(name)?).ok()
 }
 
+/// Writes via a uniquely named temp file + rename so a concurrent reader never
+/// sees a half-written cache entry and concurrent writers don't share a file.
 fn write_cache(name: &str, contents: &str) {
-    let dir = cache_dir();
-    if fs::create_dir_all(&dir).is_ok() {
-        let _ = fs::write(dir.join(name), contents);
+    static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
+    let Some(path) = cache_path(name) else {
+        return;
+    };
+    let temp_path = path.with_extension(format!(
+        "{}-{}.tmp",
+        std::process::id(),
+        NEXT_TEMP.fetch_add(1, Ordering::Relaxed)
+    ));
+    if fs::write(&temp_path, contents).is_ok() && fs::rename(&temp_path, &path).is_err() {
+        let _ = fs::remove_file(&temp_path);
     }
 }
 
@@ -272,6 +275,7 @@ fn resolve_fill(
         stable,
         size_bytes: download.size,
         sha256: download.checksums.as_ref().map(|sums| sums.sha256.clone()),
+        sha1: None,
     })
 }
 
@@ -311,6 +315,8 @@ struct MojangServerDownload {
     url: String,
     #[serde(default)]
     size: Option<u64>,
+    #[serde(default)]
+    sha1: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -327,6 +333,9 @@ struct VanillaResolved {
     url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     size: Option<u64>,
+    /// Absent in cache entries written before mserve captured it.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    sha1: Option<String>,
     #[serde(default)]
     java_major: u32,
     #[serde(rename = "type")]
@@ -339,8 +348,16 @@ fn load_vanilla_resolved() -> BTreeMap<String, VanillaResolved> {
         .unwrap_or_default()
 }
 
-fn save_vanilla_resolved(map: &BTreeMap<String, VanillaResolved>) {
-    if let Ok(text) = serde_json::to_string(map) {
+/// Merges freshly resolved entries into the on-disk cache. The read-merge-write
+/// is serialized so concurrent resolves don't drop each other's entries.
+fn save_vanilla_resolved(new_entries: impl IntoIterator<Item = (String, VanillaResolved)>) {
+    static LOCK: Mutex<()> = Mutex::new(());
+    let _guard = LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut map = load_vanilla_resolved();
+    map.extend(new_entries);
+    if let Ok(text) = serde_json::to_string(&map) {
         write_cache(VANILLA_RESOLVED_CACHE, &text);
     }
 }
@@ -360,6 +377,7 @@ fn resolve_one_vanilla(
             has_jar: true,
             url: Some(server.url),
             size: server.size,
+            sha1: server.sha1,
             java_major: detail.java_version.map_or(0, |java| java.major_version),
             kind: version.kind.clone(),
         },
@@ -367,6 +385,7 @@ fn resolve_one_vanilla(
             has_jar: false,
             url: None,
             size: None,
+            sha1: None,
             java_major: 0,
             kind: version.kind.clone(),
         },
@@ -453,10 +472,9 @@ fn vanilla_list_entries(
         .collect();
 
     if !pending.is_empty() {
-        for (id, entry) in resolve_many_vanilla(client, pending) {
-            resolved.insert(id, entry);
-        }
-        save_vanilla_resolved(&resolved);
+        let fresh = resolve_many_vanilla(client, pending);
+        resolved.extend(fresh.iter().cloned());
+        save_vanilla_resolved(fresh);
     }
 
     let mut entries = Vec::new();
@@ -483,10 +501,10 @@ pub(in crate::app) fn resolve_vanilla(
     client: &reqwest::blocking::Client,
     version: &str,
 ) -> Result<ResolvedProvider, String> {
-    let mut resolved = load_vanilla_resolved();
+    let resolved = load_vanilla_resolved();
 
     let entry = match resolved.get(version) {
-        Some(entry) if entry.has_jar => entry.clone(),
+        Some(entry) if entry.has_jar && entry.sha1.is_some() => entry.clone(),
         _ => {
             let manifest_text = fetch_cached(
                 client,
@@ -504,8 +522,7 @@ pub(in crate::app) fn resolve_vanilla(
 
             let resolved_entry = resolve_one_vanilla(client, mojang_version)
                 .ok_or_else(|| format!("Failed to resolve metadata for Minecraft {version}."))?;
-            resolved.insert(version.to_string(), resolved_entry.clone());
-            save_vanilla_resolved(&resolved);
+            save_vanilla_resolved([(version.to_string(), resolved_entry.clone())]);
             resolved_entry
         }
     };
@@ -535,6 +552,7 @@ pub(in crate::app) fn resolve_vanilla(
         stable: entry.kind == "release",
         size_bytes: entry.size,
         sha256: None,
+        sha1: entry.sha1,
     })
 }
 
@@ -600,6 +618,38 @@ fn pick_stable_fabric_version(entries: &[FabricVersionInfo]) -> Option<&FabricVe
         .or_else(|| entries.first())
 }
 
+/// The newest stable Fabric installer version (shared with the modpack installer).
+pub(in crate::app) fn latest_fabric_installer(
+    client: &reqwest::blocking::Client,
+) -> Result<String, String> {
+    let installers_text = fetch_cached(
+        client,
+        &format!("{FABRIC_META}/versions/installer"),
+        "fabric-installer-versions.json",
+        LIST_CACHE_TTL_SECS,
+    )?;
+    let installers: Vec<FabricVersionInfo> =
+        serde_json::from_str(&installers_text).map_err(|err| err.to_string())?;
+    pick_stable_fabric_version(&installers)
+        .map(|installer| installer.version.clone())
+        .ok_or_else(|| "No Fabric installer version is available.".to_string())
+}
+
+/// File name and download URL of the Fabric server launcher for a Minecraft +
+/// loader + installer combination.
+pub(in crate::app) fn fabric_server_jar(
+    minecraft_version: &str,
+    loader_version: &str,
+    installer_version: &str,
+) -> (String, String) {
+    (
+        format!("fabric-server-mc.{minecraft_version}-loader.{loader_version}.jar"),
+        format!(
+            "{FABRIC_META}/versions/loader/{minecraft_version}/{loader_version}/{installer_version}/server/jar"
+        ),
+    )
+}
+
 fn resolve_fabric(
     client: &reqwest::blocking::Client,
     version: &str,
@@ -615,17 +665,7 @@ fn resolve_fabric(
         .ok_or_else(|| format!("No Fabric loader is available for Minecraft {version}."))?
         .clone();
 
-    let installers_text = fetch_cached(
-        client,
-        &format!("{FABRIC_META}/versions/installer"),
-        "fabric-installer-versions.json",
-        LIST_CACHE_TTL_SECS,
-    )?;
-    let installers: Vec<FabricVersionInfo> =
-        serde_json::from_str(&installers_text).map_err(|err| err.to_string())?;
-    let installer = pick_stable_fabric_version(&installers)
-        .ok_or_else(|| "No Fabric installer version is available.".to_string())?
-        .clone();
+    let installer = latest_fabric_installer(client)?;
 
     let game_stable = fabric_game_versions(client)
         .ok()
@@ -643,19 +683,19 @@ fn resolve_fabric(
         .map(|resolved| resolved.jdk_versions)
         .unwrap_or_default();
 
+    let (file, download_url) = fabric_server_jar(version, &loader.version, &installer);
+
     Ok(ResolvedProvider {
         name: "fabric".to_string(),
-        file: format!("fabric-server-mc.{version}-loader.{}.jar", loader.version),
-        download_url: format!(
-            "{FABRIC_META}/versions/loader/{version}/{}/{}/server/jar",
-            loader.version, installer.version
-        ),
+        file,
+        download_url,
         provider_version: loader.version,
         minecraft_version: version.to_string(),
         jdk_versions,
         stable: game_stable && loader.stable,
         size_bytes: None,
         sha256: None,
+        sha1: None,
     })
 }
 
@@ -728,6 +768,7 @@ fn resolve_purpur(
         stable: !version_is_unstable(version),
         size_bytes: None,
         sha256: None,
+        sha1: None,
     })
 }
 
@@ -776,6 +817,7 @@ fn resolve_bungeecord(client: &reqwest::blocking::Client) -> Result<ResolvedProv
         stable: true,
         size_bytes: None,
         sha256: None,
+        sha1: None,
     })
 }
 
@@ -784,10 +826,16 @@ fn resolve_bungeecord(client: &reqwest::blocking::Client) -> Result<ResolvedProv
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
-pub(in crate::app) fn list_provider_versions(
+pub(in crate::app) async fn list_provider_versions(
     payload: ListProviderVersionsPayload,
 ) -> Result<Vec<ProviderVersionEntry>, String> {
-    let client = http_client()?;
+    run_blocking(move || list_provider_versions_blocking(&payload)).await
+}
+
+fn list_provider_versions_blocking(
+    payload: &ListProviderVersionsPayload,
+) -> Result<Vec<ProviderVersionEntry>, String> {
+    let client = http_client(API_TIMEOUT)?;
     let include_unstable = payload.include_unstable;
 
     match payload.tab.trim().to_lowercase().as_str() {
@@ -814,10 +862,16 @@ pub(in crate::app) fn list_provider_versions(
 }
 
 #[tauri::command]
-pub(in crate::app) fn resolve_provider_version(
+pub(in crate::app) async fn resolve_provider_version(
     payload: ResolveProviderVersionPayload,
 ) -> Result<ResolvedProvider, String> {
-    let client = http_client()?;
+    run_blocking(move || resolve_provider_version_blocking(&payload)).await
+}
+
+fn resolve_provider_version_blocking(
+    payload: &ResolveProviderVersionPayload,
+) -> Result<ResolvedProvider, String> {
+    let client = http_client(API_TIMEOUT)?;
     let provider = payload.provider.trim().to_lowercase();
     let version = payload.version.trim();
     if version.is_empty() {

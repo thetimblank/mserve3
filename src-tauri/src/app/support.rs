@@ -1,6 +1,7 @@
 mod backups;
 mod content_meta;
 mod core;
+mod download;
 mod items;
 #[cfg(target_os = "linux")]
 mod linux_firewall;
@@ -26,6 +27,7 @@ mod windows_firewall;
 pub(super) use backups::*;
 pub(super) use content_meta::*;
 pub(super) use core::*;
+pub(super) use download::*;
 pub(super) use items::*;
 #[cfg(target_os = "linux")]
 pub(super) use linux_firewall::*;

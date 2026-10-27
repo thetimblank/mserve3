@@ -52,6 +52,7 @@ tokio-util = "0.7"
 # Surfaces the playit agent crates' `tracing` diagnostics (they log connection/auth
 # failures via `tracing`, which is otherwise dropped with no subscriber installed).
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+sha1 = "0.10"
 sha2 = "0.10"
 
 [target.'cfg(windows)'.dependencies]
@@ -68,7 +69,6 @@ tar = "0.4"
 
 [dev-dependencies]
 tempfile = "3"
-serial_test = "3"
 
 # Size-optimized release build. `opt-level = "s"` trades a little speed for a
 # smaller binary (the workload here — RCON/telemetry/IO — isn't hot), while LTO +
