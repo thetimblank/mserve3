@@ -38,7 +38,7 @@ to the module tree the way the siblings are declared.
 ## 3. Register it in `generate_handler!` ⚠️
 
 In [src-tauri/src/app/mod.rs](../../../src-tauri/src/app/mod.rs), add the function
-name to the `tauri::generate_handler![ … ]` list (~line 546). Without this the
+name to the `tauri::generate_handler![ … ]` list in `run()` at the end of the file. Without this the
 frontend gets a "command not found" error at call time.
 
 ## 4. Call it from the frontend

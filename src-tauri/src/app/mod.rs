@@ -3,7 +3,7 @@ mod support;
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
-use std::process::{Child, ChildStdin};
+use std::process::Child;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tauri::{Emitter, Manager};
@@ -291,7 +291,7 @@ impl LifecycleState {
     }
 }
 
-/// Loopback RCON credentials, provisioned into server.properties on start.
+/// RCON credentials, provisioned into server.properties on start.
 #[derive(Debug, Clone)]
 struct RconConfig {
     port: u16,
@@ -354,7 +354,9 @@ struct TelemetryHistoryPoint {
 struct ServerRuntime {
     directory: String,
     child: Option<Child>,
-    stdin: Option<ChildStdin>,
+    /// Shared so a graceful-stop or console write can happen after the
+    /// `processes` lock is released (a full pipe must not wedge the map).
+    stdin: Option<support::StdinHandle>,
     pid: Option<u32>,
     started_at: chrono::DateTime<chrono::Utc>,
     state: LifecycleState,
@@ -364,6 +366,10 @@ struct ServerRuntime {
     host: String,
     server_port: u16,
     is_proxy: bool,
+    /// Console commands that shut this server down; the first is the one mserve
+    /// sends for a graceful stop (`stop` for game servers, `end`/`shutdown` for
+    /// proxies).
+    shutdown_commands: &'static [&'static str],
     server_id: String,
     configured_ram: Option<f64>,
     provider_version: Option<String>,
@@ -537,20 +543,6 @@ struct JavaRuntimeDetectionResult {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ServerDirectoryInspectionResult {
-    kind: String,
-    exists: bool,
-    is_directory: bool,
-    is_empty: bool,
-    has_mserve_json: bool,
-    has_server_properties: bool,
-    has_eula_txt: bool,
-    first_jar_file: Option<String>,
-    message: String,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
 struct ScannedPlugin {
     name: Option<String>,
     file: String,
@@ -642,8 +634,13 @@ fn confirm_close(_app: tauri::AppHandle) {
     std::process::exit(0);
 }
 
+/// Set once the frontend has finished booting and swapped the splash for the
+/// main window, so the splash-timeout fallback doesn't re-show/re-focus it.
+static STARTUP_COMPLETED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 #[tauri::command]
 fn complete_startup(app: tauri::AppHandle) {
+    STARTUP_COMPLETED.store(true, std::sync::atomic::Ordering::Relaxed);
     if let Some(main_window) = app.get_webview_window("main") {
         let _ = main_window.show();
         let _ = main_window.set_focus();
@@ -654,19 +651,15 @@ fn complete_startup(app: tauri::AppHandle) {
     }
 }
 
-/// Directories of every server that isn't fully stopped — used to warn the user
-/// before a real quit.
+/// Directories of every server whose process mserve owns and would kill on a
+/// real quit — used to warn the user first.
 fn running_server_directories(app: &tauri::AppHandle) -> Vec<String> {
     let state: tauri::State<'_, RuntimeState> = app.state();
     let guard = state
         .processes
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    guard
-        .values()
-        .filter(|r| r.state.is_active())
-        .map(|r| r.directory.clone())
-        .collect()
+    commands::owned_running_server_directories(&guard)
 }
 
 /// Emit `app-close-requested` so the frontend can prompt before shutdown. The
@@ -857,7 +850,12 @@ fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
     let app_handle = app.handle().clone();
     tauri::async_runtime::spawn(async move {
-        std::thread::sleep(std::time::Duration::from_secs(8));
+        tokio::time::sleep(std::time::Duration::from_secs(8)).await;
+        // The frontend normally hands off via `complete_startup`; this is only the
+        // fallback for a frontend that never finished booting.
+        if STARTUP_COMPLETED.load(std::sync::atomic::Ordering::Relaxed) {
+            return;
+        }
 
         if let Some(main_window) = app_handle.get_webview_window("main") {
             let _ = main_window.show();
@@ -872,7 +870,6 @@ fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
 /// Installs a lightweight stderr tracing subscriber so the in-process playit agent's
 /// diagnostics (control-server connect / auth / registration) are visible when the
 /// app is run from a console (`npm run dev`). Quiet by default — global `warn` plus
@@ -923,7 +920,6 @@ pub fn run() {
             install_modrinth_file,
             install_modrinth_modpack,
             initialize_server,
-            inspect_server_directory,
             import_server,
             sync_server_mserve_json,
             repair_server_mserve_json,
@@ -960,7 +956,6 @@ pub fn run() {
             force_kill_server,
             force_kill_all_servers,
             run_in_background,
-            get_running_server_directories,
             send_server_command,
             get_server_runtime,
             get_server_telemetry,

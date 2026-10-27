@@ -1,10 +1,51 @@
 use super::super::{MserveProvider, SyncedMserveConfig};
 use super::copy_jar_to_server_directory;
+use super::server_properties::read_property;
 use serde::Deserialize;
 use serde::de::{self, MapAccess, Visitor};
 use serde_json::{Map, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+
+/// Serializes every mserve.json write in this process, so two writes can never
+/// interleave on disk. It does not make a caller's earlier read part of the
+/// critical section: a whole-file writer that read mserve.json before a
+/// concurrent `patch_mserve_json` can still overwrite the patched fields.
+static MSERVE_JSON_WRITE_LOCK: Mutex<()> = Mutex::new(());
+
+/// Writes `bytes` to `<directory>/mserve.json` via a temp file + rename, so a
+/// crash mid-write can never leave a truncated config behind.
+fn write_mserve_json_atomically(directory: &Path, bytes: &[u8]) -> Result<(), String> {
+    let path = directory.join("mserve.json");
+    let temp_path = directory.join("mserve.json.tmp");
+    fs::write(&temp_path, bytes).map_err(|err| err.to_string())?;
+    fs::rename(&temp_path, &path).map_err(|err| {
+        let _ = fs::remove_file(&temp_path);
+        err.to_string()
+    })
+}
+
+/// Sets individual top-level fields in an existing `mserve.json`, leaving every
+/// other field untouched (read → patch → atomic write, under the write lock).
+pub(in crate::app) fn patch_mserve_json(
+    directory: &Path,
+    updates: &[(&str, Value)],
+) -> Result<(), String> {
+    let _guard = MSERVE_JSON_WRITE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let raw = fs::read_to_string(directory.join("mserve.json")).map_err(|err| err.to_string())?;
+    let mut value: Value = serde_json::from_str(&raw).map_err(|err| err.to_string())?;
+    let object = value
+        .as_object_mut()
+        .ok_or_else(|| "mserve.json is not a JSON object.".to_string())?;
+    for (key, update) in updates {
+        object.insert((*key).to_string(), update.clone());
+    }
+    let out = serde_json::to_vec_pretty(&value).map_err(|err| err.to_string())?;
+    write_mserve_json_atomically(directory, &out)
+}
 
 struct TopLevelObject(Map<String, Value>);
 
@@ -273,29 +314,11 @@ pub(in crate::app) fn default_telemetry_host() -> String {
     "127.0.0.1".to_string()
 }
 
-fn parse_server_properties_port(directory: &Path) -> Option<u16> {
-    let properties_path = directory.join("server.properties");
-    let raw = fs::read_to_string(properties_path).ok()?;
-
-    for line in raw.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            continue;
-        }
-
-        if let Some(value) = trimmed.strip_prefix("server-port=") {
-            let parsed = value.trim().parse::<u16>().ok()?;
-            if parsed > 0 {
-                return Some(parsed);
-            }
-        }
-    }
-
-    None
-}
-
 pub(in crate::app) fn detect_default_telemetry_port(directory: &Path) -> u16 {
-    parse_server_properties_port(directory).unwrap_or(25565)
+    read_property(directory, "server-port")
+        .and_then(|value| value.parse::<u16>().ok())
+        .filter(|port| *port > 0)
+        .unwrap_or(25565)
 }
 
 pub(in crate::app) fn sanitize_telemetry_host(raw: Option<&serde_json::Value>) -> String {
@@ -741,12 +764,12 @@ pub(in crate::app) fn write_synced_mserve_json(
     directory: &Path,
     config: &SyncedMserveConfig,
 ) -> Result<(), String> {
-    fs::write(
-        directory.join("mserve.json"),
-        serde_json::to_vec_pretty(&synced_mserve_json_value(config))
-            .map_err(|err| err.to_string())?,
-    )
-    .map_err(|err| err.to_string())
+    let bytes = serde_json::to_vec_pretty(&synced_mserve_json_value(config))
+        .map_err(|err| err.to_string())?;
+    let _guard = MSERVE_JSON_WRITE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    write_mserve_json_atomically(directory, &bytes)
 }
 
 pub(in crate::app) fn validate_mserve_json_keys(
@@ -909,6 +932,46 @@ pub(in crate::app) fn resolve_repair_file(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn patch_mserve_json_sets_only_the_given_fields() {
+        let dir = std::env::temp_dir().join(format!("mserve-patch-json-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("mserve.json"),
+            r#"{"id":"abc","telemetry_port":25565,"tunnel_enabled":false}"#,
+        )
+        .unwrap();
+
+        super::patch_mserve_json(
+            &dir,
+            &[
+                ("telemetry_port", serde_json::json!(25566)),
+                ("tunnel_id", serde_json::json!("t-1")),
+            ],
+        )
+        .unwrap();
+
+        let value: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("mserve.json")).unwrap())
+                .unwrap();
+        assert_eq!(value["id"], "abc");
+        assert_eq!(value["telemetry_port"], 25566);
+        assert_eq!(value["tunnel_id"], "t-1");
+        assert_eq!(value["tunnel_enabled"], false);
+        assert!(!dir.join("mserve.json.tmp").exists());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn telemetry_port_tolerates_spaces_around_the_separator() {
+        // Regression (R-039): the old hand-rolled parser required `server-port=`.
+        let dir = std::env::temp_dir().join(format!("mserve-port-spaces-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("server.properties"), "server-port = 25570\n").unwrap();
+        assert_eq!(super::detect_default_telemetry_port(&dir), 25570);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
     use super::*;
     use serde_json::json;
 

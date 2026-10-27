@@ -6,14 +6,15 @@
 //!
 //! std sockets only (no async) so it builds identically on Windows and Linux.
 
-use super::super::{
-    LifecycleState, ServerOutputEvent, ServerRuntime, ServerRuntimeStateEvent, TelemetrySample,
-};
+use super::super::{LifecycleState, ServerRuntime, TelemetrySample};
 use super::mc_protocol::{
     build_login_disconnect_packet, build_status_packet, build_status_response_json, read_handshake,
     read_varint_from_stream, with_packet_length,
 };
+use super::playit;
+use super::runtime_io::emit_system_line;
 use super::server_properties::read_property;
+use super::supervisor::{offline_state_event, remove_if_current};
 use super::telemetry::probe_port;
 use super::telemetry_store;
 use std::collections::HashMap;
@@ -86,6 +87,29 @@ fn resolve_bind_host(directory: &Path) -> String {
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| "0.0.0.0".to_string())
+}
+
+/// The address to probe to reach whatever is bound on `bind_host`: a wildcard
+/// bind answers on loopback; a pinned address only answers on itself.
+fn probe_host_for_bind(bind_host: &str) -> &str {
+    match bind_host {
+        "0.0.0.0" | "::" | "[::]" => "127.0.0.1",
+        pinned => pinned,
+    }
+}
+
+/// Waits (bounded, ~6s) until nothing answers on the server's port any more, so
+/// a freshly-released wake listener doesn't make the real server's bind fail.
+/// Probes the address the listener actually bound (see [`resolve_bind_host`]).
+pub(in crate::app) fn wait_for_port_release(directory: &Path, port: u16) {
+    let bind_host = resolve_bind_host(directory);
+    let probe_host = probe_host_for_bind(&bind_host);
+    for _ in 0..15 {
+        if !probe_port(probe_host, port, Duration::from_millis(200)) {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
 }
 
 fn run_accept_loop(
@@ -211,8 +235,9 @@ fn echo_ping(stream: &mut TcpStream) {
     }
 }
 
-/// Waits for the port to free, then starts the real server. The listener has
-/// already been dropped by the caller.
+/// Starts the real server. The listener has already been dropped by the caller;
+/// `start_server_internal` waits for the port to free (the entry is still
+/// `Sleeping`, which is its wake path).
 fn wake_server(processes: &Processes, app: &tauri::AppHandle, params: &SleepListenerParams) {
     emit_system_line(
         app,
@@ -220,37 +245,30 @@ fn wake_server(processes: &Processes, app: &tauri::AppHandle, params: &SleepList
         "A player is joining — waking the server…",
     );
 
-    // Wait (bounded) for the OS to release the port we just held before java
-    // tries to bind it. `probe_port` returns true while something still answers.
-    for _ in 0..15 {
-        if !probe_port("127.0.0.1", params.server_port, Duration::from_millis(200)) {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(200));
-    }
-
     if let Err(err) = super::super::commands::start_server_internal(
         params.directory.clone(),
         params.java_executable.clone(),
         processes.clone(),
         app.clone(),
     ) {
-        // Couldn't wake: drop the sleeping entry and report offline.
-        if let Ok(mut guard) = processes.lock() {
-            guard.remove(&params.key);
+        // Couldn't wake. Only clean up if the map still holds *our* sleeping
+        // runtime: when a concurrent start (e.g. the user clicking Start) won the
+        // race, the error is "already running" and that runtime must survive.
+        if let Some(mut removed) = remove_if_current(processes, &params.key, params.generation)
+            && let Some(stop) = removed.playit_stop.take()
+        {
+            playit::stop_agent(&stop);
         }
-        let _ = app.emit(
-            "server-runtime-state",
-            ServerRuntimeStateEvent {
-                directory: params.directory.clone(),
-                state: LifecycleState::Offline,
-                pid: None,
-                started_at: None,
-                exit_code: None,
-                stderr_tail: Vec::new(),
-                server_port: Some(params.server_port),
-            },
-        );
+        let replaced = processes
+            .lock()
+            .is_ok_and(|guard| guard.contains_key(&params.key));
+        if !replaced {
+            let _ = app.emit(
+                "server-runtime-state",
+                offline_state_event(params.directory.clone(), params.server_port),
+            );
+            playit::emit_tunnel_state(app, &params.directory, "offline", None, None);
+        }
         emit_system_line(
             app,
             &params.directory,
@@ -259,13 +277,18 @@ fn wake_server(processes: &Processes, app: &tauri::AppHandle, params: &SleepList
     }
 }
 
-fn emit_system_line(app: &tauri::AppHandle, directory: &str, line: impl Into<String>) {
-    let _ = app.emit(
-        "server-output",
-        ServerOutputEvent {
-            directory: directory.to_string(),
-            stream: "system".to_string(),
-            line: line.into(),
-        },
-    );
+#[cfg(test)]
+mod tests {
+    use super::probe_host_for_bind;
+
+    #[test]
+    fn wildcard_binds_are_probed_on_loopback() {
+        assert_eq!(probe_host_for_bind("0.0.0.0"), "127.0.0.1");
+        assert_eq!(probe_host_for_bind("::"), "127.0.0.1");
+    }
+
+    #[test]
+    fn pinned_server_ip_is_probed_on_itself() {
+        assert_eq!(probe_host_for_bind("192.168.1.10"), "192.168.1.10");
+    }
 }

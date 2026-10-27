@@ -944,7 +944,7 @@ export const useServerRuntime = ({
 			setTerminalInput('');
 			appendTerminalLine(`> ${command}`);
 
-			if (isStopCommand(command)) {
+			if (isStopCommand(command, server?.provider)) {
 				runtimeRef.current.manualStopRequested = true;
 				runtimeRef.current.stopRequested = true;
 				setServerStatus(serverId, 'closing');
@@ -963,6 +963,7 @@ export const useServerRuntime = ({
 		[
 			appendTerminalLine,
 			isBusy,
+			server?.provider,
 			serverDirectory,
 			serverStatus,
 			serverId,

@@ -33,16 +33,21 @@ await invoke('start_server', { directory, javaExecutable });
 const unlisten = await listen('server-runtime-state', (e) => { /* e.payload */ });
 ```
 
-The four backend → frontend events and where they're consumed:
+The nine backend → frontend events and where they're consumed:
 
 | Event | Payload (camelCase) | Primary consumer |
 | --- | --- | --- |
-| `server-runtime-state` | `{ directory, state, pid, startedAt, exitCode, stderrTail, serverPort }` | `components/server-runtime-monitor.tsx` |
-| `server-telemetry` | `{ directory, sample }` | `server-runtime-monitor.tsx`, stats hooks |
-| `server-output` | `{ directory, stream, line }` | `pages/server/hooks/use-server-terminal.ts` |
-| `java-download-progress` | `{ … progress }` | `data/java-download.tsx` |
+| `server-runtime-state` | `{ directory, state, pid, startedAt, exitCode, stderrTail, serverPort }` | `components/server-runtime-monitor.tsx`, `pages/server/hooks/use-server-runtime.ts` |
+| `server-telemetry` | `{ directory, sample }` | `server-runtime-monitor.tsx`, `use-server-runtime.ts` |
+| `server-output` | `{ directory, stream, line }` (`stream`: `stdout`/`stderr`/`system`) | `server-runtime-monitor.tsx`, `use-server-runtime.ts` |
+| `java-download-progress` | `{ majorVersion, downloadedBytes, totalBytes, progress, done }` | `data/java-download.tsx` |
+| `server-jar-download-progress` | `{ downloadId, downloadedBytes, totalBytes, progress, done }` | `pages/create-server/slides/SlideJarFile.tsx` |
+| `modpack-install-progress` | `{ installId, stage, message, filesDone, filesTotal, progress, done }` | `pages/create-server/CreateServerContext.tsx` |
+| `playit-claim-state` | `{ status, claimUrl, error }` | `hooks/use-playit-account.ts` |
+| `playit-tunnel-state` | `{ directory, status, address, error }` | `pages/server/hooks/use-server-tunnel.ts` |
+| `app-close-requested` | `{ runningServerDirectories }` | `components/close-warning-dialog.tsx` |
 
-`state` is the authoritative lifecycle string (`offline|starting|online|stopping|crashed|running-external`).
+`state` is the authoritative lifecycle string (`offline|starting|online|stopping|crashed|running-external|sleeping`).
 
 **Claimed-server pattern:** `server-runtime-monitor.tsx` is an app-wide listener
 that keeps the home/network views in sync. When the server-detail page mounts it

@@ -26,36 +26,46 @@ setup is in `app/mod.rs`.
 src/app/
 ├── mod.rs            # Tauri builder, managed state, struct/enum definitions, generate_handler!
 ├── commands/         # #[tauri::command] IPC handlers — the frontend-facing API
-│   ├── runtime.rs        start/stop/restart/force-kill, send command, get runtime snapshot
-│   ├── setup.rs          initialize/import/inspect a server, sync & repair mserve.json
-│   ├── providers.rs      list/resolve provider versions, download_server_jar
+│   ├── runtime.rs        start/stop/sleep/restart/force-kill, send command, runtime snapshot,
+│   │                     background mode, set/get_server_tunnel, delete_server
+│   ├── setup.rs          initialize/import a server, sync & repair mserve.json
+│   ├── providers.rs      list/resolve provider versions
 │   ├── java.rs           detect_java_runtimes (registry/PATH/JAVA_HOME scan)
 │   ├── java_download.rs   download_java_runtime (+ java-download-progress event)
-│   ├── network.rs        firewall port forwarding (per-OS dispatch)
+│   ├── network.rs        firewall port forwarding (per-OS dispatch), local/public IP,
+│   │                     validate_path, get_system_memory_gb, download_server_jar
+│   │                     (+ server-jar-download-progress event)
 │   ├── networks.rs       networks.json + per-server network file (Velocity forwarding)
-│   ├── settings.rs       update_server_settings, set_server_java_installation
-│   ├── backups.rs        create/restore/delete backup
-│   ├── items.rs          plugin/world/datapack toggle, delete, export, upload
+│   ├── settings.rs       update_server_settings / backup settings, Java + custom flags,
+│   │                     default servers root
+│   ├── backups.rs        create/restore/delete/lock backups, apply retention
+│   ├── items.rs          plugin/world/datapack scan, toggle, delete, export, upload, storage
 │   ├── config_files.rs   scan/read/write managed config files (whitelist.json, ops.json…)
+│   ├── modrinth.rs       Modrinth search/project/versions/tags, install_modrinth_file
+│   ├── modpack.rs        install_modrinth_modpack (.mrpack, + modpack-install-progress)
 │   ├── telemetry.rs      get_server_telemetry, get_server_telemetry_history
 │   ├── playit.rs         playit.gg account: get_playit_status, start_playit_claim, disconnect
-│   └── navigation.rs     open folder/path, validate_path, delete_server
+│   └── navigation.rs     open_server_folder, open_server_path
 └── support/          # subsystems & helpers (not directly exposed to the frontend)
     ├── supervisor.rs      per-server lifecycle owner (see below)
     ├── telemetry.rs       live sample collection (SLP + RCON TPS + sysinfo)
     ├── telemetry_store.rs  SQLite time-series (append + bucket-averaged range query)
-    ├── mserve_config.rs   mserve.json read/normalize/write, provider inference
-    ├── server_properties.rs  RCON provisioning into server.properties
-    ├── rcon.rs            hand-rolled Source RCON client (loopback only)
+    ├── mserve_config.rs   mserve.json read/normalize/write (atomic), provider inference
+    ├── server_properties.rs  server.properties read/update, RCON provisioning
+    ├── rcon.rs            hand-rolled Source RCON client
+    ├── mc_protocol.rs     Minecraft VarInt/String codec, handshake + status packets
+    ├── sleep_listener.rs  sleep-mode wake listener (holds the port, answers pings, wakes on join)
+    ├── content_meta.rs    .mserve-content.json provenance sidecar for installed content
     ├── playit.rs          playit.gg tunneling: REST claim/tunnel + in-process agent
     │                      (set_server_tunnel/get_server_tunnel live in commands/runtime.rs;
     │                      emits playit-claim-state + playit-tunnel-state)
-    ├── runtime_io.rs      stream child stdout/stderr → server-output events
+    ├── runtime_io.rs      stream child stdout/stderr → server-output events, stdin writes
     ├── process.rs         OS process plumbing (job object / process groups, port→PID kill)
     ├── backups.rs         backup copy/restore + retention enforcement
     ├── scan.rs            enumerate worlds/plugins/datapacks
     ├── items.rs           move items between active/inactive folders
     ├── core.rs            platform helpers (no_window_command, home_dir, file moves)
+    ├── testkit.rs         test-only fake Minecraft server (SLP + RCON), cfg(test)
     ├── linux_firewall.rs  firewalld/ufw wrappers via pkexec (cfg(linux))
     └── windows_firewall.rs  netsh wrappers (cfg(windows))
 ```
@@ -66,7 +76,7 @@ src/app/
    `commands/*.rs` (group by domain, not alphabetically).
 2. Make it reachable through the `commands` module (modules are re-exported; follow
    the sibling functions in that file).
-3. **Register it in the `generate_handler![…]` list in `app/mod.rs`** (~line 546) —
+3. **Register it in the `generate_handler![…]` list at the end of `app/mod.rs`** (in `run()`) —
    this is the step that's easy to forget; an unregistered command fails at runtime
    with "command not found", not at compile time.
 4. Frontend side: `invoke('my_command', { camelCaseArgs })`. See the
@@ -120,5 +130,10 @@ struct RuntimeState { processes: Arc<Mutex<HashMap<String, ServerRuntime>>> }
   (traversal guard) — see `scan.rs` / `items.rs`.
 - **Idempotent writes:** read → compare → write only on change (e.g. RCON
   provisioning in `server_properties.rs`).
-- Run `cargo fmt` and `cargo clippy` before considering a backend change done
-  (no CI lint gate exists, so this is on you).
+- Run `cargo fmt` and `cargo clippy` before considering a backend change done.
+  CI fails on `cargo fmt --check`; clippy runs there too but is non-blocking
+  (`continue-on-error`), so lint cleanliness is still on you.
+- **Slow work off the main thread:** synchronous `#[tauri::command]`s run on the
+  main thread. A command that spawns processes, probes ports, talks RCON, or waits
+  must be `async` and wrap that work in `spawn_blocking` (see `run_blocking` in
+  `commands/runtime.rs`).

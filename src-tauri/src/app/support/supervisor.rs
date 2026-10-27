@@ -11,12 +11,12 @@
 //! The frontend is a pure consumer of these events plus a one-shot snapshot.
 
 use super::super::{
-    LifecycleState, RconConfig, ServerOutputEvent, ServerRuntime, ServerRuntimeStateEvent,
-    ServerTelemetryEvent, TelemetrySample, TpsCommandState,
+    LifecycleState, RconConfig, ServerRuntime, ServerRuntimeStateEvent, ServerTelemetryEvent,
+    TelemetrySample, TpsCommandState,
 };
 use super::playit;
 use super::rcon::RconClient;
-use super::runtime_io::send_stop_via_stdin;
+use super::runtime_io::{emit_system_line, stop_request};
 use super::sleep_listener::{SleepListenerParams, spawn_sleep_listener};
 use super::telemetry::{
     StatusPingResult, collect_process_metrics, collect_status_ping, collect_tps_via_rcon,
@@ -127,19 +127,6 @@ fn should_sleep(
         && idle_for >= threshold
 }
 
-/// Emits a `server-output` "system" line for a server directory (used to explain
-/// backend-driven actions like a crash restart in the console).
-fn emit_system_line(app: &tauri::AppHandle, directory: &str, line: impl Into<String>) {
-    let _ = app.emit(
-        "server-output",
-        ServerOutputEvent {
-            directory: directory.to_string(),
-            stream: "system".to_string(),
-            line: line.into(),
-        },
-    );
-}
-
 /// After an owned child exits, decides whether to auto-restart it (crash
 /// protection). Runs on the supervisor thread just before it exits, so the
 /// restart is spawned on its own short-lived thread after a backoff. When the
@@ -208,6 +195,10 @@ const STARTING_POLL: Duration = Duration::from_millis(1000);
 const ONLINE_POLL: Duration = Duration::from_millis(5000);
 /// Consecutive failed probes before an adopted (external) server is declared off.
 const EXTERNAL_OFFLINE_STREAK: u32 = 3;
+/// How long an owned server may sit in `starting` (port not accepting) before we
+/// explain in the console what mserve is waiting for. Modded servers can take
+/// minutes to boot, so this only warns; it never changes the state.
+const STARTING_WARNING_AFTER: Duration = Duration::from_secs(180);
 /// How long to wait for a graceful `stop` before force-killing the process.
 const STOP_GRACE: Duration = Duration::from_secs(10);
 
@@ -255,7 +246,7 @@ enum Phase1 {
     Continue(Snapshot),
 }
 
-fn state_event(runtime: &ServerRuntime) -> ServerRuntimeStateEvent {
+pub(in crate::app) fn state_event(runtime: &ServerRuntime) -> ServerRuntimeStateEvent {
     ServerRuntimeStateEvent {
         directory: runtime.directory.clone(),
         state: runtime.state,
@@ -264,6 +255,37 @@ fn state_event(runtime: &ServerRuntime) -> ServerRuntimeStateEvent {
         exit_code: runtime.exit_code,
         stderr_tail: runtime.stderr_tail.iter().cloned().collect(),
         server_port: Some(runtime.server_port),
+    }
+}
+
+/// Removes `key` from the map only while it still holds the runtime of
+/// `generation`, so a stale path can never delete a newer runtime (e.g. a start
+/// that replaced a sleeping one).
+pub(in crate::app) fn remove_if_current(
+    processes: &Arc<Mutex<HashMap<String, ServerRuntime>>>,
+    key: &str,
+    generation: u64,
+) -> Option<ServerRuntime> {
+    let mut guard = processes.lock().ok()?;
+    if guard.get(key)?.generation != generation {
+        return None;
+    }
+    guard.remove(key)
+}
+
+/// A `server-runtime-state` event reporting `directory` as offline.
+pub(in crate::app) fn offline_state_event(
+    directory: String,
+    server_port: u16,
+) -> ServerRuntimeStateEvent {
+    ServerRuntimeStateEvent {
+        directory,
+        state: LifecycleState::Offline,
+        pid: None,
+        started_at: None,
+        exit_code: None,
+        stderr_tail: Vec::new(),
+        server_port: Some(server_port),
     }
 }
 
@@ -304,9 +326,14 @@ fn next_state(
             external_terminal: false,
         }
     } else if accepting {
-        // No owned child but the port answers: an externally-started server.
+        // No owned child but the port answers: an externally-started server. A
+        // stop we sent it over RCON stays `stopping` until the port goes quiet.
+        let state = match prev {
+            LifecycleState::Stopping => LifecycleState::Stopping,
+            _ => LifecycleState::RunningExternal,
+        };
         StateDecision {
-            state: LifecycleState::RunningExternal,
+            state,
             miss_streak: 0,
             external_terminal: false,
         }
@@ -343,6 +370,7 @@ pub(in crate::app) fn spawn_supervisor(
         // When the server first went empty (for sleep mode). Reset on any player
         // or an unknown reading; set once players hit zero while online.
         let mut idle_since: Option<Instant> = None;
+        let mut starting_warned = false;
 
         loop {
             // ---- Phase 1: brief lock — read a snapshot and detect process exit.
@@ -368,16 +396,23 @@ pub(in crate::app) fn spawn_supervisor(
                                 runtime.stop_requested || runtime.state == LifecycleState::Stopping;
                             let sleep_requested = runtime.sleep_requested;
                             let next = terminal_state(requested, sleep_requested, code);
+                            if let Some(pid) = runtime.pid {
+                                super::process::release_child_from_app_lifetime(pid);
+                            }
                             runtime.exit_code = code;
                             runtime.child = None;
                             runtime.stdin = None;
                             runtime.pid = None;
                             runtime.latest_sample = None;
-                            // Tear the playit tunnel down with the server it fronts.
-                            if let Some(stop) = runtime.playit_stop.take() {
-                                playit::stop_agent(&stop);
+                            // Tear the playit tunnel down with the server it fronts —
+                            // except into sleep, where the wake listener takes over the
+                            // port and tunnel players must still be able to wake it.
+                            if !matches!(next, LifecycleState::Sleeping) {
+                                if let Some(stop) = runtime.playit_stop.take() {
+                                    playit::stop_agent(&stop);
+                                }
+                                runtime.tunnel_address = None;
                             }
-                            runtime.tunnel_address = None;
 
                             if matches!(next, LifecycleState::Sleeping) {
                                 // Enter sleep: keep the entry, clear the stop flags,
@@ -470,13 +505,23 @@ pub(in crate::app) fn spawn_supervisor(
                     // with nothing holding the port.
                     match spawn_sleep_listener(processes.clone(), app.clone(), sleep.params) {
                         Ok(handle) => {
-                            if let Ok(mut guard) = processes.lock()
-                                && let Some(runtime) = guard.get_mut(&key)
-                            {
-                                runtime.sleep_stop = Some(handle);
+                            // Attach the listener to *this* sleeping runtime only; if
+                            // a start replaced it meanwhile, shut the listener down.
+                            let attached =
+                                processes
+                                    .lock()
+                                    .is_ok_and(|mut guard| match guard.get_mut(&key) {
+                                        Some(runtime) if runtime.generation == generation => {
+                                            runtime.sleep_stop = Some(handle.clone());
+                                            true
+                                        }
+                                        _ => false,
+                                    });
+                            if !attached {
+                                handle.store(true, Ordering::Relaxed);
+                                return;
                             }
                             let _ = app.emit("server-runtime-state", sleep.event);
-                            playit::emit_tunnel_state(&app, &directory, "offline", None, None);
                             emit_system_line(
                                 &app,
                                 &directory,
@@ -484,20 +529,17 @@ pub(in crate::app) fn spawn_supervisor(
                             );
                         }
                         Err(err) => {
-                            if let Ok(mut guard) = processes.lock() {
-                                guard.remove(&key);
+                            let Some(mut removed) = remove_if_current(&processes, &key, generation)
+                            else {
+                                // A start already replaced this runtime.
+                                return;
+                            };
+                            if let Some(stop) = removed.playit_stop.take() {
+                                playit::stop_agent(&stop);
                             }
                             let _ = app.emit(
                                 "server-runtime-state",
-                                ServerRuntimeStateEvent {
-                                    directory: directory.clone(),
-                                    state: LifecycleState::Offline,
-                                    pid: None,
-                                    started_at: None,
-                                    exit_code: None,
-                                    stderr_tail: Vec::new(),
-                                    server_port: Some(server_port),
-                                },
+                                offline_state_event(directory.clone(), server_port),
                             );
                             playit::emit_tunnel_state(&app, &directory, "offline", None, None);
                             emit_system_line(
@@ -607,9 +649,17 @@ pub(in crate::app) fn spawn_supervisor(
                 sleep_threshold,
             );
 
+            let starting_too_long = !starting_warned
+                && snapshot.has_child
+                && matches!(new_state, LifecycleState::Starting)
+                && (chrono::Utc::now() - snapshot.started_at)
+                    .to_std()
+                    .is_ok_and(|elapsed| elapsed >= STARTING_WARNING_AFTER);
+
             // ---- Phase 3: brief lock — write back state/sample, prepare events.
             let mut state_change: Option<ServerRuntimeStateEvent> = None;
             let mut sleep_initiated = false;
+            let mut sleep_stop_write = None;
             {
                 let Ok(mut guard) = processes.lock() else {
                     return;
@@ -630,7 +680,13 @@ pub(in crate::app) fn spawn_supervisor(
                 if matches!(new_state, LifecycleState::Online) {
                     runtime.ever_online = true;
                 }
-                if sleep_now
+                // A command (stop, sleep, restart, force-kill) changed the state
+                // while phase 2 ran unlocked. It owns the transition now; writing
+                // our snapshot-derived state would revert it.
+                let changed_by_command = runtime.state != snapshot.state;
+                if changed_by_command {
+                    // Leave the state alone.
+                } else if sleep_now
                     && matches!(runtime.state, LifecycleState::Online)
                     && !runtime.stop_requested
                 {
@@ -641,7 +697,7 @@ pub(in crate::app) fn spawn_supervisor(
                     runtime.stop_requested = true;
                     runtime.stop_requested_at = Some(Instant::now());
                     runtime.state = LifecycleState::Stopping;
-                    send_stop_via_stdin(runtime);
+                    sleep_stop_write = stop_request(runtime);
                     idle_since = None;
                     sleep_initiated = true;
                     state_change = Some(state_event(runtime));
@@ -656,6 +712,10 @@ pub(in crate::app) fn spawn_supervisor(
                 }
             }
 
+            if let Some(stop) = sleep_stop_write {
+                stop.send();
+            }
+
             if let Some(sample) = sample {
                 telemetry_store::insert_sample(&snapshot.server_id, &sample);
                 let _ = app.emit(
@@ -668,6 +728,17 @@ pub(in crate::app) fn spawn_supervisor(
             }
             if let Some(event) = state_change {
                 let _ = app.emit("server-runtime-state", event);
+            }
+            if starting_too_long {
+                starting_warned = true;
+                emit_system_line(
+                    &app,
+                    &snapshot.directory,
+                    format!(
+                        "Still waiting for the server to accept connections on {}:{}. If it has finished loading, check that server-ip and server-port in server.properties match that address.",
+                        snapshot.host, snapshot.server_port
+                    ),
+                );
             }
             if sleep_initiated {
                 emit_system_line(
@@ -727,6 +798,27 @@ mod tests {
         // A successful probe resets the miss streak.
         assert_eq!(d.miss_streak, 0);
         assert!(!d.external_terminal);
+    }
+
+    #[test]
+    fn adopted_server_keeps_stopping_while_port_still_accepts() {
+        // Regression (R-017): an RCON stop of an adopted server used to flip back
+        // to running-external on the next poll.
+        let d = next_state(LifecycleState::Stopping, false, true, 0);
+        assert_eq!(d.state, LifecycleState::Stopping);
+        assert!(!d.external_terminal);
+    }
+
+    #[test]
+    fn adopted_stopping_goes_offline_after_streak() {
+        let d = next_state(
+            LifecycleState::Stopping,
+            false,
+            false,
+            EXTERNAL_OFFLINE_STREAK - 1,
+        );
+        assert_eq!(d.state, LifecycleState::Offline);
+        assert!(d.external_terminal);
     }
 
     #[test]

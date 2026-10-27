@@ -81,6 +81,18 @@ pub(in crate::app) fn tie_child_to_app_lifetime(child: &Child) {
 #[cfg(not(any(windows, unix)))]
 pub(in crate::app) fn tie_child_to_app_lifetime(_child: &Child) {}
 
+/// Forgets a reaped child's process group so the exit hooks don't SIGKILL its
+/// pgid later, by which time the PID may belong to an unrelated group. No-op on
+/// Windows, where the job object tracks live processes itself.
+pub(in crate::app) fn release_child_from_app_lifetime(pid: u32) {
+    #[cfg(unix)]
+    unix_lifetime::untrack_process_group(pid);
+    #[cfg(not(unix))]
+    {
+        let _ = pid;
+    }
+}
+
 /// Configures `command` so the spawned child (and everything it spawns) can be
 /// signalled as one unit. On Unix this puts the child in its own process group
 /// (pgid = its pid), which [`kill_process_tree`] and the exit hooks rely on.
@@ -147,6 +159,20 @@ mod unix_lifetime {
         }
     }
 
+    pub(super) fn untrack_process_group(pid: u32) {
+        let Ok(pgid) = i32::try_from(pid) else {
+            return;
+        };
+        for slot in &TRACKED_PGIDS {
+            if slot
+                .compare_exchange(pgid, 0, Ordering::SeqCst, Ordering::Relaxed)
+                .is_ok()
+            {
+                return;
+            }
+        }
+    }
+
     /// SIGKILLs every registered process group. Async-signal-safe: touches only
     /// atomics and `kill(2)`.
     extern "C" fn kill_tracked_groups() {
@@ -191,26 +217,7 @@ pub(in crate::app) fn pid_listening_on_port(port: u16) -> Option<u32> {
             .args(["-ano", "-p", "TCP"])
             .output()
             .ok()?;
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let suffix = format!(":{port}");
-
-        for line in stdout.lines() {
-            // "  TCP  0.0.0.0:25565  0.0.0.0:0  LISTENING  12345"
-            let mut columns = line.split_whitespace();
-            let (Some("TCP"), Some(local), _, Some("LISTENING"), Some(pid)) = (
-                columns.next(),
-                columns.next(),
-                columns.next(),
-                columns.next(),
-                columns.next(),
-            ) else {
-                continue;
-            };
-            if local.ends_with(&suffix) {
-                return pid.parse::<u32>().ok().filter(|pid| *pid > 4);
-            }
-        }
-        None
+        find_listening_pid_in_netstat(&String::from_utf8_lossy(&output.stdout), port)
     }
 
     #[cfg(target_os = "linux")]
@@ -238,6 +245,34 @@ pub(in crate::app) fn pid_listening_on_port(port: u16) -> Option<u32> {
         let _ = port;
         None
     }
+}
+
+/// Parses `netstat -ano -p TCP` output for the PID listening on `port`.
+///
+/// The state column ("LISTENING") is localized (e.g. German "ABHÖREN"), so a
+/// listener is recognized by its unspecified foreign address instead, which
+/// netstat never translates: `0.0.0.0:0` (IPv4) or `[::]:0` (IPv6).
+#[cfg_attr(not(windows), allow(dead_code))]
+fn find_listening_pid_in_netstat(stdout: &str, port: u16) -> Option<u32> {
+    let suffix = format!(":{port}");
+
+    for line in stdout.lines() {
+        // "  TCP  0.0.0.0:25565  0.0.0.0:0  LISTENING  12345"
+        let columns: Vec<&str> = line.split_whitespace().collect();
+        let [proto, local, foreign, _state, pid] = columns.as_slice() else {
+            continue;
+        };
+        if !proto.eq_ignore_ascii_case("TCP") {
+            continue;
+        }
+        if !matches!(*foreign, "0.0.0.0:0" | "[::]:0") {
+            continue;
+        }
+        if local.ends_with(&suffix) {
+            return pid.parse::<u32>().ok().filter(|pid| *pid > 4);
+        }
+    }
+    None
 }
 
 /// Force-terminates `pid` and its whole child tree. Best-effort.
@@ -439,5 +474,48 @@ mod linux_proc {
             }
         }
         result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::find_listening_pid_in_netstat;
+
+    const NETSTAT_EN: &str = "
+Active Connections
+
+  Proto  Local Address          Foreign Address        State           PID
+  TCP    0.0.0.0:135            0.0.0.0:0              LISTENING       1204
+  TCP    127.0.0.1:25565        127.0.0.1:50122        ESTABLISHED     9000
+  TCP    0.0.0.0:25565          0.0.0.0:0              LISTENING       4321
+  TCP    [::]:25565             [::]:0                 LISTENING       4321
+";
+
+    // German Windows: the header and the state column are translated.
+    const NETSTAT_DE: &str = "
+Aktive Verbindungen
+
+  Proto  Lokale Adresse         Remoteadresse          Status           PID
+  TCP    127.0.0.1:25565        127.0.0.1:50122        HERGESTELLT      9000
+  TCP    0.0.0.0:25565          0.0.0.0:0              ABHÖREN          4321
+";
+
+    #[test]
+    fn finds_the_listener_not_an_established_connection() {
+        assert_eq!(find_listening_pid_in_netstat(NETSTAT_EN, 25565), Some(4321));
+    }
+
+    #[test]
+    fn ignores_the_localized_state_column() {
+        assert_eq!(find_listening_pid_in_netstat(NETSTAT_DE, 25565), Some(4321));
+    }
+
+    #[test]
+    fn ipv6_only_listener_and_missing_port() {
+        let ipv6 = "  TCP    [::]:25566             [::]:0                 LISTENING       77\n";
+        assert_eq!(find_listening_pid_in_netstat(ipv6, 25566), Some(77));
+        assert_eq!(find_listening_pid_in_netstat(NETSTAT_EN, 25570), None);
+        // Port 5565 must not match ":25565".
+        assert_eq!(find_listening_pid_in_netstat(NETSTAT_EN, 5565), None);
     }
 }

@@ -10,12 +10,27 @@ use super::super::{TelemetryHistoryPoint, TelemetrySample};
 use rusqlite::{Connection, params};
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 static STORE: OnceLock<Mutex<Connection>> = OnceLock::new();
 
-/// Keep ~30 days of raw samples; older rows are pruned on startup.
+/// Keep ~30 days of raw samples; older rows are pruned on startup and then
+/// hourly, since the app can run in the tray for weeks without restarting.
 const RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1000;
+const PRUNE_INTERVAL_MS: i64 = 60 * 60 * 1000;
+
+/// Epoch ms of the last retention prune (0 = never).
+static LAST_PRUNE_MS: AtomicI64 = AtomicI64::new(0);
+
+/// True (and records `now_ms`) when a retention prune is due.
+fn prune_due(last_prune_ms: &AtomicI64, now_ms: i64) -> bool {
+    let last = last_prune_ms.load(Ordering::Relaxed);
+    now_ms - last >= PRUNE_INTERVAL_MS
+        && last_prune_ms
+            .compare_exchange(last, now_ms, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+}
 
 /// Opens (and migrates) the telemetry database. Safe to call once at startup.
 pub(in crate::app) fn init_telemetry_store(db_path: &Path) -> Result<(), String> {
@@ -29,10 +44,9 @@ pub(in crate::app) fn init_telemetry_store(db_path: &Path) -> Result<(), String>
 
     let connection = Connection::open(db_path).map_err(|err| err.to_string())?;
     create_schema(&connection)?;
-    prune_older_than(
-        &connection,
-        chrono::Utc::now().timestamp_millis() - RETENTION_MS,
-    );
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    prune_older_than(&connection, now_ms - RETENTION_MS);
+    LAST_PRUNE_MS.store(now_ms, Ordering::Relaxed);
 
     STORE
         .set(Mutex::new(connection))
@@ -228,6 +242,11 @@ pub(in crate::app) fn insert_sample(server_id: &str, sample: &TelemetrySample) {
         return;
     };
     write_sample(&connection, server_id, sample);
+
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    if prune_due(&LAST_PRUNE_MS, now_ms) {
+        prune_older_than(&connection, now_ms - RETENTION_MS);
+    }
 }
 
 /// Returns bucket-averaged history points over `[from_ts, to_ts]`, at most
@@ -341,6 +360,17 @@ mod tests {
         let first = &points[0];
         assert_eq!(first.timestamp, 5_000);
         assert!(first.online);
+    }
+
+    #[test]
+    fn prune_is_due_hourly_and_only_once_per_interval() {
+        // Regression (R-034): retention used to run only at startup.
+        let last = AtomicI64::new(0);
+        let start = 10 * PRUNE_INTERVAL_MS;
+        assert!(prune_due(&last, start));
+        assert!(!prune_due(&last, start + 1_000));
+        assert!(!prune_due(&last, start + PRUNE_INTERVAL_MS - 1));
+        assert!(prune_due(&last, start + PRUNE_INTERVAL_MS));
     }
 
     #[test]

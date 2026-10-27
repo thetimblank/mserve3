@@ -35,6 +35,7 @@ pub(super) use rcon::*;
 pub(super) use runtime_io::*;
 pub(super) use scan::*;
 pub(super) use server_properties::*;
+pub(super) use sleep_listener::wait_for_port_release;
 pub(super) use supervisor::*;
 pub(super) use telemetry::*;
 pub(super) use telemetry_store::*;
