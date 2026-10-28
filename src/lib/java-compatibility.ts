@@ -174,6 +174,17 @@ export const resolveJavaRequirement = (
 	};
 };
 
+/** Parses a comma-separated JDK list ("17, 21") into unique positive majors. */
+export const parseJdkVersions = (value: string): number[] =>
+	Array.from(
+		new Set(
+			value
+				.split(',')
+				.map((token) => Number(token.trim()))
+				.filter((token) => Number.isInteger(token) && token > 0),
+		),
+	);
+
 export const isJavaCompatible = (javaMajor: number, requirement: JavaRequirement) =>
 	javaMajor >= requirement.minimumMajor;
 

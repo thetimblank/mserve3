@@ -18,16 +18,27 @@ Follow the neighbors:
 
 ```rust
 #[tauri::command]
-pub fn my_new_command(directory: String, some_flag: bool) -> Result<MyResult, String> {
-    // ... return Ok(..) or Err("human-readable message".into())
+pub(in crate::app) async fn my_new_command(
+    directory: String,
+    some_flag: bool,
+) -> Result<MyResult, String> {
+    run_blocking(move || {
+        // ... return Ok(..) or Err("human-readable message".into())
+    })
+    .await
 }
 ```
 
 - **Always return `Result<T, String>`** — the `Err` string surfaces to JS as a thrown error.
+- Synchronous commands run on the main thread. Anything that touches the network,
+  spawns processes, probes ports or does bulk file I/O must be `async` and wrap the
+  work in `run_blocking` (`commands.rs`). A quick, non-blocking read can stay a plain `fn`.
 - Need shared runtime state? Take `state: tauri::State<RuntimeState>` (see existing
   commands in `runtime.rs`). Need the app handle (to emit events)? Take `app: tauri::AppHandle`.
 - Payload/result structs that cross the boundary get
-  `#[derive(Serialize/Deserialize)]` + `#[serde(rename_all = "camelCase")]`.
+  `#[derive(Serialize/Deserialize)]` + `#[serde(rename_all = "camelCase")]`
+  (the `mserve.json`-shaped structs are the exception, see the IPC contract in the root
+  CLAUDE.md).
 
 ## 2. Make sure it's exported
 
@@ -61,4 +72,4 @@ inlining `invoke` in a component.
 ## Verify
 - `cargo check` (in `src-tauri/`) compiles.
 - `npm run build` typechecks the frontend.
-- Run `npm run dev` and exercise the path (see the **run-debug** skill).
+- Run `npm run tauri dev` and exercise the path (see the **run-debug** skill).

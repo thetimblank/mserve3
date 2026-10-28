@@ -18,6 +18,18 @@ type AppCloseRequestedPayload = {
 	runningServerDirectories: string[];
 };
 
+/** Force-kills every owned server, then exits (even if the kill partly fails). */
+const killAllServersAndClose = async () => {
+	try {
+		await invoke('force_kill_all_servers');
+	} catch {
+		// Proceed even if the kill partially fails.
+	}
+	// Give the OS a moment to actually terminate the processes before exit.
+	await new Promise((res) => setTimeout(res, 500));
+	await invoke('confirm_close');
+};
+
 export const CloseWarningDialog: React.FC = () => {
 	const { servers } = useServers();
 	const { user } = useUser();
@@ -29,8 +41,10 @@ export const CloseWarningDialog: React.FC = () => {
 	const [isStopping, setIsStopping] = React.useState(false);
 
 	React.useEffect(() => {
+		let active = true;
 		let unlisten: (() => void) | undefined;
 		listen<AppCloseRequestedPayload>('app-close-requested', (event) => {
+			if (!active) return;
 			const directories = event.payload.runningServerDirectories;
 
 			if (directories.length === 0) {
@@ -40,10 +54,7 @@ export const CloseWarningDialog: React.FC = () => {
 
 			if (suppressRef.current) {
 				// Kill running servers even when the dialog is suppressed.
-				void invoke('force_kill_all_servers')
-					.catch(() => {})
-					.then(() => new Promise((res) => setTimeout(res, 500)))
-					.then(() => invoke('confirm_close'));
+				void killAllServersAndClose();
 				return;
 			}
 
@@ -52,11 +63,16 @@ export const CloseWarningDialog: React.FC = () => {
 			setOpen(true);
 		})
 			.then((fn) => {
+				if (!active) {
+					fn();
+					return;
+				}
 				unlisten = fn;
 			})
 			.catch(() => {});
 
 		return () => {
+			active = false;
 			unlisten?.();
 		};
 	}, []);
@@ -68,14 +84,7 @@ export const CloseWarningDialog: React.FC = () => {
 
 	const handleStopAllAndShutdown = async () => {
 		setIsStopping(true);
-		try {
-			await invoke('force_kill_all_servers');
-			// Give the OS a moment to actually terminate the processes before exit.
-			await new Promise((res) => setTimeout(res, 500));
-		} catch {
-			// Proceed even if kill partially fails
-		}
-		await invoke('confirm_close');
+		await killAllServersAndClose();
 	};
 
 	const count = runningServers.length || runningDirectories.length;

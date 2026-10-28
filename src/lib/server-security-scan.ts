@@ -1,14 +1,10 @@
-import { invoke } from '@tauri-apps/api/core';
+import { readManagedConfigFile } from '@/components/server-config-file-editor/file-operations';
 import { parsePropertiesMap } from '@/components/server-config-file-editor/properties-config';
 import { auditServerProperties, type SecurityFinding } from '@/lib/server-security-audit';
 
-type ManagedConfigFileContent = { fileName: string; content: string };
-
 const readManagedFile = async (directory: string, fileName: string): Promise<string | null> => {
 	try {
-		const result = await invoke<ManagedConfigFileContent>('read_managed_server_config_file', {
-			payload: { directory, fileName },
-		});
+		const result = await readManagedConfigFile(directory, fileName);
 		return result.content;
 	} catch {
 		// Missing/unreadable file — the audit treats these as vanilla defaults.

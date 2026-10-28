@@ -21,6 +21,7 @@ import {
 	isServerProvider,
 	PROVIDER_NAMES,
 } from '@/lib/server-provider';
+import { parseJdkVersions } from '@/lib/java-compatibility';
 import { type JavaRuntimeInfo } from '@/lib/java-runtime-service';
 import { javaResolutionLabel, resolveServerJavaExecutable } from '@/lib/java-resolution';
 import { getEditableLiteralMotdValue, getStoredLiteralMotdValue } from '@/lib/motd-format';
@@ -62,16 +63,6 @@ const settingsFormKey = (directory: string, form: ServerSettingsForm) => {
 	payload.new_directory = resolveNewDirectory(payload, directory);
 	return JSON.stringify(payload);
 };
-
-const parseJdkVersions = (value: string): number[] =>
-	Array.from(
-		new Set(
-			value
-				.split(',')
-				.map((token) => Number(token.trim()))
-				.filter((token) => Number.isInteger(token) && token > 0),
-		),
-	);
 
 type EditServerSettingsContextValue = {
 	server: Server;

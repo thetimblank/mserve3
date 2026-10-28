@@ -33,7 +33,7 @@ import {
 
 import { ConnectionAddresses } from './help-connection-addresses';
 
-export type HelpSlide = {
+type HelpSlide = {
 	icon: LucideIcon;
 	title: string;
 	/** Plain-text explanation. Optional when `content` supplies the slide body instead. */

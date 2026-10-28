@@ -17,13 +17,13 @@ Thanks for your interest. This doc covers everything you need to contribute a bu
 
 ## Getting started
 
-Prerequisites: **Node 20**, **Rust stable**, **VS Code** (recommended).
+Prerequisites: **Node 22**, **Rust stable**, **VS Code** (recommended).
 
 ```bash
 git clone https://github.com/thetimblank/mserve3.git
 cd mserve3
 npm install
-npm run dev          # Vite + Tauri window with HMR
+npm run tauri dev    # Vite + Tauri window with HMR (`npm run dev` alone is just Vite)
 ```
 
 For backend-only checks, run `cargo check` / `cargo clippy` / `cargo fmt` inside `src-tauri/`.
@@ -37,14 +37,11 @@ See [CLAUDE.md](CLAUDE.md) for the full command reference and repo map.
 | Branch | Purpose |
 | --- | --- |
 | `main` | Always releasable. CI must be green. Direct pushes only for maintainers doing trivial one-liners. |
-| `v4` | Long-running branch for the v4 rewrite (breaking changes, Linux support, etc.). Periodically merges from `main` to pick up v3 patches. |
-| `feat/<name>` | New features — branch from `main` (or `v4` if v4-only). |
+| `feat/<name>` | New features — branch from `main`. |
 | `fix/<name>` | Bug fixes. |
 | `chore/<name>` | Dependency bumps, CI changes, tooling, non-functional cleanup. |
 
 **Keep branches short-lived.** A branch that lives for more than a week is a sign the scope is too big — break it up.
-
-For v4 work, branch from `v4`, not `main`.
 
 ---
 
@@ -52,9 +49,9 @@ For v4 work, branch from `v4`, not `main`.
 
 Open an issue before starting non-trivial work. This avoids duplicate effort and gets alignment on approach before code is written.
 
-- **Bug:** describe what happened, what you expected, and steps to reproduce. Include mserve version and Windows version.
-- **Feature / enhancement:** describe the problem you're solving, not just the solution. Link to any relevant v4 roadmap items.
-- **Use labels:** `bug`, `enhancement`, `chore`, `v4`, `good first issue`.
+- **Bug:** describe what happened, what you expected, and steps to reproduce. Include the mserve version and your OS (Windows version or Linux distro).
+- **Feature / enhancement:** describe the problem you're solving, not just the solution. Link to any relevant roadmap items in the README.
+- **Use labels** that exist in the repo: `bug`, `enhancement`, `documentation`, `good first issue`.
 - **Milestones:** assign to a version milestone (`v3.6`, `v4.0`) if you know where it lands.
 
 You don't need an issue for: typo fixes, docs tweaks, or changes that are obviously non-controversial. Use judgment.
@@ -64,13 +61,13 @@ You don't need an issue for: typo fixes, docs tweaks, or changes that are obviou
 ## Pull requests
 
 1. **One concern per PR.** A PR that fixes a bug AND adds a feature is harder to review and harder to revert. Split them.
-2. **Branch from the right base.** v3 work → `main`. v4 work → `v4`.
+2. **Branch from `main`.**
 3. **CI must pass** before requesting review. Don't open a PR with a known red build.
 4. **Reference the issue** in the PR description (`Closes #123` or `Fixes #123`).
 5. **Write a clear description.** Include: what changed, why, and how to test it manually if the automated tests don't cover it.
 6. **Small is better.** A 200-line PR gets reviewed in minutes; a 2000-line PR gets skimmed. If your change is large, ask in the issue whether to split it first.
 
-**Team rule (when there are multiple contributors):** PRs to `main` or `v4` require one approval before merging. Maintainers can self-merge only for trivial chores.
+**Team rule (when there are multiple contributors):** PRs to `main` require one approval before merging. Maintainers can self-merge only for trivial chores.
 
 ---
 
@@ -104,8 +101,8 @@ Keep the subject line under 72 characters. If the change needs more explanation,
 
 - TypeScript strict mode is on — no `any`, no `@ts-ignore` without a comment explaining why.
 - Component state lives in React Context (`src/data/`); don't reach for a global state library.
-- Tauri IPC calls go through the service layer (`src/lib/`), not directly in components.
-- Struct fields from Rust arrive as `camelCase` (the backend uses `#[serde(rename_all = "camelCase")]`).
+- Prefer a wrapper in the relevant `src/lib/*-service.ts` for IPC calls that more than one place needs; one-off calls may `invoke` directly.
+- Struct fields from Rust arrive as `camelCase` (the backend uses `#[serde(rename_all = "camelCase")]`), except the `mserve.json`-shaped structs, which stay `snake_case` (see the IPC contract in [CLAUDE.md](CLAUDE.md)).
 - No new dependencies without discussion. Check if what you need is already available (Radix UI, Tailwind utilities, etc.).
 
 ### Backend (Rust)
@@ -113,7 +110,7 @@ Keep the subject line under 72 characters. If the change needs more explanation,
 - Every `#[tauri::command]` returns `Result<T, String>`. Errors are plain strings on the JS side.
 - New structs that cross the IPC boundary need `#[derive(serde::Serialize, serde::Deserialize)]` and `#[serde(rename_all = "camelCase")]`.
 - `cargo fmt` is enforced by CI — run it before pushing.
-- Clippy warnings are not yet a hard gate, but don't introduce new ones intentionally. The goal is to get to `-D warnings` soon.
+- `cargo clippy --all-targets -- -D warnings` is enforced by CI too, so a new warning fails the build.
 - This app targets **Windows and Linux**. Keep platform-specific behavior (firewall, process lifetime, Java scanning/download, etc.) isolated behind `#[cfg]` branches with both a Windows and a Linux path — don't add one platform's code without the other. macOS is best-effort only.
 
 ### General

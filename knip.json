@@ -1,5 +1,3 @@
 {
-	"$schema": "https://unpkg.com/knip@6/schema.json",
-	"ignore": ["src-tauri/**"],
-	"ignoreDependencies": []
+	"$schema": "https://unpkg.com/knip@6/schema.json"
 }

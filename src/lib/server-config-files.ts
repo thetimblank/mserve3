@@ -1,14 +1,14 @@
 import type { ProviderKind, ProviderName } from '@/lib/mserve-schema';
 
-export type ManagedConfigFileFormat = 'json' | 'properties' | 'yaml' | 'toml';
+type ManagedConfigFileFormat = 'json' | 'properties' | 'yaml' | 'toml';
 
-export type ManagedMotdFormat = 'legacy' | 'minimessage';
+type ManagedMotdFormat = 'legacy' | 'minimessage';
 
-export type ManagedConfigPropertyEditor = 'motd';
+type ManagedConfigPropertyEditor = 'motd';
 
-export type ManagedConfigPropertyType = 'boolean' | 'number' | 'string' | 'enum' | 'list' | 'map';
+type ManagedConfigPropertyType = 'boolean' | 'number' | 'string' | 'enum' | 'list' | 'map';
 
-export type ManagedConfigPropertyOption = {
+type ManagedConfigPropertyOption = {
 	label: string;
 	value: string;
 };

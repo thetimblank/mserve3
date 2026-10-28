@@ -34,7 +34,7 @@ jobs:
          - name: Setup Node
            uses: actions/setup-node@v4
            with:
-              node-version: 20
+              node-version: 22
               cache: npm
 
          - name: Setup Rust
@@ -60,13 +60,9 @@ jobs:
            working-directory: src-tauri
            run: cargo fmt --check
 
-         # Clippy runs as a report, not a hard gate: the existing codebase has
-         # pre-existing style warnings. Tighten to `-- -D warnings` once those are
-         # cleared so new lints fail the build.
-         - name: Rust lint (clippy, non-blocking)
+         - name: Rust lint (clippy)
            working-directory: src-tauri
-           run: cargo clippy --all-targets
-           continue-on-error: true
+           run: cargo clippy --all-targets -- -D warnings
 
          - name: Rust unit + integration tests (L1 + L3)
            working-directory: src-tauri

@@ -1,47 +1,36 @@
 # mserve
 
-a webapp tool that helps manage and setup minecraft servers easily with full customizations.
+a desktop app that helps manage and set up minecraft servers easily with full customization.
 
 mserve is a Tauri + React desktop app for end-to-end Minecraft server management: it lets users create or import servers, run a guided setup flow (directory, jar, RAM, backups, auto-restart), control server runtime with start/stop/restart plus terminal access, manage server contents (plugins, worlds, datapacks, backups, provider-aware settings), run a Java compatibility guide that detects installed runtimes and checks them against server requirements, and use a hosting setup wizard for firewall/port-forwarding and connection basics; it also includes data repair/sync for mserve.json and in-app update handling.
-
-## Tauri + React + Typescript
-
-This template should help get you started developing with Tauri, React and Typescript in Vite.
 
 ## Recommended IDE Setup
 
 - [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
 
-## Releasing OTA updates
-
-This project now uses the Tauri updater plugin.
-
-## 1) Version bump rule
-
-Always bump app version before building a release:
-
-- `package.json` -> `version`
-- `src-tauri/Cargo.toml` -> `version`
-- `src-tauri/tauri.conf.json` -> `version`
-
-Use the same semantic version across all three files.
-
-## 2) Build release artifacts
+## Development
 
 ```bash
 npm install
-npm run release:build
+npm run tauri dev   # Vite + Tauri window with HMR
 ```
 
-## 3) Where to publish
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/testing.md](docs/testing.md).
 
-Publish to your repository Releases page:
+## Releasing OTA updates
 
-- <https://github.com/thetimblank/mserve3/releases>
+mserve updates itself through the Tauri updater plugin, which reads `latest.json`
+from the latest GitHub release.
 
-Create a release tag like `v3.3.0`, then upload all files above as assets.
+1. Bump `version` to the same semver in `package.json`, `src-tauri/Cargo.toml` and
+   `src-tauri/tauri.conf.json`.
+2. Push a matching tag (e.g. `v3.6.0`).
 
-With your updater endpoint, users will always read `latest.json` from the latest release asset URL.
+The [release workflow](.github/workflows/release-tauri.yml) checks the tag matches the
+three files, builds and signs the Windows and Linux installers, uploads them to the
+[Releases page](https://github.com/thetimblank/mserve3/releases), and publishes
+`latest.json`. Don't upload assets by hand: a release without `latest.json` is
+invisible to the updater.
 
 ## Roadmap
 
@@ -67,7 +56,6 @@ Bugs
 
 - Add &r at end of the first line/content to fix motd formatting
 - Better sleeping UX for player (Works, but server says its stopped and doesnt ping at all while its waking/starting)
-- When a server is on, the backup settings restore to default (remove all saved changes) every couple of seconds
 
 Supported Providers
 

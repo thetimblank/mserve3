@@ -11,6 +11,12 @@ npm run build
 echo "[pre-push] frontend tests (vitest run)"
 npm run test:run
 
+echo "[pre-push] rust format check (cargo fmt --check)"
+( cd src-tauri && cargo fmt --check )
+
+echo "[pre-push] rust lint (cargo clippy -D warnings)"
+( cd src-tauri && cargo clippy --all-targets -- -D warnings )
+
 echo "[pre-push] rust unit + integration tests (cargo test)"
 ( cd src-tauri && cargo test )
 

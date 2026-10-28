@@ -44,7 +44,7 @@ src/app/
 │   ├── config_files.rs   scan/read/write managed config files (whitelist.json, ops.json…)
 │   ├── modrinth.rs       Modrinth search/project/versions/tags, install_modrinth_file
 │   ├── modpack.rs        install_modrinth_modpack (.mrpack, + modpack-install-progress)
-│   ├── telemetry.rs      get_server_telemetry, get_server_telemetry_history
+│   ├── telemetry.rs      get_server_telemetry_history
 │   ├── playit.rs         playit.gg account: get_playit_status, start_playit_claim, disconnect
 │   └── navigation.rs     open_server_folder, open_server_path
 └── support/          # subsystems & helpers (not directly exposed to the frontend)
@@ -138,8 +138,8 @@ struct RuntimeState { processes: Arc<Mutex<HashMap<String, ServerRuntime>>> }
 - **Idempotent writes:** read → compare → write only on change (e.g. RCON
   provisioning in `server_properties.rs`).
 - Run `cargo fmt` and `cargo clippy` before considering a backend change done.
-  CI fails on `cargo fmt --check`; clippy runs there too but is non-blocking
-  (`continue-on-error`), so lint cleanliness is still on you.
+  CI (and the `pre-push` hook) fail on `cargo fmt --check` and on
+  `cargo clippy --all-targets -- -D warnings`.
 - **Slow work off the main thread:** synchronous `#[tauri::command]`s run on the
   main thread. A command that spawns processes, probes ports, talks RCON, or waits
   must be `async` and wrap that work in `spawn_blocking` (see `run_blocking` in

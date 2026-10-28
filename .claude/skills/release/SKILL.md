@@ -11,9 +11,10 @@ important rule** is that the version is identical across three files.
 
 ## 1. Decide the version
 
-Format (from README):
+Format:
 - Stable: `vMAJOR.MINOR.PATCH` (e.g. `v3.5.0`)
-- Pre-release: `vMAJOR.MINOR.PATCHpreN` (e.g. `v3.5.0pre3`)
+- Pre-release: `vMAJOR.MINOR.PATCH-pre.N` (e.g. `v3.5.0-pre.3`). Cargo and Tauri
+  only accept valid semver, so `3.5.0pre3` (no hyphen) fails to build.
 
 Ask the user which, or infer from the latest git tag (`git tag --sort=-v:refname`
 / `git log --oneline -5`).
@@ -24,9 +25,9 @@ Ask the user which, or infer from the latest git tag (`git tag --sort=-v:refname
 - [src-tauri/Cargo.toml](../../../src-tauri/Cargo.toml) → `version` under `[package]`
 - [src-tauri/tauri.conf.json](../../../src-tauri/tauri.conf.json) → `"version"`
 
-> Cargo/semver may not accept the `preN` suffix the same way the app's display does —
-> match the existing style already in these files rather than assuming. If they
-> currently disagree with the latest tag, point that out before bumping.
+> If the three files currently disagree with each other or with the latest tag,
+> point that out before bumping. The release workflow's first step fails the build
+> when the pushed tag doesn't match all three.
 
 After editing, **verify all three match**:
 

@@ -59,12 +59,11 @@ unrelated fix you noticed along the way.
 ```bash
 npm run build
 npm run test:run
-cd src-tauri && cargo fmt && cargo clippy --all-targets && cargo test && cd ..
+cd src-tauri && cargo fmt && cargo clippy --all-targets -- -D warnings && cargo test && cd ..
 ```
 
-For a runtime/behavior change, delegate to the **verify** skill (and
-**run-debug** for runtime/telemetry/terminal changes) instead of reinventing
-manual QA steps. If anything fails, fix and re-run before moving on — never
+For a runtime/behavior change, follow the **run-debug** skill's verification
+recipes instead of reinventing manual QA steps. If anything fails, fix and re-run before moving on — never
 commit red.
 
 ## 6. Self-review

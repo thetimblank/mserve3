@@ -512,21 +512,21 @@ the "clear data" scope in `settings-data-card`, and whether Feedback leaks PII i
 
 ## F. Cross-cutting sweeps (run after A–E)
 
-### [ ] F1 · IPC contract audit
+### [x] F1 · IPC contract audit — 2026-10-28, 3 findings (R-167, R-180, R-183). All 67 registered commands were diffed against the 66 invoked names (`get_local_ip`/`get_public_ip` are invoked through a variable in `use-ip-address.ts`): only `get_server_telemetry` is uncalled (R-167), and `ping` is the smoke-test mock. Every call's top-level args match the Rust params in camelCase, and every payload/result struct matches its TS type (optionality included; `Option` → `null` is read with `??`/`typeof` everywhere). All 10 event payloads, the modpack stage strings, tunnel/claim statuses and backup reasons match. The mserve.json-shaped structs are snake_case on both sides, which only the docs get wrong (R-180).
 Go through every `invoke('…')` in `src/` and check it against the Rust signature (arg names in
 camelCase, optional vs. required, return shape). Then check every event payload against its TS type.
 Use one table per domain, and log only the mismatches.
 
-### [ ] F2 · Dead-code & dependency sweep
+### [x] F2 · Dead-code & dependency sweep — 2026-10-28, 5 findings (R-167–R-170, R-173). `cargo clippy --all-targets -- -W dead_code` is clean. knip: 56 unused exports are all shadcn sub-exports (kept per R-130) plus 14 unused exported types (R-168). Every cargo crate has a user. `@dnd-kit/*` (bento drag), `ogl` (dark veil), `vaul` (two drawers), `yaml` (YAML editor + paper-global.yml) and `@iarna/toml` (velocity.toml) are all used and don't overlap; `next-themes` was already removed in #14. The six direct `@radix-ui/*` deps duplicate `radix-ui` (R-169).
 Run `npx knip` and `cargo clippy --all-targets -- -W dead_code`, and refresh the registered-vs-invoked
 command diff. Check for unused or overlapping npm deps: `@dnd-kit/*`, `ogl`, `vaul`, `next-themes`,
 `yaml` + `@iarna/toml`, and `radix-ui` alongside individual `@radix-ui/*` packages. Check unused cargo crates.
 
-### [ ] F3 · Duplication synthesis
+### [x] F3 · Duplication synthesis — 2026-10-28, 2 findings (R-171, R-172). All 33 earlier `dup` rows are closed, so the proposals are a record of the canonical homes they landed in: see **F3 duplication synthesis** under Details in FINDINGS.md. A fresh sweep (same-named helpers across `src/` and `src-tauri/src/`) found the two new copies.
 Group all the `dup` findings into consolidation proposals. Each proposal names one canonical home,
 the copies to delete, and a suggested PR order.
 
-### [ ] F4 · Build, CI, tooling & docs
+### [x] F4 · Build, CI, tooling & docs — 2026-10-28, 9 findings (R-174–R-182). vite/vitest/tsconfig are fine (Vitest is deliberately separate from the Tauri dev config). The test mocks handle unregistered commands and mid-dispatch unlisten. `npm run dev` being Vite-only is the worst drift (R-177). Seeds R-003–R-005 stay fixed.
 - `package.json`
 - `vite.config.ts`
 - `vitest.config.ts`

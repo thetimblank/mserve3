@@ -45,21 +45,23 @@ emitTauriEvent('server-runtime-state', { directory: 'C:/srv', state: 'online' })
 
 ## Real-server matrix (L4)
 
-Behind `--ignored` so it never runs in the fast suite. It downloads real Java and real
-provider jars (Vanilla / Paper / Velocity / a modded custom jar), boots each with tiny
-RAM, asserts `online` + telemetry, then stops. Run it explicitly or via the
+Behind `--ignored` so it never runs in the fast suite. It downloads real provider jars
+(Vanilla / Paper / Velocity, plus a modded jar you supply via `MSERVE_E2E_CUSTOM_JAR`),
+boots each with tiny RAM on the JVM from `MSERVE_E2E_JAVA` or `JAVA_HOME` (it doesn't
+download Java), asserts `online` + telemetry, then stops. A missing prerequisite skips the
+case unless `MSERVE_E2E_REQUIRE=1`. Run it explicitly or via the
 `e2e-nightly` workflow.
 
 ## CI
 
 - [ci.yml](../.github/workflows/ci.yml) — every PR/push (`windows-latest` +
   `ubuntu-latest`): build + typecheck, Vitest, `cargo fmt --check`,
-  `cargo clippy -D warnings`, `cargo test`.
+  `cargo clippy --all-targets -- -D warnings`, `cargo test`.
 - [e2e-nightly.yml](../.github/workflows/e2e-nightly.yml) — schedule + manual: the L4
   matrix.
 
 ## Local pre-push hook
 
 `npm install` runs `scripts/install-git-hooks.mjs`, which points `core.hooksPath` at
-[.githooks/](../.githooks/). The `pre-push` hook runs the fast suite and blocks the
-push on failure. Bypass with `git push --no-verify`.
+[.githooks/](../.githooks/). The `pre-push` hook runs the same checks as `ci.yml`
+(build, Vitest, `cargo fmt --check`, clippy, `cargo test`) and blocks the push on failure. Bypass with `git push --no-verify`.
