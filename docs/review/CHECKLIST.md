@@ -370,7 +370,7 @@ restyle anything.
 
 ## E. Frontend pages
 
-### [ ] E1 · Server runtime hooks (~1.7k)
+### [x] E1 · Server runtime hooks (~1.7k) — 2026-10-28, 7 findings (R-131–R-137); seed R-010 confirmed. Every listener handles the async-unlisten race. The `--nogui` retry is capped at one strip per start cycle and the Java step-down at one download offer. The auto-backup triggers are the main problem (R-132–R-134).
 - `src/pages/server/hooks/use-server-runtime.ts` (988)
 - `src/pages/server/hooks/use-server-runtime.test.tsx`
 - `src/pages/server/hooks/use-server-terminal.ts`
@@ -380,7 +380,7 @@ restyle anything.
 Focus: optimistic updates vs. events, the Java-fallback retry loop (can it run more than
 intended?), auto-backup triggers, terminal history memory bounds, and R-010.
 
-### [ ] E2 · Other server hooks & security (~800)
+### [x] E2 · Other server hooks & security (~800) — 2026-10-28, 1 finding (R-138). `use-server-tunnel` (per-server) and `use-playit-account` (install-wide) don't overlap, and both clean up their listeners. Property fixes only write while stopped and go through the comment-preserving `apply_server_properties`.
 - `src/pages/server/hooks/use-server-backup-actions.ts`
 - `src/pages/server/hooks/use-server-tunnel.ts`
 - `src/hooks/use-playit-account.ts`
@@ -390,7 +390,7 @@ intended?), auto-backup triggers, terminal history memory bounds, and R-010.
 
 Focus: `use-server-tunnel` vs. `use-playit-account` overlap, and listener cleanup for the playit events.
 
-### [ ] E3 · Server page & panels (~1.8k)
+### [x] E3 · Server page & panels (~1.8k) — 2026-10-28, 5 findings (R-139–R-143). A hidden tab can't be reached by URL: `activeTab` falls back and the URL is rewritten. Every `server-types.ts` payload matches Rust except `UpdateServerSettingsResult` (R-139).
 - `src/pages/Server.tsx` (493)
 - `src/pages/server/server-overview-panel.tsx` (501)
 - `src/pages/server/server-terminal-panel.tsx`
@@ -404,7 +404,7 @@ Focus: `use-server-tunnel` vs. `use-playit-account` overlap, and listener cleanu
 Focus: capability-gated tabs (can a hidden tab still be reached by URL?), `server-types.ts` vs.
 Rust payloads, and helpers in `server-utils.ts` duplicated in `lib/`.
 
-### [ ] E4 · Server settings & backups tabs (~1.5k)
+### [x] E4 · Server settings & backups tabs (~1.5k) — 2026-10-28, 4 findings (R-144–R-147). Settings sections that need a stopped server are locked while it runs (ops/whitelist/bans/help/commands stay editable on purpose). Backup actions all live in `use-server-backup-actions`; the tab only renders.
 - `src/pages/server/server-settings-panel.tsx` (671)
 - `src/pages/server/server-settings-tab.tsx`
 - `src/pages/server/server-backups-tab.tsx` (668)
@@ -413,7 +413,7 @@ Rust payloads, and helpers in `server-utils.ts` duplicated in `lib/`.
 Focus: settings saved while the server is running (which take effect when?), backup tab logic
 duplicated with `use-server-backup-actions.ts`.
 
-### [ ] E5 · Statistics (~670)
+### [x] E5 · Statistics (~670) — 2026-10-28, 2 findings (R-148, R-149). Timestamps are epoch ms on both sides. History is polled only (no events), so nothing is counted twice. Chart formatters aren't duplicated with the dashboard (it reuses `stats-utils`).
 - `src/pages/server/server-statistics-tab.tsx`
 - `src/pages/server/stats/metric-card.tsx`
 - `src/pages/server/stats/stats-utils.ts`
@@ -424,7 +424,7 @@ duplicated with `use-server-backup-actions.ts`.
 Focus: timestamp units vs. telemetry_store (A5), polling plus event double-counting, and
 chart formatting helpers duplicated with the dashboard.
 
-### [ ] E6 · Dashboard & server list (~2.0k)
+### [x] E6 · Dashboard & server list (~2.0k) — 2026-10-28, 4 findings (R-150–R-153). `server-tile` and `server-card` share `server-controls` but copy the hook plumbing (R-150); `stat-card` and `metric-card` differ (sparkline vs hint + animation). The layout prefs are filtered against `DASHBOARD_CARD_IDS` on write. Bento planned work not flagged.
 - `src/pages/Home.tsx`
 - `src/pages/Servers.tsx`
 - `src/pages/dashboard/activity-insights.tsx`
@@ -448,7 +448,7 @@ chart formatting helpers duplicated with the dashboard.
 Focus: `server-tile.tsx` vs. `components/server-card.tsx`, `stat-card` vs. `stats/metric-card`, and
 the persisted layout schema. **The bento overhaul is 1/2 complete**, so don't flag planned work as dead.
 
-### [ ] E7 · Create-server wizard (~2.6k)
+### [x] E7 · Create-server wizard (~2.6k) — 2026-10-28, 4 findings (R-154–R-157). Wizard defaults come from `createDefaultMserveForm`, same as the settings form. Directory checks use `validate_path` (stat only). There's no cancel for a jar download; leaving the slide mid-download doesn't break state.
 - `src/pages/CreateServer.tsx`
 - `src/pages/create-server/CreateServerContext.tsx` (630)
 - `src/pages/create-server/create-server-flow.ts`
@@ -468,7 +468,7 @@ the persisted layout schema. **The bento overhaul is 1/2 complete**, so don't fl
 Focus: wizard state vs. the D3 form (duplicate defaults/validation), the cancel path mid-download,
 and directory validation vs. Rust `validate_path`.
 
-### [ ] E8 · Network page (~1.9k)
+### [x] E8 · Network page (~1.9k) — 2026-10-28, 3 findings (R-158–R-160). Start is backends then proxy and stop is proxy then backends, as documented. A failure stops the sequence and toasts; servers already started keep running.
 - `src/pages/Network.tsx` (399)
 - `src/pages/network/ApplyChangesDrawer.tsx`
 - `src/pages/network/NetworkCanvas.tsx`
@@ -481,7 +481,7 @@ and directory validation vs. Rust `validate_path`.
 Focus: orchestration ordering (proxy before or after backends), partial-failure handling, and
 whether `use-network-telemetry` duplicates the runtime monitor.
 
-### [ ] E9 · Settings, setup, guides, feedback (~1.9k)
+### [x] E9 · Settings, setup, guides, feedback (~1.9k) — 2026-10-28, 5 findings (R-161–R-164, R-166) plus R-165 for Part E's unused exports; seed R-009 confirmed for Setup + Java guide only. The feedback URL carries only the app version and user agent, and the user reviews it on GitHub before submitting.
 - `src/pages/Settings.tsx`
 - `src/pages/settings/hooks/use-app-update.ts`
 - `src/pages/settings/settings-appearance-card.tsx`
