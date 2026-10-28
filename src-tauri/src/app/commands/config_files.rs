@@ -1,7 +1,7 @@
 use super::super::support::apply_properties;
 use super::super::{Deserialize, Serialize};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 const MANAGED_CONFIG_FILE_NAMES: [&str; 10] = [
     "server.properties",
@@ -181,15 +181,7 @@ pub(in crate::app) fn apply_server_properties(
         normalized.push((allowed, update.value.trim().to_string()));
     }
 
-    apply_server_properties_to_dir(&directory_path, &normalized)
-}
-
-/// Thin wrapper so the write can be unit-tested against a temp directory.
-fn apply_server_properties_to_dir(
-    directory: &Path,
-    updates: &[(&str, String)],
-) -> Result<(), String> {
-    apply_properties(directory, updates)
+    apply_properties(&directory_path, &normalized)
 }
 
 #[cfg(test)]
@@ -219,13 +211,19 @@ mod tests {
         )
         .unwrap();
 
-        apply_server_properties_to_dir(
-            dir.path(),
-            &[
-                ("online-mode", "true".to_string()),
-                ("white-list", "true".to_string()),
+        apply_server_properties(ApplyServerPropertiesPayload {
+            directory: dir.path().to_string_lossy().to_string(),
+            updates: vec![
+                PropertyUpdate {
+                    key: "online-mode".to_string(),
+                    value: "true".to_string(),
+                },
+                PropertyUpdate {
+                    key: "white-list".to_string(),
+                    value: "true".to_string(),
+                },
             ],
-        )
+        })
         .unwrap();
 
         let result = std::fs::read_to_string(&path).unwrap();

@@ -41,8 +41,7 @@ emitTauriEvent('server-runtime-state', { directory: 'C:/srv', state: 'online' })
 - Unit tests are co-located in `#[cfg(test)] mod tests` next to the code.
 - The **fake Minecraft server** (`testkit`) speaks Server-List-Ping + RCON over a
   loopback port so the supervisor/telemetry pipeline can be driven without a JVM.
-- Dev-deps: `tempfile` (hermetic temp dirs), `serial_test` (serialize tests that
-  touch the process-wide telemetry DB).
+- Dev-dep: `tempfile` (hermetic temp dirs).
 
 ## Real-server matrix (L4)
 

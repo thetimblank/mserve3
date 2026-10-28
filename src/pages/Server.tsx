@@ -464,7 +464,7 @@ const Server: React.FC = () => {
 						server={server}
 						backups={server.backups}
 						isBusy={isBusy}
-						isOnline={server.status === 'online'}
+						isOnline={!isStoppedStatus(server.status)}
 						onCreateBackup={handleCreateBackup}
 						onRestoreBackup={handleRestoreBackup}
 						onDeleteBackup={handleDeleteBackup}

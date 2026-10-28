@@ -74,8 +74,9 @@ struct RepairMserveJsonPayload {
     auto_backup: Vec<String>,
     auto_backup_interval: u32,
     auto_restart: bool,
+    /// `None` keeps the value from the existing mserve.json (if any).
     #[serde(default)]
-    sleep_enabled: bool,
+    sleep_enabled: Option<bool>,
     #[serde(default)]
     sleep_idle_minutes: Option<u32>,
     #[serde(default)]
@@ -470,6 +471,11 @@ struct DownloadServerJarPayload {
     url: String,
     preferred_file_name: Option<String>,
     download_id: Option<String>,
+    /// Expected hashes from `resolve_provider_version`; verified when present.
+    #[serde(default)]
+    sha256: Option<String>,
+    #[serde(default)]
+    sha1: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -522,6 +528,9 @@ struct ResolvedProvider {
     size_bytes: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     sha256: Option<String>,
+    /// Mojang publishes only a SHA-1 for vanilla server jars.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sha1: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

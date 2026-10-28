@@ -5,13 +5,7 @@ pub(in crate::app) fn add_windows_firewall_rule(
     protocol: &str,
     direction: &str,
 ) -> Result<String, String> {
-    let way = if direction.eq_ignore_ascii_case("in") {
-        "Inbound"
-    } else {
-        "Outbound"
-    };
-
-    let rule_name = format!("MC Server {port} {protocol} {way} Allow");
+    let rule_name = firewall_rule_name(port, protocol, direction);
 
     let _ = no_window_command("netsh")
         .args([
@@ -59,7 +53,6 @@ pub(in crate::app) fn add_windows_firewall_rule(
     Ok(rule_name)
 }
 
-#[cfg(target_os = "windows")]
 pub(in crate::app) fn firewall_rule_name(port: u16, protocol: &str, direction: &str) -> String {
     let way = if direction.eq_ignore_ascii_case("in") {
         "Inbound"
@@ -69,7 +62,6 @@ pub(in crate::app) fn firewall_rule_name(port: u16, protocol: &str, direction: &
     format!("MC Server {port} {protocol} {way} Allow")
 }
 
-#[cfg(target_os = "windows")]
 pub(in crate::app) fn is_windows_admin() -> Result<bool, String> {
     let output = no_window_command("powershell")
         .args([
@@ -96,7 +88,6 @@ pub(in crate::app) fn is_windows_admin() -> Result<bool, String> {
     Ok(stdout == "true")
 }
 
-#[cfg(target_os = "windows")]
 pub(in crate::app) fn forward_port_windows_firewall_elevated(
     port: u16,
 ) -> Result<Vec<String>, String> {

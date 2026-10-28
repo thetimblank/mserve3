@@ -1,10 +1,12 @@
-use super::super::support::no_window_command;
-use super::providers::fetch_cached;
+use super::super::support::{
+    Checksum, download_to_file, http_client, no_window_command, scratch_dir,
+};
+use super::providers::{fabric_server_jar, latest_fabric_installer};
+use super::run_blocking;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha512};
 use std::collections::BTreeMap;
 use std::fs;
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -12,7 +14,7 @@ use std::time::Duration;
 use tauri::Emitter;
 
 const MODPACK_PROGRESS_EVENT: &str = "modpack-install-progress";
-const FABRIC_META: &str = "https://meta.fabricmc.net/v2";
+const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(600);
 const NEOFORGE_MAVEN: &str = "https://maven.neoforged.net/releases/net/neoforged/neoforge";
 const FORGE_MAVEN: &str = "https://maven.minecraftforge.net/net/minecraftforge/forge";
 const MAX_DOWNLOAD_WORKERS: usize = 8;
@@ -34,7 +36,7 @@ const ALLOWED_MRPACK_HOSTS: [&str; 4] = [
 pub(in crate::app) struct InstallModpackPayload {
     /// Target server directory; must not exist yet (or be an empty directory).
     directory: String,
-    /// Download URL of the .mrpack file (Modrinth CDN).
+    /// Download URL of the .mrpack file (a host in `ALLOWED_MRPACK_HOSTS`).
     url: String,
     #[serde(default)]
     sha512: Option<String>,
@@ -138,7 +140,7 @@ fn safe_relative_path(raw: &str) -> Option<PathBuf> {
                 // running on a platform whose `Path` parser doesn't treat
                 // them as a `Prefix` component (Linux), since archives are
                 // portable across the Windows/Linux hosts mserve supports.
-                if part.to_str().map_or(true, |s| s.contains(':')) {
+                if part.to_str().is_none_or(|s| s.contains(':')) {
                     return None;
                 }
                 clean.push(part);
@@ -154,6 +156,16 @@ fn safe_relative_path(raw: &str) -> Option<PathBuf> {
     }
 }
 
+/// Loader and Minecraft versions come from the (untrusted) pack index and end up
+/// in file names and Maven URLs, so only plain version characters are allowed.
+fn is_safe_version(value: &str) -> bool {
+    !value.is_empty()
+        && !value.chars().all(|ch| ch == '.')
+        && value
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | '_' | '+'))
+}
+
 fn is_allowed_mrpack_host(url: &str) -> bool {
     reqwest::Url::parse(url).is_ok_and(|parsed| {
         parsed.scheme() == "https"
@@ -163,71 +175,6 @@ fn is_allowed_mrpack_host(url: &str) -> bool {
                     .any(|allowed| host.eq_ignore_ascii_case(allowed))
             })
     })
-}
-
-// ---------------------------------------------------------------------------
-// Download helpers
-// ---------------------------------------------------------------------------
-
-fn modpack_client() -> Result<reqwest::blocking::Client, String> {
-    reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(600))
-        .user_agent(concat!(
-            "mserve/",
-            env!("CARGO_PKG_VERSION"),
-            " (github.com/thetimblank/mserve3)"
-        ))
-        .build()
-        .map_err(|err| err.to_string())
-}
-
-/// Streams `url` into `destination`, returning the byte count and sha512 hex.
-fn download_to_file(
-    client: &reqwest::blocking::Client,
-    url: &str,
-    destination: &Path,
-    mut on_chunk: impl FnMut(u64, Option<u64>),
-) -> Result<(u64, String), String> {
-    let mut response = client.get(url).send().map_err(|err| err.to_string())?;
-    if !response.status().is_success() {
-        return Err(format!(
-            "Download of {url} failed with HTTP status {}.",
-            response.status().as_u16()
-        ));
-    }
-
-    if let Some(parent) = destination.parent() {
-        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
-    }
-
-    let total = response.content_length();
-    let mut file = fs::File::create(destination).map_err(|err| err.to_string())?;
-    let mut hasher = Sha512::new();
-    let mut downloaded: u64 = 0;
-    let mut buffer = [0u8; 64 * 1024];
-    loop {
-        let read = response.read(&mut buffer).map_err(|err| err.to_string())?;
-        if read == 0 {
-            break;
-        }
-        hasher.update(&buffer[..read]);
-        file.write_all(&buffer[..read])
-            .map_err(|err| err.to_string())?;
-        downloaded = downloaded.saturating_add(read as u64);
-        on_chunk(downloaded, total);
-    }
-    file.flush().map_err(|err| err.to_string())?;
-
-    Ok((downloaded, format!("{:x}", hasher.finalize())))
-}
-
-fn verify_sha512(expected: Option<&str>, actual: &str, what: &str) -> Result<(), String> {
-    if let Some(expected) = expected.map(str::trim).filter(|value| !value.is_empty())
-        && !actual.eq_ignore_ascii_case(expected)
-    {
-        return Err(format!("{what} failed integrity verification."));
-    }
-    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -247,35 +194,9 @@ fn install_fabric_loader(
     minecraft_version: &str,
     loader_version: &str,
 ) -> Result<LoaderInstall, String> {
-    #[derive(Deserialize)]
-    struct InstallerVersion {
-        version: String,
-        stable: bool,
-    }
-
-    let installers_text = fetch_cached(
-        client,
-        &format!("{FABRIC_META}/versions/installer"),
-        "fabric-installer-versions.json",
-        60 * 60,
-    )?;
-    let installers: Vec<InstallerVersion> =
-        serde_json::from_str(&installers_text).map_err(|err| err.to_string())?;
-    let installer = installers
-        .iter()
-        .find(|entry| entry.stable)
-        .or_else(|| installers.first())
-        .ok_or_else(|| "No Fabric installer version is available.".to_string())?;
-
-    let file_name = format!("fabric-server-mc.{minecraft_version}-loader.{loader_version}.jar");
-    let url = format!(
-        "{FABRIC_META}/versions/loader/{minecraft_version}/{loader_version}/{}/server/jar",
-        installer.version
-    );
-    let (bytes, _) = download_to_file(client, &url, &directory.join(&file_name), |_, _| {})?;
-    if bytes == 0 {
-        return Err("Downloaded Fabric server launcher was empty.".to_string());
-    }
+    let installer = latest_fabric_installer(client)?;
+    let (file_name, url) = fabric_server_jar(minecraft_version, loader_version, &installer);
+    download_to_file(client, &url, &directory.join(&file_name), None, |_, _| {})?;
 
     Ok(LoaderInstall {
         provider_name: "fabric".to_string(),
@@ -307,10 +228,7 @@ fn run_loader_installer(
     }
 
     let installer_path = directory.join("mserve-loader-installer.jar");
-    let (bytes, _) = download_to_file(client, installer_url, &installer_path, |_, _| {})?;
-    if bytes == 0 {
-        return Err(format!("Downloaded {provider_name} installer was empty."));
-    }
+    download_to_file(client, installer_url, &installer_path, None, |_, _| {})?;
 
     let output = no_window_command(java)
         .arg("-jar")
@@ -501,7 +419,7 @@ fn download_pack_files(
             let errors = Arc::clone(&errors);
             let done = Arc::clone(&done);
             scope.spawn(move || {
-                let Ok(client) = modpack_client() else {
+                let Ok(client) = http_client(DOWNLOAD_TIMEOUT) else {
                     if let Ok(mut guard) = errors.lock() {
                         guard.push("Could not build a download client.".to_string());
                     }
@@ -532,12 +450,10 @@ fn download_pack_files(
                             ));
                         }
                         let destination = directory.join(&relative);
-                        let (bytes, sha512) =
-                            download_to_file(&client, url, &destination, |_, _| {})?;
-                        if bytes == 0 {
-                            return Err(format!("Downloaded file was empty: {}", file.path));
-                        }
-                        verify_sha512(file.hashes.sha512.as_deref(), &sha512, &file.path)
+                        let checksum =
+                            Checksum::from_hex(Checksum::Sha512, file.hashes.sha512.as_deref());
+                        download_to_file(&client, url, &destination, checksum.as_ref(), |_, _| {})
+                            .map(|_| ())
                     })();
 
                     match result {
@@ -575,15 +491,30 @@ fn download_pack_files(
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
-pub(in crate::app) fn install_modrinth_modpack(
+pub(in crate::app) async fn install_modrinth_modpack(
     app: tauri::AppHandle,
     payload: InstallModpackPayload,
+) -> Result<InstallModpackResult, String> {
+    run_blocking(move || install_modrinth_modpack_blocking(&app, &payload)).await
+}
+
+fn install_modrinth_modpack_blocking(
+    app: &tauri::AppHandle,
+    payload: &InstallModpackPayload,
 ) -> Result<InstallModpackResult, String> {
     let directory = PathBuf::from(payload.directory.trim());
     if payload.directory.trim().is_empty() {
         return Err("Server directory is required.".to_string());
     }
-    if directory.exists() {
+    if !is_allowed_mrpack_host(payload.url.trim()) {
+        return Err(
+            "Modpacks can only be downloaded from Modrinth's CDN or the hosts the .mrpack spec allows."
+                .to_string(),
+        );
+    }
+
+    let existed = directory.exists();
+    if existed {
         let is_empty_dir = directory.is_dir()
             && fs::read_dir(&directory)
                 .map(|mut entries| entries.next().is_none())
@@ -595,10 +526,23 @@ pub(in crate::app) fn install_modrinth_modpack(
         fs::create_dir_all(&directory).map_err(|err| err.to_string())?;
     }
 
-    if !is_allowed_mrpack_host(payload.url.trim()) {
-        return Err("Modpacks can only be downloaded from the Modrinth CDN.".to_string());
+    let result = install_into_directory(app, payload, &directory);
+    if result.is_err() {
+        // The directory was empty (or missing) before the install, so everything
+        // in it is a half-finished install; clear it so a retry can proceed.
+        let _ = fs::remove_dir_all(&directory);
+        if existed {
+            let _ = fs::create_dir_all(&directory);
+        }
     }
+    result
+}
 
+fn install_into_directory(
+    app: &tauri::AppHandle,
+    payload: &InstallModpackPayload,
+    directory: &Path,
+) -> Result<InstallModpackResult, String> {
     let install_id = payload
         .install_id
         .as_deref()
@@ -623,19 +567,23 @@ pub(in crate::app) fn install_modrinth_modpack(
             );
         };
 
-    let client = modpack_client()?;
+    let client = http_client(DOWNLOAD_TIMEOUT)?;
 
     // 1. Download the .mrpack itself.
     emit("downloading-pack", "Downloading modpack…", 0, 0, 0.0);
-    let staging_dir = std::env::temp_dir()
-        .join("mserve")
-        .join("modpack-downloads");
-    fs::create_dir_all(&staging_dir).map_err(|err| err.to_string())?;
-    let mrpack_path = staging_dir.join(format!("{install_id}.mrpack"));
-    let (bytes, pack_sha512) = download_to_file(
+    let staging_dir = scratch_dir("modpack-downloads")?;
+    let safe_id: String = install_id
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_'))
+        .collect();
+    let nonce = chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default();
+    let mrpack_path = staging_dir.join(format!("{safe_id}-{nonce}.mrpack"));
+    let pack_checksum = Checksum::from_hex(Checksum::Sha512, payload.sha512.as_deref());
+    download_to_file(
         &client,
         payload.url.trim(),
         &mrpack_path,
+        pack_checksum.as_ref(),
         |downloaded, total| {
             if let Some(total) = total.filter(|value| *value > 0) {
                 emit(
@@ -648,14 +596,21 @@ pub(in crate::app) fn install_modrinth_modpack(
             }
         },
     )?;
-    if bytes == 0 {
-        return Err("Downloaded modpack file was empty.".to_string());
-    }
-    verify_sha512(payload.sha512.as_deref(), &pack_sha512, "The modpack file")?;
+    let result = install_from_mrpack(payload, directory, &client, &mrpack_path, &emit);
+    let _ = fs::remove_file(&mrpack_path);
+    result
+}
 
+fn install_from_mrpack(
+    payload: &InstallModpackPayload,
+    directory: &Path,
+    client: &reqwest::blocking::Client,
+    mrpack_path: &Path,
+    emit: &(impl Fn(&str, &str, usize, usize, f64) + Sync),
+) -> Result<InstallModpackResult, String> {
     // 2. Parse the index.
     emit("extracting", "Reading modpack contents…", 0, 0, 0.0);
-    let mrpack_file = fs::File::open(&mrpack_path).map_err(|err| err.to_string())?;
+    let mrpack_file = fs::File::open(mrpack_path).map_err(|err| err.to_string())?;
     let mut archive = zip::ZipArchive::new(mrpack_file).map_err(|err| err.to_string())?;
     let index: MrpackIndex = {
         let mut entry = archive.by_name("modrinth.index.json").map_err(|_| {
@@ -680,6 +635,15 @@ pub(in crate::app) fn install_modrinth_modpack(
         .get("minecraft")
         .cloned()
         .ok_or_else(|| "The modpack does not declare a Minecraft version.".to_string())?;
+    if let Some((name, version)) = index
+        .dependencies
+        .iter()
+        .find(|(_, version)| !is_safe_version(version))
+    {
+        return Err(format!(
+            "The modpack declares an invalid {name} version: {version:?}."
+        ));
+    }
 
     // 3. Download server-side files.
     let server_files: Vec<MrpackFile> = index
@@ -695,27 +659,25 @@ pub(in crate::app) fn install_modrinth_modpack(
         files_total,
         0.0,
     );
-    download_pack_files(&directory, server_files, &emit)?;
+    download_pack_files(directory, server_files, emit)?;
 
     // 4. Apply overrides (server-overrides win over shared overrides).
     emit("extracting", "Applying modpack overrides…", 0, 0, 0.0);
-    extract_override_tree(&mut archive, "overrides/", &directory)?;
-    extract_override_tree(&mut archive, "server-overrides/", &directory)?;
+    extract_override_tree(&mut archive, "overrides/", directory)?;
+    extract_override_tree(&mut archive, "server-overrides/", directory)?;
 
     // 5. Install the loader.
     emit("installing-loader", "Installing the mod loader…", 0, 0, 0.0);
     let loader = install_loader(
-        &client,
-        &directory,
+        client,
+        directory,
         payload.java_executable.as_deref(),
         &index.dependencies,
         &minecraft_version,
     )?;
 
-    let _ = fs::remove_file(&mrpack_path);
-
     // Best-effort Java requirement from Mojang's metadata for this MC version.
-    let jdk_versions = super::providers::resolve_vanilla(&client, &minecraft_version)
+    let jdk_versions = super::providers::resolve_vanilla(client, &minecraft_version)
         .map(|resolved| resolved.jdk_versions)
         .unwrap_or_default();
 
@@ -809,10 +771,14 @@ mod tests {
     }
 
     #[test]
-    fn sha512_verification_is_case_insensitive_and_optional() {
-        assert!(verify_sha512(None, "abc", "x").is_ok());
-        assert!(verify_sha512(Some(""), "abc", "x").is_ok());
-        assert!(verify_sha512(Some("ABC"), "abc", "x").is_ok());
-        assert!(verify_sha512(Some("def"), "abc", "x").is_err());
+    fn only_plain_version_strings_are_safe() {
+        assert!(is_safe_version("1.21.1"));
+        assert!(is_safe_version("0.16.10"));
+        assert!(is_safe_version("21.1.77-beta+build.5"));
+        assert!(!is_safe_version(""));
+        assert!(!is_safe_version(".."));
+        assert!(!is_safe_version("1.21/../../evil"));
+        assert!(!is_safe_version("1.21\\..\\evil"));
+        assert!(!is_safe_version("C:evil"));
     }
 }

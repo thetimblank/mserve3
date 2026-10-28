@@ -1,9 +1,8 @@
 use super::super::support::{
     DEFAULT_SLEEP_IDLE_MINUTES, DEFAULT_SLEEP_MOTD, copy_jar_to_server_directory,
-    default_auto_backup, default_backup_policy, default_backup_scope, default_custom_flags,
-    default_provider_for_file, default_synced_config, default_telemetry_host,
-    detect_default_telemetry_port, find_first_jar_file_name, generate_server_id,
-    has_required_mserve_json_fields, normalize_backup_policy, normalize_backup_scope,
+    default_backup_policy, default_backup_scope, default_provider_for_file, default_synced_config,
+    default_telemetry_host, detect_default_telemetry_port, find_first_jar_file_name,
+    generate_server_id, has_required_mserve_json_fields, normalize_auto_backup_modes,
     normalize_custom_flags, normalize_provider, parse_mserve_top_level_object, resolve_repair_file,
     sanitize_mserve_value_config, synced_mserve_json_string, validate_mserve_json_keys, write_eula,
     write_synced_mserve_json,
@@ -13,7 +12,7 @@ use super::super::{
     SyncedMserveConfig,
 };
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Clamps an optional idle-minutes value from a payload to at least 1, defaulting
 /// when absent. Keeps sleep-mode plumbing consistent across create and repair.
@@ -27,6 +26,14 @@ fn resolve_sleep_idle_minutes(minutes: Option<u32>) -> u32 {
 fn resolve_sleep_motd(motd: Option<&str>) -> String {
     motd.filter(|value| !value.trim().is_empty())
         .map_or_else(|| DEFAULT_SLEEP_MOTD.to_string(), str::to_string)
+}
+
+/// The existing mserve.json, normalized, when it parses as a JSON object. Unknown
+/// keys and missing fields are tolerated (they fall back to defaults).
+fn read_existing_config(directory: &Path) -> Option<SyncedMserveConfig> {
+    let raw = fs::read_to_string(directory.join("mserve.json")).ok()?;
+    let object = parse_mserve_top_level_object(&raw).ok()?;
+    Some(sanitize_mserve_value_config(directory, &object))
 }
 
 #[tauri::command]
@@ -77,11 +84,7 @@ pub(in crate::app) fn initialize_server(
         });
     }
 
-    let auto_backup: Vec<String> = payload
-        .auto_backup
-        .into_iter()
-        .filter(|value| matches!(value.as_str(), "interval" | "on_close" | "on_start"))
-        .collect();
+    let auto_backup = normalize_auto_backup_modes(payload.auto_backup);
 
     // Copy the jar file to the server directory. Adopted directories already
     // hold their launch file (or use an argfile launch), so the name is taken
@@ -180,39 +183,24 @@ pub(in crate::app) fn import_server(directory: String) -> Result<InitServerResul
         });
     }
 
-    // Check if mserve.json already exists
-    let mserve_json_path = directory_path.join("mserve.json");
-
-    let (server_id, jar_file, message) = if mserve_json_path.exists() {
-        let detected = find_first_jar_file_name(&directory_path).unwrap_or_default();
-        let resolved_id = fs::read_to_string(&mserve_json_path)
-            .ok()
-            .and_then(|raw| parse_mserve_top_level_object(&raw).ok())
-            .map_or_else(generate_server_id, |object| {
-                sanitize_mserve_value_config(&directory_path, &object).id
-            });
+    let (server_id, jar_file, message) = if let Some(existing) =
+        read_existing_config(&directory_path)
+    {
         (
-            resolved_id,
-            detected,
+            existing.id,
+            existing.file,
+            "Server already has mserve.json configuration. It will be validated and synced on import.".to_string(),
+        )
+    } else if directory_path.join("mserve.json").exists() {
+        // Present but unreadable: the sync step that follows import sends it
+        // through the repair dialog.
+        (
+            generate_server_id(),
+            find_first_jar_file_name(&directory_path).unwrap_or_default(),
             "Server already has mserve.json configuration. It will be validated and synced on import.".to_string(),
         )
     } else {
-        let mut found_jar = String::new();
-
-        if let Ok(entries) = fs::read_dir(&directory_path) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_file()
-                    && let Some(filename) = path.file_name().and_then(|name| name.to_str())
-                    && filename.to_lowercase().ends_with(".jar")
-                {
-                    found_jar = filename.to_string();
-                    break;
-                }
-            }
-        }
-
-        if found_jar.is_empty() {
+        let Some(found_jar) = find_first_jar_file_name(&directory_path) else {
             return Ok(InitServerResult {
                 ok: false,
                 message:
@@ -222,40 +210,14 @@ pub(in crate::app) fn import_server(directory: String) -> Result<InitServerResul
                 file: String::new(),
                 directory: directory_str.to_string(),
             });
-        }
-
-        let server_id = generate_server_id();
-
-        let config = SyncedMserveConfig {
-            id: server_id.clone(),
-            file: found_jar.clone(),
-            ram: 4.0,
-            storage_limit: 200,
-            auto_backup: default_auto_backup(),
-            auto_backup_interval: 120,
-            backup_policy: default_backup_policy(),
-            backup_max_count: 0,
-            backup_max_age_days: 0,
-            backup_scope: default_backup_scope(),
-            auto_restart: false,
-            sleep_enabled: false,
-            sleep_idle_minutes: DEFAULT_SLEEP_IDLE_MINUTES,
-            sleep_motd: DEFAULT_SLEEP_MOTD.to_string(),
-            custom_flags: default_custom_flags(),
-            java_installation: None,
-            provider: default_provider_for_file(&found_jar),
-            telemetry_host: default_telemetry_host(),
-            telemetry_port: detect_default_telemetry_port(&directory_path),
-            created_at: chrono::Local::now().to_rfc3339(),
-            tunnel_enabled: false,
-            tunnel_id: None,
-            tunnel_address: None,
         };
 
+        // The defaults already target the first jar in the directory.
+        let config = default_synced_config(&directory_path);
         write_synced_mserve_json(&directory_path, &config)?;
 
         (
-            server_id,
+            config.id,
             found_jar.clone(),
             format!("Created mserve.json with default settings. Found jar file: {found_jar}"),
         )
@@ -304,21 +266,20 @@ pub(in crate::app) fn sync_server_mserve_json(
         });
     };
 
-    if validate_mserve_json_keys(&object).is_err() {
+    // The file parsed, so the rebuild should start from what it holds rather
+    // than from defaults (one stray key must not reset every setting).
+    let invalid_message = if validate_mserve_json_keys(&object).is_err() {
+        Some("The data found was invalid. Please rebuild mserve.json.")
+    } else if !has_required_mserve_json_fields(&object) {
+        Some("Required mserve.json fields are missing. Please rebuild mserve.json.")
+    } else {
+        None
+    };
+    if let Some(message) = invalid_message {
         return Ok(SyncMserveJsonResult {
             status: "needs_setup".to_string(),
-            message: "The data found was invalid. Please rebuild mserve.json.".to_string(),
-            config: Some(default_synced_config(&directory_path)),
-            updated: false,
-        });
-    }
-
-    if !has_required_mserve_json_fields(&object) {
-        return Ok(SyncMserveJsonResult {
-            status: "needs_setup".to_string(),
-            message: "Required mserve.json fields are missing. Please rebuild mserve.json."
-                .to_string(),
-            config: Some(default_synced_config(&directory_path)),
+            message: message.to_string(),
+            config: Some(sanitize_mserve_value_config(&directory_path, &object)),
             updated: false,
         });
     }
@@ -361,58 +322,11 @@ pub(in crate::app) fn repair_server_mserve_json(
     }
 
     let resolved_file = resolve_repair_file(&directory_path, &payload.file)?;
-    let auto_backup: Vec<String> = payload
-        .auto_backup
-        .into_iter()
-        .filter(|value| matches!(value.as_str(), "interval" | "on_close" | "on_start"))
-        .collect();
+    let auto_backup = normalize_auto_backup_modes(payload.auto_backup);
 
-    let existing_object = fs::read_to_string(directory_path.join("mserve.json"))
-        .ok()
-        .and_then(|raw| parse_mserve_top_level_object(&raw).ok());
-
-    let existing_id = existing_object
-        .as_ref()
-        .and_then(|object| {
-            object
-                .get("id")
-                .and_then(|value| value.as_str())
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(std::string::ToString::to_string)
-        })
-        .unwrap_or_else(generate_server_id);
-
-    // Backup retention/scope settings aren't part of the repair form; carry
-    // whatever the old file had (falling back to the defaults).
-    let existing_backup_policy = normalize_backup_policy(
-        existing_object
-            .as_ref()
-            .and_then(|object| object.get("backup_policy"))
-            .and_then(|value| value.as_str()),
-    );
-    let existing_backup_max_count = existing_object
-        .as_ref()
-        .and_then(|object| object.get("backup_max_count"))
-        .and_then(serde_json::Value::as_u64)
-        .map_or(0, |value| u32::try_from(value).unwrap_or(u32::MAX));
-    let existing_backup_max_age_days = existing_object
-        .as_ref()
-        .and_then(|object| object.get("backup_max_age_days"))
-        .and_then(serde_json::Value::as_u64)
-        .map_or(0, |value| u32::try_from(value).unwrap_or(u32::MAX));
-    let existing_backup_scope_raw = existing_object
-        .as_ref()
-        .and_then(|object| object.get("backup_scope"))
-        .and_then(|value| value.as_array())
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| item.as_str())
-                .map(std::string::ToString::to_string)
-                .collect::<Vec<String>>()
-        });
-    let existing_backup_scope = normalize_backup_scope(existing_backup_scope_raw.as_deref());
+    // Fields the repair form doesn't cover (identity, retention, tunnel, and
+    // sleep when the caller omits it) carry over from the old file if it parses.
+    let existing = read_existing_config(&directory_path);
 
     let custom_flags = normalize_custom_flags(payload.custom_flags);
     let provider = payload.provider.as_ref().map_or_else(
@@ -421,20 +335,43 @@ pub(in crate::app) fn repair_server_mserve_json(
     );
 
     let config = SyncedMserveConfig {
-        id: existing_id,
+        id: existing
+            .as_ref()
+            .map_or_else(generate_server_id, |config| config.id.clone()),
         file: resolved_file,
         ram: payload.ram.max(0.25),
         storage_limit: payload.storage_limit.max(1),
         auto_backup,
         auto_backup_interval: payload.auto_backup_interval.max(1),
-        backup_policy: existing_backup_policy,
-        backup_max_count: existing_backup_max_count,
-        backup_max_age_days: existing_backup_max_age_days,
-        backup_scope: existing_backup_scope,
+        backup_policy: existing
+            .as_ref()
+            .map_or_else(default_backup_policy, |config| config.backup_policy.clone()),
+        backup_max_count: existing
+            .as_ref()
+            .map_or(0, |config| config.backup_max_count),
+        backup_max_age_days: existing
+            .as_ref()
+            .map_or(0, |config| config.backup_max_age_days),
+        backup_scope: existing
+            .as_ref()
+            .map_or_else(default_backup_scope, |config| config.backup_scope.clone()),
         auto_restart: payload.auto_restart,
-        sleep_enabled: payload.sleep_enabled,
-        sleep_idle_minutes: resolve_sleep_idle_minutes(payload.sleep_idle_minutes),
-        sleep_motd: resolve_sleep_motd(payload.sleep_motd.as_deref()),
+        sleep_enabled: payload
+            .sleep_enabled
+            .or_else(|| existing.as_ref().map(|config| config.sleep_enabled))
+            .unwrap_or(false),
+        sleep_idle_minutes: resolve_sleep_idle_minutes(
+            payload
+                .sleep_idle_minutes
+                .or_else(|| existing.as_ref().map(|config| config.sleep_idle_minutes)),
+        ),
+        sleep_motd: resolve_sleep_motd(
+            payload
+                .sleep_motd
+                .as_deref()
+                .filter(|value| !value.trim().is_empty())
+                .or_else(|| existing.as_ref().map(|config| config.sleep_motd.as_str())),
+        ),
         custom_flags,
         java_installation: payload
             .java_installation
@@ -452,10 +389,19 @@ pub(in crate::app) fn repair_server_mserve_json(
             .telemetry_port
             .filter(|value| *value > 0)
             .unwrap_or_else(|| detect_default_telemetry_port(&directory_path)),
-        created_at: chrono::Local::now().to_rfc3339(),
-        tunnel_enabled: false,
-        tunnel_id: None,
-        tunnel_address: None,
+        created_at: existing.as_ref().map_or_else(
+            || chrono::Local::now().to_rfc3339(),
+            |config| config.created_at.clone(),
+        ),
+        tunnel_enabled: existing
+            .as_ref()
+            .is_some_and(|config| config.tunnel_enabled),
+        tunnel_id: existing
+            .as_ref()
+            .and_then(|config| config.tunnel_id.clone()),
+        tunnel_address: existing
+            .as_ref()
+            .and_then(|config| config.tunnel_address.clone()),
     };
 
     write_synced_mserve_json(&directory_path, &config)?;

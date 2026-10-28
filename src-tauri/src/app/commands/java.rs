@@ -1,5 +1,6 @@
 use super::super::support::no_window_command;
 use super::super::{JavaRuntimeDetectionResult, JavaRuntimeInfo};
+use super::run_blocking;
 use std::collections::HashSet;
 use std::env;
 use std::path::{Path, PathBuf};
@@ -129,6 +130,12 @@ fn collect_managed_candidates(
 
     for entry in entries.flatten() {
         let path = entry.path();
+        // Skip the download's in-flight staging (`.temurin-N.staging`) and
+        // retired (`temurin-N.old`) copies; neither is a usable install.
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') || name.ends_with(".old") {
+            continue;
+        }
         if path.is_dir() {
             push_java_under(&path, 2, candidates, seen, "managed");
         }
@@ -155,39 +162,15 @@ fn collect_java_home_candidate(candidates: &mut Vec<JavaCandidate>, seen: &mut H
     );
 }
 
-fn collect_path_candidates(
-    candidates: &mut Vec<JavaCandidate>,
-    seen: &mut HashSet<String>,
-    errors: &mut Vec<String>,
-) {
-    #[cfg(target_os = "windows")]
-    let output = no_window_command("where").arg("java").output();
-
-    #[cfg(not(target_os = "windows"))]
-    let output = no_window_command("which").args(["-a", "java"]).output();
-
-    let result = match output {
-        Ok(value) => value,
-        Err(err) => {
-            errors.push(format!(
-                "Could not inspect PATH for Java executables: {err}"
-            ));
-            return;
-        }
-    };
-
-    if !result.status.success() {
+/// Every `java` executable on `PATH`, in PATH order. Walks the variable
+/// directly rather than spawning `where`/`which` (`which` isn't installed on
+/// some minimal Linux distros).
+fn collect_path_candidates(candidates: &mut Vec<JavaCandidate>, seen: &mut HashSet<String>) {
+    let Some(path) = env::var_os("PATH") else {
         return;
-    }
-
-    let stdout = String::from_utf8_lossy(&result.stdout);
-    for raw_line in stdout.lines() {
-        let line = raw_line.trim();
-        if line.is_empty() {
-            continue;
-        }
-
-        push_candidate(candidates, seen, PathBuf::from(line), "path");
+    };
+    for dir in env::split_paths(&path) {
+        push_candidate(candidates, seen, dir.join(java_executable_name()), "path");
     }
 }
 
@@ -235,7 +218,7 @@ fn collect_common_install_candidates(
         }
 
         for vendor in VENDOR_ROOTS {
-            // <ProgramFiles>/<vendor>/bin/java.exe and two levels of nested JDK
+            // <ProgramFiles>/<vendor>/bin/java.exe and one level of nested JDK
             // folders below it (e.g. .../Eclipse Adoptium/jdk-21.../bin/java.exe).
             push_java_under(
                 &base_dir.join(vendor),
@@ -457,16 +440,19 @@ pub(in crate::app) fn inspect_java_executable(
 }
 
 #[tauri::command]
-pub(in crate::app) fn detect_java_runtimes(
+pub(in crate::app) async fn detect_java_runtimes(
     app: tauri::AppHandle,
 ) -> Result<JavaRuntimeDetectionResult, String> {
+    run_blocking(move || Ok(detect_java_runtimes_blocking(&app))).await
+}
+
+fn detect_java_runtimes_blocking(app: &tauri::AppHandle) -> JavaRuntimeDetectionResult {
     let mut candidates = Vec::new();
     let mut seen_candidates = HashSet::new();
-    let mut errors = Vec::new();
 
-    collect_managed_candidates(&app, &mut candidates, &mut seen_candidates);
+    collect_managed_candidates(app, &mut candidates, &mut seen_candidates);
     collect_java_home_candidate(&mut candidates, &mut seen_candidates);
-    collect_path_candidates(&mut candidates, &mut seen_candidates, &mut errors);
+    collect_path_candidates(&mut candidates, &mut seen_candidates);
     collect_common_install_candidates(&mut candidates, &mut seen_candidates);
 
     let scanned_candidates = candidates.len();
@@ -474,7 +460,7 @@ pub(in crate::app) fn detect_java_runtimes(
     // Inspect candidates concurrently — each one may spawn `java -version`, which
     // is slow when several runtimes are installed.
     let runtimes = Mutex::new(Vec::new());
-    let errors = Mutex::new(errors);
+    let errors = Mutex::new(Vec::new());
 
     std::thread::scope(|scope| {
         for candidate in &candidates {
@@ -495,9 +481,9 @@ pub(in crate::app) fn detect_java_runtimes(
             .then_with(|| left.executable_path.cmp(&right.executable_path))
     });
 
-    Ok(JavaRuntimeDetectionResult {
+    JavaRuntimeDetectionResult {
         runtimes,
         errors,
         scanned_candidates,
-    })
+    }
 }

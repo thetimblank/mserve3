@@ -31,3 +31,16 @@ pub(super) use runtime::*;
 pub(super) use settings::*;
 pub(super) use setup::*;
 pub(super) use telemetry::*;
+
+/// Runs blocking command work (downloads, spawns, port probes, RCON, bulk file
+/// I/O, bounded waits) on the blocking pool. Synchronous Tauri commands execute
+/// on the main thread, so doing this inline would freeze the window.
+async fn run_blocking<T, F>(work: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|err| err.to_string())?
+}

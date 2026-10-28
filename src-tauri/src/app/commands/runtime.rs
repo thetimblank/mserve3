@@ -1,7 +1,7 @@
 use super::super::support::playit;
 use super::super::support::{
     RconClient, emit_output_reader, emit_system_line, ensure_rcon_enabled, get_runtime_config,
-    infer_provider_version, isolate_in_own_process_group, kill_child_process_group,
+    infer_provider_version, is_restoring, isolate_in_own_process_group, kill_child_process_group,
     kill_process_tree, next_generation, no_window_command, offline_state_event, patch_mserve_json,
     pid_listening_on_port, probe_port, read_rcon_config, release_child_from_app_lifetime,
     remove_if_current, resolve_telemetry_target, server_key, set_server_port, spawn_supervisor,
@@ -12,6 +12,7 @@ use super::super::{
     LifecycleState, RuntimeServerConfig, RuntimeState, ServerRuntime, ServerRuntimeSnapshot,
     ServerRuntimeStateEvent, ServerTunnelInfo, TpsCommandState,
 };
+use super::run_blocking;
 use std::collections::{HashMap, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -316,19 +317,6 @@ pub(in crate::app) fn owned_running_server_directories(
         .collect()
 }
 
-/// Runs blocking command work (spawns, port probes, RCON, bounded waits) on the
-/// blocking pool. Synchronous Tauri commands execute on the main thread, so doing
-/// this inline would freeze the window.
-async fn run_blocking<T, F>(work: F) -> Result<T, String>
-where
-    T: Send + 'static,
-    F: FnOnce() -> Result<T, String> + Send + 'static,
-{
-    tauri::async_runtime::spawn_blocking(work)
-        .await
-        .map_err(|err| err.to_string())?
-}
-
 /// Brings up this server's playit tunnel asynchronously (when enabled) so server
 /// start isn't blocked on network I/O. Provisions/reuses the tunnel, starts the
 /// in-process agent, stores its stop handle on the runtime, and emits
@@ -467,6 +455,11 @@ pub(in crate::app) fn start_server_internal(
     // is the "wake" path.
     let (sleeping_port, server_port) = {
         let mut guard = processes.lock().map_err(|_| "Runtime lock failed.")?;
+        if is_restoring(&key) {
+            return Err(
+                "A backup is being restored for this server. Try again when it's done.".to_string(),
+            );
+        }
         let mut sleeping_port = None;
         if let Some(existing) = guard.get_mut(&key) {
             if is_start_reservation(existing) {
@@ -712,7 +705,7 @@ fn stop_sleep_listener(runtime: &mut ServerRuntime) {
 
 /// Tears down a sleeping server's wake listener and the tunnel agent that kept
 /// fronting it, returning the offline event to emit once the entry is removed.
-fn release_sleeping(runtime: &mut ServerRuntime) -> ServerRuntimeStateEvent {
+pub(in crate::app) fn release_sleeping(runtime: &mut ServerRuntime) -> ServerRuntimeStateEvent {
     stop_sleep_listener(runtime);
     if let Some(stop) = runtime.playit_stop.take() {
         playit::stop_agent(&stop);
@@ -722,7 +715,7 @@ fn release_sleeping(runtime: &mut ServerRuntime) -> ServerRuntimeStateEvent {
 }
 
 /// Emits an offline lifecycle event plus the matching tunnel-offline event.
-fn emit_offline(app: &tauri::AppHandle, event: ServerRuntimeStateEvent) {
+pub(in crate::app) fn emit_offline(app: &tauri::AppHandle, event: ServerRuntimeStateEvent) {
     let directory = event.directory.clone();
     let _ = app.emit("server-runtime-state", event);
     playit::emit_tunnel_state(app, &directory, "offline", None, None);

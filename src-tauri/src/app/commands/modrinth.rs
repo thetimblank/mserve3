@@ -1,12 +1,11 @@
 use super::super::support::{
-    ContentItemMeta, is_simple_relative_name, item_roots, move_file_with_fallback,
-    record_content_meta,
+    Checksum, ContentItemMeta, download_to_file, http_client, is_simple_relative_name, item_roots,
+    move_file_with_fallback, record_content_meta, scratch_dir,
 };
-use super::providers::{fetch_cached, fetch_text};
+use super::providers::{API_TIMEOUT, fetch_cached, fetch_text};
+use super::run_blocking;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha512};
 use std::fs;
-use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -17,19 +16,6 @@ const TAG_CACHE_TTL_SECS: u64 = 60 * 60; // 1 hour
 const ALLOWED_PROJECT_TYPES: [&str; 4] = ["plugin", "datapack", "mod", "modpack"];
 const ALLOWED_SEARCH_INDEXES: [&str; 5] =
     ["relevance", "downloads", "follows", "newest", "updated"];
-
-/// Modrinth asks for a uniquely identifying User-Agent with a contact pointer.
-fn modrinth_client() -> Result<reqwest::blocking::Client, String> {
-    reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .user_agent(concat!(
-            "mserve/",
-            env!("CARGO_PKG_VERSION"),
-            " (github.com/thetimblank/mserve3)"
-        ))
-        .build()
-        .map_err(|err| err.to_string())
-}
 
 // ---------------------------------------------------------------------------
 // Boundary structs. Modrinth's JSON is snake_case; the IPC boundary is
@@ -318,6 +304,19 @@ fn to_version_entry(raw: ModrinthVersionRaw) -> Option<ModrinthVersionEntry> {
     })
 }
 
+/// Modrinth project ids and slugs are alphanumeric plus `-` / `_`.
+fn validate_project_id(raw: &str) -> Result<&str, String> {
+    let id = raw.trim();
+    if id.is_empty()
+        || !id
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
+    {
+        return Err("Invalid Modrinth project id.".to_string());
+    }
+    Ok(id)
+}
+
 fn is_modrinth_cdn_url(url: &str) -> bool {
     reqwest::Url::parse(url).is_ok_and(|parsed| {
         parsed.scheme() == "https" && parsed.host_str() == Some(MODRINTH_CDN_HOST)
@@ -350,8 +349,14 @@ fn validate_install_file_name(item_type: &str, file_name: &str) -> Result<(), St
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
-pub(in crate::app) fn search_modrinth_projects(
+pub(in crate::app) async fn search_modrinth_projects(
     payload: ModrinthSearchPayload,
+) -> Result<ModrinthSearchResult, String> {
+    run_blocking(move || search_modrinth_projects_blocking(&payload)).await
+}
+
+fn search_modrinth_projects_blocking(
+    payload: &ModrinthSearchPayload,
 ) -> Result<ModrinthSearchResult, String> {
     let project_type = payload.project_type.trim().to_lowercase();
     if !ALLOWED_PROJECT_TYPES.contains(&project_type.as_str()) {
@@ -379,7 +384,7 @@ pub(in crate::app) fn search_modrinth_projects(
     );
     let limit = payload.limit.unwrap_or(20).clamp(1, 100);
 
-    let client = modrinth_client()?;
+    let client = http_client(API_TIMEOUT)?;
     let response = client
         .get(format!("{MODRINTH_API}/search"))
         .query(&[
@@ -404,37 +409,31 @@ pub(in crate::app) fn search_modrinth_projects(
 }
 
 #[tauri::command]
-pub(in crate::app) fn get_modrinth_project(
+pub(in crate::app) async fn get_modrinth_project(
     payload: ModrinthProjectPayload,
 ) -> Result<ModrinthProject, String> {
-    let id = payload.id_or_slug.trim();
-    if id.is_empty()
-        || !id
-            .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
-    {
-        return Err("Invalid Modrinth project id.".to_string());
-    }
-
-    let client = modrinth_client()?;
-    let text = fetch_text(&client, &format!("{MODRINTH_API}/project/{id}"))?;
-    serde_json::from_str(&text).map_err(|err| err.to_string())
+    run_blocking(move || {
+        let id = validate_project_id(&payload.id_or_slug)?;
+        let client = http_client(API_TIMEOUT)?;
+        let text = fetch_text(&client, &format!("{MODRINTH_API}/project/{id}"))?;
+        serde_json::from_str(&text).map_err(|err| err.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
-pub(in crate::app) fn list_modrinth_project_versions(
+pub(in crate::app) async fn list_modrinth_project_versions(
     payload: ModrinthVersionsPayload,
 ) -> Result<Vec<ModrinthVersionEntry>, String> {
-    let id = payload.id_or_slug.trim();
-    if id.is_empty()
-        || !id
-            .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
-    {
-        return Err("Invalid Modrinth project id.".to_string());
-    }
+    run_blocking(move || list_modrinth_project_versions_blocking(&payload)).await
+}
 
-    let client = modrinth_client()?;
+fn list_modrinth_project_versions_blocking(
+    payload: &ModrinthVersionsPayload,
+) -> Result<Vec<ModrinthVersionEntry>, String> {
+    let id = validate_project_id(&payload.id_or_slug)?;
+
+    let client = http_client(API_TIMEOUT)?;
     let mut request = client.get(format!("{MODRINTH_API}/project/{id}/version"));
     if !payload.loaders.is_empty() {
         let loaders = serde_json::to_string(&payload.loaders).map_err(|err| err.to_string())?;
@@ -461,13 +460,19 @@ pub(in crate::app) fn list_modrinth_project_versions(
 }
 
 #[tauri::command]
-pub(in crate::app) fn get_modrinth_tags(project_type: String) -> Result<ModrinthTags, String> {
+pub(in crate::app) async fn get_modrinth_tags(
+    project_type: String,
+) -> Result<ModrinthTags, String> {
+    run_blocking(move || get_modrinth_tags_blocking(&project_type)).await
+}
+
+fn get_modrinth_tags_blocking(project_type: &str) -> Result<ModrinthTags, String> {
     let normalized = project_type.trim().to_lowercase();
     if !ALLOWED_PROJECT_TYPES.contains(&normalized.as_str()) {
         return Err(format!("Unsupported Modrinth project type: {normalized}."));
     }
 
-    let client = modrinth_client()?;
+    let client = http_client(API_TIMEOUT)?;
     let categories_text = fetch_cached(
         &client,
         &format!("{MODRINTH_API}/tag/category"),
@@ -499,8 +504,14 @@ pub(in crate::app) fn get_modrinth_tags(project_type: String) -> Result<Modrinth
 }
 
 #[tauri::command]
-pub(in crate::app) fn install_modrinth_file(
+pub(in crate::app) async fn install_modrinth_file(
     payload: InstallModrinthFilePayload,
+) -> Result<InstallModrinthFileResult, String> {
+    run_blocking(move || install_modrinth_file_blocking(&payload)).await
+}
+
+fn install_modrinth_file_blocking(
+    payload: &InstallModrinthFilePayload,
 ) -> Result<InstallModrinthFileResult, String> {
     let directory = PathBuf::from(payload.directory.trim());
     if !directory.exists() || !directory.is_dir() {
@@ -515,68 +526,30 @@ pub(in crate::app) fn install_modrinth_file(
         return Err("Downloads are only allowed from the Modrinth CDN.".to_string());
     }
 
-    // Download into a temp file, hashing as we stream.
-    let staging_dir = std::env::temp_dir()
-        .join("mserve")
-        .join("modrinth-downloads");
-    fs::create_dir_all(&staging_dir).map_err(|err| err.to_string())?;
-    let temp_path = staging_dir.join(format!("{file_name}.part"));
+    // Download into a staging file (verifying the sha512 as it streams), then
+    // move it into place so a failed download never touches the server.
+    let staging_dir = scratch_dir("modrinth-downloads")?;
+    let nonce = chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default();
+    let temp_path = staging_dir.join(format!("{nonce}-{file_name}.part"));
 
-    let client = modrinth_client()?;
-    let mut response = client
-        .get(payload.url.trim())
-        .send()
-        .map_err(|err| err.to_string())?;
-    if !response.status().is_success() {
-        return Err(format!(
-            "Download failed with HTTP status {}.",
-            response.status().as_u16()
-        ));
-    }
-
-    let mut temp_file = fs::File::create(&temp_path).map_err(|err| err.to_string())?;
-    let mut hasher = Sha512::new();
-    let mut downloaded_bytes: u64 = 0;
-    let mut buffer = [0u8; 64 * 1024];
-    loop {
-        let read = response.read(&mut buffer).map_err(|err| err.to_string())?;
-        if read == 0 {
-            break;
-        }
-        hasher.update(&buffer[..read]);
-        temp_file
-            .write_all(&buffer[..read])
-            .map_err(|err| err.to_string())?;
-        downloaded_bytes = downloaded_bytes.saturating_add(read as u64);
-    }
-    temp_file.flush().map_err(|err| err.to_string())?;
-    drop(temp_file);
-
-    if downloaded_bytes == 0 {
-        let _ = fs::remove_file(&temp_path);
-        return Err("Downloaded file was empty.".to_string());
-    }
-
-    if let Some(expected) = payload
-        .sha512
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
-        let actual = format!("{:x}", hasher.finalize());
-        if !actual.eq_ignore_ascii_case(expected) {
-            let _ = fs::remove_file(&temp_path);
-            return Err("Downloaded file failed integrity verification.".to_string());
-        }
-    }
+    let client = http_client(Duration::from_secs(300))?;
+    let checksum = Checksum::from_hex(Checksum::Sha512, payload.sha512.as_deref());
+    let downloaded_bytes = download_to_file(
+        &client,
+        payload.url.trim(),
+        &temp_path,
+        checksum.as_ref(),
+        |_, _| {},
+    )?;
 
     let (active_root, _) = item_roots(&directory, item_type)?;
-    fs::create_dir_all(&active_root).map_err(|err| err.to_string())?;
-    let destination = active_root.join(file_name);
-    if destination.exists() {
-        fs::remove_file(&destination).map_err(|err| err.to_string())?;
+    let installed = fs::create_dir_all(&active_root)
+        .map_err(|err| err.to_string())
+        .and_then(|()| move_file_with_fallback(&temp_path, &active_root.join(file_name)));
+    if let Err(err) = installed {
+        let _ = fs::remove_file(&temp_path);
+        return Err(err);
     }
-    move_file_with_fallback(&temp_path, &destination)?;
 
     record_content_meta(
         &directory,

@@ -60,6 +60,9 @@ export type DownloadServerJarPayload = {
 	url: string;
 	preferredFileName?: string;
 	downloadId?: string;
+	/** Expected hashes from `resolve_provider_version`; the backend verifies them. */
+	sha256?: string;
+	sha1?: string;
 };
 
 export type DownloadServerJarResult = {
@@ -96,6 +99,7 @@ type ResolvedProviderResult = {
 	stable: boolean;
 	sizeBytes?: number;
 	sha256?: string;
+	sha1?: string;
 };
 
 const toRowId = (entry: ProviderVersionEntry) =>
@@ -269,7 +273,9 @@ const jdkVersionsFromHeuristic = (providerId: ProviderName, minecraftVersion: st
 };
 
 /** Resolves the exact build for a row into a fully-populated {@link Provider}. */
-export const resolveJarRow = async (row: JarVersionRow): Promise<{ provider: Provider; downloadUrl: string }> => {
+export const resolveJarRow = async (
+	row: JarVersionRow,
+): Promise<{ provider: Provider; downloadUrl: string; sha256?: string; sha1?: string }> => {
 	const resolved = await invoke<ResolvedProviderResult>('resolve_provider_version', {
 		payload: { provider: row.providerId, version: row.version, stability: row.stability },
 	});
@@ -292,7 +298,7 @@ export const resolveJarRow = async (row: JarVersionRow): Promise<{ provider: Pro
 		stable: resolved.stable,
 	};
 
-	return { provider, downloadUrl: resolved.downloadUrl };
+	return { provider, downloadUrl: resolved.downloadUrl, sha256: resolved.sha256, sha1: resolved.sha1 };
 };
 
 type DownloadJarRowOptions = {
@@ -305,12 +311,14 @@ export const downloadAndResolveJarRow = async (
 	row: JarVersionRow,
 	options?: DownloadJarRowOptions,
 ): Promise<{ result: DownloadServerJarResult; provider: Provider }> => {
-	const { provider, downloadUrl } = await resolveJarRow(row);
+	const { provider, downloadUrl, sha256, sha1 } = await resolveJarRow(row);
 
 	const payload: DownloadServerJarPayload = {
 		url: downloadUrl,
 		preferredFileName: provider.file,
 		downloadId: options?.downloadId,
+		sha256,
+		sha1,
 	};
 
 	const result = await invoke<DownloadServerJarResult>('download_server_jar', { payload });
