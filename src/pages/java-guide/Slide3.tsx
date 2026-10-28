@@ -11,6 +11,7 @@ import { Container } from '@/components/ui/container';
 import { Spinner } from '@/components/ui/spinner';
 import { downloadJavaRuntime } from '@/lib/java-runtime-service';
 import { useJavaRuntimes } from '@/data/java-runtimes';
+import { getErrorMessage } from '@/lib/utils';
 
 // Eclipse Temurin is OpenJDK under GPLv2 + Classpath Exception and is freely
 // redistributable, so mserve can fetch it directly.
@@ -50,7 +51,7 @@ export default function Slide3() {
 			await rescan();
 			toast.success(`Java ${major} installed.`, { id: toastId });
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : `Failed to download Java ${major}.`, {
+			toast.error(getErrorMessage(err, `Failed to download Java ${major}.`), {
 				id: toastId,
 			});
 		} finally {

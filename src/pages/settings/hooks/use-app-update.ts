@@ -3,6 +3,7 @@ import { isTauri } from '@tauri-apps/api/core';
 import { getVersion } from '@tauri-apps/api/app';
 import { check, type Update } from '@tauri-apps/plugin-updater';
 import { toast } from 'sonner';
+import { getErrorMessage } from '@/lib/utils';
 
 type State = {
 	isDesktopApp: boolean;
@@ -155,7 +156,7 @@ export const useAppUpdate = () => {
 			dispatch({ type: 'setAvailableUpdate', update, message });
 			toast.info(message);
 		} catch (error) {
-			const message = error instanceof Error ? error.message : 'Failed to check for updates.';
+			const message = getErrorMessage(error, 'Failed to check for updates.');
 			dispatch({ type: 'setError', message });
 			toast.error(message);
 		} finally {
@@ -175,7 +176,7 @@ export const useAppUpdate = () => {
 			dispatch({ type: 'setInstalled', message });
 			toast.success(message);
 		} catch (error) {
-			const message = error instanceof Error ? error.message : 'Failed to install update.';
+			const message = getErrorMessage(error, 'Failed to install update.');
 			dispatch({ type: 'setError', message });
 			toast.error(message);
 		} finally {

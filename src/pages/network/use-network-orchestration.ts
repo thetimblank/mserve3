@@ -20,6 +20,7 @@ import {
 	type ServerControlContext,
 } from '@/lib/server-controls';
 import type { ManagedNetwork } from '@/lib/network-schema';
+import { getErrorMessage } from '@/lib/utils';
 
 export type OrchestrationMode = 'sequential' | 'staged';
 export type OrchestrationAction = 'start' | 'stop' | 'restart';
@@ -148,7 +149,7 @@ export const useNetworkOrchestration = (network: ManagedNetwork | null, servers:
 				await run();
 				toast.success(label);
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : 'Network operation failed.');
+				toast.error(getErrorMessage(err, 'Network operation failed.'));
 			} finally {
 				setBusy(false);
 				setProgress(null);

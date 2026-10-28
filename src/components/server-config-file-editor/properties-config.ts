@@ -7,36 +7,52 @@ import type {
 import type { PropertyValues } from './types';
 import { parsePropertyNumber } from './utils';
 
+const isPropertiesSpace = (char: string | undefined) => char === ' ' || char === '\t' || char === '\f';
+
+/**
+ * Parses `.properties` lines the way Java's `Properties.load` does (which is how
+ * the server reads them): the key ends at the first unescaped `=`, `:` or
+ * whitespace, so `key value` and a bare `key` (empty value) are valid too.
+ */
+/** A line ending in an odd number of backslashes continues on the next one. */
+const continuesOnNextLine = (line: string) => (line.match(/\\+$/)?.[0].length ?? 0) % 2 === 1;
+
 export const parsePropertiesMap = (content: string) => {
 	const values = new Map<string, string>();
+	const physicalLines = content.split(/\r?\n/);
 
-	for (const rawLine of content.split(/\r?\n/)) {
-		const trimmed = rawLine.trim();
-		if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('!')) {
+	for (let index = 0; index < physicalLines.length; index += 1) {
+		const rawLine = physicalLines[index];
+		let line = rawLine.trimStart();
+		if (!line || line.startsWith('#') || line.startsWith('!')) {
 			continue;
 		}
-
-		const equalsIndex = rawLine.indexOf('=');
-		const colonIndex = rawLine.indexOf(':');
-		let separatorIndex = -1;
-
-		if (equalsIndex >= 0 && colonIndex >= 0) {
-			separatorIndex = Math.min(equalsIndex, colonIndex);
-		} else {
-			separatorIndex = equalsIndex >= 0 ? equalsIndex : colonIndex;
+		while (continuesOnNextLine(line) && index + 1 < physicalLines.length) {
+			index += 1;
+			line = line.slice(0, -1) + physicalLines[index].trimStart();
 		}
 
-		if (separatorIndex < 0) {
-			throw new Error(`Invalid properties line: ${rawLine}`);
+		let keyEnd = 0;
+		while (keyEnd < line.length) {
+			const char = line[keyEnd];
+			if (char === '\\') {
+				keyEnd += 2;
+				continue;
+			}
+			if (char === '=' || char === ':' || isPropertiesSpace(char)) break;
+			keyEnd += 1;
 		}
 
-		const key = rawLine.slice(0, separatorIndex).trim();
-		const value = rawLine.slice(separatorIndex + 1).trim();
+		const key = line.slice(0, keyEnd);
 		if (!key) {
 			throw new Error(`Invalid properties line: ${rawLine}`);
 		}
 
-		values.set(key, value);
+		let valueStart = keyEnd;
+		while (isPropertiesSpace(line[valueStart])) valueStart += 1;
+		if (line[valueStart] === '=' || line[valueStart] === ':') valueStart += 1;
+
+		values.set(key, line.slice(valueStart).trim());
 	}
 
 	return values;

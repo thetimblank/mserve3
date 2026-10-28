@@ -21,6 +21,7 @@ import { resolveServerJavaExecutable } from '@/lib/java-resolution';
 import { isJavaCompatible } from '@/lib/java-compatibility';
 import { useUser } from '@/data/user';
 import type { Server } from '@/data/servers';
+import { getErrorMessage } from '@/lib/utils';
 
 type EnsureJavaContextValue = {
 	/**
@@ -111,7 +112,7 @@ export const JavaDownloadProvider: React.FC<{ children: React.ReactNode }> = ({ 
 				await rescan();
 				settle(majorVersion, runtime);
 			} catch (err) {
-				const message = err instanceof Error ? err.message : 'Java download failed.';
+				const message = getErrorMessage(err, 'Java download failed.');
 				// The dialog may have moved on to another request meanwhile.
 				setState((prev) =>
 					prev.majorVersion === majorVersion ? { ...prev, phase: 'error', error: message } : prev,

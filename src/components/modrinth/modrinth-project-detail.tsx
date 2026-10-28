@@ -28,6 +28,7 @@ import {
 	type ModrinthVersionChannel,
 } from '@/lib/modrinth-service';
 import ModrinthProjectIcon from './modrinth-project-icon';
+import { getErrorMessage } from '@/lib/utils';
 
 export type ModrinthInstallTarget = {
 	projectId: string;
@@ -115,7 +116,7 @@ const ModrinthProjectDetail: React.FC<ModrinthProjectDetailProps> = ({
 				setVersions(projectVersions);
 			} catch (err) {
 				if (cancelled) return;
-				setError(typeof err === 'string' ? err : 'Failed to load project details.');
+				setError(getErrorMessage(err, 'Failed to load project details.'));
 			}
 		})();
 

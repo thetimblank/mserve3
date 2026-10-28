@@ -13,7 +13,7 @@ import {
 	ProviderTelemetrySettingsSection,
 	GeneralSettingsSection,
 	SleepModeSettingsSection,
-} from '@/components/edit-server-properties-form';
+} from '@/components/edit-server-settings-form';
 import SecuritySettingsSection from './security/security-settings-section';
 import ServerConfigFileEditor from '@/components/server-config-file-editor';
 import { TunnelSettingsSection } from './tunnel-settings-section';
@@ -44,6 +44,7 @@ import {
 	getManagedServerConfigFileDefinitions,
 	getManagedServerConfigFileKeywords,
 } from '@/lib/server-config-files';
+import { getErrorMessage } from '@/lib/utils';
 
 type Props = {
 	clearTerminalSession: () => void;
@@ -423,7 +424,7 @@ export default function ServerSettingsPanel({
 
 			toast.success(synced.message);
 		} catch (err) {
-			const message = err instanceof Error ? err.message : 'Failed to sync mserve.json.';
+			const message = getErrorMessage(err, 'Failed to sync mserve.json.');
 			toast.error(message);
 		} finally {
 			setIsBusy(false);
@@ -440,7 +441,7 @@ export default function ServerSettingsPanel({
 			removeServer(server.id);
 			navigate('/');
 		} catch (err) {
-			const message = err instanceof Error ? err.message : 'Failed to delete server.';
+			const message = getErrorMessage(err, 'Failed to delete server.');
 			toast.error(message);
 		} finally {
 			setIsBusy(false);

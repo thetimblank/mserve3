@@ -1,106 +1,37 @@
 import React from 'react';
-import { toast } from 'sonner';
 
 import { Textarea } from '@/components/ui/textarea';
 import { useUser } from '@/data/user';
 
-import { getManagedConfigToastId, readManagedConfigFile, writeManagedConfigFile } from './file-operations';
 import { EditorError, EditorHeader, LoadingFileContents, NetworkingDisclaimer } from './layout';
-import { normalizePlainTextContent } from './text-normalizers';
+import { validatePlainTextContent } from './text-validation';
 import type { ServerConfigFileEditorProps } from './types';
-import { useUnsavedChangesToast } from './use-unsaved-changes-toast';
-import { toErrorMessage } from './utils';
+import { useManagedConfigFile } from './use-managed-config-file';
 
-const PlainTextConfigFileEditor: React.FC<ServerConfigFileEditorProps> = ({
-	serverDirectory,
-	definition,
-	disabled,
-	onSaved,
-}) => {
+const PlainTextConfigFileEditor: React.FC<ServerConfigFileEditorProps> = (props) => {
+	const { definition } = props;
 	const [content, setContent] = React.useState('');
 	const [originalContent, setOriginalContent] = React.useState('');
-	const [isLoading, setIsLoading] = React.useState(true);
-	const [isSaving, setIsSaving] = React.useState(false);
-	const [error, setError] = React.useState<string | null>(null);
 	const { user } = useUser();
 
-	const isLocked = Boolean(disabled || isLoading || isSaving);
 	const isDirty = content !== originalContent;
-	const toastId = React.useMemo(
-		() => getManagedConfigToastId(serverDirectory, definition.fileName),
-		[definition.fileName, serverDirectory],
-	);
-
-	const loadContent = React.useCallback(async () => {
-		if (!serverDirectory.trim()) return;
-
-		setIsLoading(true);
-		setError(null);
-		try {
-			const result = await readManagedConfigFile(serverDirectory, definition.fileName);
-			setContent(result.content);
-			setOriginalContent(result.content);
-		} catch (err) {
-			setError(toErrorMessage(err, `Could not load ${definition.fileName}.`));
-		} finally {
-			setIsLoading(false);
-		}
-	}, [definition.fileName, serverDirectory]);
-
-	React.useEffect(() => {
-		void loadContent();
-	}, [loadContent]);
-
-	const handleReset = React.useCallback(() => {
-		setContent(originalContent);
-		setError(null);
-	}, [originalContent]);
-
-	const handleReload = React.useCallback(async () => {
-		await loadContent();
-	}, [loadContent]);
-
-	const handleSave = React.useCallback(async () => {
-		if (isLocked) return;
-
-		setError(null);
-		setIsSaving(true);
-		try {
-			const normalizedContent = normalizePlainTextContent(content, definition.format);
-			const result = await writeManagedConfigFile(
-				serverDirectory,
-				definition.fileName,
-				normalizedContent,
-			);
-
-			setContent(result.content);
-			setOriginalContent(result.content);
-			toast.success(`${definition.title} saved.`);
-			await onSaved?.();
-		} catch (err) {
-			setError(toErrorMessage(err, `Could not save ${definition.fileName}.`));
-		} finally {
-			setIsSaving(false);
-		}
-	}, [content, definition.fileName, definition.format, definition.title, isLocked, onSaved, serverDirectory]);
-
-	useUnsavedChangesToast({
-		toastId,
+	const { isLoading, isLocked, error, setError, reload } = useManagedConfigFile({
+		...props,
 		isDirty,
-		isLocked,
-		isSaving,
-		onReset: handleReset,
-		onSave: handleSave,
+		applyContent: (loaded) => {
+			setContent(loaded);
+			setOriginalContent(loaded);
+		},
+		buildContent: () => {
+			validatePlainTextContent(content, definition.format);
+			return content;
+		},
+		resetValues: () => setContent(originalContent),
 	});
 
 	return (
 		<div className='space-y-6'>
-			<EditorHeader
-				definition={definition}
-				isDirty={isDirty}
-				onReload={handleReload}
-				disabled={isLocked}
-			/>
+			<EditorHeader definition={definition} isDirty={isDirty} onReload={reload} disabled={isLocked} />
 			<NetworkingDisclaimer user={user} definition={definition} />
 			{isLoading ? (
 				<LoadingFileContents />

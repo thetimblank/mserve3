@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
 import type { Server, ServerStatus, ServerUpdate } from '@/data/servers';
-import { isJavaVersionError, isNoguiUnsupportedError, stripAnsi } from '@/lib/utils';
+import { isJavaVersionError, isNoguiUnsupportedError, stripAnsi, getErrorMessage } from '@/lib/utils';
 import { hasNoguiFlag, setServerCustomFlags, stripNoguiFlags } from '@/lib/server-flags-service';
 import {
 	mapRuntimeStateToStatus,
@@ -127,7 +127,7 @@ export const useServerRuntime = ({
 
 	const showError = React.useCallback(
 		(error: unknown, fallback: string) => {
-			const message = error instanceof Error ? error.message : fallback;
+			const message = getErrorMessage(error, fallback);
 			setErrorMessage(message);
 			toast.error(message);
 			return message;
@@ -146,7 +146,7 @@ export const useServerRuntime = ({
 				});
 				appendTerminalLine(`[system] Running: ${command}`);
 			} catch (error) {
-				const message = error instanceof Error ? error.message : 'Failed to resolve start command.';
+				const message = getErrorMessage(error, 'Failed to resolve start command.');
 				appendTerminalLine(`[system] ${message}`);
 			}
 		},
@@ -283,7 +283,7 @@ export const useServerRuntime = ({
 				runtimeRef.current.javaFallbackInProgress = false;
 				setOfflineState();
 				appendTerminalLine(
-					`[system] ${err instanceof Error ? err.message : 'Failed to start with fallback Java.'}`,
+					`[system] ${getErrorMessage(err, 'Failed to start with fallback Java.')}`,
 				);
 			}
 			return;
@@ -352,7 +352,7 @@ export const useServerRuntime = ({
 			updateServer(serverId, { custom_flags: nextFlags });
 		} catch (err) {
 			appendTerminalLine(
-				`[system] ${err instanceof Error ? err.message : "Failed to remove '--nogui' from the server config."}`,
+				`[system] ${getErrorMessage(err, "Failed to remove '--nogui' from the server config.")}`,
 			);
 			return false;
 		}
@@ -363,7 +363,7 @@ export const useServerRuntime = ({
 		} catch (err) {
 			setOfflineState();
 			appendTerminalLine(
-				`[system] ${err instanceof Error ? err.message : "Failed to restart without '--nogui'."}`,
+				`[system] ${getErrorMessage(err, "Failed to restart without '--nogui'.")}`,
 			);
 			return false;
 		}
@@ -428,7 +428,7 @@ export const useServerRuntime = ({
 				}
 				await syncServerContents();
 			} catch (err) {
-				const message = err instanceof Error ? err.message : 'Failed to create automatic backup.';
+				const message = getErrorMessage(err, 'Failed to create automatic backup.');
 				if (message.startsWith(BACKUP_STORAGE_LIMIT_ERROR_PREFIX)) {
 					toast.error(message, { duration: Infinity, id: 'backup-storage-limit' });
 				}
@@ -824,7 +824,7 @@ export const useServerRuntime = ({
 			await invoke('stop_server', { directory: serverDirectory });
 		} catch (err) {
 			setOfflineState();
-			const message = err instanceof Error ? err.message : 'Failed to stop server.';
+			const message = getErrorMessage(err, 'Failed to stop server.');
 			appendTerminalLine(`[system] ${message}`);
 		} finally {
 			setIsBusy(false);

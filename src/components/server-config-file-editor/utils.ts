@@ -38,9 +38,6 @@ export const stringifyStructuredValue = (value: unknown): string => {
 	return String(value);
 };
 
-export const toErrorMessage = (err: unknown, fallback: string) =>
-	err instanceof Error ? err.message : fallback;
-
 export const defaultValueToString = (value: ManagedConfigPropertyDefinition['defaultValue']): string =>
 	stringifyStructuredValue(value);
 

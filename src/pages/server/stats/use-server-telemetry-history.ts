@@ -10,6 +10,7 @@
 import React from 'react';
 import { invoke } from '@tauri-apps/api/core';
 
+import { getErrorMessage } from '@/lib/utils';
 import type { TelemetryHistoryPoint } from '@/pages/server/server-types';
 
 type Options = {
@@ -77,7 +78,7 @@ export const useServerTelemetryHistory = (
 				setUpdatedAt(Date.now());
 			} catch (err) {
 				if (!active) return;
-				setError(err instanceof Error ? err.message : String(err));
+				setError(getErrorMessage(err, String(err)));
 			} finally {
 				if (active) setIsLoading(false);
 				inFlight = false;

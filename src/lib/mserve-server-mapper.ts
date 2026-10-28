@@ -1,8 +1,10 @@
 import type { Server } from '@/data/servers';
 import type { InitServerResult, ServerSetupFormData, SyncedMserveConfig } from '@/lib/mserve-sync';
 import {
+	DEFAULT_AUTO_BACKUP_INTERVAL_MINUTES,
 	DEFAULT_SERVER_PROVIDER,
 	DEFAULT_SLEEP_IDLE_MINUTES,
+	DEFAULT_STORAGE_LIMIT_GB,
 	DEFAULT_TELEMETRY_HOST,
 	DEFAULT_TELEMETRY_PORT,
 } from '@/lib/mserve-consts';
@@ -76,9 +78,9 @@ export const buildCreatedServer = (form: ServerSetupFormData, result: InitServer
 	id: result.id,
 	file: result.file,
 	ram: Math.max(1, Number(form.ram) || 1),
-	storage_limit: Math.max(1, Number(form.storage_limit) || 200),
+	storage_limit: Math.max(1, Number(form.storage_limit) || DEFAULT_STORAGE_LIMIT_GB),
 	auto_backup: form.auto_backup,
-	auto_backup_interval: Math.max(1, Number(form.auto_backup_interval) || 120),
+	auto_backup_interval: Math.max(1, Number(form.auto_backup_interval) || DEFAULT_AUTO_BACKUP_INTERVAL_MINUTES),
 	// New servers start on the smart retention policy; the backend writes the
 	// same defaults into mserve.json.
 	backup_policy: 'smart',

@@ -11,6 +11,7 @@ import {
 	DEFAULT_TELEMETRY_HOST,
 	DEFAULT_TELEMETRY_PORT,
 } from '@/lib/mserve-consts';
+import { getErrorMessage } from '@/lib/utils';
 
 export type { AutoBackupMode, BackupPolicy, BackupScopeItem } from '@/lib/mserve-schema';
 import { normalizeBackupPolicy, normalizeBackupScope } from '@/lib/mserve-schema';
@@ -533,7 +534,7 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 				try {
 					await syncServerFromDisk(server);
 				} catch (err) {
-					const message = err instanceof Error ? err.message : 'Failed to sync mserve.json.';
+					const message = getErrorMessage(err, 'Failed to sync mserve.json.');
 					toast.error(`${server.name}: ${message}`);
 				}
 			}

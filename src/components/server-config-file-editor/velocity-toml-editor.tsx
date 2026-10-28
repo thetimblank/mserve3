@@ -1,32 +1,23 @@
 import React from 'react';
-import { toast } from 'sonner';
 
 import { useUser } from '@/data/user';
 
 import { AdvancedPropertiesSection } from './advanced-properties-section';
 import { FeaturedPropertyFields } from './featured-property-fields';
-import { getManagedConfigToastId, readManagedConfigFile, writeManagedConfigFile } from './file-operations';
 import { AdvancedModeDisclaimer, EditorError, EditorHeader, NetworkingDisclaimer } from './layout';
 import { createVelocityTomlContent, inferTomlValueKind, parseVelocityEditorState } from './toml-config';
 import type { PropertyValues, ServerConfigFileEditorProps, TomlRoot } from './types';
-import { useUnsavedChangesToast } from './use-unsaved-changes-toast';
-import { sameStringRecord, toErrorMessage } from './utils';
+import { useManagedConfigFile } from './use-managed-config-file';
+import { sameStringRecord } from './utils';
 
-const VelocityTomlEditor: React.FC<ServerConfigFileEditorProps> = ({
-	serverDirectory,
-	definition,
-	disabled,
-	onSaved,
-}) => {
+const VelocityTomlEditor: React.FC<ServerConfigFileEditorProps> = (props) => {
+	const { definition } = props;
 	const { user } = useUser();
 	const [values, setValues] = React.useState<PropertyValues>({});
 	const [originalValues, setOriginalValues] = React.useState<PropertyValues>({});
 	const [root, setRoot] = React.useState<TomlRoot>({});
-	const [isLoading, setIsLoading] = React.useState(true);
-	const [isSaving, setIsSaving] = React.useState(false);
-	const [error, setError] = React.useState<string | null>(null);
+	const [content, setContent] = React.useState('');
 
-	const isLocked = Boolean(disabled || isLoading || isSaving);
 	const isDirty = React.useMemo(() => !sameStringRecord(values, originalValues), [originalValues, values]);
 	const featuredKeySet = React.useMemo(
 		() => new Set(definition.featuredProperties.map((property) => property.key)),
@@ -36,106 +27,40 @@ const VelocityTomlEditor: React.FC<ServerConfigFileEditorProps> = ({
 		() => Object.keys(root).filter((key) => key !== 'servers' && !featuredKeySet.has(key)),
 		[featuredKeySet, root],
 	);
-	const toastId = React.useMemo(
-		() => getManagedConfigToastId(serverDirectory, definition.fileName),
-		[definition.fileName, serverDirectory],
-	);
 
-	const applyContent = React.useCallback(
-		(content: string) => {
-			const nextState = parseVelocityEditorState(content, definition);
+	const { isLocked, error, setError, reload } = useManagedConfigFile({
+		...props,
+		isDirty,
+		applyContent: (loaded) => {
+			const nextState = parseVelocityEditorState(loaded, definition);
+			setContent(loaded);
 			setRoot(nextState.root);
 			setValues(nextState.values);
 			setOriginalValues(nextState.values);
 		},
-		[definition],
-	);
-
-	const loadContent = React.useCallback(async () => {
-		if (!serverDirectory.trim()) return;
-
-		setIsLoading(true);
-		setError(null);
-		try {
-			const result = await readManagedConfigFile(serverDirectory, definition.fileName);
-			applyContent(result.content);
-		} catch (err) {
-			setError(toErrorMessage(err, `Could not load ${definition.fileName}.`));
-		} finally {
-			setIsLoading(false);
-		}
-	}, [applyContent, definition.fileName, serverDirectory]);
-
-	React.useEffect(() => {
-		void loadContent();
-	}, [loadContent]);
-
-	const handleReset = React.useCallback(() => {
-		setValues(originalValues);
-		setError(null);
-	}, [originalValues]);
-
-	const handleReload = React.useCallback(async () => {
-		await loadContent();
-	}, [loadContent]);
-
-	const updateValue = React.useCallback((key: string, nextValue: string) => {
-		setValues((previous) => ({ ...previous, [key]: nextValue }));
-		setError(null);
-	}, []);
-
-	const handleSave = React.useCallback(async () => {
-		if (isLocked) return;
-
-		setError(null);
-		setIsSaving(true);
-		try {
-			const normalizedContent = createVelocityTomlContent({
+		buildContent: () =>
+			createVelocityTomlContent({
+				content,
 				root,
 				values,
 				advancedKeys: advancedTomlKeys,
 				featuredKeySet,
 				definition,
-			});
-			const result = await writeManagedConfigFile(serverDirectory, definition.fileName, normalizedContent);
-
-			applyContent(result.content);
-			toast.success(`${definition.title} saved.`);
-			await onSaved?.();
-		} catch (err) {
-			setError(toErrorMessage(err, `Could not save ${definition.fileName}.`));
-		} finally {
-			setIsSaving(false);
-		}
-	}, [
-		advancedTomlKeys,
-		applyContent,
-		definition,
-		featuredKeySet,
-		isLocked,
-		onSaved,
-		root,
-		serverDirectory,
-		values,
-	]);
-
-	useUnsavedChangesToast({
-		toastId,
-		isDirty,
-		isLocked,
-		isSaving,
-		onReset: handleReset,
-		onSave: handleSave,
+			}),
+		resetValues: () => setValues(originalValues),
 	});
+
+	const updateValue = React.useCallback(
+		(key: string, nextValue: string) => {
+			setValues((previous) => ({ ...previous, [key]: nextValue }));
+			setError(null);
+		},
+		[setError],
+	);
 
 	return (
 		<div className='space-y-8'>
-			<EditorHeader
-				definition={definition}
-				isDirty={isDirty}
-				onReload={handleReload}
-				disabled={isLocked}
-			/>
+			<EditorHeader definition={definition} isDirty={isDirty} onReload={reload} disabled={isLocked} />
 			<NetworkingDisclaimer user={user} definition={definition} />
 			<AdvancedModeDisclaimer user={user} />
 			<FeaturedPropertyFields
@@ -151,7 +76,7 @@ const VelocityTomlEditor: React.FC<ServerConfigFileEditorProps> = ({
 					fileName={definition.fileName}
 					keys={advancedTomlKeys}
 					values={values}
-					description='All non-featured server.properties entries stay editable here when advanced mode is on.'
+					description='All non-featured velocity.toml settings stay editable here when advanced mode is on.'
 					disabled={isLocked}
 					getKind={(key) => inferTomlValueKind(root[key])}
 					onChange={updateValue}

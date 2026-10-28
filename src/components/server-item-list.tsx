@@ -33,7 +33,7 @@ import {
 import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { m } from 'motion/react';
-import { formatBytes } from '@/lib/utils';
+import { formatBytes, getErrorMessage } from '@/lib/utils';
 
 type ItemType = 'plugin' | 'mod' | 'world' | 'datapack';
 
@@ -67,7 +67,8 @@ type ServerItemListProps = {
 
 const getItemPath = (serverDirectory: string, itemType: ItemType, item: Item) => {
 	const base = serverDirectory.replace(/[/\\]+$/, '');
-	const join = (...parts: string[]) => [base, ...parts].join('\\');
+	// `/` works on every OS: the backend maps it to the native separator.
+	const join = (...parts: string[]) => [base, ...parts].join('/');
 
 	if (itemType === 'plugin') {
 		return item.activated ? join('plugins', item.file) : join('inactive', 'plugins', item.file);
@@ -138,8 +139,8 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 			});
 			await onChanged?.();
 		} catch (err) {
-			const message = err instanceof Error ? err.message : 'Failed to update item.';
-			window.alert(message);
+			const message = getErrorMessage(err, 'Failed to update item.');
+			toast.error(message);
 		} finally {
 			setBusyFile(null);
 		}
@@ -162,8 +163,8 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 				await onChanged?.();
 			}
 		} catch (err) {
-			const message = err instanceof Error ? err.message : 'Failed to delete item.';
-			window.alert(message);
+			const message = getErrorMessage(err, 'Failed to delete item.');
+			toast.error(message);
 		} finally {
 			setBusyFile(null);
 		}
@@ -186,8 +187,8 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 				await onChanged?.();
 			}
 		} catch (err) {
-			const message = err instanceof Error ? err.message : 'Failed to uninstall item.';
-			window.alert(message);
+			const message = getErrorMessage(err, 'Failed to uninstall item.');
+			toast.error(message);
 		} finally {
 			setBusyFile(null);
 		}
@@ -198,27 +199,32 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 		setBusyFile(item.file);
 
 		try {
-			toast.promise(
-				(async () => {
-					if (onExportItem) {
-						await onExportItem(item, type);
-					} else {
-						await invoke<{ path: string }>('export_server_world', {
-							payload: {
-								directory: serverDirectory,
-								itemType: type,
-								file: item.file,
-							},
-						});
-					}
-					return { name: item.file };
-				})(),
-				{
-					loading: 'Loading...',
-					success: (data) => `${data.name} has been exported to your downloads!`,
-					error: (err) => (err instanceof Error ? err.message : 'Failed to export item.'),
-				},
-			);
+			// Hold the busy lock until the export finishes.
+			await toast
+				.promise(
+					(async () => {
+						if (onExportItem) {
+							await onExportItem(item, type);
+						} else {
+							await invoke<{ path: string }>('export_server_world', {
+								payload: {
+									directory: serverDirectory,
+									itemType: type,
+									file: item.file,
+								},
+							});
+						}
+						return { name: item.file };
+					})(),
+					{
+						loading: 'Loading...',
+						success: (data) => `${data.name} has been exported to your downloads!`,
+						error: (err) => getErrorMessage(err, 'Failed to export item.'),
+					},
+				)
+				.unwrap();
+		} catch {
+			// Already surfaced by the toast.
 		} finally {
 			setBusyFile(null);
 		}
@@ -253,7 +259,7 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 			);
 
 			if (droppedPaths.length === 0) {
-				window.alert('Could not read dropped file paths. Use Add to browse instead.');
+				toast.error('Could not read dropped file paths. Use Add to browse instead.');
 				return;
 			}
 
@@ -265,8 +271,8 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 				}
 				await onChanged?.();
 			} catch (err) {
-				const message = err instanceof Error ? err.message : 'Failed to upload dropped item.';
-				window.alert(message);
+				const message = getErrorMessage(err, 'Failed to upload dropped item.');
+				toast.error(message);
 			} finally {
 				busyFileRef.current = null;
 				setBusyFile(null);
@@ -345,8 +351,8 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 				await onChanged?.();
 			}
 		} catch (err) {
-			const message = err instanceof Error ? err.message : 'Failed to upload item.';
-			window.alert(message);
+			const message = getErrorMessage(err, 'Failed to upload item.');
+			toast.error(message);
 		} finally {
 			setBusyFile(null);
 		}

@@ -6,6 +6,7 @@ import {
 	getPrimaryMinecraftVersion,
 	formatBytes,
 	formatUptime,
+	getErrorMessage,
 } from './utils';
 
 describe('stripAnsi', () => {
@@ -105,5 +106,19 @@ describe('formatBytes', () => {
 	it('treats missing or negative input as zero', () => {
 		expect(formatBytes(undefined)).toBe('0 B');
 		expect(formatBytes(-10)).toBe('0 B');
+	});
+});
+
+describe('getErrorMessage', () => {
+	it('uses the string a Tauri command rejects with', () => {
+		expect(getErrorMessage('Port 25565 is already in use.', 'Failed to start server.')).toBe(
+			'Port 25565 is already in use.',
+		);
+	});
+
+	it('uses an Error message, and falls back for anything else', () => {
+		expect(getErrorMessage(new Error('boom'), 'fallback')).toBe('boom');
+		expect(getErrorMessage('  ', 'fallback')).toBe('fallback');
+		expect(getErrorMessage(undefined, 'fallback')).toBe('fallback');
 	});
 });

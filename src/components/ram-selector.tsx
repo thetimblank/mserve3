@@ -1,8 +1,8 @@
 import * as React from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import RamSliderField from '@/components/ram-slider-field';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useUser } from '@/data/user';
+import { useSystemMemoryGb } from '@/hooks/use-system-memory';
 import { isProxyProvider } from '@/lib/server-provider';
 import { CheckCircle2 } from 'lucide-react';
 import { Provider } from '@/lib/mserve-schema';
@@ -79,50 +79,37 @@ interface Props extends React.HTMLAttributes<HTMLDivElement> {
 	// gameplay presets (a modpack is never a proxy).
 	provider?: Provider | null;
 	ram: number;
+	/**
+	 * Replace a value that isn't one of the presets with the recommended one.
+	 * Only for picking a fresh default (the create wizard): an existing server
+	 * keeps its RAM and shows it as a "Current" card instead.
+	 */
+	snapToPreset?: boolean;
 }
 
-export default function RamSelector({ provider, ram, className, updateField, ...props }: Props) {
+export default function RamSelector({ provider, ram, className, updateField, snapToPreset, ...props }: Props) {
 	const { user } = useUser();
-	const [systemMemoryGb, setSystemMemoryGb] = React.useState(16);
+	const systemMemoryGb = useSystemMemoryGb();
 
-	React.useEffect(() => {
-		let active = true;
-		void invoke<number>('get_system_memory_gb')
-			.then((memoryGb) => {
-				if (!active) return;
-				const parsed = Number(memoryGb);
-				if (!Number.isFinite(parsed) || parsed < 1) return;
-				setSystemMemoryGb(Math.ceil(parsed));
-			})
-			.catch(() => {
-				if (!active) return;
-				setSystemMemoryGb(16);
-			});
-
-		return () => {
-			active = false;
-		};
-	}, []);
-
-	const maxBasicRam = Math.max(1, systemMemoryGb - 2);
 	const isAdvancedMode = user.advanced_mode;
 	const basePresets = React.useMemo(
 		() => (isProxyProvider(provider) ? PROXY_RAM_PRESETS : GAMEPLAY_RAM_PRESETS),
 		[provider],
 	);
-	const visiblePresets = React.useMemo(
-		() => basePresets.filter((preset) => preset.ram <= maxBasicRam),
-		[basePresets, maxBasicRam],
-	);
+	const visiblePresets = React.useMemo(() => {
+		if (systemMemoryGb === null) return basePresets;
+		const maxBasicRam = Math.max(1, systemMemoryGb - 2);
+		return basePresets.filter((preset) => preset.ram <= maxBasicRam);
+	}, [basePresets, systemMemoryGb]);
+	const isPresetValue = visiblePresets.some((preset) => preset.ram === ram);
 
 	React.useEffect(() => {
-		if (isAdvancedMode) return;
-		if (visiblePresets.length === 0) return;
-		if (visiblePresets.some((preset) => preset.ram === ram)) return;
+		if (!snapToPreset || isAdvancedMode || systemMemoryGb === null) return;
+		if (visiblePresets.length === 0 || isPresetValue) return;
 		const recommended =
 			visiblePresets.find((preset) => preset.recommended) ?? visiblePresets[visiblePresets.length - 1];
 		updateField('ram', recommended.ram);
-	}, [ram, isAdvancedMode, updateField, visiblePresets]);
+	}, [isAdvancedMode, isPresetValue, snapToPreset, systemMemoryGb, updateField, visiblePresets]);
 
 	return (
 		<>
@@ -134,6 +121,22 @@ export default function RamSelector({ provider, ram, className, updateField, ...
 				/>
 			) : (
 				<div className={cn('flex flex-col gap-2', className)} {...props}>
+					{!isPresetValue && !snapToPreset && (
+						<Card className='border-accent bg-accent/50 dark:bg-accent/50'>
+							<CardHeader>
+								<CardTitle className='flex items-center justify-between'>
+									<div className='flex items-center gap-1.5'>
+										<CheckCircle2 className='size-4' />
+										<span>Current</span>
+									</div>
+									<span className='text-sm text-muted-foreground'>{formatRamLabel(ram)}</span>
+								</CardTitle>
+								<CardDescription>
+									A custom amount. Pick a preset below to change it.
+								</CardDescription>
+							</CardHeader>
+						</Card>
+					)}
 					{visiblePresets.map((preset) => {
 						const selected = ram === preset.ram;
 						return (

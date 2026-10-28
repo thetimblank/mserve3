@@ -21,6 +21,7 @@ import {
 	type NetworkFileChange,
 } from '@/lib/network-config-engine';
 import type { ManagedNetwork } from '@/lib/network-schema';
+import { getErrorMessage } from '@/lib/utils';
 
 interface ApplyChangesDrawerProps {
 	open: boolean;
@@ -99,7 +100,7 @@ export const ApplyChangesDrawer: React.FC<ApplyChangesDrawerProps> = ({
 				const result = await planNetworkApply(network, servers);
 				if (active) setPlan(result);
 			} catch (caught) {
-				if (active) setError(caught instanceof Error ? caught.message : 'Failed to compute changes.');
+				if (active) setError(getErrorMessage(caught, 'Failed to compute changes.'));
 			} finally {
 				if (active) setLoading(false);
 			}
@@ -129,7 +130,7 @@ export const ApplyChangesDrawer: React.FC<ApplyChangesDrawerProps> = ({
 			onApplied();
 			onOpenChange(false);
 		} catch (caught) {
-			toast.error(caught instanceof Error ? caught.message : 'Failed to apply changes.');
+			toast.error(getErrorMessage(caught, 'Failed to apply changes.'));
 		} finally {
 			setApplying(false);
 		}

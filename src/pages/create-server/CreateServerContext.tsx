@@ -30,6 +30,8 @@ import {
 	getCreateServerStepSlides,
 	getCreateServerVisibleSlide,
 } from './create-server-flow';
+import { getErrorMessage } from '@/lib/utils';
+import { DEFAULT_AUTO_BACKUP_INTERVAL_MINUTES, DEFAULT_STORAGE_LIMIT_GB } from '@/lib/mserve-consts';
 
 export type PathValidationResult = {
 	exists: boolean;
@@ -359,18 +361,13 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 					installId,
 				});
 
-				await toast.promise(installPromise, {
-					loading: `Installing ${modpack.title}…`,
-					success: () => `Server "${trimmedName}" has been created from ${modpack.title}`,
-					error: (err) =>
-						typeof err === 'string'
-							? err
-							: err instanceof Error
-								? err.message
-								: 'Failed to install the modpack.',
-				});
-
-				const installed = await installPromise;
+				const installed = await toast
+					.promise(installPromise, {
+						loading: `Installing ${modpack.title}…`,
+						success: () => `Server "${trimmedName}" has been created from ${modpack.title}`,
+						error: (err) => getErrorMessage(err, 'Failed to install the modpack.'),
+					})
+					.unwrap();
 				const provider = createProvider(installed.providerName, {
 					file: installed.file,
 					provider_version: installed.loaderVersion,
@@ -386,10 +383,10 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 					adopt_existing_directory: true,
 					file: installed.file,
 					ram: clampRamGb(form.ram),
-					storage_limit: Math.max(1, Number(form.storage_limit) || 200),
+					storage_limit: Math.max(1, Number(form.storage_limit) || DEFAULT_STORAGE_LIMIT_GB),
 					auto_restart: form.auto_restart,
 					auto_backup: form.auto_backup,
-					auto_backup_interval: Math.max(1, Number(form.auto_backup_interval) || 120),
+					auto_backup_interval: Math.max(1, Number(form.auto_backup_interval) || DEFAULT_AUTO_BACKUP_INTERVAL_MINUTES),
 					auto_agree_eula: form.auto_agree_eula,
 					java_installation: form.java_installation,
 					custom_flags: ['--nogui'],
@@ -416,12 +413,7 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 				setCreatedServerId(serverId);
 				setSlide(DONE_SLIDE_INDEX);
 			} catch (err) {
-				const message =
-					typeof err === 'string'
-						? err
-						: err instanceof Error
-							? err.message
-							: 'Failed to install the modpack.';
+				const message = getErrorMessage(err, 'Failed to install the modpack.');
 				setError(message);
 			} finally {
 				unlisten?.();
@@ -475,10 +467,10 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 				create_directory_if_missing: true,
 				file,
 				ram: clampRamGb(form.ram),
-				storage_limit: Math.max(1, Number(form.storage_limit) || 200),
+				storage_limit: Math.max(1, Number(form.storage_limit) || DEFAULT_STORAGE_LIMIT_GB),
 				auto_restart: form.auto_restart,
 				auto_backup: form.auto_backup,
-				auto_backup_interval: Math.max(1, Number(form.auto_backup_interval) || 120),
+				auto_backup_interval: Math.max(1, Number(form.auto_backup_interval) || DEFAULT_AUTO_BACKUP_INTERVAL_MINUTES),
 				auto_agree_eula: form.auto_agree_eula,
 				java_installation: form.java_installation,
 				// GUI-capable servers (vanilla/plugin) ship with --nogui by default;
@@ -495,13 +487,13 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 				return res;
 			})();
 
-			await toast.promise(initializePromise, {
-				loading: 'Creating server...',
-				success: () => `Server "${trimmedName}" has been created`,
-				error: (err) => (err instanceof Error ? err.message : 'Failed to create server.'),
-			});
-
-			const result = await initializePromise;
+			const result = await toast
+				.promise(initializePromise, {
+					loading: 'Creating server...',
+					success: () => `Server "${trimmedName}" has been created`,
+					error: (err) => getErrorMessage(err, 'Failed to create server.'),
+				})
+				.unwrap();
 			const serverId = addServer(
 				buildCreatedServer(
 					{
@@ -515,7 +507,7 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 			setCreatedServerId(serverId);
 			setSlide(DONE_SLIDE_INDEX);
 		} catch (err) {
-			const message = err instanceof Error ? err.message : 'Failed to initialize server.';
+			const message = getErrorMessage(err, 'Failed to initialize server.');
 			setError(message);
 		} finally {
 			setIsSubmitting(false);

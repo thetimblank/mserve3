@@ -14,6 +14,7 @@ import { toast } from 'sonner';
 import type { Server, ServerStatus } from '@/data/servers';
 import { mapRuntimeStateToStatus, offlineServerStats, startingServerStats } from '@/lib/server-telemetry';
 import type { ServerRuntimeSnapshot } from '@/pages/server/server-types';
+import { getErrorMessage } from './utils';
 
 export type ServerControlContext = {
 	server: Pick<Server, 'id' | 'directory' | 'provider'>;
@@ -56,7 +57,7 @@ export const startServer = async ({
 	} catch (err) {
 		setServerStatus(server.id, 'offline');
 		updateServerStats(server.id, offlineServerStats());
-		toast.error(err instanceof Error ? err.message : 'Failed to start server.');
+		toast.error(getErrorMessage(err, 'Failed to start server.'));
 		return false;
 	}
 };
@@ -71,7 +72,7 @@ export const stopServer = async (context: ServerControlContext): Promise<boolean
 		await invoke('stop_server', { directory: context.server.directory });
 		return true;
 	} catch (err) {
-		toast.error(err instanceof Error ? err.message : 'Failed to stop server.');
+		toast.error(getErrorMessage(err, 'Failed to stop server.'));
 		await refreshStatus(context);
 		return false;
 	}
@@ -91,7 +92,7 @@ export const forceKillServer = async ({
 	} catch (err) {
 		setServerStatus(server.id, 'offline');
 		updateServerStats(server.id, offlineServerStats());
-		toast.error(err instanceof Error ? err.message : 'Failed to force kill server process.');
+		toast.error(getErrorMessage(err, 'Failed to force kill server process.'));
 		return false;
 	}
 };
@@ -110,7 +111,7 @@ export const sleepServer = async ({ server, setServerStatus }: ServerControlCont
 		return true;
 	} catch (err) {
 		setServerStatus(server.id, 'online');
-		toast.error(err instanceof Error ? err.message : 'Failed to put server to sleep.');
+		toast.error(getErrorMessage(err, 'Failed to put server to sleep.'));
 		return false;
 	}
 };
@@ -124,7 +125,7 @@ export const restartServer = async (context: ServerControlContext): Promise<bool
 		await invoke('restart_server', { directory: server.directory, javaExecutable });
 		return true;
 	} catch (err) {
-		toast.error(err instanceof Error ? err.message : 'Failed to restart server.');
+		toast.error(getErrorMessage(err, 'Failed to restart server.'));
 		await refreshStatus(context);
 		return false;
 	}

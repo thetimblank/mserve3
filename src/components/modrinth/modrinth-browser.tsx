@@ -29,6 +29,7 @@ import {
 } from '@/lib/modrinth-service';
 import ModrinthProjectDetail, { type ModrinthInstallTarget } from './modrinth-project-detail';
 import ModrinthProjectIcon from './modrinth-project-icon';
+import { getErrorMessage } from '@/lib/utils';
 
 const ANY_VERSION = '__any__';
 
@@ -132,7 +133,7 @@ const ModrinthBrowser: React.FC<ModrinthBrowserProps> = ({
 			})
 			.catch((err) => {
 				if (cancelled) return;
-				setError(typeof err === 'string' ? err : 'Search failed. Check your connection.');
+				setError(getErrorMessage(err, 'Search failed. Check your connection.'));
 				setIsLoading(false);
 			});
 

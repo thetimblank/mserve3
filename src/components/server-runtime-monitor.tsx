@@ -29,7 +29,7 @@ import {
 	offlineServerStats,
 	startingServerStats,
 } from '@/lib/server-telemetry';
-import { isJavaVersionError, isNoguiUnsupportedError, stripAnsi } from '@/lib/utils';
+import { getErrorMessage, isJavaVersionError, isNoguiUnsupportedError, stripAnsi } from '@/lib/utils';
 import { planJavaFallback, resolveServerJavaExecutable } from '@/lib/java-resolution';
 import { setServerJavaInstallation, type JavaRuntimeInfo } from '@/lib/java-runtime-service';
 import { hasNoguiFlag, setServerCustomFlags, stripNoguiFlags } from '@/lib/server-flags-service';
@@ -70,6 +70,8 @@ export const ServerRuntimeMonitor: React.FC = () => {
 
 	const entriesRef = React.useRef<Map<string, RuntimeEntry>>(new Map());
 	const syncedRef = React.useRef<Set<string>>(new Set());
+	// Servers that got a lifecycle event since their snapshot was requested.
+	const stateEventSeenRef = React.useRef<Set<string>>(new Set());
 
 	const getEntry = React.useCallback((id: string): RuntimeEntry => {
 		let entry = entriesRef.current.get(id);
@@ -137,13 +139,14 @@ export const ServerRuntimeMonitor: React.FC = () => {
 		let active = true;
 		let unlisten: UnlistenFn | null = null;
 
-		const startWith = (server: { id: string; directory: string }, javaExecutable: string) => {
+		const startWith = (server: { id: string; name: string; directory: string }, javaExecutable: string) => {
 			setServerStatus(server.id, 'starting');
 			updateServerStats(server.id, startingServerStats());
-			void invoke('start_server', { directory: server.directory, javaExecutable }).catch(() => {
+			void invoke('start_server', { directory: server.directory, javaExecutable }).catch((err) => {
 				if (!active) return;
 				setServerStatus(server.id, 'offline');
 				updateServerStats(server.id, offlineServerStats());
+				toast.error(`${server.name}: ${getErrorMessage(err, "couldn't restart.")}`);
 			});
 		};
 
@@ -153,6 +156,8 @@ export const ServerRuntimeMonitor: React.FC = () => {
 			const server = serversRef.current.find((item) => item.directory === directory);
 			if (!server) return;
 			if (isServerRuntimeClaimed(server.id)) return;
+			// Newer than any snapshot still in flight for this server.
+			stateEventSeenRef.current.add(server.id);
 
 			// The supervisor knows the port the server is actually bound to (it may
 			// have been reassigned on start when the configured one was taken).
@@ -324,19 +329,29 @@ export const ServerRuntimeMonitor: React.FC = () => {
 
 	// One-shot snapshot per server to sync initial state and adopt any server
 	// already running (e.g. the app was restarted while servers were up).
+	// `servers` changes as each snapshot lands, so a re-run must not discard the
+	// ones still in flight — they're already marked synced and won't be retried.
+	const mountedRef = React.useRef(true);
 	React.useEffect(() => {
-		let active = true;
+		mountedRef.current = true;
+		return () => {
+			mountedRef.current = false;
+		};
+	}, []);
 
+	React.useEffect(() => {
 		void Promise.all(
 			serversRef.current.map(async (server) => {
 				if (isServerRuntimeClaimed(server.id)) return;
 				if (syncedRef.current.has(server.id)) return;
 				syncedRef.current.add(server.id);
+				stateEventSeenRef.current.delete(server.id);
 				try {
 					const snapshot = await invoke<ServerRuntimeSnapshot>('get_server_runtime', {
 						directory: server.directory,
 					});
-					if (!active) return;
+					// A lifecycle event that landed meanwhile is newer than this snapshot.
+					if (!mountedRef.current || stateEventSeenRef.current.has(server.id)) return;
 					setServerStatus(server.id, mapRuntimeStateToStatus(snapshot.state));
 					if (snapshot.serverPort != null && snapshot.serverPort !== server.telemetry_port) {
 						updateServer(server.id, { telemetry_port: snapshot.serverPort });
@@ -358,10 +373,6 @@ export const ServerRuntimeMonitor: React.FC = () => {
 				}
 			}),
 		);
-
-		return () => {
-			active = false;
-		};
 	}, [servers, getEntry, setServerStatus, updateServer, updateServerStats]);
 
 	return null;

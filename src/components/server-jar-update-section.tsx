@@ -2,7 +2,7 @@ import React from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { ArrowUpCircle, CircleCheck, Download, Loader, RefreshCcw, TriangleAlert } from 'lucide-react';
 import { toast } from 'sonner';
-import { type Server, useServers } from '@/data/servers';
+import { isStoppedStatus, type Server, useServers } from '@/data/servers';
 import { useServerUpdates } from '@/data/server-updates';
 import { Button } from '@/components/ui/button';
 import {
@@ -16,15 +16,19 @@ import {
 } from '@/components/ui/alert-dialog';
 import { downloadAndResolveJarRow } from '@/lib/jar-download-service';
 import { createProvider } from '@/lib/server-provider';
-import { DEFAULT_TELEMETRY_HOST, DEFAULT_TELEMETRY_PORT } from '@/lib/mserve-consts';
 import { getServerNameFromDirectory } from '@/lib/mserve-server-mapper';
 import { type ServerUpdateTarget } from '@/lib/server-update-service';
-import { buildUpdateServerSettingsPayload, resolveNewDirectory } from '@/pages/server/server-utils';
+import {
+	buildSettingsFormFromServer,
+	buildUpdateServerSettingsPayload,
+	resolveNewDirectory,
+} from '@/pages/server/server-utils';
 import type {
 	ServerSettingsForm,
 	UpdateServerSettingsPayload,
 	UpdateServerSettingsResult,
 } from '@/pages/server/server-types';
+import { getErrorMessage } from '@/lib/utils';
 
 type Props = {
 	server: Server;
@@ -38,23 +42,10 @@ const buildUpdatePayload = (
 	downloadedJarPath: string,
 ): UpdateServerSettingsPayload => {
 	// Keep the existing jar filename — only the contents + provider metadata change.
-	const provider = createProvider(target.provider, { file: server.file });
 	const form: ServerSettingsForm = {
-		ram: server.ram,
-		storage_limit: server.storage_limit,
-		auto_backup: server.auto_backup,
-		auto_backup_interval: server.auto_backup_interval,
-		auto_restart: server.auto_restart,
-		sleep_enabled: server.sleep_enabled,
-		sleep_idle_minutes: server.sleep_idle_minutes,
-		sleep_motd: server.sleep_motd,
-		custom_flags: server.custom_flags,
-		java_installation: server.java_installation ?? '',
-		provider,
-		telemetry_host: server.telemetry_host ?? DEFAULT_TELEMETRY_HOST,
-		telemetry_port: Math.max(1, Number(server.telemetry_port) || DEFAULT_TELEMETRY_PORT),
+		...buildSettingsFormFromServer(server),
+		provider: createProvider(target.provider, { file: server.file }),
 		jar_swap_path: downloadedJarPath,
-		new_directory: server.directory,
 	};
 
 	const payload = buildUpdateServerSettingsPayload(server.directory, form);
@@ -69,7 +60,7 @@ const ServerJarUpdateSection: React.FC<Props> = ({ server, disabled }) => {
 	const [confirmTarget, setConfirmTarget] = React.useState<ServerUpdateTarget | null>(null);
 
 	const entry = getEntry(server.id);
-	const isOffline = server.status === 'offline';
+	const isOffline = isStoppedStatus(server.status);
 	const isChecking = entry.status === 'checking';
 	const actionsDisabled = disabled || isUpdating || !isOffline;
 
@@ -82,12 +73,15 @@ const ServerJarUpdateSection: React.FC<Props> = ({ server, disabled }) => {
 			setConfirmTarget(null);
 			setIsUpdating(true);
 			try {
+				// The backup has to finish (and succeed) before the jar is swapped.
 				if (options.backup) {
-					toast.promise(invoke('create_server_backup', { directory: server.directory }), {
-						loading: 'Creating backup before updating...',
-						success: 'Backup created.',
-						error: (err) => (err instanceof Error ? err.message : 'Failed to create backup.'),
-					});
+					await toast
+						.promise(invoke('create_server_backup', { directory: server.directory }), {
+							loading: 'Creating backup before updating...',
+							success: 'Backup created.',
+							error: (err) => getErrorMessage(err, 'Failed to create backup.'),
+						})
+						.unwrap();
 				}
 
 				const updatePromise = (async () => {
@@ -102,7 +96,7 @@ const ServerJarUpdateSection: React.FC<Props> = ({ server, disabled }) => {
 				toast.promise(updatePromise, {
 					loading: 'Downloading and installing the new jar...',
 					success: 'Server jar updated.',
-					error: (err) => (err instanceof Error ? err.message : 'Failed to update server jar.'),
+					error: (err) => getErrorMessage(err, 'Failed to update server jar.'),
 				});
 
 				const settingsResult = await updatePromise;

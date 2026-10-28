@@ -2,6 +2,7 @@ import React from 'react';
 import { type Server, useServers } from '@/data/servers';
 import { useUser } from '@/data/user';
 import { checkServerJarUpdate, type ServerUpdateCheck } from '@/lib/server-update-service';
+import { getErrorMessage } from '@/lib/utils';
 
 /** Per-server update-check state, keyed by server id. Transient (not persisted):
  *  the check re-runs on every app load by design. */
@@ -38,7 +39,7 @@ export const ServerUpdatesProvider: React.FC<{ children: React.ReactNode }> = ({
 				[server.id]: { status: 'result', check, checkedAt: Date.now() },
 			}));
 		} catch (error) {
-			const message = error instanceof Error ? error.message : 'Failed to check for updates.';
+			const message = getErrorMessage(error, 'Failed to check for updates.');
 			setEntries((previous) => ({
 				...previous,
 				[server.id]: { status: 'error', error: message, checkedAt: Date.now() },

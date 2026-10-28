@@ -1,7 +1,9 @@
 import React from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Folder } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { getErrorMessage } from '@/lib/utils';
 
 type OpenFolderButtonProps = {
 	directory?: string;
@@ -37,9 +39,9 @@ const OpenFolderButton: React.FC<OpenFolderButtonProps> = ({
 				throw new Error('No path available to open.');
 			}
 		} catch (err) {
-			const message = err instanceof Error ? err.message : 'Failed to open folder.';
+			const message = getErrorMessage(err, 'Failed to open folder.');
 			if (onError) onError(message);
-			else window.alert(message);
+			else toast.error(message);
 		} finally {
 			setIsOpening(false);
 		}

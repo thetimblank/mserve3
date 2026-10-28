@@ -10,6 +10,7 @@ import {
 } from '@/lib/server-security-audit';
 import type { Server } from '@/data/servers';
 import { useNetworks } from '@/data/networks';
+import { getErrorMessage } from '@/lib/utils';
 
 type ManagedConfigFileContent = { fileName: string; content: string };
 
@@ -67,7 +68,7 @@ export const useSecurityAudit = (server: Server) => {
 			};
 			setFindings(auditServerProperties(props, ctx));
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : 'Could not run the security audit.');
+			toast.error(getErrorMessage(err, 'Could not run the security audit.'));
 			setFindings([]);
 		} finally {
 			setIsLoading(false);
@@ -88,7 +89,7 @@ export const useSecurityAudit = (server: Server) => {
 				toast.success(successMessage);
 				await refresh();
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : 'Could not apply the fix.');
+				toast.error(getErrorMessage(err, 'Could not apply the fix.'));
 			} finally {
 				setIsApplying(false);
 			}

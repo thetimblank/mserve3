@@ -24,6 +24,8 @@ export type JsonColumn = {
 	key: string;
 	label: string;
 	kind: JsonColumnKind;
+	/** Value for new rows, when the kind's generic default is wrong for this file. */
+	defaultValue?: string;
 };
 
 export type TomlValueKind = 'string' | 'number' | 'boolean' | 'list' | 'json';

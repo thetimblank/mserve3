@@ -248,7 +248,7 @@ path joins), Sentry opt-in, and PII scrubbing.
 
 ## D. Frontend shell & shared components
 
-### [ ] D1 · App shell (~1.3k)
+### [x] D1 · App shell (~1.3k) — 2026-10-27, 5 findings (R-100–R-104). Provider order is sound (every provider only consumes ones above it). The close warning matches the backend list and kills on confirm or when suppressed. Unused CSS is in R-104; the WebGL disposal gap is R-101.
 - `src/main.tsx`
 - `src/components/app-sidebar.tsx`
 - `src/components/nav.tsx`
@@ -266,14 +266,14 @@ path joins), Sentry opt-in, and PII scrubbing.
 Focus: provider nesting order, close-warning logic vs. running servers, whether the WebGL
 effect is disposed on unmount, and unused CSS.
 
-### [ ] D2 · Runtime monitor & server card (~730)
+### [x] D2 · Runtime monitor & server card (~730) — 2026-10-27, 3 findings (R-105–R-107). All three listeners handle the async-unlisten race, and every handler checks the claimed-server registry. The card routes every action through `server-controls`. Seed R-010 is left to E1, which owns `use-server-runtime.ts`.
 - `src/components/server-runtime-monitor.tsx`
 - `src/components/server-status.tsx`
 - `src/components/server-card.tsx`
 
 Focus: seed R-010 (overlap with `use-server-runtime.ts`), unlisten races, and claimed-server respect.
 
-### [ ] D3 · Server properties form (~1.7k)
+### [x] D3 · Server properties form (~1.7k) — 2026-10-27, 6 findings (R-108–R-113, R-110 spans D3–D7); seeds R-007 and R-008 are false positives. Wizard form-state overlap (E7) isn't checked here.
 - `src/components/edit-server-properties-form.tsx` (1010)
 - `src/components/ram-selector.tsx`
 - `src/components/ram-slider-field.tsx`
@@ -282,7 +282,7 @@ Focus: seed R-010 (overlap with `use-server-runtime.ts`), unlisten races, and cl
 
 Focus: seeds R-007 and R-008, and form-state duplication with the create-server wizard (E7).
 
-### [ ] D4 · Config file editor (~2.2k)
+### [x] D4 · Config file editor (~2.2k) — 2026-10-27, 6 findings (R-114–R-119). TOML goes through `@iarna/toml`, not a hand-rolled parser. The properties parser has one copy (`properties-config.ts`), which `lib/` also imports. Comments are lost for YAML (R-114) and TOML (R-116). server.properties loses them too, but Minecraft rewrites that file on every start.
 - `src/components/server-config-file-editor.tsx`
 - `src/components/server-config-file-editor/advanced-properties-section.tsx`
 - `src/components/server-config-file-editor/featured-property-fields.tsx`
@@ -305,13 +305,13 @@ Focus: the hand-rolled TOML handling in `toml-config.ts` when `@iarna/toml` is a
 whether the properties parser is duplicated with D3 / `lib/server-config-files.ts`, and whether
 saving preserves comments.
 
-### [ ] D5 · MOTD editor (~1.55k)
+### [x] D5 · MOTD editor (~1.55k) — 2026-10-27, 1 finding (R-120). Legacy § round-trips cleanly (color before decorations, `§r` only on a downgrade). Legacy hex isn't supported in either direction, which is consistent. Observation, not logged: lines 62–816 are pure run/selection/serialization helpers and could move to `lib/motd-runs.ts`.
 - `src/components/motd-editor.tsx`
 
 Focus: parsing/serialization duplicated with `lib/motd-format.ts`, whether the 1.5k-line
 component has obvious extraction seams, and legacy § vs. JSON round-tripping.
 
-### [ ] D6 · Content components (~1.6k)
+### [x] D6 · Content components (~1.6k) — 2026-10-27, 4 findings (R-121–R-123, plus R-112). The Modrinth search is debounced at 300ms, and the `cancelled` flags drop stale and out-of-order results in both the browser and the detail view.
 - `src/components/server-item-list.tsx` (586)
 - `src/components/server-jar-update-section.tsx`
 - `src/components/modrinth/modrinth-browser-dialog.tsx`
@@ -321,7 +321,7 @@ component has obvious extraction seams, and legacy § vs. JSON round-tripping.
 
 Focus: pagination/search debounce, and stale results arriving out of order.
 
-### [ ] D7 · Import, repair, help, onboarding (~1.4k)
+### [x] D7 · Import, repair, help, onboarding (~1.4k) — 2026-10-27, 5 findings (R-124–R-128, plus R-121). Import validates only the directory, and the wizard has its own checks, so nothing is duplicated. R-009 is left to E9. The help slideshow and onboarding overlay share the slide/dot pattern that E9 compares.
 - `src/components/import-server.tsx`
 - `src/components/mserve-repair-dialog.tsx`
 - `src/components/create-server.tsx`
@@ -334,7 +334,7 @@ Focus: pagination/search debounce, and stale results arriving out of order.
 
 Focus: import flow vs. the wizard (duplicated validation?), and seed R-009 (help-slideshow).
 
-### [ ] D8 · shadcn primitives (~3.1k, mostly generated)
+### [x] D8 · shadcn primitives (~3.1k, mostly generated) — 2026-10-27, 2 findings (R-129, R-130). knip finds no unused primitive files. The unused sub-exports are generated API and stay. Local edits (slider track styling, sidebar motion, `destructive-secondary`) introduce no bugs.
 - `src/components/ui/accordion.tsx`
 - `src/components/ui/alert-dialog.tsx`
 - `src/components/ui/button-group.tsx`

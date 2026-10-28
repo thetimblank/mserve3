@@ -17,7 +17,7 @@ const SlideRam: React.FC = () => {
 					Continue
 				</Button>
 			}>
-			<RamSelector provider={form.provider} ram={form.ram} updateField={updateField} />
+			<RamSelector provider={form.provider} ram={form.ram} updateField={updateField} snapToPreset />
 		</SlideShell>
 	);
 };

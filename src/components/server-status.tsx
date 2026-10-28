@@ -3,7 +3,6 @@ import { Circle, CircleAlert, LoaderCircle, Moon } from 'lucide-react';
 import React from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import clsx from 'clsx';
-import { useServers } from '@/data/servers';
 
 interface Props {
 	server: Server;
@@ -11,22 +10,6 @@ interface Props {
 }
 
 const ServerStatus: React.FC<Props> = ({ server, size = 'md' }) => {
-	const { setServerStatus } = useServers();
-
-	const handlePromoteToOnline = React.useCallback(() => {
-		if (server.status !== 'starting') return;
-		setServerStatus(server.id, 'online');
-	}, [server.id, server.status, setServerStatus]);
-
-	const handleStartingKeyDown = React.useCallback(
-		(event: React.KeyboardEvent<HTMLDivElement>) => {
-			if (event.key !== 'Enter' && event.key !== ' ') return;
-			event.preventDefault();
-			handlePromoteToOnline();
-		},
-		[handlePromoteToOnline],
-	);
-
 	const sizeClasses = {
 		md: {
 			container: 'gap-1 relative',
@@ -113,16 +96,7 @@ const ServerStatus: React.FC<Props> = ({ server, size = 'md' }) => {
 				</div>
 			)}
 			{server.status === 'starting' && (
-				<div
-					className={clsx(
-						`text-yellow-500 flex items-center flex-col animate-pulse ${classes.container}`,
-						'cursor-pointer',
-					)}
-					onClick={handlePromoteToOnline}
-					onKeyDown={handleStartingKeyDown}
-					role='button'
-					tabIndex={0}
-					title='Click to mark server online'>
+				<div className={`text-yellow-500 flex items-center flex-col animate-pulse ${classes.container}`}>
 					<LoaderCircle className={`animate-spin ${classes.visual}`} />
 					<p className={`font-bold ${classes.status}`}>Starting</p>
 				</div>

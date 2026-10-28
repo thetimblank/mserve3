@@ -54,6 +54,7 @@ import { HelpButton } from '@/components/help/help-button';
 import type { BackupSettingsUpdate } from './hooks/use-server-backup-actions';
 import { formatBytes } from '@/lib/utils';
 import { getBackupNameFromPath } from './server-utils';
+import { DEFAULT_AUTO_BACKUP_INTERVAL_MINUTES, DEFAULT_STORAGE_LIMIT_GB } from '@/lib/mserve-consts';
 
 type Backup = Server['backups'][number];
 
@@ -191,8 +192,8 @@ const BackupSettingsDrawer: React.FC<{
 		try {
 			await onSave({
 				auto_backup: autoBackup,
-				auto_backup_interval: Math.max(1, Math.round(Number(interval) || 120)),
-				storage_limit: Math.max(1, Math.round(Number(storageLimit) || 200)),
+				auto_backup_interval: Math.max(1, Math.round(Number(interval) || DEFAULT_AUTO_BACKUP_INTERVAL_MINUTES)),
+				storage_limit: Math.max(1, Math.round(Number(storageLimit) || DEFAULT_STORAGE_LIMIT_GB)),
 				backup_policy: policy,
 				backup_max_count: maxCount,
 				backup_max_age_days: maxAgeDays,

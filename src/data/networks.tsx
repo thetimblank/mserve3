@@ -11,6 +11,7 @@ import {
 	normalizeNetworks,
 	type ManagedNetwork,
 } from '@/lib/network-schema';
+import { getErrorMessage } from '@/lib/utils';
 
 export type NetworkUpdate =
 	| Partial<Omit<ManagedNetwork, 'id'>>
@@ -81,7 +82,7 @@ export const NetworksProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 				} catch (error) {
 					writableRootPath = '';
 					loaded = loadFromLocalStorage();
-					const message = error instanceof Error ? error.message : String(error);
+					const message = getErrorMessage(error, String(error));
 					toast.error(`Could not read networks.json (${message}). Network changes won't be saved to disk until it's fixed.`);
 				}
 			} else {
@@ -109,7 +110,7 @@ export const NetworksProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 		const rootPath = rootPathRef.current;
 		if (!rootPath) return;
 		void writeNetworksConfig(rootPath, JSON.stringify(networks, null, 2)).catch((error) => {
-			const message = error instanceof Error ? error.message : 'Failed to save networks.';
+			const message = getErrorMessage(error, 'Failed to save networks.');
 			toast.error(`Could not save networks: ${message}`);
 		});
 	}, [networks, isReady]);

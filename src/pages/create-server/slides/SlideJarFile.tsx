@@ -32,6 +32,7 @@ import ModrinthBrowser from '@/components/modrinth/modrinth-browser';
 import { useCreateServer, type PathValidationResult } from '../CreateServerContext';
 import JarVersionSelectorPane from './components/JarVersionSelectorPane';
 import SlideShell from './SlideShell';
+import { getErrorMessage } from '@/lib/utils';
 
 const parseJdkVersions = (value: string): number[] =>
 	Array.from(
@@ -81,7 +82,7 @@ const SlideJarFile: React.FC = () => {
 			})
 			.catch((error) => {
 				if (cancelled) return;
-				const message = error instanceof Error ? error.message : 'Failed to fetch jar versions.';
+				const message = getErrorMessage(error, 'Failed to fetch jar versions.');
 				setError(message);
 				setRows([]);
 			})
@@ -140,7 +141,7 @@ const SlideJarFile: React.FC = () => {
 				clearError();
 			}
 		} catch (err) {
-			const message = err instanceof Error ? err.message : 'Could not open file picker.';
+			const message = getErrorMessage(err, 'Could not open file picker.');
 			setError(message);
 		}
 	};
@@ -244,7 +245,7 @@ const SlideJarFile: React.FC = () => {
 			clearError();
 			nextSlide();
 		} catch (err) {
-			const message = err instanceof Error ? err.message : 'Failed to validate jar file path.';
+			const message = getErrorMessage(err, 'Failed to validate jar file path.');
 			setError(message);
 		}
 	};
