@@ -13,7 +13,15 @@ import { ArrowUpRight, CircleCheck, MemoryStick, Moon, OctagonX, Package, Users 
 
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { isStoppedStatus, type Server, type ServerStatus, useServers } from '@/data/servers';
+import {
+	canStartStatus,
+	canStopStatus,
+	type Server,
+	type ServerStatus,
+	startActionLabel,
+	stopActionLabel,
+	useServers,
+} from '@/data/servers';
 import { useServerJavaResolver } from '@/data/java-download';
 import { startServer, stopServer, type ServerControlContext } from '@/lib/server-controls';
 import { getPrimaryMinecraftVersion } from '@/lib/utils';
@@ -116,24 +124,16 @@ const ServerTile: React.FC<Props> = ({ server, delay = 0 }) => {
 				</div>
 
 				<div className='mt-3 flex items-center gap-2'>
-					{isStoppedStatus(server.status) && (
+					{canStartStatus(server.status) && (
 						<Button size='sm' onClick={handleStart} disabled={isBusy}>
-							<CircleCheck />
-							Serve
+							{server.status === 'sleeping' ? <Moon /> : <CircleCheck />}
+							{startActionLabel(server.status)}
 						</Button>
 					)}
-					{server.status === 'sleeping' && (
-						<Button size='sm' onClick={handleStart} disabled={isBusy}>
-							<Moon />
-							Awake
-						</Button>
-					)}
-					{(server.status === 'online' ||
-						server.status === 'starting' ||
-						server.status === 'sleeping') && (
+					{canStopStatus(server.status) && (
 						<Button size='sm' variant='secondary' onClick={handleStop} disabled={isBusy}>
 							<OctagonX />
-							Stop
+							{stopActionLabel(server.status)}
 						</Button>
 					)}
 					<Button asChild size='sm' variant='secondary'>

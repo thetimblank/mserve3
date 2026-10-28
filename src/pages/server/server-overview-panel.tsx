@@ -31,7 +31,17 @@ import OpenFolderButton from '@/components/open-folder-button';
 import ServerStatus from '@/components/server-status';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Card, CardContent } from '@/components/ui/card';
-import type { Server } from '@/data/servers';
+import {
+	canForceKillStatus,
+	canRestartStatus,
+	canSleepServer,
+	canStartStatus,
+	canStopStatus,
+	forceKillActionLabel,
+	type Server,
+	startActionLabel,
+	stopActionLabel,
+} from '@/data/servers';
 import { useUser } from '@/data/user';
 import { useServerUpdates } from '@/data/server-updates';
 import { type JavaRuntimeInfo } from '@/lib/java-runtime-service';
@@ -197,8 +207,6 @@ const ServerOverviewPanel: React.FC<Props> = ({
 		return null;
 	}, [sparkData]);
 
-	const isRunning = server.status === 'online' || server.status === 'starting';
-
 	return (
 		<Card className='rounded-b-none'>
 			<CardContent className='flex flex-col gap-6'>
@@ -207,40 +215,34 @@ const ServerOverviewPanel: React.FC<Props> = ({
 					<ServerStatus server={server} size='xl' />
 					<div className='flex flex-col gap-2 flex-1 w-full'>
 						<div className='flex flex-wrap gap-2 w-full'>
-							{isRunning && (
+							{canStopStatus(server.status) && (
 								<Button onClick={onStop} disabled={isBusy}>
 									<OctagonX />
-									<p>Stop</p>
+									<p>{stopActionLabel(server.status)}</p>
 								</Button>
 							)}
-							{isRunning && (
+							{canRestartStatus(server.status) && (
 								<Button variant='secondary' onClick={onRestart} disabled={isBusy}>
 									<RefreshCcw />
 									<p>Restart</p>
 								</Button>
 							)}
-							{server.status === 'online' && !isProxy && (
+							{canSleepServer(server) && (
 								<Button variant='secondary' onClick={onSleep} disabled={isBusy}>
 									<Moon />
 									<p>Sleep</p>
 								</Button>
 							)}
-							{isOffline && (
+							{canStartStatus(server.status) && (
 								<Button onClick={onStart} disabled={isBusy}>
-									<CircleCheck />
-									<p>Serve</p>
+									{isSleeping ? <Moon /> : <CircleCheck />}
+									<p>{startActionLabel(server.status)}</p>
 								</Button>
 							)}
-							{isSleeping && (
-								<Button onClick={onStart} disabled={isBusy}>
-									<Moon />
-									<p>Awake</p>
-								</Button>
-							)}
-							{!isOffline && (
+							{canForceKillStatus(server.status) && (
 								<Button variant='destructive-secondary' onClick={onForceKill} disabled={isBusy}>
 									<OctagonX />
-									<p>{isSleeping ? 'Shutdown' : 'Force Kill'}</p>
+									<p>{forceKillActionLabel(server.status)}</p>
 								</Button>
 							)}
 							<OpenFolderButton directory={server.directory} disabled={isBusy} />

@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 import { repairServerMserveJson, syncServerMserveJson } from '@/lib/mserve-sync';
 import { requestMserveRepair } from '@/lib/mserve-repair-controller';
 import { type MserveJsonProps, type MserveStats, type Provider } from '@/lib/mserve-schema';
-import { createProvider } from '@/lib/server-provider';
+import { createProvider, isProxyProvider } from '@/lib/server-provider';
 
 export type { AutoBackupMode, BackupPolicy, BackupScopeItem } from '@/lib/mserve-schema';
 import { normalizeBackupPolicy, normalizeBackupScope } from '@/lib/mserve-schema';
@@ -22,6 +22,47 @@ export const isStoppedStatus = (status: ServerStatus): boolean =>
 /** A server whose process is up or coming up: `online` or `starting`. */
 export const isRunningStatus = (status: ServerStatus): boolean =>
 	status === 'online' || status === 'starting';
+
+/*
+ * Lifecycle-action gating + labels. Every surface that renders start/stop/
+ * restart/sleep/force-kill affordances (server card, dashboard tile, network
+ * node menu, server overview panel) must go through these — the conditions are
+ * subtle (`sleeping` is neither stopped nor running) and past divergence let a
+ * button appear in a state the backend rejects.
+ */
+
+/** Start is offered from a stopped state, and doubles as "wake" while sleeping. */
+export const canStartStatus = (status: ServerStatus): boolean =>
+	isStoppedStatus(status) || status === 'sleeping';
+
+/** Graceful stop: a live process, or the wake listener a sleeping server holds. */
+export const canStopStatus = (status: ServerStatus): boolean =>
+	isRunningStatus(status) || status === 'sleeping';
+
+/** Restart needs a live process to restart. */
+export const canRestartStatus = (status: ServerStatus): boolean => isRunningStatus(status);
+
+/** Force-kill needs something to kill — anything that isn't already stopped. */
+export const canForceKillStatus = (status: ServerStatus): boolean => !isStoppedStatus(status);
+
+/**
+ * Sleep requires a *fully* online server (the backend rejects it mid-`starting`)
+ * and a provider that owns a world — proxies have nothing to sleep.
+ */
+export const canSleepServer = (server: Pick<Server, 'status' | 'provider'>): boolean =>
+	server.status === 'online' && !isProxyProvider(server.provider);
+
+/** Start/wake button label. */
+export const startActionLabel = (status: ServerStatus): string =>
+	status === 'sleeping' ? 'Awake' : 'Serve';
+
+/** Stop button label — stopping a sleeping server tears down its wake listener. */
+export const stopActionLabel = (status: ServerStatus): string =>
+	status === 'sleeping' ? 'Stop sleeping' : 'Stop';
+
+/** Force-kill button label — a sleeping server has no process to kill, only state to drop. */
+export const forceKillActionLabel = (status: ServerStatus): string =>
+	status === 'sleeping' ? 'Shutdown' : 'Force Kill';
 
 export interface Server extends MserveJsonProps {
 	id: string;

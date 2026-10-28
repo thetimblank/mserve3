@@ -1,6 +1,17 @@
 import { Button } from '@/components/ui/button';
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { isStoppedStatus, Server, useServers } from '@/data/servers';
+import {
+	canForceKillStatus,
+	canRestartStatus,
+	canSleepServer,
+	canStartStatus,
+	canStopStatus,
+	forceKillActionLabel,
+	Server,
+	startActionLabel,
+	stopActionLabel,
+	useServers,
+} from '@/data/servers';
 import {
 	ArrowDownToLine,
 	CircleCheck,
@@ -28,7 +39,6 @@ import {
 	type ServerControlContext,
 } from '@/lib/server-controls';
 import { useServerJavaResolver } from '@/data/java-download';
-import { isProxyProvider } from '@/lib/server-provider';
 
 interface Props {
 	server: Server;
@@ -159,42 +169,34 @@ const ServerCard: React.FC<Props> = ({ server, delay }) => {
 						<Link to={`/servers/${encodeURIComponent(server.id)}`}>
 							<Button>View More Details</Button>
 						</Link>
-						{!isStoppedStatus(server.status) && (
+						{canForceKillStatus(server.status) && (
 							<Button variant='destructive-secondary' onClick={handleForceKill} disabled={isBusy}>
 								<OctagonX />
-								<p>{server.status === 'sleeping' ? 'Shutdown' : 'Force Kill'}</p>
+								<p>{forceKillActionLabel(server.status)}</p>
 							</Button>
 						)}
-						{(server.status === 'online' ||
-							server.status === 'starting' ||
-							server.status === 'sleeping') && (
+						{canStopStatus(server.status) && (
 							<Button variant='secondary' onClick={handleStop} disabled={isBusy}>
 								<OctagonX />
-								<p>{server.status === 'sleeping' ? 'Stop sleeping' : 'Stop'}</p>
+								<p>{stopActionLabel(server.status)}</p>
 							</Button>
 						)}
-						{(server.status === 'online' || server.status === 'starting') && (
+						{canRestartStatus(server.status) && (
 							<Button variant='secondary' onClick={handleRestart} disabled={isBusy}>
 								<RefreshCcw />
 								<p>Restart</p>
 							</Button>
 						)}
-						{server.status === 'online' && !isProxyProvider(server.provider) && (
+						{canSleepServer(server) && (
 							<Button variant='secondary' onClick={handleSleep} disabled={isBusy}>
 								<Moon />
 								<p>Sleep</p>
 							</Button>
 						)}
-						{isStoppedStatus(server.status) && (
+						{canStartStatus(server.status) && (
 							<Button variant='secondary' onClick={handleStart} disabled={isBusy}>
-								<CircleCheck />
-								<p>Serve</p>
-							</Button>
-						)}
-						{server.status === 'sleeping' && (
-							<Button variant='secondary' onClick={handleStart} disabled={isBusy}>
-								<Moon />
-								<p>Awake</p>
+								{server.status === 'sleeping' ? <Moon /> : <CircleCheck />}
+								<p>{startActionLabel(server.status)}</p>
 							</Button>
 						)}
 						<OpenFolderButton directory={server.directory} disabled={isBusy} />
