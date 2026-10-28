@@ -1,44 +1,15 @@
 import React from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
-import { parsePropertiesMap } from '@/components/server-config-file-editor/properties-config';
-import {
-	auditServerProperties,
-	isNetworkBackend,
-	type SecurityFinding,
-	type SecurityAuditContext,
-} from '@/lib/server-security-audit';
+import { isNetworkBackend, type SecurityFinding } from '@/lib/server-security-audit';
+import { forgetCriticalCount, scanServerSecurity } from '@/lib/server-security-scan';
 import type { Server } from '@/data/servers';
 import { useNetworks } from '@/data/networks';
 import { getErrorMessage } from '@/lib/utils';
 
-type ManagedConfigFileContent = { fileName: string; content: string };
-
-const readManagedFile = async (directory: string, fileName: string): Promise<string | null> => {
-	try {
-		const result = await invoke<ManagedConfigFileContent>('read_managed_server_config_file', {
-			payload: { directory, fileName },
-		});
-		return result.content;
-	} catch {
-		// Missing/unreadable file — the audit treats these as vanilla defaults.
-		return null;
-	}
-};
-
-const countWhitelist = (content: string | null): number | null => {
-	if (!content) return null;
-	try {
-		const parsed = JSON.parse(content);
-		return Array.isArray(parsed) ? parsed.length : null;
-	} catch {
-		return null;
-	}
-};
-
 /**
  * Reads the server's `server.properties` (and `whitelist.json` count), runs the
- * pure {@link auditServerProperties} rules, and exposes a one-click `applyFix`
+ * pure audit rules (`lib/server-security-scan`), and exposes a one-click `applyFix`
  * that writes back through the comment-preserving `apply_server_properties`
  * backend command. Fixes should only be offered while the server is stopped
  * (server.properties is read at boot).
@@ -56,17 +27,7 @@ export const useSecurityAudit = (server: Server) => {
 	const refresh = React.useCallback(async () => {
 		setIsLoading(true);
 		try {
-			const [properties, whitelist] = await Promise.all([
-				readManagedFile(directory, 'server.properties'),
-				readManagedFile(directory, 'whitelist.json'),
-			]);
-			const props = properties ? parsePropertiesMap(properties) : new Map<string, string>();
-			const ctx: SecurityAuditContext = {
-				maxRamGb: Math.max(1, Number(ram) || 1),
-				whitelistCount: countWhitelist(whitelist),
-				behindProxy,
-			};
-			setFindings(auditServerProperties(props, ctx));
+			setFindings(await scanServerSecurity({ directory, ram }, behindProxy));
 		} catch (err) {
 			toast.error(getErrorMessage(err, 'Could not run the security audit.'));
 			setFindings([]);
@@ -86,6 +47,8 @@ export const useSecurityAudit = (server: Server) => {
 			setIsApplying(true);
 			try {
 				await invoke('apply_server_properties', { payload: { directory, updates } });
+				// The dashboard's "Could use a look" feed re-reads on its next visit.
+				forgetCriticalCount(directory);
 				toast.success(successMessage);
 				await refresh();
 			} catch (err) {

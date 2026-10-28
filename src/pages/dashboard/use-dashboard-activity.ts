@@ -25,7 +25,7 @@ const REFRESH_MS = 60000;
 
 export type PlayerTrend = 'up' | 'down' | 'flat';
 
-export type ServerActivity = {
+type ServerActivity = {
 	serverId: string;
 	/** 0..1 fraction of buckets the server was online. Sleep counts as down. */
 	availability: number;

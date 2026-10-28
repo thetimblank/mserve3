@@ -3,23 +3,12 @@ import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
 import { isStoppedStatus, type Server, type ServerUpdate } from '@/data/servers';
 import type { AutoBackupMode, BackupPolicy, BackupScopeItem } from '@/lib/mserve-schema';
-import { getBackupNameFromPath } from '../server-utils';
+import { BACKUP_STORAGE_LIMIT_ERROR_PREFIX, getBackupNameFromPath, notifyDeletedBackups } from '../server-utils';
 import type { CreateServerBackupResult, RestoreServerBackupResult } from '../server-types';
 import { getErrorMessage } from '@/lib/utils';
 import { DEFAULT_AUTO_BACKUP_INTERVAL_MINUTES, DEFAULT_STORAGE_LIMIT_GB } from '@/lib/mserve-consts';
 
-const BACKUP_STORAGE_LIMIT_ERROR_PREFIX = 'Backup storage limit exceeded';
-
 const isBackupStorageLimitError = (message: string) => message.startsWith(BACKUP_STORAGE_LIMIT_ERROR_PREFIX);
-
-const notifyDeletedBackups = (count: number) => {
-	if (count < 1) return;
-	toast.info(
-		count === 1
-			? 'Removed 1 old backup per your retention settings.'
-			: `Removed ${count} old backups per your retention settings.`,
-	);
-};
 
 /** Everything the backup settings sheet can change in one save. */
 export type BackupSettingsUpdate = {

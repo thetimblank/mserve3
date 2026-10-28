@@ -1,34 +1,15 @@
 use super::super::support::{
-    RestoreClaim, claim_restore, create_backup_snapshot, discard_backup, enforce_backup_retention,
-    ensure_backup_fits, get_runtime_config, restore_backup_contents, server_key, set_backup_locked,
+    RestoreClaim, claim_restore, enforce_backup_retention, ensure_not_proxy,
+    is_auto_backup_running, restore_backup_contents, server_key, set_backup_locked,
+    snapshot_then_retain,
 };
 use super::super::{
-    CreateBackupResult, RestoreBackupPayload, RestoreBackupResult, RuntimeState, ScannedBackup,
+    CreateBackupResult, RestoreBackupPayload, RestoreBackupResult, RuntimeState,
     SetBackupLockedPayload,
 };
 use super::run_blocking;
 use std::path::{Path, PathBuf};
 use tauri::State;
-
-/// Backups are pointless for proxy servers (no worlds, no meaningful state),
-/// so every backup entry point rejects them with a clear message.
-fn ensure_not_proxy(directory: &Path) -> Result<(), String> {
-    let Ok(config) = get_runtime_config(directory) else {
-        return Ok(());
-    };
-    let provider_name = config
-        .provider
-        .map(|provider| provider.name.trim().to_lowercase())
-        .unwrap_or_default();
-
-    if provider_name == "velocity" || provider_name == "bungeecord" {
-        return Err(
-            "Proxy servers don't store worlds or player data, so backups are disabled.".to_string(),
-        );
-    }
-
-    Ok(())
-}
 
 /// Validates that `backup_directory` really is a backup of `server_directory`
 /// (i.e. lives under its `.backups` root) and returns the canonical path.
@@ -49,30 +30,6 @@ fn resolve_backup_inside_root(
     }
 
     Ok(selected_canonical)
-}
-
-/// Takes a snapshot, then applies retention with the new snapshot protected, so
-/// old backups are only deleted once a good replacement exists. If retention
-/// can't make room, the new snapshot is rolled back and the error returned.
-/// `extra_protected` backups (e.g. the one being restored) are never deleted.
-fn snapshot_then_retain(
-    server_directory: &Path,
-    name: Option<String>,
-    reason: &str,
-    extra_protected: &[PathBuf],
-) -> Result<(ScannedBackup, usize), String> {
-    ensure_backup_fits(server_directory, extra_protected)?;
-    let backup = create_backup_snapshot(server_directory, name, reason)?;
-
-    let mut protected = extra_protected.to_vec();
-    protected.push(PathBuf::from(&backup.directory));
-    match enforce_backup_retention(server_directory, &protected) {
-        Ok(deleted) => Ok((backup, deleted)),
-        Err(err) => {
-            discard_backup(&backup);
-            Err(err)
-        }
-    }
 }
 
 #[tauri::command]
@@ -134,6 +91,11 @@ fn claim_stopped_server(state: &RuntimeState, directory: &str) -> Result<Restore
         .is_some_and(|runtime| runtime.state.is_active())
     {
         return Err("Stop the server before restoring a backup.".to_string());
+    }
+    if is_auto_backup_running(&key) {
+        return Err(
+            "An automatic backup of this server is running. Try again when it's done.".to_string(),
+        );
     }
     claim_restore(key)
 }

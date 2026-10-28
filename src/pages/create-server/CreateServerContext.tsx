@@ -4,7 +4,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useJavaRuntimes } from '@/data/java-runtimes';
-import { useServers } from '@/data/servers';
+import { useServers, type Server } from '@/data/servers';
 import { useUser } from '@/data/user';
 import { buildCreatedServer } from '@/lib/mserve-server-mapper';
 import type { Provider } from '@/lib/mserve-schema';
@@ -40,7 +40,7 @@ export type PathValidationResult = {
 };
 
 /** A Modrinth modpack version the user picked in the jar slide. */
-export type ModpackSelection = {
+type ModpackSelection = {
 	projectId: string;
 	slug: string;
 	title: string;
@@ -57,6 +57,23 @@ const sameArray = (left: string[], right: string[]) => {
 };
 
 const normalizeName = (value: string) => value.trim().toLowerCase();
+
+/** The server with this name (case-insensitive), if one exists. */
+export const findServerByName = (servers: Pick<Server, 'name'>[], name: string) => {
+	const normalized = normalizeName(name);
+	if (!normalized) return null;
+	return servers.find((server) => normalizeName(server.name) === normalized) ?? null;
+};
+
+/** Why a server name can't be used, or `null` when it's fine (before checking the disk). */
+export const validateServerName = (name: string, servers: Pick<Server, 'name'>[]): string | null => {
+	const trimmed = name.trim();
+	if (!trimmed) return 'Please enter a server name.';
+	if (/[/\\]/.test(trimmed)) return 'Server name cannot include path separators. Please choose another name.';
+	const existing = findServerByName(servers, trimmed);
+	if (existing) return `Server name already exists as "${existing.name}". Please choose another name.`;
+	return null;
+};
 
 const joinPath = (basePath: string, name: string) => {
 	const base = basePath.trim();
@@ -126,7 +143,8 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 	const { servers, addServer } = useServers();
 	const { user, updateUserField } = useUser();
 	const [form, setForm] = React.useState<ServerSetupFormData>(DEFAULT_FORM);
-	const [provider, setProvider] = React.useState<Provider | null>(DEFAULT_FORM.provider);
+	// The slide navigation reads the provider synchronously (it decides which
+	// steps exist), so it's mirrored in a ref alongside `form.provider`.
 	const providerRef = React.useRef<Provider | null>(DEFAULT_FORM.provider);
 	const [serverName, setServerNameState] = React.useState('');
 	const [serversRootPath, setServersRootPath] = React.useState('');
@@ -182,10 +200,6 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 	);
 
 	React.useEffect(() => {
-		providerRef.current = provider;
-	}, [provider]);
-
-	React.useEffect(() => {
 		setForm((previous) => ({
 			...previous,
 			directory: resolvedDirectory,
@@ -197,7 +211,6 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 		<K extends keyof ServerSetupFormData>(key: K, value: ServerSetupFormData[K]) => {
 			if (key === 'provider') {
 				providerRef.current = value as Provider;
-				setProvider(value as Provider);
 			}
 			setForm((prev) => ({ ...prev, [key]: value }));
 			setHasStarted(true);
@@ -217,7 +230,6 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 			// The modpack install determines the launch file and provider, so any
 			// previously selected jar no longer applies.
 			providerRef.current = null;
-			setProvider(null);
 			setForm((prev) => ({ ...prev, file: '', provider: null }));
 		}
 	}, []);
@@ -247,7 +259,7 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
 	const resetDraft = React.useCallback(() => {
 		setForm(createDefaultServerSetupForm());
-		setProvider(DEFAULT_FORM.provider);
+		providerRef.current = DEFAULT_FORM.provider;
 		setServerNameState('');
 		setSlide(CREATE_SERVER_SLIDE_INDEX.intro);
 		setHasStarted(false);
@@ -265,15 +277,6 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 		navigate(`/servers/${encodeURIComponent(targetId)}`);
 	}, [createdServerId, navigate, resetDraft]);
 
-	const findExistingServerByName = React.useCallback(
-		(name: string) => {
-			const normalized = normalizeName(name);
-			if (!normalized) return null;
-			return servers.find((server) => normalizeName(server.name) === normalized) ?? null;
-		},
-		[servers],
-	);
-
 	const createServer = React.useCallback(async () => {
 		setError(null);
 
@@ -290,21 +293,9 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 		}
 
 		const trimmedName = serverName.trim();
-		if (!trimmedName) {
-			setError('Please enter a server name.');
-			setSlide(CREATE_SERVER_SLIDE_INDEX.directory);
-			return;
-		}
-
-		if (/[/\\]/.test(trimmedName)) {
-			setError('Server name cannot include path separators. Please choose another name.');
-			setSlide(CREATE_SERVER_SLIDE_INDEX.directory);
-			return;
-		}
-
-		const existingByName = findExistingServerByName(trimmedName);
-		if (existingByName) {
-			setError(`Server name already exists as "${existingByName.name}". Please choose another name.`);
+		const nameError = validateServerName(trimmedName, servers);
+		if (nameError) {
+			setError(nameError);
 			setSlide(CREATE_SERVER_SLIDE_INDEX.directory);
 			return;
 		}
@@ -316,9 +307,13 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 			return;
 		}
 
-		const directoryValidation = await invoke<PathValidationResult>('validate_path', {
-			path: directory,
-		});
+		let directoryValidation: PathValidationResult;
+		try {
+			directoryValidation = await invoke<PathValidationResult>('validate_path', { path: directory });
+		} catch (err) {
+			setError(getErrorMessage(err, 'Could not check the server folder.'));
+			return;
+		}
 		if (directoryValidation.exists && !directoryValidation.isDirectory) {
 			setError('Target path is not a directory. Please change the server name.');
 			setSlide(CREATE_SERVER_SLIDE_INDEX.directory);
@@ -436,8 +431,10 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 			return;
 		}
 
-		const fileValidation = await invoke<PathValidationResult>('validate_path', { path: file });
-		if (!fileValidation.exists || !fileValidation.isFile) {
+		const fileValidation = await invoke<PathValidationResult>('validate_path', { path: file }).catch(
+			() => null,
+		);
+		if (!fileValidation?.exists || !fileValidation.isFile) {
 			setError('Please choose a valid server jar file.');
 			setSlide(CREATE_SERVER_SLIDE_INDEX.jarFile);
 			return;
@@ -514,12 +511,12 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 		}
 	}, [
 		addServer,
-		findExistingServerByName,
 		form,
 		isResolvingServersRootPath,
 		javaRuntimes,
 		modpack,
 		serverName,
+		servers,
 		serversRootPath,
 	]);
 

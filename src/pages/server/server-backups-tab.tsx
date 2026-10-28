@@ -53,7 +53,7 @@ import { getServerProviderCapabilities } from '@/lib/server-provider-capabilitie
 import { HelpButton } from '@/components/help/help-button';
 import type { BackupSettingsUpdate } from './hooks/use-server-backup-actions';
 import { formatBytes } from '@/lib/utils';
-import { getBackupNameFromPath } from './server-utils';
+import { getBackupNameFromPath, toggleBackupMode } from './server-utils';
 import { DEFAULT_AUTO_BACKUP_INTERVAL_MINUTES, DEFAULT_STORAGE_LIMIT_GB } from '@/lib/mserve-consts';
 
 type Backup = Server['backups'][number];
@@ -148,16 +148,20 @@ const BackupSettingsDrawer: React.FC<{
 	const [isSaving, setIsSaving] = React.useState(false);
 
 	// Re-seed the form each time the sheet opens so stale edits don't linger.
+	// Only on open: `server` is a new object on every telemetry sample.
+	const serverRef = React.useRef(server);
+	serverRef.current = server;
 	React.useEffect(() => {
 		if (!open) return;
-		setAutoBackup(server.auto_backup);
-		setInterval(server.auto_backup_interval);
-		setScope(server.backup_scope);
-		setPolicy(server.backup_policy);
-		setMaxCount(server.backup_max_count);
-		setMaxAgeDays(server.backup_max_age_days);
-		setStorageLimit(server.storage_limit);
-	}, [open, server]);
+		const current = serverRef.current;
+		setAutoBackup(current.auto_backup);
+		setInterval(current.auto_backup_interval);
+		setScope(current.backup_scope);
+		setPolicy(current.backup_policy);
+		setMaxCount(current.backup_max_count);
+		setMaxAgeDays(current.backup_max_age_days);
+		setStorageLimit(current.storage_limit);
+	}, [open]);
 
 	// Mods only exist on modded servers; plugins only where a plugins folder
 	// makes sense. Hiding irrelevant scopes keeps the sheet approachable.
@@ -172,9 +176,7 @@ const BackupSettingsDrawer: React.FC<{
 	);
 
 	const toggleTrigger = (mode: AutoBackupMode, enabled: boolean) => {
-		setAutoBackup((current) =>
-			enabled ? Array.from(new Set([...current, mode])) : current.filter((item) => item !== mode),
-		);
+		setAutoBackup((current) => toggleBackupMode(current, mode, enabled));
 	};
 
 	const toggleScope = (item: BackupScopeItem, enabled: boolean) => {
@@ -460,7 +462,7 @@ const ServerBackupsTab: React.FC<ServerBackupsTabProps> = ({
 
 			{isOnline && (
 				<p className='text-xs text-muted-foreground'>
-					Manual backups and restores are disabled while the server is running. Automatic backups keep running.
+					Manual backups and restores are disabled while the server is running. Automatic backups still run.
 				</p>
 			)}
 

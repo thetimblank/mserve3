@@ -85,6 +85,19 @@ export const toChartData = (points: TelemetryHistoryPoint[]): ChartPoint[] =>
 		cpuUsed: point.cpuUsed,
 	}));
 
+/** The newest non-null reading of a metric, or `null` when there is none. */
+export const latestReading = (data: ChartPoint[], key: keyof ChartPoint): number | null => {
+	for (let index = data.length - 1; index >= 0; index -= 1) {
+		const value = data[index][key];
+		if (value != null) return Number(value);
+	}
+	return null;
+};
+
+/** RAM in use against the server's allocation, e.g. `1843mb / 4096mb`. */
+export const formatRamUsage = (ramBytes: number, allocatedGb: number): string =>
+	`${Math.round(ramBytes / 1048576)}mb / ${allocatedGb * 1024}mb`;
+
 // One color token per metric. Kept stable across overview + stats page.
 export const METRIC_COLORS = {
 	cpu: 'var(--chart-1)',
@@ -93,9 +106,6 @@ export const METRIC_COLORS = {
 	tps: 'var(--chart-4)',
 	online: 'var(--chart-5)',
 } as const;
-
-/** Sleep-mode accent, matching the indigo "Sleeping" status badge. */
-export const SLEEPING_COLOR = 'var(--color-indigo-400)';
 
 export const cpuChartConfig: ChartConfig = { cpuUsed: { label: 'CPU', color: METRIC_COLORS.cpu } };
 export const ramPctChartConfig: ChartConfig = { ramUsed: { label: 'RAM', color: METRIC_COLORS.ram } };

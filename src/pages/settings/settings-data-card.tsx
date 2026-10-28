@@ -22,9 +22,11 @@ import {
 
 type SettingsDataCardProps = {
 	onClearAllData: () => void;
+	/** False while any server runs: it would keep running with nothing left to stop it. */
+	canClearAllData: boolean;
 };
 
-const SettingsDataCard: React.FC<SettingsDataCardProps> = ({ onClearAllData }) => {
+const SettingsDataCard: React.FC<SettingsDataCardProps> = ({ onClearAllData, canClearAllData }) => {
 	const { user, updateUserField } = useUser();
 	const [serversRootPath, setServersRootPath] = React.useState(user.servers_root_path);
 	const [defaultServersRootPath, setDefaultServersRootPath] = React.useState('');
@@ -118,7 +120,7 @@ const SettingsDataCard: React.FC<SettingsDataCardProps> = ({ onClearAllData }) =
 					<p className='font-medium'>Data management</p>
 					<AlertDialog>
 						<AlertDialogTrigger asChild>
-							<Button variant='destructive-secondary'>
+							<Button variant='destructive-secondary' disabled={!canClearAllData}>
 								<Trash />
 								Clear All Data
 							</Button>
@@ -127,7 +129,8 @@ const SettingsDataCard: React.FC<SettingsDataCardProps> = ({ onClearAllData }) =
 							<AlertDialogHeader>
 								<AlertDialogTitle>Are you sure?</AlertDialogTitle>
 								<AlertDialogDescription>
-									This will remove all servers and restore defaults forever.
+									This removes every server and network from mserve and restores all settings to their
+									defaults. Server files on disk are not deleted.
 								</AlertDialogDescription>
 							</AlertDialogHeader>
 							<AlertDialogFooter>
@@ -141,6 +144,9 @@ const SettingsDataCard: React.FC<SettingsDataCardProps> = ({ onClearAllData }) =
 							</AlertDialogFooter>
 						</AlertDialogContent>
 					</AlertDialog>
+					{!canClearAllData && (
+						<p className='text-sm text-muted-foreground'>Stop every server before clearing all data.</p>
+					)}
 				</div>
 			</CardContent>
 		</Card>

@@ -1,3 +1,4 @@
+mod auto_backup;
 mod backups;
 mod content_meta;
 mod core;
@@ -24,6 +25,7 @@ mod testkit;
 #[cfg(windows)]
 mod windows_firewall;
 
+pub(super) use auto_backup::{is_auto_backup_running, wait_for_auto_backup};
 pub(super) use backups::*;
 pub(super) use content_meta::*;
 pub(super) use core::*;

@@ -16,6 +16,7 @@ vi.mock('@/data/java-download', () => ({ useJavaDownload: () => ({ ensureJava: v
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), info: vi.fn(), success: vi.fn() } }));
 
 import { useServerRuntime } from './use-server-runtime';
+import { useServerUiState } from './use-server-ui-state';
 
 const DIR = 'C:/servers/survival';
 
@@ -322,5 +323,52 @@ describe('useServerRuntime — event-driven lifecycle', () => {
 			'start_server',
 			expect.objectContaining({ directory: DIR, javaExecutable: 'C:/jdk21/bin/java.exe' }),
 		);
+	});
+
+	it('shows backend system lines in the terminal', async () => {
+		const { spies } = renderRuntime(makeServer());
+		await waitFor(() => expect(invokeMock).toHaveBeenCalled());
+
+		await act(async () => {
+			emitTauriEvent('server-output', {
+				directory: DIR,
+				stream: 'system',
+				line: 'Auto backup created (on close).',
+			});
+		});
+
+		expect(spies.appendTerminalLine).toHaveBeenCalledWith('[system] Auto backup created (on close).');
+	});
+
+	it('keeps the error banner after a failed start', async () => {
+		mockInvoke('get_server_start_command', () => 'java -jar server.jar');
+		mockInvoke('start_server', () => {
+			throw 'Port 25565 is already in use.';
+		});
+		const server = makeServer();
+		const { result } = renderHook(() => {
+			const ui = useServerUiState();
+			const runtime = useServerRuntime({
+				server,
+				serverId: server.id,
+				isBusy: ui.isBusy,
+				setIsBusy: ui.setIsBusy,
+				terminalInput: ui.terminalInput,
+				setTerminalInput: ui.setTerminalInput,
+				setErrorMessage: ui.setErrorMessage,
+				setServerStatus: vi.fn(),
+				updateServer: vi.fn(),
+				updateServerStats: vi.fn(),
+				appendTerminalLine: vi.fn(),
+			});
+			return { ui, runtime };
+		});
+		await waitFor(() => expect(invokeMock).toHaveBeenCalled());
+
+		await act(async () => {
+			await result.current.runtime.handleStart();
+		});
+
+		expect(result.current.ui.errorMessage).toBe('Port 25565 is already in use.');
 	});
 });

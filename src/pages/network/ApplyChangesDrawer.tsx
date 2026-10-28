@@ -30,7 +30,6 @@ interface ApplyChangesDrawerProps {
 	servers: Server[];
 	/** Running-server messages that block writing config files right now. */
 	runtimeBlockers: string[];
-	onApplied: () => void;
 }
 
 const FileChangeCard: React.FC<{ change: NetworkFileChange }> = ({ change }) => (
@@ -81,13 +80,17 @@ export const ApplyChangesDrawer: React.FC<ApplyChangesDrawerProps> = ({
 	network,
 	servers,
 	runtimeBlockers,
-	onApplied,
 }) => {
 	const [plan, setPlan] = React.useState<NetworkApplyPlan | null>(null);
 	const [loading, setLoading] = React.useState(false);
 	const [applying, setApplying] = React.useState(false);
 	const [error, setError] = React.useState<string | null>(null);
 
+	// Plan when the drawer opens or the network changes. `servers` is read from a
+	// ref: it's a new array on every telemetry sample, and re-planning on each
+	// one reset the drawer every few seconds.
+	const serversRef = React.useRef(servers);
+	serversRef.current = servers;
 	React.useEffect(() => {
 		if (!open) return;
 		let active = true;
@@ -97,7 +100,7 @@ export const ApplyChangesDrawer: React.FC<ApplyChangesDrawerProps> = ({
 
 		void (async () => {
 			try {
-				const result = await planNetworkApply(network, servers);
+				const result = await planNetworkApply(network, serversRef.current);
 				if (active) setPlan(result);
 			} catch (caught) {
 				if (active) setError(getErrorMessage(caught, 'Failed to compute changes.'));
@@ -109,7 +112,7 @@ export const ApplyChangesDrawer: React.FC<ApplyChangesDrawerProps> = ({
 		return () => {
 			active = false;
 		};
-	}, [open, network, servers]);
+	}, [open, network]);
 
 	const grouped = React.useMemo(() => {
 		const map = new Map<string, { serverName: string; changes: NetworkFileChange[] }>();
@@ -127,7 +130,6 @@ export const ApplyChangesDrawer: React.FC<ApplyChangesDrawerProps> = ({
 		try {
 			await applyNetworkPlan(plan);
 			toast.success('Network configuration applied.');
-			onApplied();
 			onOpenChange(false);
 		} catch (caught) {
 			toast.error(getErrorMessage(caught, 'Failed to apply changes.'));

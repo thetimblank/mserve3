@@ -24,7 +24,6 @@ import {
 	Wifi,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { invoke } from '@tauri-apps/api/core';
 import { Button } from '@/components/ui/button';
 import { HelpButton } from '@/components/help/help-button';
 import OpenFolderButton from '@/components/open-folder-button';
@@ -51,9 +50,11 @@ import { getServerProviderCapabilities } from '@/lib/server-provider-capabilitie
 import { formatBytes, getPrimaryMinecraftVersion } from '@/lib/utils';
 import { formatDetailedUptime } from './server-utils';
 import { useServerTunnel } from './hooks/use-server-tunnel';
+import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
+import { usePublicIp } from '@/hooks/use-ip-address';
 import MetricCard from './stats/metric-card';
 import { useServerTelemetryHistory } from './stats/use-server-telemetry-history';
-import { METRIC_COLORS, formatPercent, toChartData } from './stats/stats-utils';
+import { METRIC_COLORS, formatPercent, formatRamUsage, latestReading, toChartData } from './stats/stats-utils';
 
 type Props = {
 	server: Server;
@@ -127,45 +128,17 @@ const ServerOverviewPanel: React.FC<Props> = ({
 	const showTunnel =
 		server.status === 'online' && tunnel.enabled && tunnel.status === 'online' && tunnelAddress != null;
 
-	const [publicIp, setPublicIp] = React.useState<string | null>(null);
+	const publicIp = usePublicIp();
 	const [ipHidden, setIpHidden] = React.useState(true);
-	const [copied, setCopied] = React.useState(false);
-	const [tunnelCopied, setTunnelCopied] = React.useState(false);
+	const { copied, copy: copyToClipboard } = useCopyToClipboard();
+	const { copied: tunnelCopied, copy: copyTunnel } = useCopyToClipboard();
 	// The live runtime keeps `telemetry_port` in sync with the port the server is
 	// actually bound to; a server that has never reported one uses the MC default.
 	const connectPort = server.telemetry_port ?? 25565;
 	// Minecraft's default port (25565) is implied by clients, so showing/copying it
 	// is redundant — omit the suffix only for that one port.
 	const showConnectPort = connectPort !== 25565;
-	const connectAddress = publicIp == null ? null : showConnectPort ? `${publicIp}:${connectPort}` : publicIp;
-
-	const copyToClipboard = React.useCallback((text: string | null) => {
-		if (text == null) return;
-		navigator.clipboard.writeText(text).then(() => {
-			setCopied(true);
-			setTimeout(() => setCopied(false), 2000);
-		});
-	}, []);
-
-	const copyTunnel = React.useCallback((text: string | null) => {
-		if (text == null) return;
-		navigator.clipboard.writeText(text).then(() => {
-			setTunnelCopied(true);
-			setTimeout(() => setTunnelCopied(false), 2000);
-		});
-	}, []);
-
-	React.useEffect(() => {
-		let active = true;
-		invoke<string>('get_public_ip')
-			.then((ip) => {
-				if (active) setPublicIp(ip);
-			})
-			.catch(() => {});
-		return () => {
-			active = false;
-		};
-	}, []);
+	const connectAddress = !publicIp ? null : showConnectPort ? `${publicIp}:${connectPort}` : publicIp;
 
 	const createdDateText = React.useMemo(() => {
 		if (!server.created_at) return null;
@@ -199,13 +172,7 @@ const ServerOverviewPanel: React.FC<Props> = ({
 	});
 	const sparkData = React.useMemo(() => toChartData(points), [points]);
 
-	const latestRamBytes = React.useMemo(() => {
-		for (let i = sparkData.length - 1; i >= 0; i--) {
-			const b = sparkData[i].ramBytes;
-			if (b != null) return b;
-		}
-		return null;
-	}, [sparkData]);
+	const latestRamBytes = React.useMemo(() => latestReading(sparkData, 'ramBytes'), [sparkData]);
 
 	return (
 		<Card className='rounded-b-none'>
@@ -254,10 +221,12 @@ const ServerOverviewPanel: React.FC<Props> = ({
 									<HelpButton topic='connecting' />
 									<p>
 										<span className='font-mono text-sky-500'>
-											{publicIp == null ? (
+											{publicIp === null ? (
 												<span className='blur-sm select-none text-muted-foreground'>
-													Loading....
+													Loading…
 												</span>
+											) : publicIp === false ? (
+												<span className='select-none text-muted-foreground'>Unavailable</span>
 											) : ipHidden ? (
 												<span className='blur-sm select-none'>XXX.XXX.X.X</span>
 											) : (
@@ -316,7 +285,7 @@ const ServerOverviewPanel: React.FC<Props> = ({
 												variant='ghost'
 												size='sm'
 												className='h-6 w-6 p-0 text-muted-foreground hover:text-foreground'
-												onClick={() => copyTunnel(tunnelAddress!)}>
+												onClick={() => copyTunnel(tunnelAddress)}>
 												{tunnelCopied ? (
 													<ClipboardCheck className='size-3.5' />
 												) : (
@@ -356,7 +325,7 @@ const ServerOverviewPanel: React.FC<Props> = ({
 										<>
 											{formatPercent(server.stats.ram_used)}
 											<div className='text-xs font-normal text-muted-foreground mt-0.5 leading-none'>
-												{Math.round(latestRamBytes / 1048576)}mb / {server.ram * 1024}mb
+												{formatRamUsage(latestRamBytes, server.ram)}
 											</div>
 										</>
 									) : (

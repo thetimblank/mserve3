@@ -3,25 +3,27 @@
  * detail page. The backend supervisor is the single source of truth for server
  * state and telemetry; this component is a pure consumer of its events:
  *
- *  - `server-runtime-state`: drives each server's status, handles wrong-Java
- *    step-down and auto-restart on crash, and pins a working Java once found.
+ *  - `server-runtime-state`: drives each server's status and recovers boot
+ *    failures (shared with the page through `lib/server-start-recovery`).
  *  - `server-telemetry`: keeps dashboard/network stats fresh.
- *  - `server-output`: only used to flag a wrong-Java error early so the crash
- *    handler knows why a boot failed.
+ *  - `server-output`: only used to flag why a boot failed.
+ *  - `server-backups-changed`: rescans a server's backups after an automatic
+ *    backup (for every server, open or not).
  *  - on mount / when servers change: a one-shot `get_server_runtime` snapshot per
  *    unclaimed server syncs initial state and adopts any already-running server.
  *
  * Servers claimed by an open detail page ({@link isServerRuntimeClaimed}) are
- * skipped here so the two loops never fight over the same server's status.
+ * skipped for lifecycle handling so the two loops never fight over a status.
  */
 import React from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
 
-import { useServers } from '@/data/servers';
+import { useServers, type Server } from '@/data/servers';
 import { useUser } from '@/data/user';
 import { useJavaRuntimes } from '@/data/java-runtimes';
+import { useJavaDownload } from '@/data/java-download';
 import { isServerRuntimeClaimed } from '@/lib/server-runtime-registry';
 import {
 	mapRuntimeStateToStatus,
@@ -29,70 +31,55 @@ import {
 	offlineServerStats,
 	startingServerStats,
 } from '@/lib/server-telemetry';
-import { getErrorMessage, isJavaVersionError, isNoguiUnsupportedError, stripAnsi } from '@/lib/utils';
-import { planJavaFallback, resolveServerJavaExecutable } from '@/lib/java-resolution';
-import { setServerJavaInstallation, type JavaRuntimeInfo } from '@/lib/java-runtime-service';
-import { hasNoguiFlag, setServerCustomFlags, stripNoguiFlags } from '@/lib/server-flags-service';
+import { getErrorMessage, stripAnsi } from '@/lib/utils';
+import { setServerJavaInstallation } from '@/lib/java-runtime-service';
+import { scanServerContents } from '@/lib/server-contents';
+import {
+	createResolvedStartRecovery,
+	hasFlaggedBootFailure,
+	noteRecoveryOnline,
+	noteRecoveryOutput,
+	recoverFromBootCrash,
+	type StartRecovery,
+} from '@/lib/server-start-recovery';
 import type {
+	ServerBackupsChangedEvent,
 	ServerOutputEvent,
 	ServerRuntimeSnapshot,
 	ServerRuntimeStateEvent,
 	ServerTelemetryEvent,
 } from '@/pages/server/server-types';
-
-// Per-server bookkeeping for the background lifecycle handling.
-type RuntimeEntry = {
-	everRunning: boolean;
-	lastRestartAt: number;
-	// Wrong-Java step-down state.
-	javaErrorFlagged: boolean;
-	attemptedMajors: number[];
-	didFallback: boolean;
-	lastExecutable: string | null;
-	// Unsupported-`--nogui` strip-and-retry state.
-	noguiErrorFlagged: boolean;
-	noguiStripAttempted: boolean;
-};
+import { BACKUP_STORAGE_LIMIT_ERROR_PREFIX, notifyDeletedBackups } from '@/pages/server/server-utils';
 
 export const ServerRuntimeMonitor: React.FC = () => {
 	const { servers, setServerStatus, updateServer, updateServerStats } = useServers();
 	const { user } = useUser();
 	const { runtimes } = useJavaRuntimes();
+	const { ensureJava } = useJavaDownload();
 
 	// Latest values kept in refs so the event listeners don't re-subscribe on
 	// every stats update.
 	const serversRef = React.useRef(servers);
 	serversRef.current = servers;
-	const javaDefaultRef = React.useRef(user.java_installation_default);
-	javaDefaultRef.current = user.java_installation_default;
-	const runtimesRef = React.useRef<JavaRuntimeInfo[]>(runtimes);
-	runtimesRef.current = runtimes;
+	const envRef = React.useRef({ globalDefault: user.java_installation_default, runtimes, ensureJava });
+	envRef.current = { globalDefault: user.java_installation_default, runtimes, ensureJava };
 
-	const entriesRef = React.useRef<Map<string, RuntimeEntry>>(new Map());
+	// Start-failure recovery per server, for the current start cycle.
+	const recoveriesRef = React.useRef<Map<string, StartRecovery>>(new Map());
 	const syncedRef = React.useRef<Set<string>>(new Set());
 	// Servers that got a lifecycle event since their snapshot was requested.
 	const stateEventSeenRef = React.useRef<Set<string>>(new Set());
 
-	const getEntry = React.useCallback((id: string): RuntimeEntry => {
-		let entry = entriesRef.current.get(id);
-		if (!entry) {
-			entry = {
-				everRunning: false,
-				lastRestartAt: 0,
-				javaErrorFlagged: false,
-				attemptedMajors: [],
-				didFallback: false,
-				lastExecutable: null,
-				noguiErrorFlagged: false,
-				noguiStripAttempted: false,
-			};
-			entriesRef.current.set(id, entry);
+	const getRecovery = React.useCallback((server: Server): StartRecovery => {
+		let recovery = recoveriesRef.current.get(server.id);
+		if (!recovery) {
+			recovery = createResolvedStartRecovery(server, envRef.current);
+			recoveriesRef.current.set(server.id, recovery);
 		}
-		return entry;
+		return recovery;
 	}, []);
 
-	// Flag wrong-Java and unsupported-`--nogui` errors as they stream so the crash
-	// handler can step down / strip the flag.
+	// Flag wrong-Java and unsupported-`--nogui` errors as they stream.
 	React.useEffect(() => {
 		let active = true;
 		let unlisten: UnlistenFn | null = null;
@@ -105,22 +92,7 @@ export const ServerRuntimeMonitor: React.FC = () => {
 			if (!server) return;
 			if (isServerRuntimeClaimed(server.id)) return;
 
-			const line = stripAnsi(event.payload.line);
-
-			// Unlike the Java step-down, this applies regardless of a pinned Java —
-			// the flag is rejected by the jar, not the runtime.
-			if (isNoguiUnsupportedError(line)) {
-				const entry = getEntry(server.id);
-				if (!entry.everRunning) entry.noguiErrorFlagged = true;
-			}
-
-			// A pinned Java is the user's explicit choice — never auto-step-down.
-			if ((server.java_installation ?? '').trim() !== '') return;
-
-			if (isJavaVersionError(line)) {
-				const entry = getEntry(server.id);
-				if (!entry.everRunning) entry.javaErrorFlagged = true;
-			}
+			noteRecoveryOutput(getRecovery(server), server, stripAnsi(event.payload.line));
 		})
 			.then((cleanup) => {
 				if (!active) cleanup();
@@ -132,22 +104,51 @@ export const ServerRuntimeMonitor: React.FC = () => {
 			active = false;
 			if (unlisten) unlisten();
 		};
-	}, [getEntry]);
+	}, [getRecovery]);
 
 	// Authoritative lifecycle state.
 	React.useEffect(() => {
 		let active = true;
 		let unlisten: UnlistenFn | null = null;
 
-		const startWith = (server: { id: string; name: string; directory: string }, javaExecutable: string) => {
+		const startWith = (server: Server, javaExecutable: string) => {
 			setServerStatus(server.id, 'starting');
 			updateServerStats(server.id, startingServerStats());
 			void invoke('start_server', { directory: server.directory, javaExecutable }).catch((err) => {
 				if (!active) return;
 				setServerStatus(server.id, 'offline');
 				updateServerStats(server.id, offlineServerStats());
+				recoveriesRef.current.delete(server.id);
 				toast.error(`${server.name}: ${getErrorMessage(err, "couldn't restart.")}`);
 			});
+		};
+
+		const handleCrash = async (server: Server, exitCode: number | null) => {
+			const recovery = getRecovery(server);
+			const env = envRef.current;
+			const outcome = await recoverFromBootCrash(recovery, server, {
+				globalDefault: env.globalDefault,
+				runtimes: env.runtimes,
+				ensureJava: env.ensureJava,
+				updateServer,
+				report: (message) => toast.info(`${server.name}: ${message}`),
+			});
+			if (!active) return;
+			if (outcome.kind === 'retry') {
+				startWith(server, outcome.executablePath);
+				return;
+			}
+
+			recoveriesRef.current.delete(server.id);
+			setServerStatus(server.id, 'crashed');
+			updateServerStats(server.id, offlineServerStats());
+			toast.error(
+				outcome.kind === 'failed'
+					? `${server.name}: ${outcome.message}`
+					: exitCode != null
+						? `${server.name} crashed (exit code ${exitCode}).`
+						: `${server.name} crashed.`,
+			);
 		};
 
 		listen<ServerRuntimeStateEvent>('server-runtime-state', (event) => {
@@ -165,31 +166,24 @@ export const ServerRuntimeMonitor: React.FC = () => {
 				updateServer(server.id, { telemetry_port: serverPort });
 			}
 
-			const entry = getEntry(server.id);
-
 			if (state === 'online' || state === 'running-external') {
-				entry.everRunning = true;
-				entry.javaErrorFlagged = false;
-				entry.noguiErrorFlagged = false;
+				const pinned = noteRecoveryOnline(getRecovery(server), server);
 				setServerStatus(server.id, 'online');
 				updateServerStats(server.id, {
 					online: true,
 					uptime: server.stats.uptime ?? new Date(),
 				});
 				// Pin a Java we had to step down to find, so next time is instant.
-				if (entry.didFallback && entry.lastExecutable && (server.java_installation ?? '').trim() === '') {
-					const pinned = entry.lastExecutable;
+				if (pinned) {
 					void setServerJavaInstallation(server.directory, pinned)
 						.then(() => updateServer(server.id, { java_installation: pinned }))
 						.catch(() => {});
 				}
-				entry.didFallback = false;
-				entry.lastExecutable = null;
-				entry.attemptedMajors = [];
 				return;
 			}
 
 			if (state === 'starting') {
+				getRecovery(server);
 				setServerStatus(server.id, 'starting');
 				return;
 			}
@@ -198,95 +192,26 @@ export const ServerRuntimeMonitor: React.FC = () => {
 				return;
 			}
 			if (state === 'sleeping') {
-				// The backend now holds the port with a wake listener; reflect it and
-				// keep the entry so a later wake/crash is handled normally.
+				// The backend now holds the port with a wake listener; a wake starts a
+				// fresh cycle.
+				recoveriesRef.current.delete(server.id);
 				setServerStatus(server.id, 'sleeping');
 				updateServerStats(server.id, offlineServerStats());
 				return;
 			}
 
-			// offline or crashed.
-			const noPinnedJava = (server.java_installation ?? '').trim() === '';
-
-			// Unsupported `--nogui`: drop the flag and retry once, before the crash
-			// is surfaced. Only when it never came up and we saw the error.
-			if (
-				state === 'crashed' &&
-				entry.noguiErrorFlagged &&
-				!entry.noguiStripAttempted &&
-				!entry.everRunning &&
-				hasNoguiFlag(server.custom_flags ?? [])
-			) {
-				entry.noguiErrorFlagged = false;
-				entry.noguiStripAttempted = true;
-
-				const resolution = resolveServerJavaExecutable({
-					provider: server.provider,
-					javaInstallation: server.java_installation,
-					globalDefault: javaDefaultRef.current,
-					runtimes: runtimesRef.current,
-				});
-
-				if (resolution.status === 'resolved') {
-					const nextFlags = stripNoguiFlags(server.custom_flags ?? []);
-					const executablePath = resolution.executablePath;
-					void setServerCustomFlags(server.directory, nextFlags)
-						.then(() => {
-							if (!active) return;
-							updateServer(server.id, { custom_flags: nextFlags });
-							toast.info(`${server.name} doesn't support '--nogui' — removed it and restarted.`);
-							startWith(server, executablePath);
-						})
-						.catch(() => {
-							if (!active) return;
-							setServerStatus(server.id, 'crashed');
-							updateServerStats(server.id, offlineServerStats());
-						});
-					return;
-				}
-			}
-
-			// Wrong-Java step-down: only when it never came up and we saw the error.
-			if (state === 'crashed' && entry.javaErrorFlagged && !entry.everRunning && noPinnedJava) {
-				entry.javaErrorFlagged = false;
-				const plan = planJavaFallback({
-					provider: server.provider,
-					globalDefault: javaDefaultRef.current,
-					runtimes: runtimesRef.current,
-					attemptedMajors: entry.attemptedMajors,
-				});
-				if (plan.kind === 'retry') {
-					entry.attemptedMajors.push(plan.majorVersion);
-					entry.didFallback = true;
-					entry.lastExecutable = plan.executablePath;
-					entry.lastRestartAt = Date.now();
-					startWith(server, plan.executablePath);
-					return;
-				}
-				// No installed Java worked — the detail page offers a download.
-				setServerStatus(server.id, 'offline');
-				updateServerStats(server.id, offlineServerStats());
-				entriesRef.current.delete(server.id);
-				toast.error(`${server.name} couldn't start: no compatible Java runtime.`);
-				return;
-			}
-
-			// Auto-restart (including crash-loop guarding) now lives in the Rust
+			// Auto-restart (including crash-loop guarding) lives in the Rust
 			// supervisor, so it keeps working with the app window closed. The monitor
-			// only reflects the resulting state.
-			if (state === 'crashed') {
-				setServerStatus(server.id, 'crashed');
-				updateServerStats(server.id, offlineServerStats());
-				toast.error(
-					exitCode != null ? `${server.name} crashed (exit code ${exitCode}).` : `${server.name} crashed.`,
-				);
-				entriesRef.current.delete(server.id);
+			// only reflects the resulting state and recovers boot failures.
+			const recovery = recoveriesRef.current.get(server.id);
+			if (state === 'crashed' || (recovery && hasFlaggedBootFailure(recovery))) {
+				void handleCrash(server, exitCode);
 				return;
 			}
 
+			recoveriesRef.current.delete(server.id);
 			setServerStatus(server.id, 'offline');
 			updateServerStats(server.id, offlineServerStats());
-			entriesRef.current.delete(server.id);
 		})
 			.then((cleanup) => {
 				if (!active) cleanup();
@@ -298,7 +223,7 @@ export const ServerRuntimeMonitor: React.FC = () => {
 			active = false;
 			if (unlisten) unlisten();
 		};
-	}, [getEntry, setServerStatus, updateServer, updateServerStats]);
+	}, [getRecovery, setServerStatus, updateServer, updateServerStats]);
 
 	// Live telemetry → stats.
 	React.useEffect(() => {
@@ -326,6 +251,48 @@ export const ServerRuntimeMonitor: React.FC = () => {
 			if (unlisten) unlisten();
 		};
 	}, [updateServerStats]);
+
+	// An automatic backup finished (or failed) in the backend: refresh that
+	// server's backup list, whether or not its page is open.
+	React.useEffect(() => {
+		let active = true;
+		let unlisten: UnlistenFn | null = null;
+
+		listen<ServerBackupsChangedEvent>('server-backups-changed', (event) => {
+			if (!active) return;
+			const { directory, deletedBackupsCount, error } = event.payload;
+			const server = serversRef.current.find((item) => item.directory === directory);
+			if (!server) return;
+
+			if (error) {
+				// One toast per server that replaces itself, so a failing interval
+				// backup doesn't stack a new toast every few minutes.
+				toast.error(
+					`${server.name}: auto backup failed. ${error}`,
+					error.startsWith(BACKUP_STORAGE_LIMIT_ERROR_PREFIX)
+						? { duration: Infinity, id: 'backup-storage-limit' }
+						: { id: `auto-backup-failed-${server.id}` },
+				);
+				return;
+			}
+			notifyDeletedBackups(deletedBackupsCount);
+			void scanServerContents(directory)
+				.then((update) => {
+					if (active) updateServer(server.id, update);
+				})
+				.catch(() => {});
+		})
+			.then((cleanup) => {
+				if (!active) cleanup();
+				else unlisten = cleanup;
+			})
+			.catch(() => {});
+
+		return () => {
+			active = false;
+			if (unlisten) unlisten();
+		};
+	}, [updateServer]);
 
 	// One-shot snapshot per server to sync initial state and adopt any server
 	// already running (e.g. the app was restarted while servers were up).
@@ -357,7 +324,7 @@ export const ServerRuntimeMonitor: React.FC = () => {
 						updateServer(server.id, { telemetry_port: snapshot.serverPort });
 					}
 					if (snapshot.state === 'online' || snapshot.state === 'running-external') {
-						getEntry(server.id).everRunning = true;
+						getRecovery(server).everRunning = true;
 					}
 					if (snapshot.sample) {
 						updateServerStats(
@@ -373,7 +340,7 @@ export const ServerRuntimeMonitor: React.FC = () => {
 				}
 			}),
 		);
-	}, [servers, getEntry, setServerStatus, updateServer, updateServerStats]);
+	}, [servers, getRecovery, setServerStatus, updateServer, updateServerStats]);
 
 	return null;
 };

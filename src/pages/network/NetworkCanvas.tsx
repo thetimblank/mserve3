@@ -159,8 +159,18 @@ export const NetworkCanvas: React.FC<NetworkCanvasProps> = ({
 	const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
 	const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
+	// Rebuilt on every server update (telemetry included), so a node the user
+	// is dragging keeps its live position until the drop commits it.
 	React.useEffect(() => {
-		setNodes(buildNodes(network, byId, diagnostics, selectedServerId, onRemoveMember, onRemoveProxy));
+		const next = buildNodes(network, byId, diagnostics, selectedServerId, onRemoveMember, onRemoveProxy);
+		setNodes((current) => {
+			const dragging = new Map(current.filter((node) => node.dragging).map((node) => [node.id, node]));
+			if (dragging.size === 0) return next;
+			return next.map((node) => {
+				const live = dragging.get(node.id);
+				return live ? { ...node, position: live.position, dragging: true } : node;
+			});
+		});
 		setEdges(buildEdges(network, byId));
 	}, [network, byId, diagnostics, selectedServerId, onRemoveMember, onRemoveProxy, setNodes, setEdges]);
 

@@ -14,17 +14,8 @@ import {
 	forceKillActionLabel,
 	startActionLabel,
 	stopActionLabel,
-	useServers,
 } from '@/data/servers';
-import { useServerJavaResolver } from '@/data/java-download';
-import {
-	forceKillServer,
-	restartServer,
-	sleepServer,
-	startServer,
-	stopServer,
-	type ServerControlContext,
-} from '@/lib/server-controls';
+import { useServerControls } from '@/hooks/use-server-controls';
 import {
 	ContextMenu,
 	ContextMenuContent,
@@ -54,27 +45,8 @@ interface ServerNodeMenuProps {
 
 export const ServerNodeMenu: React.FC<ServerNodeMenuProps> = ({ server, role, onRemove, children }) => {
 	const navigate = useNavigate();
-	const { setServerStatus, updateServerStats } = useServers();
-	const resolveServerJava = useServerJavaResolver();
+	const controls = useServerControls(server);
 	const [confirmOpen, setConfirmOpen] = React.useState(false);
-
-	const context = (javaExecutable?: string): ServerControlContext => ({
-		server,
-		javaExecutable,
-		setServerStatus,
-		updateServerStats,
-	});
-
-	// Start/restart resolve a Java runtime first (prompting to download if missing).
-	const handleStart = async () => {
-		const javaExecutable = await resolveServerJava(server);
-		if (javaExecutable) await startServer(context(javaExecutable));
-	};
-
-	const handleRestart = async () => {
-		const javaExecutable = await resolveServerJava(server);
-		if (javaExecutable) await restartServer(context(javaExecutable));
-	};
 
 	const status = server.status;
 	const isSleeping = status === 'sleeping';
@@ -105,27 +77,27 @@ export const ServerNodeMenu: React.FC<ServerNodeMenuProps> = ({ server, role, on
 						<ArrowUpRight /> Go to server
 					</ContextMenuItem>
 					{canStart && (
-						<ContextMenuItem onSelect={() => void handleStart()}>
+						<ContextMenuItem onSelect={controls.start}>
 							{isSleeping ? <Moon /> : <CircleCheck />} {startActionLabel(status)}
 						</ContextMenuItem>
 					)}
 					{canRestart && (
-						<ContextMenuItem onSelect={() => void handleRestart()}>
+						<ContextMenuItem onSelect={controls.restart}>
 							<RefreshCcw /> Restart
 						</ContextMenuItem>
 					)}
 					{canSleep && (
-						<ContextMenuItem onSelect={() => void sleepServer(context())}>
+						<ContextMenuItem onSelect={controls.sleep}>
 							<Moon /> Sleep
 						</ContextMenuItem>
 					)}
 					{canStop && (
-						<ContextMenuItem onSelect={() => void stopServer(context())}>
+						<ContextMenuItem onSelect={controls.stop}>
 							<OctagonX /> {stopActionLabel(status)}
 						</ContextMenuItem>
 					)}
 					{canForceKill && (
-						<ContextMenuItem variant='destructive' onSelect={() => void forceKillServer(context())}>
+						<ContextMenuItem variant='destructive' onSelect={controls.forceKill}>
 							<OctagonX /> {forceKillActionLabel(status)}
 						</ContextMenuItem>
 					)}

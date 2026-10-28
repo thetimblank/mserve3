@@ -23,6 +23,14 @@ export type CreateServerBackupResult = {
 	deletedBackupsCount: number;
 };
 
+/** Payload of the `server-backups-changed` event (an automatic backup finished). */
+export type ServerBackupsChangedEvent = {
+	directory: string;
+	reason: 'on_start' | 'on_close' | 'interval';
+	deletedBackupsCount: number;
+	error: string | null;
+};
+
 export type RestoreServerBackupResult = {
 	deletedBackupsCount: number;
 };
@@ -137,12 +145,13 @@ export type UpdateServerSettingsPayload = {
 	backup_scope?: BackupScopeItem[];
 };
 
+/** Result of `update_server_settings` (the Rust struct serializes camelCase). */
 export type UpdateServerSettingsResult = {
 	directory: string;
 	file: string;
 	provider: Provider;
-	telemetry_host: string;
-	telemetry_port: number;
+	telemetryHost: string;
+	telemetryPort: number;
 };
 
 /** Per-server tunnel status (mirrors the Rust `ServerTunnelInfo.status` strings,

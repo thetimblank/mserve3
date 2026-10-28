@@ -10,7 +10,6 @@ import {
 	Server,
 	startActionLabel,
 	stopActionLabel,
-	useServers,
 } from '@/data/servers';
 import {
 	ArrowDownToLine,
@@ -30,15 +29,7 @@ import ServerStatus from './server-status';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import OpenFolderButton from '@/components/open-folder-button';
 import { formatUptime, getPrimaryMinecraftVersion } from '@/lib/utils';
-import {
-	forceKillServer,
-	restartServer,
-	sleepServer,
-	startServer,
-	stopServer,
-	type ServerControlContext,
-} from '@/lib/server-controls';
-import { useServerJavaResolver } from '@/data/java-download';
+import { useServerControls } from '@/hooks/use-server-controls';
 
 interface Props {
 	server: Server;
@@ -46,46 +37,16 @@ interface Props {
 }
 
 const ServerCard: React.FC<Props> = ({ server, delay }) => {
-	const { setServerStatus, updateServerStats } = useServers();
-	const resolveServerJava = useServerJavaResolver();
-	const [isBusy, setIsBusy] = React.useState(false);
 	const displayVersion = server.stats.server_version ?? server.provider.minecraft_version ?? null;
 
-	const controlContext = (javaExecutable?: string): ServerControlContext => ({
-		server,
-		javaExecutable,
-		setServerStatus,
-		updateServerStats,
-	});
-
-	const runControl = async (action: (context: ServerControlContext) => Promise<boolean>) => {
-		if (isBusy) return;
-		setIsBusy(true);
-		try {
-			await action(controlContext());
-		} finally {
-			setIsBusy(false);
-		}
-	};
-
-	// Start/restart need a resolved Java runtime (and may prompt to download one).
-	const runStartControl = async (action: (context: ServerControlContext) => Promise<boolean>) => {
-		if (isBusy) return;
-		setIsBusy(true);
-		try {
-			const javaExecutable = await resolveServerJava(server);
-			if (!javaExecutable) return;
-			await action(controlContext(javaExecutable));
-		} finally {
-			setIsBusy(false);
-		}
-	};
-
-	const handleStart = () => void runStartControl(startServer);
-	const handleStop = () => void runControl(stopServer);
-	const handleSleep = () => void runControl(sleepServer);
-	const handleRestart = () => void runStartControl(restartServer);
-	const handleForceKill = () => void runControl(forceKillServer);
+	const {
+		isBusy,
+		start: handleStart,
+		stop: handleStop,
+		sleep: handleSleep,
+		restart: handleRestart,
+		forceKill: handleForceKill,
+	} = useServerControls(server);
 
 	return (
 		<m.div

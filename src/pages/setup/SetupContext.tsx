@@ -1,56 +1,26 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import React, { createContext, useContext, useState } from 'react';
 
-export interface SetupData {
+type SetupData = {
 	port: number;
-	ip: string;
-	domain: string;
 	ip_hidden: boolean;
-}
+};
 
-interface SetupContextType {
+type SetupContextType = {
 	data: SetupData;
-	slide: number;
-	updated_ata: <K extends keyof SetupData>(key: K, value: SetupData[K]) => void;
-	nextSlide: () => void;
-	prevSlide: () => void;
-}
+	updateData: <K extends keyof SetupData>(key: K, value: SetupData[K]) => void;
+};
 
 const SetupContext = createContext<SetupContextType | undefined>(undefined);
 
+/** The answers the hosting setup slides share (slide navigation is `useSlideshow`). */
 export const SetupProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-	const [slide, setSlide] = useState(0);
-	const [data, setData] = useState<SetupData>({
-		port: 25565,
-		ip: '',
-		domain: '',
-		ip_hidden: true,
-	});
+	const [data, setData] = useState<SetupData>({ port: 25565, ip_hidden: true });
 
-	const updated_ata = <K extends keyof SetupData>(key: K, value: SetupData[K]) => {
+	const updateData = React.useCallback(<K extends keyof SetupData>(key: K, value: SetupData[K]) => {
 		setData((prev) => ({ ...prev, [key]: value }));
-	};
-
-	useEffect(() => {
-		const fetchIp = async () => {
-			try {
-				const ip = await invoke<string>('get_public_ip');
-				updated_ata('ip', ip);
-			} catch (err) {
-				console.error(err);
-			}
-		};
-		fetchIp();
 	}, []);
 
-	const nextSlide = () => setSlide((prev) => prev + 1);
-	const prevSlide = () => setSlide((prev) => (prev > 0 ? prev - 1 : prev));
-
-	return (
-		<SetupContext.Provider value={{ data, slide, updated_ata, nextSlide, prevSlide }}>
-			{children}
-		</SetupContext.Provider>
-	);
+	return <SetupContext.Provider value={{ data, updateData }}>{children}</SetupContext.Provider>;
 };
 
 export const useSetup = () => {

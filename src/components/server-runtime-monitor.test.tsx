@@ -6,6 +6,8 @@ import { createProvider } from '@/lib/server-provider';
 import { ServersProvider, useServers, type Server } from '@/data/servers';
 import { UserProvider } from '@/data/user';
 import { JavaRuntimesProvider } from '@/data/java-runtimes';
+import { JavaDownloadProvider } from '@/data/java-download';
+import { MemoryRouter } from 'react-router-dom';
 import { ServerRuntimeMonitor } from './server-runtime-monitor';
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), info: vi.fn(), success: vi.fn() } }));
@@ -30,14 +32,18 @@ const storedServer = (id: string): Partial<Server> => ({
 });
 
 const wrapper = ({ children }: { children: React.ReactNode }) => (
-	<UserProvider>
-		<JavaRuntimesProvider>
-			<ServersProvider>
-				<ServerRuntimeMonitor />
-				{children}
-			</ServersProvider>
-		</JavaRuntimesProvider>
-	</UserProvider>
+	<MemoryRouter>
+		<UserProvider>
+			<JavaRuntimesProvider>
+				<ServersProvider>
+					<JavaDownloadProvider>
+						<ServerRuntimeMonitor />
+						{children}
+					</JavaDownloadProvider>
+				</ServersProvider>
+			</JavaRuntimesProvider>
+		</UserProvider>
+	</MemoryRouter>
 );
 
 afterEach(() => {
@@ -113,3 +119,38 @@ describe('ServerRuntimeMonitor startup snapshot', () => {
 		expect(result.current.servers[0].status).toBe('starting');
 	});
 });
+
+describe('ServerRuntimeMonitor automatic backups', () => {
+	it('rescans a server after the backend reports a new automatic backup', async () => {
+		window.localStorage.setItem(STORAGE_KEY, JSON.stringify([storedServer('a')]));
+		mockInvoke('detect_java_runtimes', () => ({ runtimes: [], errors: [], scannedCandidates: 0 }));
+		mockInvoke('get_server_runtime', () => ({ state: 'offline', stderrTail: [], sample: null }));
+		mockInvoke('scan_server_contents', () => ({
+			plugins: [],
+			mods: [],
+			worlds: [],
+			datapacks: [],
+			backups: [{ directory: 'C:/servers/a/.backups/b1', createdAt: '2026-10-28T00:00:00Z', reason: 'on_close' }],
+			worldsSizeBytes: 0,
+			backupsSizeBytes: 10,
+		}));
+
+		const { result } = renderHook(() => useServers(), { wrapper });
+		await waitFor(() => expect(result.current.isReady).toBe(true));
+		await waitFor(() =>
+			expect(listenMock).toHaveBeenCalledWith('server-backups-changed', expect.any(Function)),
+		);
+
+		await act(async () => {
+			emitTauriEvent('server-backups-changed', {
+				directory: 'C:/servers/a',
+				reason: 'on_close',
+				deletedBackupsCount: 0,
+				error: null,
+			});
+		});
+
+		await waitFor(() => expect(result.current.servers[0].backups).toHaveLength(1));
+	});
+});
+

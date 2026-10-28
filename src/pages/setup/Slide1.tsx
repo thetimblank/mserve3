@@ -1,4 +1,4 @@
-import { m } from 'motion/react';
+import { SlideFrame, useSlideshow } from '@/components/slideshow';
 import { Field } from '@/components/ui/field';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -12,7 +12,8 @@ import { useUser } from '@/data/user';
 import { getErrorMessage } from '@/lib/utils';
 
 export default function Slide1() {
-	const { nextSlide, updated_ata, data } = useSetup();
+	const { nextSlide } = useSlideshow();
+	const { data, updateData } = useSetup();
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const { user } = useUser();
@@ -60,11 +61,7 @@ export default function Slide1() {
 	};
 
 	return (
-		<m.div
-			initial={{ scale: 0.75, y: 10, opacity: 0 }}
-			whileInView={{ scale: 1, y: 0, opacity: 1 }}
-			transition={{ type: 'spring', duration: 0.5, bounce: 0 }}
-			className='flex flex-col items-center max-w-lg'>
+		<SlideFrame className='flex flex-col items-center max-w-lg'>
 			<p className='text-center text-3xl font-bold flex gap-5 items-center mb-2 w-fit'>
 				Setup Port Forwarding on your PC
 			</p>
@@ -84,7 +81,7 @@ export default function Slide1() {
 						id='server-port'
 						type='number'
 						value={data.port}
-						onChange={(event) => updated_ata('port', Number(event.currentTarget.value))}
+						onChange={(event) => updateData('port', Number(event.currentTarget.value))}
 						required
 					/>
 				</Field>
@@ -99,6 +96,6 @@ export default function Slide1() {
 					</Button>
 				</div>
 			</form>
-		</m.div>
+		</SlideFrame>
 	);
 }

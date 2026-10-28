@@ -6,13 +6,17 @@
 //!     (the universal online signal, replacing console-log scraping),
 //!   * collects a telemetry sample (SLP + sysinfo + RCON) on a cadence,
 //!     persists it to the time-series store, and
-//!   * emits `server-runtime-state` and `server-telemetry` events.
+//!   * emits `server-runtime-state` and `server-telemetry` events, and
+//!   * triggers the automatic backups (on start, on close, on an interval).
 //!
 //! The frontend is a pure consumer of these events plus a one-shot snapshot.
 
 use super::super::{
     LifecycleState, RconConfig, ServerRuntime, ServerRuntimeStateEvent, ServerTelemetryEvent,
     TelemetrySample, TpsCommandState,
+};
+use super::auto_backup::{
+    AutoBackupReason, AutoBackupSettings, run_auto_backup, spawn_auto_backup, try_claim_auto_backup,
 };
 use super::playit;
 use super::rcon::RconClient;
@@ -201,6 +205,9 @@ const EXTERNAL_OFFLINE_STREAK: u32 = 3;
 const STARTING_WARNING_AFTER: Duration = Duration::from_secs(180);
 /// How long to wait for a graceful `stop` before force-killing the process.
 const STOP_GRACE: Duration = Duration::from_secs(10);
+/// How often an online server re-reads its interval-backup settings. One
+/// minute is also the shortest interval mserve.json allows.
+const INTERVAL_BACKUP_CHECK: Duration = Duration::from_secs(60);
 
 struct Snapshot {
     directory: String,
@@ -229,6 +236,7 @@ struct TerminalOutcome {
     auto_restart: bool,
     requested: bool,
     ever_online: bool,
+    force_killed: bool,
     java_executable: Option<String>,
 }
 
@@ -371,6 +379,10 @@ pub(in crate::app) fn spawn_supervisor(
         // or an unknown reading; set once players hit zero while online.
         let mut idle_since: Option<Instant> = None;
         let mut starting_warned = false;
+        // Interval backups count from when the server came online (or from the
+        // last interval backup); the settings are re-read once a minute.
+        let mut last_interval_backup: Option<Instant> = None;
+        let mut next_interval_check = Instant::now();
 
         loop {
             // ---- Phase 1: brief lock — read a snapshot and detect process exit.
@@ -443,6 +455,7 @@ pub(in crate::app) fn spawn_supervisor(
                                     auto_restart: runtime.auto_restart,
                                     requested,
                                     ever_online: runtime.ever_online,
+                                    force_killed: runtime.force_killed,
                                     java_executable: runtime.java_executable.clone(),
                                 })
                             }
@@ -456,6 +469,8 @@ pub(in crate::app) fn spawn_supervisor(
                             {
                                 super::process::kill_child_process_group(child);
                                 let _ = child.kill();
+                                // The save was cut off: skip the on-close backup.
+                                runtime.force_killed = true;
                             }
                             Phase1::Continue(Snapshot {
                                 directory: runtime.directory.clone(),
@@ -492,8 +507,17 @@ pub(in crate::app) fn spawn_supervisor(
                 Phase1::Stop => return,
                 Phase1::Terminal(outcome) => {
                     let directory = outcome.event.directory.clone();
+                    // A boot failure has nothing new to save, and a force-kill left
+                    // the world unsaved. Claim the backup slot before announcing the
+                    // exit, so a restart can't start a JVM under the copy.
+                    let back_up = outcome.ever_online && !outcome.force_killed;
+                    let early_claim = back_up.then(|| try_claim_auto_backup(&directory)).flatten();
                     let _ = app.emit("server-runtime-state", outcome.event.clone());
                     playit::emit_tunnel_state(&app, &directory, "offline", None, None);
+                    // Back up the stopped (or crashed) server before any auto-restart.
+                    if back_up {
+                        run_auto_backup(&app, &directory, AutoBackupReason::OnClose, early_claim);
+                    }
                     maybe_auto_restart(&key, &outcome, &processes, &app);
                     return;
                 }
@@ -527,6 +551,8 @@ pub(in crate::app) fn spawn_supervisor(
                                 &directory,
                                 "No players online — server is now sleeping. It will wake automatically when someone joins.",
                             );
+                            // The process saved and exited, like a graceful stop.
+                            run_auto_backup(&app, &directory, AutoBackupReason::OnClose, None);
                         }
                         Err(err) => {
                             let Some(mut removed) = remove_if_current(&processes, &key, generation)
@@ -660,6 +686,7 @@ pub(in crate::app) fn spawn_supervisor(
             let mut state_change: Option<ServerRuntimeStateEvent> = None;
             let mut sleep_initiated = false;
             let mut sleep_stop_write = None;
+            let mut became_online = false;
             {
                 let Ok(mut guard) = processes.lock() else {
                     return;
@@ -702,6 +729,9 @@ pub(in crate::app) fn spawn_supervisor(
                     sleep_initiated = true;
                     state_change = Some(state_event(runtime));
                 } else if runtime.state != new_state {
+                    became_online = snapshot.has_child
+                        && matches!(runtime.state, LifecycleState::Starting)
+                        && matches!(new_state, LifecycleState::Online);
                     runtime.state = new_state;
                     state_change = Some(state_event(runtime));
                 }
@@ -728,6 +758,34 @@ pub(in crate::app) fn spawn_supervisor(
             }
             if let Some(event) = state_change {
                 let _ = app.emit("server-runtime-state", event);
+            }
+            if became_online {
+                last_interval_backup = Some(Instant::now());
+                spawn_auto_backup(
+                    app.clone(),
+                    snapshot.directory.clone(),
+                    AutoBackupReason::OnStart,
+                );
+            }
+            // Owned servers only: an adopted server's backups belong to whoever
+            // started it.
+            if snapshot.has_child
+                && matches!(new_state, LifecycleState::Online)
+                && Instant::now() >= next_interval_check
+            {
+                next_interval_check = Instant::now() + INTERVAL_BACKUP_CHECK;
+                let started = *last_interval_backup.get_or_insert_with(Instant::now);
+                let settings = AutoBackupSettings::load(&snapshot.directory);
+                if settings.enabled(AutoBackupReason::Interval)
+                    && started.elapsed() >= settings.interval()
+                {
+                    last_interval_backup = Some(Instant::now());
+                    spawn_auto_backup(
+                        app.clone(),
+                        snapshot.directory.clone(),
+                        AutoBackupReason::Interval,
+                    );
+                }
             }
             if starting_too_long {
                 starting_warned = true;

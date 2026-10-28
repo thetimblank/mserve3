@@ -109,8 +109,8 @@ const ServerJarUpdateSection: React.FC<Props> = ({ server, disabled }) => {
 					name: getServerNameFromDirectory(settingsResult.directory),
 					file: settingsResult.file,
 					provider: updatedProvider,
-					telemetry_host: settingsResult.telemetry_host,
-					telemetry_port: settingsResult.telemetry_port,
+					telemetry_host: settingsResult.telemetryHost,
+					telemetry_port: settingsResult.telemetryPort,
 				});
 
 				// Re-check against the freshly applied provider so the panel reflects

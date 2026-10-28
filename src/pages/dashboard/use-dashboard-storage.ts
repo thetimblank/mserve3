@@ -11,7 +11,7 @@ import type { Server } from '@/data/servers';
 
 const REFRESH_MS = 5 * 60 * 1000;
 
-export type ServerStorageInfo = {
+type ServerStorageInfo = {
 	directory: string;
 	totalBytes: number;
 	worldsBytes: number;

@@ -1,3 +1,4 @@
+import { toast } from 'sonner';
 import type { AutoBackupMode, Server } from '@/data/servers';
 import type { Provider, ProviderName } from '@/lib/mserve-schema';
 import { clampRamGb, formatHeapSize } from '@/lib/ram-utils';
@@ -110,14 +111,18 @@ export const resolveNewDirectory = (payload: UpdateServerSettingsPayload, curren
 	return trimmed;
 };
 
-export const didRequestStop = (
-	stopRequested: boolean,
-	restartRequested: boolean,
-	manualStopRequested: boolean,
-) => stopRequested || restartRequested || manualStopRequested;
+/** Prefix of the backend error when a backup wouldn't fit the storage limit. */
+export const BACKUP_STORAGE_LIMIT_ERROR_PREFIX = 'Backup storage limit exceeded';
 
-export const makeCloseBackupKey = (serverId: string, exitCode: number | null) =>
-	`${serverId}:${exitCode ?? 'none'}`;
+/** Tells the user how many old backups retention removed (nothing when none). */
+export const notifyDeletedBackups = (count: number) => {
+	if (count < 1) return;
+	toast.info(
+		count === 1
+			? 'Removed 1 old backup per your retention settings.'
+			: `Removed ${count} old backups per your retention settings.`,
+	);
+};
 
 /**
  * Console commands that shut a server down, per provider. Mirrors

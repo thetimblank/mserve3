@@ -1,4 +1,5 @@
 use super::super::support::playit;
+use super::super::support::wait_for_auto_backup;
 use super::super::support::{
     RconClient, emit_output_reader, emit_system_line, ensure_rcon_enabled, get_runtime_config,
     infer_provider_version, is_restoring, isolate_in_own_process_group, kill_child_process_group,
@@ -275,6 +276,7 @@ fn new_runtime(
         java_executable: None,
         auto_restart: false,
         ever_online: false,
+        force_killed: false,
         sleep_enabled: false,
         sleep_idle_minutes: 15,
         sleep_motd: default_sleep_motd(),
@@ -442,6 +444,7 @@ pub(in crate::app) fn start_server_internal(
 
     let config = get_runtime_config(&directory_path)?;
     let key = server_key(&directory);
+    wait_for_auto_backup(&app, &directory)?;
     let java_executable = resolve_java_executable(&config, java_executable.as_deref())?;
     ensure_java_executable_exists(&java_executable)?;
     let (host, configured_port) = resolve_telemetry_target(&config, &directory_path);
@@ -979,6 +982,7 @@ fn force_kill_server_blocking(
             return Ok("Start cancelled.".to_string());
         }
         if let Some(child) = runtime.child.as_mut() {
+            runtime.force_killed = true;
             kill_child_process_group(child);
             let _ = child.kill();
             drop(guard);

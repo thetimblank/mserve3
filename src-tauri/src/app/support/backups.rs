@@ -39,6 +39,50 @@ const SMART_KEEP_ALL_HOURS: i64 = 48;
 const SMART_DAILY_DAYS: i64 = 14;
 const SMART_WEEKLY_DAYS: i64 = 60;
 
+/// Backups are pointless for proxy servers (no worlds, no meaningful state),
+/// so every backup entry point rejects them with a clear message.
+pub(in crate::app) fn ensure_not_proxy(directory: &Path) -> Result<(), String> {
+    let Ok(config) = get_runtime_config(directory) else {
+        return Ok(());
+    };
+    let provider_name = config
+        .provider
+        .map(|provider| provider.name.trim().to_lowercase())
+        .unwrap_or_default();
+
+    if provider_name == "velocity" || provider_name == "bungeecord" {
+        return Err(
+            "Proxy servers don't store worlds or player data, so backups are disabled.".to_string(),
+        );
+    }
+
+    Ok(())
+}
+
+/// Takes a snapshot, then applies retention with the new snapshot protected, so
+/// old backups are only deleted once a good replacement exists. If retention
+/// can't make room, the new snapshot is rolled back and the error returned.
+/// `extra_protected` backups (e.g. the one being restored) are never deleted.
+pub(in crate::app) fn snapshot_then_retain(
+    server_directory: &Path,
+    name: Option<String>,
+    reason: &str,
+    extra_protected: &[PathBuf],
+) -> Result<(ScannedBackup, usize), String> {
+    ensure_backup_fits(server_directory, extra_protected)?;
+    let backup = create_backup_snapshot(server_directory, name, reason)?;
+
+    let mut protected = extra_protected.to_vec();
+    protected.push(PathBuf::from(&backup.directory));
+    match enforce_backup_retention(server_directory, &protected) {
+        Ok(deleted) => Ok((backup, deleted)),
+        Err(err) => {
+            discard_backup(&backup);
+            Err(err)
+        }
+    }
+}
+
 /// Server keys with a backup restore in progress. Starts are refused for them
 /// (checked under the runtime lock in `start_server_internal`).
 static RESTORING: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());

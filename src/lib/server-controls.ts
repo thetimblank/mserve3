@@ -26,12 +26,13 @@ export type ServerControlContext = {
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-const getRuntimeState = (directory: string) =>
+/** The backend's live lifecycle state for a server (not the store's, which may lag). */
+export const getServerRuntimeState = (directory: string) =>
 	invoke<ServerRuntimeSnapshot>('get_server_runtime', { directory }).then((runtime) => runtime.state);
 
 /** After a failed command, show whatever the backend says the server is doing. */
 const refreshStatus = async ({ server, setServerStatus, updateServerStats }: ServerControlContext) => {
-	const state = await getRuntimeState(server.directory).catch(() => 'offline' as const);
+	const state = await getServerRuntimeState(server.directory).catch(() => 'offline' as const);
 	const status = mapRuntimeStateToStatus(state);
 	setServerStatus(server.id, status);
 	if (status === 'offline' || status === 'crashed') updateServerStats(server.id, offlineServerStats());
@@ -147,7 +148,7 @@ export const waitForServerReady = async (
 
 	while (Date.now() - startedAt < timeoutMs) {
 		try {
-			const state = await getRuntimeState(server.directory);
+			const state = await getServerRuntimeState(server.directory);
 			if (state === 'online' || state === 'running-external') return true;
 		} catch {
 			// Backend not ready yet; keep polling.
@@ -173,7 +174,7 @@ export const waitForServerStopped = async (
 
 	while (Date.now() - startedAt < timeoutMs) {
 		try {
-			const state = await getRuntimeState(server.directory);
+			const state = await getServerRuntimeState(server.directory);
 			if (state === 'offline' || state === 'crashed') return true;
 		} catch {
 			// Keep polling.

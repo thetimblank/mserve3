@@ -3,8 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
 import type { Server, ServerStatus, ServerUpdate } from '@/data/servers';
-import { isJavaVersionError, isNoguiUnsupportedError, stripAnsi, getErrorMessage } from '@/lib/utils';
-import { hasNoguiFlag, setServerCustomFlags, stripNoguiFlags } from '@/lib/server-flags-service';
+import { stripAnsi, getErrorMessage } from '@/lib/utils';
 import {
 	mapRuntimeStateToStatus,
 	mapSampleToStats,
@@ -14,20 +13,27 @@ import {
 import { useUser } from '@/data/user';
 import { useJavaRuntimes } from '@/data/java-runtimes';
 import { useJavaDownload } from '@/data/java-download';
-import { planJavaFallback, resolveServerJavaExecutable } from '@/lib/java-resolution';
+import { resolveServerJavaExecutable } from '@/lib/java-resolution';
 import { setServerJavaInstallation } from '@/lib/java-runtime-service';
+import { scanServerContents } from '@/lib/server-contents';
+import {
+	createResolvedStartRecovery,
+	createStartRecovery,
+	hasFlaggedBootFailure,
+	noteRecoveryOnline,
+	noteRecoveryOutput,
+	recoverFromBootCrash,
+	type StartRecovery,
+} from '@/lib/server-start-recovery';
 import {
 	type CrashInfo,
-	type CreateServerBackupResult,
-	type ScanServerContentsResult,
 	type ServerOutputEvent,
 	type ServerRuntimeSnapshot,
 	type ServerRuntimeStateEvent,
 	type ServerTelemetryEvent,
 } from '../server-types';
-import { isStopCommand, makeCloseBackupKey, mapScannedBackups } from '../server-utils';
+import { isStopCommand } from '../server-utils';
 import { claimServerRuntime, releaseServerRuntime } from '@/lib/server-runtime-registry';
-import { isProxyProvider } from '@/lib/server-provider';
 
 type Args = {
 	server: Server | undefined;
@@ -43,60 +49,30 @@ type Args = {
 	appendTerminalLine: (line: string) => void;
 };
 
-type BackupReason = 'on_start' | 'on_close' | 'interval';
-
-const BACKUP_STORAGE_LIMIT_ERROR_PREFIX = 'Backup storage limit exceeded';
-
 type RuntimeState = {
 	startAt: Date | null;
 	lastOutputKey: string;
 	lastOutputAt: number;
-	stopRequested: boolean;
-	restartRequested: boolean;
-	manualStopRequested: boolean;
-	forceKilled: boolean;
-	everRunning: boolean;
-	lastOnCloseBackupKey: string;
-	isAutoRestarting: boolean;
-	previousStatus: ServerStatus;
-	isCreatingAutoBackup: boolean;
-	// Automatic Java resolution + start-failure fallback.
-	awaitingReady: boolean;
-	currentJavaExecutable: string | null;
-	javaAttemptMajors: number[];
-	javaDidFallback: boolean;
-	javaFallbackInProgress: boolean;
-	javaDownloadAttempted: boolean;
-	javaGiveUp: boolean;
-	// Unsupported-`--nogui` strip-and-retry state.
-	noguiErrorFlagged: boolean;
-	noguiStripAttempted: boolean;
+	/** Start-failure recovery for the current start cycle. */
+	recovery: StartRecovery;
+	/** A lifecycle event arrived after the startup snapshot was requested. */
+	stateEventSeen: boolean;
 };
 
 const initialRuntimeState = (): RuntimeState => ({
 	startAt: null,
 	lastOutputKey: '',
 	lastOutputAt: 0,
-	stopRequested: false,
-	restartRequested: false,
-	manualStopRequested: false,
-	forceKilled: false,
-	everRunning: false,
-	lastOnCloseBackupKey: '',
-	isAutoRestarting: false,
-	previousStatus: 'offline',
-	isCreatingAutoBackup: false,
-	awaitingReady: false,
-	currentJavaExecutable: null,
-	javaAttemptMajors: [],
-	javaDidFallback: false,
-	javaFallbackInProgress: false,
-	javaDownloadAttempted: false,
-	javaGiveUp: false,
-	noguiErrorFlagged: false,
-	noguiStripAttempted: false,
+	recovery: createStartRecovery(),
+	stateEventSeen: false,
 });
 
+/**
+ * The server page's runtime loop: terminal output, authoritative lifecycle and
+ * telemetry for the open server, and the user's start/stop/restart actions.
+ * Start-failure recovery is shared with the app-wide monitor
+ * (`lib/server-start-recovery`); automatic backups run in the backend supervisor.
+ */
 export const useServerRuntime = ({
 	server,
 	serverId,
@@ -116,14 +92,14 @@ export const useServerRuntime = ({
 	const runtimeRef = React.useRef<RuntimeState>(initialRuntimeState());
 	const serverDirectory = server?.directory;
 	const serverStatus = server?.status;
-	const serverTelemetryPort = server?.telemetry_port;
-
-	const autoBackupModes = server?.auto_backup ?? [];
-	const hasOnStartBackup = autoBackupModes.includes('on_start');
-	const hasOnCloseBackup = autoBackupModes.includes('on_close');
-	const hasIntervalBackup = autoBackupModes.includes('interval');
-	const autoBackupIntervalMinutes = Math.max(1, server?.auto_backup_interval ?? 1);
 	const [lastCrash, setLastCrash] = React.useState<CrashInfo | null>(null);
+
+	// Latest values for the event listeners, so they don't re-subscribe (and
+	// miss events) whenever the server's config or stats change.
+	const serverRef = React.useRef(server);
+	serverRef.current = server;
+	const recoveryEnvRef = React.useRef({ globalDefault: user.java_installation_default, javaRuntimes, ensureJava });
+	recoveryEnvRef.current = { globalDefault: user.java_installation_default, javaRuntimes, ensureJava };
 
 	const showError = React.useCallback(
 		(error: unknown, fallback: string) => {
@@ -156,10 +132,6 @@ export const useServerRuntime = ({
 	const setOfflineState = React.useCallback(() => {
 		setServerStatus(serverId, 'offline');
 		runtimeRef.current.startAt = null;
-		runtimeRef.current.manualStopRequested = false;
-		runtimeRef.current.stopRequested = false;
-		runtimeRef.current.restartRequested = false;
-		runtimeRef.current.everRunning = false;
 		updateServerStats(serverId, offlineServerStats());
 	}, [serverId, setServerStatus, updateServerStats]);
 
@@ -169,10 +141,6 @@ export const useServerRuntime = ({
 		(crash: CrashInfo) => {
 			setServerStatus(serverId, 'crashed');
 			runtimeRef.current.startAt = null;
-			runtimeRef.current.manualStopRequested = false;
-			runtimeRef.current.stopRequested = false;
-			runtimeRef.current.restartRequested = false;
-			runtimeRef.current.everRunning = false;
 			updateServerStats(serverId, offlineServerStats());
 			setLastCrash(crash);
 		},
@@ -188,257 +156,40 @@ export const useServerRuntime = ({
 		setServerStatus(serverId, 'starting');
 	}, [serverId, setServerStatus, updateServerStats]);
 
-	const resolveJava = React.useCallback(
-		(excludeMajors: number[] = []) =>
-			resolveServerJavaExecutable({
-				provider: server?.provider,
-				javaInstallation: server?.java_installation,
-				globalDefault: user.java_installation_default,
-				runtimes: javaRuntimes,
-				excludeMajors,
-			}),
-		[javaRuntimes, server?.java_installation, server?.provider, user.java_installation_default],
-	);
-
 	// Resolves an installed compatible Java, or offers to download the
 	// recommended one. Returns `null` when the user cancelled the download.
 	const acquireJava = React.useCallback(async (): Promise<{
 		executablePath: string;
 		majorVersion: number | null;
 	} | null> => {
-		const resolution = resolveJava();
+		const resolution = resolveServerJavaExecutable({
+			provider: server?.provider,
+			javaInstallation: server?.java_installation,
+			globalDefault: user.java_installation_default,
+			runtimes: javaRuntimes,
+		});
 		if (resolution.status === 'resolved') {
 			return { executablePath: resolution.executablePath, majorVersion: resolution.majorVersion };
 		}
 		const runtime = await ensureJava(resolution.requirement.recommendedMajor);
 		return runtime ? { executablePath: runtime.executablePath, majorVersion: runtime.majorVersion } : null;
-	}, [ensureJava, resolveJava]);
+	}, [ensureJava, javaRuntimes, server?.java_installation, server?.provider, user.java_installation_default]);
 
-	// Resets the per-cycle bookkeeping for a fresh start (or restart) attempt.
-	const beginStartCycle = React.useCallback((options?: { restart?: boolean }) => {
-		const runtime = runtimeRef.current;
-		runtime.manualStopRequested = false;
-		runtime.restartRequested = Boolean(options?.restart);
-		runtime.stopRequested = Boolean(options?.restart);
-		runtime.forceKilled = false;
-		runtime.everRunning = false;
-		runtime.javaAttemptMajors = [];
-		runtime.javaDidFallback = false;
-		runtime.javaFallbackInProgress = false;
-		runtime.javaDownloadAttempted = false;
-		runtime.javaGiveUp = false;
-		runtime.currentJavaExecutable = null;
-		runtime.noguiErrorFlagged = false;
-		runtime.noguiStripAttempted = false;
-	}, []);
-
-	// Spawns the server with a specific Java executable and records the attempt so
-	// the start-failure fallback can step down through versions.
 	const startWithJava = React.useCallback(
-		async (javaExecutable: string, majorVersion: number | null) => {
+		async (javaExecutable: string) => {
 			if (!serverDirectory) return;
-			runtimeRef.current.currentJavaExecutable = javaExecutable;
-			if (majorVersion != null && !runtimeRef.current.javaAttemptMajors.includes(majorVersion)) {
-				runtimeRef.current.javaAttemptMajors.push(majorVersion);
-			}
-			runtimeRef.current.awaitingReady = true;
 			await appendResolvedStartCommand(javaExecutable);
 			await invoke('start_server', { directory: serverDirectory, javaExecutable });
-			runtimeRef.current.javaFallbackInProgress = false;
 		},
 		[appendResolvedStartCommand, serverDirectory],
 	);
 
-	// Reacts to a "wrong Java version" error during start: step down to the next
-	// compatible installed runtime, or download/redirect when none is left.
-	const handleJavaVersionError = React.useCallback(async () => {
-		if (!serverDirectory) return;
-		if (runtimeRef.current.manualStopRequested) return;
-		if (runtimeRef.current.javaFallbackInProgress) return;
-		if (!runtimeRef.current.awaitingReady) return;
-		// Only automatic servers step down; a pinned override surfaces the error.
-		if ((server?.java_installation ?? '').trim() !== '') return;
-
-		runtimeRef.current.javaFallbackInProgress = true;
-		runtimeRef.current.awaitingReady = false;
-
-		// The crashing JVM is exiting anyway — make sure it's gone before retrying.
-		try {
-			await invoke('force_kill_server', { directory: serverDirectory });
-		} catch {}
-
-		const plan = planJavaFallback({
-			provider: server?.provider,
-			globalDefault: user.java_installation_default,
-			runtimes: javaRuntimes,
-			attemptedMajors: runtimeRef.current.javaAttemptMajors,
-		});
-
-		if (plan.kind === 'retry') {
-			runtimeRef.current.javaDidFallback = true;
-			appendTerminalLine(`[system] That Java version was too old. Trying Java ${plan.majorVersion}...`);
-			try {
-				await startWithJava(plan.executablePath, plan.majorVersion);
-			} catch (err) {
-				runtimeRef.current.javaFallbackInProgress = false;
-				setOfflineState();
-				appendTerminalLine(
-					`[system] ${getErrorMessage(err, 'Failed to start with fallback Java.')}`,
-				);
-			}
-			return;
-		}
-
-		// No installed Java worked — offer to download the recommended one (once).
-		if (!runtimeRef.current.javaDownloadAttempted) {
-			runtimeRef.current.javaDownloadAttempted = true;
-			const requiredMajor = plan.requirement.recommendedMajor;
-			appendTerminalLine(`[system] No installed Java worked. Trying to get Java ${requiredMajor}...`);
-			const runtime = await ensureJava(requiredMajor);
-			if (runtime) {
-				runtimeRef.current.javaDidFallback = true;
-				try {
-					await startWithJava(runtime.executablePath, runtime.majorVersion);
-					return;
-				} catch {}
-			}
-		}
-
-		runtimeRef.current.javaFallbackInProgress = false;
-		runtimeRef.current.javaGiveUp = true;
-		setOfflineState();
-		const message = `No compatible Java runtime could start this server (needs Java ${plan.requirement.recommendedMajor}).`;
-		setErrorMessage(message);
-		appendTerminalLine(`[system] ${message}`);
-		toast.error(message);
-	}, [
-		appendTerminalLine,
-		ensureJava,
-		javaRuntimes,
-		server?.java_installation,
-		server?.provider,
-		serverDirectory,
-		setErrorMessage,
-		setOfflineState,
-		startWithJava,
-		user.java_installation_default,
-	]);
-
-	// Reacts to a boot failure caused by a jar that rejects `--nogui`: drop the
-	// flag from the server's config and start once more. Deliberately driven by
-	// the terminal `crashed` state rather than the log line alone, so a server
-	// that merely warns about the flag and keeps running is left untouched.
-	// Returns true when a retry was dispatched.
-	const handleNoguiUnsupported = React.useCallback(async (): Promise<boolean> => {
-		if (!serverDirectory || !serverId) return false;
-		if (runtimeRef.current.manualStopRequested) return false;
-		// One strip per start cycle — if it still won't boot, that's a real crash.
-		if (runtimeRef.current.noguiStripAttempted) return false;
-
-		const currentFlags = server?.custom_flags ?? [];
-		if (!hasNoguiFlag(currentFlags)) return false;
-
-		// We can only retry with the runtime we just launched with; without it a
-		// fresh Java resolution belongs to the normal start path, not this fallback.
-		const javaExecutable = runtimeRef.current.currentJavaExecutable;
-		if (!javaExecutable) return false;
-
-		runtimeRef.current.noguiStripAttempted = true;
-		appendTerminalLine("[system] This server doesn't support '--nogui'. Removing it and trying again...");
-
-		const nextFlags = stripNoguiFlags(currentFlags);
-		try {
-			await setServerCustomFlags(serverDirectory, nextFlags);
-			updateServer(serverId, { custom_flags: nextFlags });
-		} catch (err) {
-			appendTerminalLine(
-				`[system] ${getErrorMessage(err, "Failed to remove '--nogui' from the server config.")}`,
-			);
-			return false;
-		}
-
-		try {
-			await startWithJava(javaExecutable, null);
-			return true;
-		} catch (err) {
-			setOfflineState();
-			appendTerminalLine(
-				`[system] ${getErrorMessage(err, "Failed to restart without '--nogui'.")}`,
-			);
-			return false;
-		}
-	}, [
-		appendTerminalLine,
-		server?.custom_flags,
-		serverDirectory,
-		serverId,
-		setOfflineState,
-		startWithJava,
-		updateServer,
-	]);
-
 	const syncServerContents = React.useCallback(async () => {
-		if (!serverDirectory) return;
-		if (!serverId) return;
-
+		if (!serverDirectory || !serverId) return;
 		try {
-			const result = await invoke<ScanServerContentsResult>('scan_server_contents', {
-				directory: serverDirectory,
-			});
-			updateServer(serverId, {
-				plugins: result.plugins,
-				mods: result.mods,
-				worlds: result.worlds,
-				datapacks: result.datapacks,
-				backups: mapScannedBackups(result.backups),
-				stats: {
-					worlds_size_bytes: Math.max(0, Number(result.worldsSizeBytes) || 0),
-					backups_size_bytes: Math.max(0, Number(result.backupsSizeBytes) || 0),
-				},
-			});
+			updateServer(serverId, await scanServerContents(serverDirectory));
 		} catch {}
 	}, [serverDirectory, serverId, updateServer]);
-
-	const createAutomaticBackup = React.useCallback(
-		async (reason: BackupReason) => {
-			if (!serverDirectory) return;
-			// Proxy servers (e.g. Velocity) have no world data to back up, so
-			// auto-backups always fail. Skip them entirely instead of surfacing a
-			// recurring "Auto backup failed" message.
-			if (isProxyProvider(server?.provider)) return;
-			if (runtimeRef.current.isCreatingAutoBackup) return;
-
-			runtimeRef.current.isCreatingAutoBackup = true;
-			try {
-				const result = await invoke<CreateServerBackupResult>('create_server_backup', {
-					directory: serverDirectory,
-					name: null,
-					reason,
-				});
-				const deletedBackupsCount = Math.max(0, Number(result.deletedBackupsCount) || 0);
-				if (deletedBackupsCount > 0) {
-					toast.info(
-						deletedBackupsCount === 1
-							? 'Removed 1 old backup per your retention settings.'
-							: `Removed ${deletedBackupsCount} old backups per your retention settings.`,
-					);
-				}
-				if (reason !== 'interval') {
-					appendTerminalLine(`[system] Auto backup created (${reason.replace('_', ' ')})`);
-				}
-				await syncServerContents();
-			} catch (err) {
-				const message = getErrorMessage(err, 'Failed to create automatic backup.');
-				if (message.startsWith(BACKUP_STORAGE_LIMIT_ERROR_PREFIX)) {
-					toast.error(message, { duration: Infinity, id: 'backup-storage-limit' });
-				}
-				appendTerminalLine(`[system] Auto backup failed: ${message}`);
-			} finally {
-				runtimeRef.current.isCreatingAutoBackup = false;
-			}
-		},
-		[appendTerminalLine, server?.provider, serverDirectory, syncServerContents],
-	);
 
 	React.useEffect(() => {
 		setErrorMessage(null);
@@ -458,22 +209,23 @@ export const useServerRuntime = ({
 	}, [syncServerContents]);
 
 	// Sync initial state once (covers opening the page on an already-running or
-	// externally-running server).
+	// externally-running server). A lifecycle event that lands first is newer.
 	React.useEffect(() => {
 		if (!serverDirectory || !serverId) return;
 		let active = true;
+		runtimeRef.current.stateEventSeen = false;
 		void (async () => {
 			try {
 				const snapshot = await invoke<ServerRuntimeSnapshot>('get_server_runtime', {
 					directory: serverDirectory,
 				});
-				if (!active) return;
+				if (!active || runtimeRef.current.stateEventSeen) return;
 				setServerStatus(serverId, mapRuntimeStateToStatus(snapshot.state));
-				if (snapshot.serverPort != null && snapshot.serverPort !== serverTelemetryPort) {
+				if (snapshot.serverPort != null && snapshot.serverPort !== serverRef.current?.telemetry_port) {
 					updateServer(serverId, { telemetry_port: snapshot.serverPort });
 				}
 				if (snapshot.state === 'online' || snapshot.state === 'running-external') {
-					runtimeRef.current.everRunning = true;
+					runtimeRef.current.recovery.everRunning = true;
 					if (!runtimeRef.current.startAt) {
 						runtimeRef.current.startAt = snapshot.startedAt ? new Date(snapshot.startedAt) : new Date();
 					}
@@ -489,9 +241,9 @@ export const useServerRuntime = ({
 		return () => {
 			active = false;
 		};
-	}, [serverDirectory, serverId, serverTelemetryPort, setServerStatus, updateServer, updateServerStats]);
+	}, [serverDirectory, serverId, setServerStatus, updateServer, updateServerStats]);
 
-	// Console output: terminal display + early wrong-Java detection.
+	// Console output: terminal display + flagging boot-failure causes.
 	React.useEffect(() => {
 		if (!serverDirectory) return;
 		if (!serverId) return;
@@ -503,6 +255,13 @@ export const useServerRuntime = ({
 			if (!active) return;
 			if (event.payload.directory !== serverDirectory) return;
 			const stream = event.payload.stream;
+
+			// Lines the backend writes to explain its own actions (sleep, wake,
+			// auto backups, port changes).
+			if (stream === 'system') {
+				appendTerminalLine(`[system] ${event.payload.line}`);
+				return;
+			}
 			if (stream !== 'stdout' && stream !== 'stderr') return;
 
 			const cleaned = stripAnsi(event.payload.line);
@@ -515,15 +274,8 @@ export const useServerRuntime = ({
 			runtimeRef.current.lastOutputKey = dedupeKey;
 			runtimeRef.current.lastOutputAt = now;
 
-			if (isJavaVersionError(cleaned)) {
-				void handleJavaVersionError();
-			}
-
-			// Only flagged here; the strip-and-retry runs once the server actually
-			// dies (see the `crashed` branch of the lifecycle listener).
-			if (isNoguiUnsupportedError(cleaned) && !runtimeRef.current.everRunning) {
-				runtimeRef.current.noguiErrorFlagged = true;
-			}
+			const current = serverRef.current;
+			if (current) noteRecoveryOutput(runtimeRef.current.recovery, current, cleaned);
 
 			if (!cleaned) {
 				return;
@@ -546,7 +298,7 @@ export const useServerRuntime = ({
 				unlisten();
 			}
 		};
-	}, [appendTerminalLine, handleJavaVersionError, serverDirectory, serverId]);
+	}, [appendTerminalLine, serverDirectory, serverId]);
 
 	// Authoritative lifecycle state from the backend supervisor.
 	React.useEffect(() => {
@@ -555,43 +307,67 @@ export const useServerRuntime = ({
 		let unlisten: UnlistenFn | null = null;
 		let active = true;
 
+		const handleCrash = async (exitCode: number | null, stderrTail: string[]) => {
+			const current = serverRef.current;
+			const env = recoveryEnvRef.current;
+			const outcome = current
+				? await recoverFromBootCrash(runtimeRef.current.recovery, current, {
+						globalDefault: env.globalDefault,
+						runtimes: env.javaRuntimes,
+						ensureJava: env.ensureJava,
+						updateServer,
+						report: (message) => appendTerminalLine(`[system] ${message}`),
+					})
+				: ({ kind: 'none' } as const);
+			if (!active) return;
+
+			if (outcome.kind === 'retry') {
+				setStartingState();
+				try {
+					await startWithJava(outcome.executablePath);
+				} catch (err) {
+					setOfflineState();
+					appendTerminalLine(`[system] ${getErrorMessage(err, 'Failed to start the server again.')}`);
+				}
+				return;
+			}
+
+			runtimeRef.current.recovery = createStartRecovery();
+			if (outcome.kind === 'failed') {
+				appendTerminalLine(`[system] ${outcome.message}`);
+				setErrorMessage(outcome.message);
+				toast.error(outcome.message);
+			}
+			appendTerminalLine(
+				exitCode != null ? `[system] Server crashed (exit code ${exitCode}).` : '[system] Server crashed.',
+			);
+			setCrashedState({ exitCode, stderrTail, at: new Date() });
+		};
+
 		listen<ServerRuntimeStateEvent>('server-runtime-state', (event) => {
 			if (!active) return;
 			if (event.payload.directory !== serverDirectory) return;
 			const { state, exitCode, startedAt, serverPort, stderrTail } = event.payload;
+			runtimeRef.current.stateEventSeen = true;
 
 			// The supervisor knows the port the server is actually bound to (it may
 			// have been reassigned on start when the configured one was taken).
-			if (serverPort != null && serverPort !== serverTelemetryPort) {
+			if (serverPort != null && serverPort !== serverRef.current?.telemetry_port) {
 				updateServer(serverId, { telemetry_port: serverPort });
 			}
 
 			if (state === 'online' || state === 'running-external') {
-				runtimeRef.current.everRunning = true;
-				runtimeRef.current.awaitingReady = false;
-				runtimeRef.current.javaFallbackInProgress = false;
-				runtimeRef.current.javaAttemptMajors = [];
-				runtimeRef.current.noguiErrorFlagged = false;
-				runtimeRef.current.isAutoRestarting = false;
+				const current = serverRef.current;
+				const pinned = current ? noteRecoveryOnline(runtimeRef.current.recovery, current) : null;
 				setLastCrash(null);
-				runtimeRef.current.stopRequested = false;
-				runtimeRef.current.restartRequested = false;
-				runtimeRef.current.manualStopRequested = false;
-				runtimeRef.current.forceKilled = false;
 				if (!runtimeRef.current.startAt) {
 					runtimeRef.current.startAt = startedAt ? new Date(startedAt) : new Date();
 				}
 				setServerStatus(serverId, 'online');
 				updateServerStats(serverId, { online: true, uptime: runtimeRef.current.startAt });
 
-				// The current Java worked. If we stepped down to find it, pin it.
-				if (
-					runtimeRef.current.javaDidFallback &&
-					runtimeRef.current.currentJavaExecutable &&
-					(server?.java_installation ?? '').trim() === ''
-				) {
-					const pinned = runtimeRef.current.currentJavaExecutable;
-					runtimeRef.current.javaDidFallback = false;
+				// The current Java worked after a step-down: pin it.
+				if (pinned) {
 					void setServerJavaInstallation(serverDirectory, pinned)
 						.then(() => {
 							updateServer(serverId, { java_installation: pinned });
@@ -603,6 +379,15 @@ export const useServerRuntime = ({
 			}
 
 			if (state === 'starting') {
+				// A start this page didn't make (auto-restart, sleep wake) is a new cycle.
+				const current = serverRef.current;
+				if (current && runtimeRef.current.recovery.everRunning) {
+					const env = recoveryEnvRef.current;
+					runtimeRef.current.recovery = createResolvedStartRecovery(current, {
+						globalDefault: env.globalDefault,
+						runtimes: env.javaRuntimes,
+					});
+				}
 				if (!runtimeRef.current.startAt) runtimeRef.current.startAt = new Date();
 				setLastCrash(null);
 				setServerStatus(serverId, 'starting');
@@ -616,68 +401,23 @@ export const useServerRuntime = ({
 
 			if (state === 'sleeping') {
 				// The process is down but mserve holds the port with a wake listener.
-				// Treat it like a graceful close (run the on-close backup) but land in
-				// the sleeping status rather than offline.
-				void (async () => {
-					const closeBackupKey = makeCloseBackupKey(serverId, exitCode);
-					if (
-						!runtimeRef.current.forceKilled &&
-						hasOnCloseBackup &&
-						runtimeRef.current.lastOnCloseBackupKey !== closeBackupKey
-					) {
-						runtimeRef.current.lastOnCloseBackupKey = closeBackupKey;
-						await createAutomaticBackup('on_close');
-					}
-					runtimeRef.current.startAt = null;
-					runtimeRef.current.stopRequested = false;
-					setServerStatus(serverId, 'sleeping');
-					updateServerStats(serverId, offlineServerStats());
-				})();
+				runtimeRef.current.recovery = createStartRecovery();
+				runtimeRef.current.startAt = null;
+				setServerStatus(serverId, 'sleeping');
+				updateServerStats(serverId, offlineServerStats());
 				return;
 			}
 
-			// offline or crashed. (Backend auto-restart — including crash-loop
-			// guarding — lives in the Rust supervisor now, so it keeps working with
-			// the app window closed. The frontend only reflects the resulting state
-			// and, for boot-time Java errors, still owns the version step-down.)
-			void (async () => {
-				const closeBackupKey = makeCloseBackupKey(serverId, exitCode);
+			// Backend auto-restart (with crash-loop guarding) lives in the Rust
+			// supervisor, so it keeps working with the app window closed. The page
+			// only reflects the resulting state and recovers boot failures.
+			if (state === 'crashed' || hasFlaggedBootFailure(runtimeRef.current.recovery)) {
+				void handleCrash(exitCode, stderrTail ?? []);
+				return;
+			}
 
-				if (
-					!runtimeRef.current.forceKilled &&
-					hasOnCloseBackup &&
-					runtimeRef.current.lastOnCloseBackupKey !== closeBackupKey
-				) {
-					runtimeRef.current.lastOnCloseBackupKey = closeBackupKey;
-					await createAutomaticBackup('on_close');
-				}
-
-				// The version-error fallback owns the restart while it's stepping down.
-				if (runtimeRef.current.javaFallbackInProgress) {
-					return;
-				}
-
-				runtimeRef.current.forceKilled = false;
-
-				if (state === 'crashed') {
-					// A boot failure blamed on `--nogui`: drop the flag and retry once
-					// before surfacing this as a crash.
-					if (runtimeRef.current.noguiErrorFlagged && !runtimeRef.current.everRunning) {
-						runtimeRef.current.noguiErrorFlagged = false;
-						if (await handleNoguiUnsupported()) return;
-					}
-
-					appendTerminalLine(
-						exitCode != null
-							? `[system] Server crashed (exit code ${exitCode}).`
-							: '[system] Server crashed.',
-					);
-					setCrashedState({ exitCode, stderrTail: stderrTail ?? [], at: new Date() });
-					return;
-				}
-
-				setOfflineState();
-			})();
+			runtimeRef.current.recovery = createStartRecovery();
+			setOfflineState();
 		})
 			.then((cleanup) => {
 				if (!active) {
@@ -694,16 +434,14 @@ export const useServerRuntime = ({
 		};
 	}, [
 		appendTerminalLine,
-		createAutomaticBackup,
-		handleNoguiUnsupported,
-		hasOnCloseBackup,
-		server?.java_installation,
 		serverDirectory,
 		serverId,
-		serverTelemetryPort,
 		setCrashedState,
+		setErrorMessage,
 		setOfflineState,
 		setServerStatus,
+		setStartingState,
+		startWithJava,
 		updateServer,
 		updateServerStats,
 	]);
@@ -738,40 +476,10 @@ export const useServerRuntime = ({
 		};
 	}, [serverDirectory, serverId, updateServerStats]);
 
-	React.useEffect(() => {
-		if (!serverStatus) return;
-		const becameOnline = runtimeRef.current.previousStatus !== 'online' && serverStatus === 'online';
-
-		if (becameOnline && hasOnStartBackup) {
-			void createAutomaticBackup('on_start');
-		}
-
-		runtimeRef.current.previousStatus = serverStatus;
-	}, [createAutomaticBackup, hasOnStartBackup, serverStatus]);
-
-	React.useEffect(() => {
-		if (!serverStatus) return;
-		if (serverStatus !== 'online') return;
-		if (!hasIntervalBackup) return;
-
-		const timer = window.setInterval(() => {
-			void createAutomaticBackup('interval');
-		}, autoBackupIntervalMinutes * 60_000);
-
-		return () => {
-			window.clearInterval(timer);
-		};
-	}, [autoBackupIntervalMinutes, createAutomaticBackup, hasIntervalBackup, serverStatus]);
-
-	const handleItemsChanged = React.useCallback(async () => {
-		await syncServerContents();
-	}, [syncServerContents]);
-
 	const handleStart = React.useCallback(async () => {
 		if (!serverDirectory) return;
 		if (isBusy) return;
 
-		beginStartCycle();
 		setIsBusy(true);
 		setStartingState();
 		appendTerminalLine('[system] Starting server...');
@@ -784,7 +492,8 @@ export const useServerRuntime = ({
 				return;
 			}
 
-			await startWithJava(java.executablePath, java.majorVersion);
+			runtimeRef.current.recovery = createStartRecovery(java.executablePath, java.majorVersion);
+			await startWithJava(java.executablePath);
 			await syncServerContents();
 		} catch (err) {
 			setOfflineState();
@@ -796,7 +505,6 @@ export const useServerRuntime = ({
 	}, [
 		acquireJava,
 		appendTerminalLine,
-		beginStartCycle,
 		isBusy,
 		serverDirectory,
 		setIsBusy,
@@ -811,15 +519,11 @@ export const useServerRuntime = ({
 		if (!serverDirectory) return;
 		if (isBusy) return;
 
-		runtimeRef.current.manualStopRequested = true;
-		runtimeRef.current.stopRequested = true;
-		runtimeRef.current.forceKilled = false;
 		setIsBusy(true);
 		setServerStatus(serverId, 'closing');
 		appendTerminalLine('[system] Stopping server...');
 
-		// The supervisor detects the actual exit and emits `offline`, which drives
-		// the on-close backup and final offline state.
+		// The supervisor detects the actual exit and emits `offline`.
 		try {
 			await invoke('stop_server', { directory: serverDirectory });
 		} catch (err) {
@@ -835,9 +539,6 @@ export const useServerRuntime = ({
 		if (!serverDirectory) return;
 		if (isBusy) return;
 
-		runtimeRef.current.manualStopRequested = true;
-		runtimeRef.current.stopRequested = true;
-		runtimeRef.current.forceKilled = false;
 		setIsBusy(true);
 		setServerStatus(serverId, 'closing');
 		appendTerminalLine('[system] Putting server to sleep...');
@@ -848,12 +549,8 @@ export const useServerRuntime = ({
 			// or offline if sleep mode failed to start) corrects it once the process
 			// actually exits.
 		} catch (err) {
-			// The backend rejected the request before touching the process — it's
-			// still online, so revert status and the bookkeeping flags set above
-			// rather than leaving them stuck (mirrors setOfflineState's cleanup).
-			runtimeRef.current.manualStopRequested = false;
-			runtimeRef.current.stopRequested = false;
-			runtimeRef.current.forceKilled = false;
+			// The backend rejected the request before touching the process, so
+			// it's still online.
 			setServerStatus(serverId, 'online');
 			const message = showError(err, 'Failed to put server to sleep.');
 			appendTerminalLine(`[system] ${message}`);
@@ -866,7 +563,6 @@ export const useServerRuntime = ({
 		if (!serverDirectory) return;
 		if (isBusy) return;
 
-		beginStartCycle({ restart: true });
 		setIsBusy(true);
 		setServerStatus(serverId, 'closing');
 		appendTerminalLine('[system] Restarting server...');
@@ -879,11 +575,7 @@ export const useServerRuntime = ({
 				return;
 			}
 
-			runtimeRef.current.currentJavaExecutable = java.executablePath;
-			if (java.majorVersion != null && !runtimeRef.current.javaAttemptMajors.includes(java.majorVersion)) {
-				runtimeRef.current.javaAttemptMajors.push(java.majorVersion);
-			}
-			runtimeRef.current.awaitingReady = true;
+			runtimeRef.current.recovery = createStartRecovery(java.executablePath, java.majorVersion);
 			await appendResolvedStartCommand(java.executablePath);
 			// The backend stops, waits for exit, then starts; events do the rest.
 			await invoke('restart_server', { directory: serverDirectory, javaExecutable: java.executablePath });
@@ -898,7 +590,6 @@ export const useServerRuntime = ({
 		acquireJava,
 		appendResolvedStartCommand,
 		appendTerminalLine,
-		beginStartCycle,
 		isBusy,
 		serverDirectory,
 		serverId,
@@ -912,10 +603,6 @@ export const useServerRuntime = ({
 		if (!serverDirectory) return;
 		if (isBusy) return;
 
-		runtimeRef.current.manualStopRequested = true;
-		runtimeRef.current.stopRequested = true;
-		runtimeRef.current.restartRequested = false;
-		runtimeRef.current.forceKilled = true;
 		setIsBusy(true);
 		setServerStatus(serverId, 'closing');
 		appendTerminalLine('[system] Force killing server process...');
@@ -945,8 +632,6 @@ export const useServerRuntime = ({
 			appendTerminalLine(`> ${command}`);
 
 			if (isStopCommand(command, server?.provider)) {
-				runtimeRef.current.manualStopRequested = true;
-				runtimeRef.current.stopRequested = true;
 				setServerStatus(serverId, 'closing');
 			}
 
@@ -976,7 +661,6 @@ export const useServerRuntime = ({
 
 	return {
 		syncServerContents,
-		handleItemsChanged,
 		handleStart,
 		handleStop,
 		handleSleep,

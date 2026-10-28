@@ -1,14 +1,13 @@
 import * as React from 'react';
-import { FolderOpen, TriangleAlert } from 'lucide-react';
+import { FolderOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { type AutoBackupMode, type ServerSetupFormData } from '@/lib/mserve-sync';
+import { type ServerSetupFormData } from '@/lib/mserve-sync';
 import { examplePaths } from '@/lib/platform';
-import { backupChoices } from '@/pages/server/server-constants';
-import { toggleBackupMode as toggleBackupModeValue } from '@/pages/server/server-utils';
+import { AutoBackupFields } from '@/components/auto-backup-fields';
 import RamSliderField from '@/components/ram-slider-field';
 
 type ServerSetupFormFieldsProps = {
@@ -22,11 +21,6 @@ type ServerSetupFormFieldsProps = {
 	showAutoAgreeEula?: boolean;
 };
 
-const asNumber = (value: string, fallback: number) => {
-	const parsed = Number(value);
-	return Number.isFinite(parsed) ? parsed : fallback;
-};
-
 export const ServerSetupFormFields: React.FC<ServerSetupFormFieldsProps> = ({
 	form,
 	onFieldChange,
@@ -37,10 +31,6 @@ export const ServerSetupFormFields: React.FC<ServerSetupFormFieldsProps> = ({
 	showCreateDirectoryIfMissing = true,
 	showAutoAgreeEula = true,
 }) => {
-	const handleToggleBackupMode = (mode: AutoBackupMode, enabled: boolean) => {
-		onFieldChange('auto_backup', toggleBackupModeValue(form.auto_backup, mode, enabled));
-	};
-
 	return (
 		<>
 			{showDirectory && (
@@ -111,63 +101,7 @@ export const ServerSetupFormFields: React.FC<ServerSetupFormFieldsProps> = ({
 				/>
 			</Field>
 
-			<Field>
-				<Label>Auto backup modes</Label>
-				<div className='space-y-2'>
-					{backupChoices.map((choice) => (
-						<Label key={choice.value} className='flex items-center gap-3'>
-							<Checkbox
-								checked={form.auto_backup.includes(choice.value)}
-								onCheckedChange={(checked) =>
-									handleToggleBackupMode(
-										choice.value,
-										typeof checked === 'boolean' ? checked : false,
-									)
-								}
-							/>
-							{choice.label}
-						</Label>
-					))}
-				</div>
-			</Field>
-			{form.auto_backup.length > 0 && (
-				<Field>
-					<Label htmlFor={`${idPrefix}-storage-limit`}>Backup storage limit (GB)</Label>
-					<Input
-						id={`${idPrefix}-storage-limit`}
-						type='number'
-						value={form.storage_limit}
-						onChange={(event) =>
-							onFieldChange('storage_limit', asNumber(event.target.value, form.storage_limit))
-						}
-						min={1}
-						required
-					/>
-					<p className='text-sm text-muted-foreground'>
-						<TriangleAlert className='size-4 inline-flex mr-1 mb-0.5' />
-						Backups can grow quickly. Set a limit to avoid filling the disk. The oldest backup(s) will
-						be deleted once the limit is reached to make space for the new one.
-					</p>
-				</Field>
-			)}
-			{form.auto_backup.includes('interval') && (
-				<Field>
-					<Label htmlFor={`${idPrefix}-backup-interval`}>Backup interval (minutes)</Label>
-					<Input
-						id={`${idPrefix}-backup-interval`}
-						type='number'
-						value={form.auto_backup_interval}
-						onChange={(event) =>
-							onFieldChange(
-								'auto_backup_interval',
-								asNumber(event.target.value, form.auto_backup_interval),
-							)
-						}
-						min={1}
-						required
-					/>
-				</Field>
-			)}
+			<AutoBackupFields values={form} onFieldChange={onFieldChange} idPrefix={idPrefix} />
 			<Field>
 				<Label className='flex items-center gap-3'>
 					<Checkbox

@@ -31,20 +31,8 @@ import CreateServerPage from './pages/CreateServer';
 import { CreateServerProvider } from './pages/create-server/CreateServerContext';
 import Feedback from './pages/Feedback';
 import { initSentry, reportError } from './lib/sentry';
+import { clearAppStorage, THEME_STORAGE_KEY } from './lib/local-storage';
 
-const THEME_STORAGE_KEY = 'vite-ui-theme';
-
-/** Every key the app stores starts with `mserve.` (plus the theme), so new stores are covered too. */
-const clearAppStorage = () => {
-	try {
-		const keys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index));
-		for (const key of keys) {
-			if (key && (key.startsWith('mserve.') || key === THEME_STORAGE_KEY)) localStorage.removeItem(key);
-		}
-	} catch {
-		// Storage unavailable; the reload still helps.
-	}
-};
 
 class AppErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
 	constructor(props: { children: React.ReactNode }) {

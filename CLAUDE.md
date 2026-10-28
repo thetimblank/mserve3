@@ -75,7 +75,7 @@ the **run-debug** skill.
   `stopping`, `crashed`, `running-external`, `sleeping` (process parked, port held
   by the wake listener). This — not console scraping — is the authoritative server
   status, set by the supervisor via TCP port probing and by the runtime commands.
-- **Backend → frontend events** (9 of them):
+- **Backend → frontend events** (10 of them):
   - `server-runtime-state` — lifecycle change (`support/supervisor.rs`, `commands/runtime.rs`, `support/sleep_listener.rs`)
   - `server-telemetry` — a metrics sample (`support/supervisor.rs`)
   - `server-output` — a stdout/stderr console line, or a `system` line explaining a backend action (`support/runtime_io.rs`)
@@ -85,6 +85,10 @@ the **run-debug** skill.
   - `playit-claim-state` — playit.gg account claim flow (`support/playit.rs`)
   - `playit-tunnel-state` — per-server tunnel status/address (`support/playit.rs`)
   - `app-close-requested` — window close/tray quit, carrying the servers a quit would kill (`app/mod.rs`)
+  - `server-backups-changed` — an automatic backup (on start, on close, interval) finished or failed (`support/auto_backup.rs`)
+- **Automatic backups run in the backend:** the supervisor triggers the
+  `auto_backup` modes (`support/auto_backup.rs`), so they work with the server's
+  page closed or the window in the background, like auto-restart.
 - **Per-server config lives in `mserve.json`** in each server's directory (RAM,
   flags, provider, java path, backup policy…). The frontend mirrors a subset to
   `localStorage`; the backend owns the file. See `support/mserve_config.rs`.

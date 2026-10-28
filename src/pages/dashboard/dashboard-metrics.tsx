@@ -11,6 +11,7 @@ import type { Server } from '@/data/servers';
 import { METRIC_COLORS } from '@/pages/server/stats/stats-utils';
 import { formatBytes } from '@/lib/utils';
 
+import { BENTO_METRICS_GRID_CLASSES } from './bento-shapes';
 import StatCard from './stat-card';
 import type { DashboardActivity } from './use-dashboard-activity';
 import type { DashboardStorage } from './use-dashboard-storage';
@@ -58,7 +59,7 @@ const DashboardMetrics: React.FC<Props> = ({ servers, activity, storage, trailin
 			: 'offline drops · last 7 days';
 
 	return (
-		<div className='grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-6'>
+		<div className={BENTO_METRICS_GRID_CLASSES}>
 			<StatCard
 				icon={<ServerIcon />}
 				label='Servers online'

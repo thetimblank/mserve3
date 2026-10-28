@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 import type { PlayitClaimStateEvent } from '@/pages/server/server-types';
 import { getErrorMessage } from '@/lib/utils';
 
-export type PlayitClaimState = {
+type PlayitClaimState = {
 	status: 'idle' | 'pending' | 'claimed' | 'error';
 	claimUrl: string | null;
 	error: string | null;

@@ -65,6 +65,8 @@ src/app/
     ├── runtime_io.rs      stream child stdout/stderr → server-output events, stdin writes
     ├── process.rs         OS process plumbing (job object / process groups, port→PID kill)
     ├── backups.rs         backup copy/restore + retention enforcement
+    ├── auto_backup.rs     automatic backups the supervisor triggers (on start/close,
+    │                      interval); emits server-backups-changed
     ├── scan.rs            enumerate worlds/plugins/datapacks
     ├── items.rs           move items between active/inactive folders
     ├── core.rs            platform helpers (no_window_command, home_dir, file moves)
@@ -109,7 +111,9 @@ struct RuntimeState { processes: Arc<Mutex<HashMap<String, ServerRuntime>>> }
   Owns lifecycle — watches the child for exit, probes the TCP port to flip
   `starting → online`, drives telemetry sampling cadence (~1s starting, ~5s online),
   and emits `server-runtime-state` + `server-telemetry`. Graceful stop waits ~10s
-  before force-kill.
+  before force-kill. It also triggers the automatic backups: on start (starting →
+  online), on close (after a graceful stop, crash or sleep, never a force-kill)
+  and on an interval while online, reading the modes from mserve.json each time.
 - **telemetry** (`support/telemetry.rs`): builds a `TelemetrySample` from three
   sources — Server-List-Ping (online/players/version/MOTD, works for proxies),
   RCON TPS (`/tps` for Paper, `/tickquery` for the TickQuery plugin, else

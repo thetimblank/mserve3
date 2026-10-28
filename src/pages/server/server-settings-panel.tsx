@@ -34,8 +34,8 @@ import { Container } from '@/components/ui/container';
 import { Input } from '@/components/ui/input';
 import { isStoppedStatus, Server, useServers } from '@/data/servers';
 import type { JavaRuntimeInfo } from '@/lib/java-runtime-service';
-import { repairServerMserveJson, syncServerMserveJson } from '@/lib/mserve-sync';
-import { requestMserveRepair } from '@/lib/mserve-repair-controller';
+import { syncMserveJsonWithRepair } from '@/lib/mserve-sync';
+import { mapSyncedConfigToServer } from '@/lib/mserve-server-mapper';
 import { getServerProviderCapabilities } from '@/lib/server-provider-capabilities';
 import {
 	type ManagedConfigFileStatus,
@@ -352,11 +352,12 @@ export default function ServerSettingsPanel({
 		}
 	}, [cacheKey, server.directory]);
 
+	// Show the last known list at once, but rescan on every visit: a server's
+	// first start writes files (bukkit.yml, spigot.yml…) that weren't there.
 	React.useEffect(() => {
 		const cachedStatuses = managedConfigFileStatusCache.get(cacheKey);
 		if (cachedStatuses) {
 			setManagedConfigFileStatuses(cachedStatuses);
-			return;
 		}
 
 		void refreshManagedConfigFiles();
@@ -367,60 +368,13 @@ export default function ServerSettingsPanel({
 
 		setIsBusy(true);
 		try {
-			let synced = await syncServerMserveJson(server.directory);
-
-			if (synced.status === 'needs_setup') {
-				if (!synced.config) {
-					throw new Error('Could not load fallback mserve configuration for repair.');
-				}
-
-				const repairPayload = await requestMserveRepair({
-					directory: server.directory,
-					file: server.file,
-					ram: server.ram,
-					storage_limit: server.storage_limit,
-					auto_backup: server.auto_backup,
-					auto_backup_interval: server.auto_backup_interval,
-					auto_restart: server.auto_restart,
-					sleep_enabled: server.sleep_enabled,
-					sleep_idle_minutes: server.sleep_idle_minutes,
-					sleep_motd: server.sleep_motd,
-					create_directory_if_missing: true,
-					auto_agree_eula: true,
-					java_installation: server.java_installation ?? '',
-					custom_flags: server.custom_flags,
-					provider: server.provider,
-					telemetry_host: server.telemetry_host,
-					telemetry_port: server.telemetry_port,
-				});
-
-				if (!repairPayload) {
-					toast.error('Sync cancelled. mserve.json rebuild was not completed.');
-					return;
-				}
-
-				synced = await repairServerMserveJson(repairPayload);
+			const synced = await syncMserveJsonWithRepair(server.directory, () => server);
+			if (!synced) {
+				toast.error('Sync cancelled. mserve.json rebuild was not completed.');
+				return;
 			}
 
-			if (!synced.config) {
-				throw new Error('Valid mserve.json data could not be resolved.');
-			}
-
-			updateServer(server.id, {
-				id: synced.config.id,
-				file: synced.config.file,
-				ram: synced.config.ram,
-				storage_limit: synced.config.storage_limit,
-				auto_backup: synced.config.auto_backup,
-				auto_backup_interval: synced.config.auto_backup_interval,
-				auto_restart: synced.config.auto_restart,
-				java_installation: synced.config.java_installation ?? undefined,
-				custom_flags: synced.config.custom_flags,
-				provider: synced.config.provider,
-				telemetry_host: synced.config.telemetry_host,
-				telemetry_port: synced.config.telemetry_port,
-				created_at: synced.config.created_at,
-			});
+			updateServer(server.id, mapSyncedConfigToServer(synced.config));
 
 			toast.success(synced.message);
 		} catch (err) {
