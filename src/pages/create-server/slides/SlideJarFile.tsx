@@ -17,6 +17,7 @@ import {
 	type DownloadServerJarProgressEvent,
 	type JarVersionRow,
 } from '@/lib/jar-download-service';
+import { parseJdkVersions } from '@/lib/java-compatibility';
 import { inferProviderFromJarPath, inferVersionFromJarPath } from '@/lib/server-provider-capabilities';
 import {
 	createProvider,
@@ -30,16 +31,6 @@ import JarBrowser from '@/components/jar-browser/jar-browser';
 import { examplePaths } from '@/lib/platform';
 import SlideShell from './SlideShell';
 import { getErrorMessage } from '@/lib/utils';
-
-const parseJdkVersions = (value: string): number[] =>
-	Array.from(
-		new Set(
-			value
-				.split(',')
-				.map((token) => Number(token.trim()))
-				.filter((token) => Number.isInteger(token) && token > 0),
-		),
-	);
 
 const SlideJarFile: React.FC = () => {
 	const { user } = useUser();

@@ -27,6 +27,23 @@ jobs:
          - name: Checkout
            uses: actions/checkout@v4
 
+         # latest.json takes its version from tauri.conf.json, so a tag that
+         # disagrees with the manifests would publish an update nobody receives.
+         - name: Check tag matches the three manifest versions
+           shell: bash
+           run: |
+              set -euo pipefail
+              tag='${{ github.ref_name }}'
+              expected="${tag#v}"
+              conf=$(jq -r '.version' src-tauri/tauri.conf.json)
+              pkg=$(jq -r '.version' package.json)
+              cargo=$(grep -m1 '^version = ' src-tauri/Cargo.toml | cut -d'"' -f2)
+              echo "tag=$expected tauri.conf.json=$conf package.json=$pkg Cargo.toml=$cargo"
+              if [ "$conf" != "$expected" ] || [ "$pkg" != "$expected" ] || [ "$cargo" != "$expected" ]; then
+                echo "Tag $tag does not match the manifest versions; bump all three to $expected." >&2
+                exit 1
+              fi
+
          - name: Install Linux system dependencies (Tauri)
            if: runner.os == 'Linux'
            run: |
@@ -37,7 +54,7 @@ jobs:
          - name: Setup Node
            uses: actions/setup-node@v4
            with:
-              node-version: 20
+              node-version: 22
               cache: npm
 
          - name: Setup Rust

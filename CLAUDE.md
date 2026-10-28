@@ -29,11 +29,11 @@ commands below.
 | Task | Command |
 | --- | --- |
 | Install deps | `npm install` |
-| Dev (Vite + Tauri window, HMR) | `npm run dev` — Vite on `1420`, HMR on `1421` |
+| Dev (Vite + Tauri window, HMR) | `npm run tauri dev` — starts Vite on `1420` (via `beforeDevCommand`) and the window. `npm run dev` alone is just Vite, so `invoke` has no backend |
 | Frontend typecheck + build | `npm run build` (`tsc && vite build`) |
 | Release build (signed installers) | `npm run release:build` |
 | Backend compile check | `cargo check` *(run inside `src-tauri/`)* |
-| Backend lint / format | `cargo clippy` / `cargo fmt` *(inside `src-tauri/`)* |
+| Backend lint / format | `cargo clippy --all-targets -- -D warnings` / `cargo fmt` *(inside `src-tauri/`; CI gates both)* |
 | Frontend tests (Vitest) | `npm run test:run` (watch: `npm run test`) |
 | Backend tests (unit + fake-server integration) | `cargo test` *(inside `src-tauri/`)* |
 | Real-server E2E matrix (slow, gated) | `cargo test --test e2e -- --ignored` *(inside `src-tauri/`)* |
@@ -56,7 +56,7 @@ the **run-debug** skill.
 | [src/lib/](src/lib/) | Frontend services, schemas, mappers |
 | [docs/ai prompts/](docs/ai%20prompts/) | Reusable task-template prompts (`add` / `fix` / `rework`) |
 | [README.md](README.md) | Human landing page + roadmap + release publishing steps |
-| `.claude/skills/` | Workflow skills (release, add-tauri-command, add-provider, run-debug) |
+| `.claude/skills/` | Workflow skills (release, add-tauri-command, add-provider, run-debug, issue, pr) |
 
 ## Critical conventions & gotchas
 
@@ -69,8 +69,12 @@ the **run-debug** skill.
 - **IPC contract:** every `#[tauri::command]` returns `Result<T, String>` (errors
   become plain strings on the JS side). Structs crossing the boundary use
   `#[serde(rename_all = "camelCase")]`, so Rust `snake_case` fields arrive as
-  `camelCase` in TS. Command *names* invoked from JS stay `snake_case`
-  (e.g. `invoke('start_server', …)`).
+  `camelCase` in TS. **Exception:** the structs shaped like `mserve.json` stay
+  `snake_case` on both sides: `InitServerPayload`, `RepairMserveJsonPayload`,
+  `UpdateServerSettingsPayload`, `SyncMserveJsonResult`/`SyncedMserveConfig` and
+  `MserveProvider` (also when nested in a camelCase struct such as
+  `UpdateServerSettingsResult`). Command *names* invoked from JS stay `snake_case`
+  (e.g. `invoke('start_server', …)`); top-level command args are camelCase.
 - **Lifecycle states** (serialized `kebab-case`): `offline`, `starting`, `online`,
   `stopping`, `crashed`, `running-external`, `sleeping` (process parked, port held
   by the wake listener). This — not console scraping — is the authoritative server

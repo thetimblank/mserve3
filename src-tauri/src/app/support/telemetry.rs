@@ -12,7 +12,6 @@ use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
 
 #[derive(Default)]
 pub(in crate::app) struct StatusPingResult {
-    pub online: bool,
     pub players_online: Option<u32>,
     pub players_max: Option<u32>,
     pub server_version: Option<String>,
@@ -187,7 +186,6 @@ pub(in crate::app) fn collect_status_ping(
             .map(std::string::ToString::to_string);
 
         Ok(StatusPingResult {
-            online: true,
             players_online,
             players_max,
             server_version,
@@ -702,7 +700,6 @@ mod pipeline_tests {
             ..FakeServerConfig::default()
         });
         let status = collect_status_ping(&server.host, server.game_port, TIMEOUT);
-        assert!(status.online);
         assert_eq!(status.players_online, Some(3));
         assert_eq!(status.players_max, Some(20));
         assert_eq!(status.server_version.as_deref(), Some("1.21.1"));
@@ -716,7 +713,7 @@ mod pipeline_tests {
             .unwrap()
             .port();
         let status = collect_status_ping("127.0.0.1", port, Duration::from_millis(300));
-        assert!(!status.online);
+        assert_eq!(status.server_version, None);
         assert_eq!(status.players_online, None);
     }
 

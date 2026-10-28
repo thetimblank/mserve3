@@ -4,6 +4,7 @@ import {
 	isJavaCompatible,
 	chooseBestInstalledJava,
 	evaluateJavaCompatibilityStatus,
+	parseJdkVersions,
 } from './java-compatibility';
 
 describe('resolveJavaRequirement', () => {
@@ -72,5 +73,15 @@ describe('evaluateJavaCompatibilityStatus', () => {
 	});
 	it('needs-upgrade when all are too old', () => {
 		expect(evaluateJavaCompatibilityStatus([8, 17], req)).toBe('needs-upgrade');
+	});
+});
+
+describe('parseJdkVersions', () => {
+	it('keeps unique positive integers in input order', () => {
+		expect(parseJdkVersions('17, 21, 17')).toEqual([17, 21]);
+	});
+
+	it('drops blanks, zero, negatives and non-numbers', () => {
+		expect(parseJdkVersions(' ,0,-8, abc, 21.5, 25')).toEqual([25]);
 	});
 });

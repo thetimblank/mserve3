@@ -9,15 +9,18 @@ description: Run mserve in dev mode and verify a change end-to-end — launching
 
 ```bash
 npm install        # first time / after dependency changes
-npm run dev        # Vite (port 1420) + Tauri window with HMR
+npm run tauri dev  # Vite (port 1420, via beforeDevCommand) + Tauri window with HMR
 ```
 
 - Frontend edits hot-reload. **Rust edits trigger a full backend rebuild** — the
   Tauri window restarts; give it time on first build.
-- `npm run dev` is long-running; start it in the background and keep working, or
+- `npm run dev` alone starts only Vite: the page loads in a browser but every
+  `invoke` fails because there's no backend. Use `npm run tauri dev`.
+- `npm run tauri dev` is long-running; start it in the background and keep working, or
   use the project's `/run` skill which already knows how to launch this app.
-- There's **no headless/test harness** — verification here means driving the real
-  UI and watching events.
+- The automated layers (Vitest, `cargo test` with a fake Minecraft server) are in
+  [docs/testing.md](../../../docs/testing.md). This skill covers driving the real UI and
+  watching events.
 
 ## What to watch (the runtime event stream)
 
@@ -26,11 +29,15 @@ backend → frontend events:
 
 | Event | Emitted by | Tells you |
 | --- | --- | --- |
-| `server-runtime-state` | `support/supervisor.rs` | lifecycle: `offline → starting → online → stopping → crashed` / `running-external` |
+| `server-runtime-state` | `support/supervisor.rs`, `commands/runtime.rs`, `support/sleep_listener.rs` | lifecycle: `offline → starting → online → stopping`, plus `crashed`, `running-external`, `sleeping` |
 | `server-telemetry` | `support/supervisor.rs` | a metrics sample (players, TPS, CPU, RAM, uptime) |
 | `server-output` | `support/runtime_io.rs` | a console line (also shown in the in-app terminal) |
 | `java-download-progress` | `commands/java_download.rs` | JDK download % |
 | `server-backups-changed` | `support/auto_backup.rs` | an automatic backup finished (or failed) |
+
+The other five (`server-jar-download-progress`, `modpack-install-progress`,
+`playit-claim-state`, `playit-tunnel-state`, `app-close-requested`) are listed with
+their payloads in [src/CLAUDE.md](../../../src/CLAUDE.md).
 
 Frontend listeners: `components/server-runtime-monitor.tsx` (app-wide) and
 `pages/server/hooks/use-server-runtime.ts` (detail page). To trace an event,
@@ -54,7 +61,7 @@ console (right-click → Inspect in the Tauri dev window).
 - Telemetry DB: `telemetry.db` in the app data dir.
 - Frontend state: `localStorage` keys `mserve.servers.v4`, `mserve.networks.v1`,
   `mserve.user.v1` (inspect via devtools → Application).
-- Backend `eprintln!`/panics surface in the terminal running `npm run dev`.
+- Backend `eprintln!`/panics surface in the terminal running `npm run tauri dev`.
 
 ## Before calling it done
 - `npm run build` (typecheck) and, for backend changes, `cargo check` +

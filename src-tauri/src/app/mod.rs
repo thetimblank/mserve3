@@ -310,8 +310,8 @@ enum TpsCommandState {
     Unsupported,
 }
 
-/// A single timestamped telemetry reading. Returned live to the UI and appended
-/// to the SQLite time-series store for the future timeline graph.
+/// A single timestamped telemetry reading. Sent live to the UI and appended to
+/// the SQLite time-series store behind the Statistics tab.
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct TelemetrySample {
@@ -972,7 +972,6 @@ pub fn run() {
             run_in_background,
             send_server_command,
             get_server_runtime,
-            get_server_telemetry,
             get_server_telemetry_history,
             scan_server_contents,
             set_server_item_active,

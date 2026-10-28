@@ -26,13 +26,13 @@ export type JarTabDefinition = {
 	description: string;
 };
 
-export type JarProviderFilterDefinition = {
+type JarProviderFilterDefinition = {
 	id: JarProviderFilterId;
 	label: string;
 	description: string;
 };
 
-export type JarStabilityFilterDefinition = {
+type JarStabilityFilterDefinition = {
 	id: JarStabilityFilterId;
 	label: string;
 	description: string;
@@ -56,7 +56,7 @@ export type JarVersionRow = {
 	stability: JarStability;
 };
 
-export type DownloadServerJarPayload = {
+type DownloadServerJarPayload = {
 	url: string;
 	preferredFileName?: string;
 	downloadId?: string;

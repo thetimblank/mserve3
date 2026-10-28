@@ -7,7 +7,7 @@
 export type SecuritySeverity = 'pass' | 'info' | 'warn' | 'critical';
 
 /** A one-click remediation: either write server.properties keys or install a plugin. */
-export type SecurityFix =
+type SecurityFix =
 	| { kind: 'properties'; updates: { key: string; value: string }[] }
 	| { kind: 'plugin' };
 

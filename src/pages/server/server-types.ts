@@ -109,7 +109,7 @@ export type CrashInfo = {
 	at: Date;
 };
 
-/** A bucket-averaged history point for the (future) telemetry timeline graph. */
+/** A bucket-averaged history point from the telemetry store (Statistics tab, dashboard). */
 export type TelemetryHistoryPoint = {
 	timestamp: number;
 	online: boolean;

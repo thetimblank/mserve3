@@ -6,7 +6,7 @@ import { getErrorMessage } from '@/lib/utils';
 
 /** Per-server update-check state, keyed by server id. Transient (not persisted):
  *  the check re-runs on every app load by design. */
-export type ServerUpdateEntry =
+type ServerUpdateEntry =
 	| { status: 'idle' }
 	| { status: 'checking' }
 	| { status: 'error'; error: string; checkedAt: number }

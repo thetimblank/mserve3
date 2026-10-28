@@ -67,13 +67,13 @@ export type ModrinthVersion = {
 	sha512?: string;
 };
 
-export type ModrinthCategoryTag = {
+type ModrinthCategoryTag = {
 	name: string;
 	projectType: string;
 	header: string;
 };
 
-export type ModrinthGameVersionTag = {
+type ModrinthGameVersionTag = {
 	version: string;
 	versionType: string;
 	major: boolean;
@@ -167,7 +167,7 @@ export const installModrinthFile = (
 		},
 	});
 
-export type ModpackInstallStage =
+type ModpackInstallStage =
 	| 'downloading-pack'
 	| 'extracting'
 	| 'downloading-files'
