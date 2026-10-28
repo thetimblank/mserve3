@@ -4,10 +4,12 @@ import { toast } from 'sonner';
 import { parsePropertiesMap } from '@/components/server-config-file-editor/properties-config';
 import {
 	auditServerProperties,
+	isNetworkBackend,
 	type SecurityFinding,
 	type SecurityAuditContext,
 } from '@/lib/server-security-audit';
 import type { Server } from '@/data/servers';
+import { useNetworks } from '@/data/networks';
 
 type ManagedConfigFileContent = { fileName: string; content: string };
 
@@ -47,6 +49,8 @@ export const useSecurityAudit = (server: Server) => {
 
 	const directory = server.directory;
 	const ram = server.ram;
+	const { networks } = useNetworks();
+	const behindProxy = isNetworkBackend(server.id, networks);
 
 	const refresh = React.useCallback(async () => {
 		setIsLoading(true);
@@ -59,6 +63,7 @@ export const useSecurityAudit = (server: Server) => {
 			const ctx: SecurityAuditContext = {
 				maxRamGb: Math.max(1, Number(ram) || 1),
 				whitelistCount: countWhitelist(whitelist),
+				behindProxy,
 			};
 			setFindings(auditServerProperties(props, ctx));
 		} catch (err) {
@@ -67,7 +72,7 @@ export const useSecurityAudit = (server: Server) => {
 		} finally {
 			setIsLoading(false);
 		}
-	}, [directory, ram]);
+	}, [directory, ram, behindProxy]);
 
 	React.useEffect(() => {
 		void refresh();

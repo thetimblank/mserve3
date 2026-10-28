@@ -18,6 +18,7 @@ import {
 	createDefaultServerSetupForm,
 } from '@/lib/mserve-sync';
 import { registerMserveRepairHandler } from '@/lib/mserve-repair-controller';
+import { DEFAULT_SLEEP_IDLE_MINUTES, DEFAULT_SLEEP_MOTD } from '@/lib/mserve-consts';
 
 type RepairRequest = {
 	options: PromptMserveRepairOptions;
@@ -32,8 +33,8 @@ const toInitialForm = (options: PromptMserveRepairOptions): ServerSetupFormData 
 	storage_limit: options.storage_limit,
 	auto_restart: options.auto_restart,
 	sleep_enabled: options.sleep_enabled ?? false,
-	sleep_idle_minutes: options.sleep_idle_minutes ?? 15,
-	sleep_motd: options.sleep_motd ?? '§eSleeping §7— join to wake this server',
+	sleep_idle_minutes: options.sleep_idle_minutes ?? DEFAULT_SLEEP_IDLE_MINUTES,
+	sleep_motd: options.sleep_motd ?? DEFAULT_SLEEP_MOTD,
 	auto_backup: options.auto_backup,
 	auto_backup_interval: options.auto_backup_interval,
 	auto_agree_eula: options.auto_agree_eula ?? true,

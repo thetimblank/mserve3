@@ -3,6 +3,7 @@ import type { Provider, ProviderName } from '@/lib/mserve-schema';
 import { clampRamGb, formatHeapSize } from '@/lib/ram-utils';
 import { isProxyProvider } from '@/lib/server-provider';
 import { getDurationParts } from '@/lib/utils';
+import { DEFAULT_SLEEP_IDLE_MINUTES, DEFAULT_TELEMETRY_PORT } from '@/lib/mserve-consts';
 import type { ScannedBackupEntry, ServerSettingsForm, UpdateServerSettingsPayload } from './server-types';
 
 export const toggleBackupMode = (
@@ -34,13 +35,13 @@ export const buildUpdateServerSettingsPayload = (
 	auto_backup_interval: Math.max(1, Number(settingsForm.auto_backup_interval) || 1),
 	auto_restart: settingsForm.auto_restart,
 	sleep_enabled: settingsForm.sleep_enabled,
-	sleep_idle_minutes: Math.max(1, Number(settingsForm.sleep_idle_minutes) || 15),
+	sleep_idle_minutes: Math.max(1, Number(settingsForm.sleep_idle_minutes) || DEFAULT_SLEEP_IDLE_MINUTES),
 	sleep_motd: settingsForm.sleep_motd,
 	custom_flags: settingsForm.custom_flags,
 	java_installation: settingsForm.java_installation.trim() || undefined,
 	provider: settingsForm.provider,
 	telemetry_host: settingsForm.telemetry_host.trim() || undefined,
-	telemetry_port: Math.max(1, Number(settingsForm.telemetry_port) || 25565),
+	telemetry_port: Math.max(1, Number(settingsForm.telemetry_port) || DEFAULT_TELEMETRY_PORT),
 	jar_swap_path: settingsForm.jar_swap_path.trim() || undefined,
 	new_directory: settingsForm.new_directory.trim() || undefined,
 });
@@ -121,27 +122,13 @@ export const isStopCommand = (command: string, provider?: Provider | ProviderNam
 export const getBackupNameFromPath = (backupDirectory: string) =>
 	backupDirectory.split(/[\\/]/).pop() || 'backup';
 
-export const formatBytes = (bytes?: number) => {
-	const value = Math.max(0, Number(bytes) || 0);
-	if (value < 1024) return `${value} B`;
-
-	const units = ['KB', 'MB', 'GB', 'TB'];
-	let scaled = value / 1024;
-	let unitIndex = 0;
-	while (scaled >= 1024 && unitIndex < units.length - 1) {
-		scaled /= 1024;
-		unitIndex += 1;
-	}
-
-	return `${scaled.toFixed(2)} ${units[unitIndex]}`;
-};
-
-export const formatUptime = (uptime: Date) => {
-	const diff = Date.now() - uptime.getTime();
+/** Detailed uptime for the overview panel (`2d 3h 15m`, `4h 2m 9s`, `5m 30s`).
+ *  The compact card variant is `formatUptime` in `lib/utils`. */
+export const formatDetailedUptime = (uptime: Date) => {
+	const diff = Math.max(0, Date.now() - uptime.getTime());
 	const { days, hours, minutes, seconds } = getDurationParts(diff);
 
-	if (days > 0) return `${days}d ${hours}h ${seconds}s`;
+	if (days > 0) return `${days}d ${hours}h ${minutes}m`;
 	if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
-	if (minutes < 0) return `Just started ${seconds}s ago`;
 	return `${minutes}m ${seconds}s`;
 };

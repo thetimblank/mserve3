@@ -14,7 +14,13 @@ export type ServerSetupFormData = MserveJsonFormProps;
 
 export const createDefaultServerSetupForm = (): ServerSetupFormData => createDefaultMserveForm();
 
-export type SyncedMserveConfig = MserveJsonProps;
+/** The Rust `SyncedMserveConfig` as it arrives over IPC (`Option` → `null`). */
+export type SyncedMserveConfig = Omit<MserveJsonProps, 'java_installation'> & {
+	java_installation: string | null;
+	tunnel_enabled: boolean;
+	tunnel_id: string | null;
+	tunnel_address: string | null;
+};
 
 /** Payload for the `initialize_server` command (create flow). */
 export type InitServerPayload = {

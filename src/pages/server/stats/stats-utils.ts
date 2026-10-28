@@ -5,7 +5,7 @@
  */
 import type { ChartConfig } from '@/components/ui/chart';
 import type { TelemetryHistoryPoint } from '@/pages/server/server-types';
-import { formatBytes } from '../server-utils';
+import { formatBytes } from '@/lib/utils';
 
 const MINUTE = 60 * 1000;
 const HOUR = 60 * MINUTE;

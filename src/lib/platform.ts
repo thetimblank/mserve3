@@ -1,7 +1,7 @@
 /** Best-effort OS detection for cosmetic decisions (example paths, hints).
  * The webview's user agent reflects the host OS under Tauri on every platform.
  * Never use this for behavior the backend owns — the backend cfg()s that. */
-export const isWindows = typeof navigator !== 'undefined' && navigator.userAgent.includes('Windows');
+const isWindows = typeof navigator !== 'undefined' && navigator.userAgent.includes('Windows');
 
 /** Platform-appropriate example paths for input placeholders. */
 export const examplePaths = isWindows

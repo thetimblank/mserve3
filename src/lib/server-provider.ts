@@ -7,8 +7,6 @@ import {
 	type ProviderTab,
 } from './mserve-schema';
 
-export type { ProviderName, TelemetryPolling } from './mserve-schema';
-
 /**
  * Static, version-independent metadata for each known provider — the single
  * source of truth for descriptive data. The actual downloadable versions (file,

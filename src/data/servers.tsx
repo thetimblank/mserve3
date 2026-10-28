@@ -4,6 +4,13 @@ import { repairServerMserveJson, syncServerMserveJson } from '@/lib/mserve-sync'
 import { requestMserveRepair } from '@/lib/mserve-repair-controller';
 import { type MserveJsonProps, type MserveStats, type Provider } from '@/lib/mserve-schema';
 import { createProvider, isProxyProvider } from '@/lib/server-provider';
+import { hasLocalStorage, readStoredJson, toDate, writeStoredString } from '@/lib/local-storage';
+import {
+	DEFAULT_SLEEP_IDLE_MINUTES,
+	DEFAULT_SLEEP_MOTD,
+	DEFAULT_TELEMETRY_HOST,
+	DEFAULT_TELEMETRY_PORT,
+} from '@/lib/mserve-consts';
 
 export type { AutoBackupMode, BackupPolicy, BackupScopeItem } from '@/lib/mserve-schema';
 import { normalizeBackupPolicy, normalizeBackupScope } from '@/lib/mserve-schema';
@@ -137,13 +144,6 @@ const generateServerId = () => {
 	return `server-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 };
 
-const toDate = (value?: string | Date): Date => {
-	if (value instanceof Date) return value;
-	if (!value) return new Date();
-	const parsed = new Date(value);
-	return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
-};
-
 const toIsoDateString = (value?: string | Date): string => toDate(value).toISOString();
 
 const sameStringList = (left?: string[], right?: string[]) => {
@@ -181,13 +181,13 @@ const toNullableString = (value: unknown): string | null => {
 
 const normalizeTelemetryHost = (value?: string): string => {
 	const trimmed = value?.trim();
-	return trimmed && trimmed.length > 0 ? trimmed : '127.0.0.1';
+	return trimmed && trimmed.length > 0 ? trimmed : DEFAULT_TELEMETRY_HOST;
 };
 
 const normalizeTelemetryPort = (value?: number): number => {
 	const parsed = Number(value);
 	if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) {
-		return 25565;
+		return DEFAULT_TELEMETRY_PORT;
 	}
 	return parsed;
 };
@@ -283,9 +283,7 @@ const toUniqueBackups = (items?: Server['backups']) => {
 	return normalized;
 };
 
-export const createDefaultServers = (): Server[] => [];
-
-export const normalizeServer = (server: Server): Server => {
+const normalizeServer = (server: Server): Server => {
 	const rawStats = (server.stats ?? {}) as Partial<MserveStats> & {
 		players?: number;
 		capacity?: number;
@@ -349,54 +347,24 @@ export const normalizeServer = (server: Server): Server => {
 		auto_restart: server.auto_restart,
 		// Defaulted for servers persisted before sleep mode existed.
 		sleep_enabled: server.sleep_enabled ?? false,
-		sleep_idle_minutes: Math.max(1, Math.round(Number(server.sleep_idle_minutes) || 15)),
+		sleep_idle_minutes: Math.max(1, Math.round(Number(server.sleep_idle_minutes) || DEFAULT_SLEEP_IDLE_MINUTES)),
 		// Not trimmed: leading spaces are the MOTD editor's alignment padding.
-		sleep_motd: server.sleep_motd?.trim() ? server.sleep_motd : '§eSleeping §7— join to wake this server',
+		sleep_motd: server.sleep_motd?.trim() ? server.sleep_motd : DEFAULT_SLEEP_MOTD,
 		java_installation: server.java_installation?.trim() || undefined,
 		custom_flags: server.custom_flags,
 		created_at: toIsoDateString(server.created_at),
-		tunnel_enabled: server.tunnel_enabled ?? false,
-		tunnel_address: server.tunnel_address?.trim() || undefined,
 	};
 };
 
-export const normalizeServers = (servers: Server[]) => servers.map(normalizeServer);
+const loadServers = (): Server[] => {
+	if (!hasLocalStorage()) return memoryStore ?? [];
 
-const hasLocalStorage = () => {
-	try {
-		return typeof window !== 'undefined' && !!window.localStorage;
-	} catch {
-		return false;
-	}
-};
-
-const loadServers = async (): Promise<Server[]> => {
-	if (!hasLocalStorage()) {
-		if (memoryStore) return memoryStore;
-		const defaults = createDefaultServers();
-		memoryStore = defaults;
-		return defaults;
-	}
-
-	const stored = window.localStorage.getItem(STORAGE_KEY);
-	if (!stored) {
-		const defaults = createDefaultServers();
-		window.localStorage.setItem(STORAGE_KEY, JSON.stringify(defaults));
-		return defaults;
-	}
-
-	try {
-		const parsed = JSON.parse(stored) as Server[];
-		if (!Array.isArray(parsed)) throw new Error('Invalid servers payload');
-		// Runtime state is never trusted from storage: the backend supervisor is
-		// authoritative, and a stale persisted "online" (e.g. after the app was
-		// end-tasked) would show phantom running servers until the first sync.
-		return normalizeServers(parsed.map((server) => ({ ...server, status: 'offline' as const })));
-	} catch {
-		const defaults = createDefaultServers();
-		window.localStorage.setItem(STORAGE_KEY, JSON.stringify(defaults));
-		return defaults;
-	}
+	const parsed = readStoredJson(STORAGE_KEY);
+	if (!Array.isArray(parsed)) return [];
+	// Runtime state is never trusted from storage: the backend supervisor is
+	// authoritative, and a stale persisted "online" (e.g. after the app was
+	// end-tasked) would show phantom running servers until the first sync.
+	return (parsed as Server[]).map((server) => normalizeServer({ ...server, status: 'offline' }));
 };
 
 /**
@@ -421,11 +389,7 @@ const saveServers = (servers: Server[], serialized: string): void => {
 		memoryStore = servers;
 		return;
 	}
-	try {
-		window.localStorage.setItem(STORAGE_KEY, serialized);
-	} catch {
-		// Ignore storage errors
-	}
+	writeStoredString(STORAGE_KEY, serialized);
 };
 
 const updateServerInList = (servers: Server[], id: string, updater: (server: Server) => Server) =>
@@ -436,19 +400,13 @@ const ServersContext = React.createContext<ServersContextValue | undefined>(unde
 export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 	const [servers, setServers] = React.useState<Server[]>([]);
 	const [isReady, setIsReady] = React.useState(false);
-	const didInitialDiskSyncRef = React.useRef(false);
 	const lastPersistedRef = React.useRef<string | null>(null);
+	const serversRef = React.useRef(servers);
+	serversRef.current = servers;
 
 	React.useEffect(() => {
-		let active = true;
-		loadServers().then((loaded) => {
-			if (!active) return;
-			setServers(loaded);
-			setIsReady(true);
-		});
-		return () => {
-			active = false;
-		};
+		setServers(loadServers());
+		setIsReady(true);
 	}, []);
 
 	React.useEffect(() => {
@@ -459,9 +417,12 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 		saveServers(servers, serialized);
 	}, [servers, isReady]);
 
+	// One disk sync per mount, over the servers loaded from storage. It must not
+	// depend on `servers`: every applied config (or any status/telemetry update)
+	// changes it, and re-running the effect's cleanup would cancel the sweep
+	// before the remaining servers were synced.
 	React.useEffect(() => {
-		if (!isReady || didInitialDiskSyncRef.current) return;
-		didInitialDiskSyncRef.current = true;
+		if (!isReady) return;
 
 		let active = true;
 
@@ -555,7 +516,7 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 						sleep_enabled: config.sleep_enabled,
 						sleep_idle_minutes: config.sleep_idle_minutes,
 						sleep_motd: config.sleep_motd,
-						java_installation: config.java_installation,
+						java_installation: config.java_installation ?? undefined,
 						custom_flags: config.custom_flags,
 						provider: configProvider,
 						telemetry_host: config.telemetry_host,
@@ -567,7 +528,7 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 		};
 
 		void (async () => {
-			for (const server of servers) {
+			for (const server of serversRef.current) {
 				if (!active) return;
 				try {
 					await syncServerFromDisk(server);
@@ -581,7 +542,7 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 		return () => {
 			active = false;
 		};
-	}, [isReady, servers]);
+	}, [isReady]);
 
 	const addServer = React.useCallback((server: Server) => {
 		const normalized = normalizeServer(server);
@@ -607,7 +568,7 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 	}, []);
 
 	const resetServers = React.useCallback(() => {
-		setServers(normalizeServers(createDefaultServers()));
+		setServers([]);
 	}, []);
 
 	const updateServer = React.useCallback((id: string, update: ServerUpdate) => {

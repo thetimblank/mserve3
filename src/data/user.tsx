@@ -1,4 +1,5 @@
 import React from 'react';
+import { hasLocalStorage, readStoredJson, toDate, writeStoredString } from '@/lib/local-storage';
 
 export interface UserData {
 	accessibility: {
@@ -36,13 +37,6 @@ interface UserContextValue {
 
 const STORAGE_KEY = 'mserve.user.v1';
 let memoryStore: UserData | null = null;
-
-const toDate = (value?: string | Date): Date => {
-	if (value instanceof Date) return value;
-	if (!value) return new Date();
-	const parsed = new Date(value);
-	return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
-};
 
 const normalizePortList = (ports?: number[]) =>
 	Array.from(
@@ -93,7 +87,7 @@ const normalizeJavaDefault = (value: unknown): string => {
 	return trimmed.toLowerCase() === 'java' || trimmed.toLowerCase() === 'java.exe' ? '' : trimmed;
 };
 
-export const createDefaultUserData = (): UserData => {
+const createDefaultUserData = (): UserData => {
 	const now = new Date();
 	return {
 		accessibility: {
@@ -115,12 +109,12 @@ export const createDefaultUserData = (): UserData => {
 	};
 };
 
-export const normalizeUserData = (user: Partial<UserData> | null | undefined): UserData => {
+const normalizeUserData = (user: Partial<UserData> | null | undefined): UserData => {
 	const fallback = createDefaultUserData();
 	return {
 		accessibility: {
-			logo_animation: user?.accessibility?.logo_animation ?? false,
-			reduced_motion: user?.accessibility?.reduced_motion ?? false,
+			logo_animation: user?.accessibility?.logo_animation ?? fallback.accessibility.logo_animation,
+			reduced_motion: user?.accessibility?.reduced_motion ?? fallback.accessibility.reduced_motion,
 		},
 		// '' = Automatic (each server resolves its own runtime). Legacy values of
 		// `java`/`java.exe` were the old "use system PATH" sentinel — migrate them
@@ -140,50 +134,18 @@ export const normalizeUserData = (user: Partial<UserData> | null | undefined): U
 	};
 };
 
-const hasLocalStorage = () => {
-	try {
-		return typeof window !== 'undefined' && !!window.localStorage;
-	} catch {
-		return false;
-	}
+const loadUserData = (): UserData => {
+	if (!hasLocalStorage()) return memoryStore ?? createDefaultUserData();
+	const stored = readStoredJson(STORAGE_KEY);
+	return stored && typeof stored === 'object' ? normalizeUserData(stored as Partial<UserData>) : createDefaultUserData();
 };
 
-const loadUserData = async (): Promise<UserData> => {
-	if (!hasLocalStorage()) {
-		if (memoryStore) return memoryStore;
-		const defaults = createDefaultUserData();
-		memoryStore = defaults;
-		return defaults;
-	}
-
-	const stored = window.localStorage.getItem(STORAGE_KEY);
-	if (!stored) {
-		const defaults = createDefaultUserData();
-		window.localStorage.setItem(STORAGE_KEY, JSON.stringify(defaults));
-		return defaults;
-	}
-
-	try {
-		const parsed = JSON.parse(stored) as Partial<UserData>;
-		return normalizeUserData(parsed);
-	} catch {
-		const defaults = createDefaultUserData();
-		window.localStorage.setItem(STORAGE_KEY, JSON.stringify(defaults));
-		return defaults;
-	}
-};
-
-const saveUserData = async (user: UserData): Promise<void> => {
+const saveUserData = (user: UserData): void => {
 	if (!hasLocalStorage()) {
 		memoryStore = user;
 		return;
 	}
-
-	try {
-		window.localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
-	} catch {
-		// Ignore storage errors
-	}
+	writeStoredString(STORAGE_KEY, JSON.stringify(user));
 };
 
 const UserContext = React.createContext<UserContextValue | undefined>(undefined);
@@ -193,15 +155,8 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
 	const [isReady, setIsReady] = React.useState(false);
 
 	React.useEffect(() => {
-		let active = true;
-		loadUserData().then((loaded) => {
-			if (!active) return;
-			setUserState(loaded);
-			setIsReady(true);
-		});
-		return () => {
-			active = false;
-		};
+		setUserState(loadUserData());
+		setIsReady(true);
 	}, []);
 
 	React.useEffect(() => {

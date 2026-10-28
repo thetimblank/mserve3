@@ -9,7 +9,7 @@ import { AlertTriangle, HardDrive, MemoryStick, Server as ServerIcon, Users } fr
 
 import type { Server } from '@/data/servers';
 import { METRIC_COLORS } from '@/pages/server/stats/stats-utils';
-import { formatBytes } from '@/pages/server/server-utils';
+import { formatBytes } from '@/lib/utils';
 
 import StatCard from './stat-card';
 import type { DashboardActivity } from './use-dashboard-activity';

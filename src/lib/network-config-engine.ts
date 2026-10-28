@@ -11,6 +11,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { readManagedConfigFile, writeManagedConfigFile } from '@/components/server-config-file-editor/file-operations';
 import { parsePropertiesMap, serializePropertiesMap } from '@/components/server-config-file-editor/properties-config';
 import { resolveProviderKind } from '@/lib/server-provider-capabilities';
+import { resolveProvider } from '@/lib/server-provider';
 import { isStoppedStatus, type Server } from '@/data/servers';
 import {
 	buildNetworkAliasMap,
@@ -45,19 +46,27 @@ const readServerNetworkFile = (directory: string, relative: string) =>
 const writeServerNetworkFile = (directory: string, relative: string, content: string) =>
 	invoke<ServerNetworkFileContent>('write_server_network_file', { payload: { directory, relative, content } });
 
-/** Read a managed config file, returning null when it does not exist yet. */
+/** OS "file/path not found" (errno 2 on Linux, ERROR_FILE/PATH_NOT_FOUND 2/3 on Windows). */
+const isNotFoundError = (error: unknown) => /\(os error [23]\)/.test(String(error));
+
+/**
+ * Read a managed config file, returning null when it does not exist yet. Any
+ * other failure (permissions, not UTF-8) is rethrown: treating it as "missing"
+ * would plan a from-scratch file that replaces the user's whole config.
+ */
 const readOptionalManagedFile = async (directory: string, fileName: string): Promise<string | null> => {
 	try {
 		const result = await readManagedConfigFile(directory, fileName);
 		return result.content;
-	} catch {
-		return null;
+	} catch (error) {
+		if (isNotFoundError(error)) return null;
+		throw new Error(`Could not read ${fileName} in ${directory}: ${String(error)}`);
 	}
 };
 
 // --- Plan / change types ----------------------------------------------------
 
-export type NetworkFileMethod = 'managed' | 'network';
+type NetworkFileMethod = 'managed' | 'network';
 
 export interface NetworkFileChange {
 	serverId: string;
@@ -76,7 +85,7 @@ export interface NetworkApplyPlan {
 	changes: NetworkFileChange[];
 }
 
-export type NetworkDiagnosticLevel = 'error' | 'warning';
+type NetworkDiagnosticLevel = 'error' | 'warning';
 
 /**
  * `config` diagnostics describe the network itself (wrong topology, port
@@ -84,7 +93,7 @@ export type NetworkDiagnosticLevel = 'error' | 'warning';
  * diagnostics only reflect the current moment (a server happens to be running)
  * and are surfaced at apply time instead of nagging while users edit.
  */
-export type NetworkDiagnosticKind = 'config' | 'runtime';
+type NetworkDiagnosticKind = 'config' | 'runtime';
 
 export interface NetworkDiagnostic {
 	level: NetworkDiagnosticLevel;
@@ -101,6 +110,14 @@ const isLoopbackHost = (host: string): boolean => {
 };
 
 const serverMapById = (servers: Server[]) => new Map(servers.map((server) => [server.id, server]));
+
+/**
+ * Networks are wired with Velocity modern forwarding (velocity.toml +
+ * forwarding.secret + Paper's `proxies.velocity`). A BungeeCord proxy is also a
+ * `proxy` kind but uses none of those files, so it can't route a network yet.
+ */
+export const isVelocityProxy = (server: Pick<Server, 'provider'>): boolean =>
+	resolveProvider(server.provider)?.name === 'velocity';
 
 // --- Per-file builders ------------------------------------------------------
 
@@ -235,6 +252,33 @@ const buildVelocityChange = (
 		servers[alias] = address;
 	}
 
+	// Aliases follow server names, so a renamed backend leaves its old entry
+	// pointing at the same address. Drop those (other entries are left alone:
+	// they may be servers the user added by hand).
+	const managedAliases = new Set(members.map(({ member }) => aliasFor(member)));
+	const memberAddresses = new Set(members.map(({ member }) => `${member.host}:${member.port}`));
+	const staleAliases = Object.keys(servers).filter(
+		(alias) => alias !== 'try' && !managedAliases.has(alias) && memberAddresses.has(String(servers[alias])),
+	);
+	for (const alias of staleAliases) {
+		delete servers[alias];
+		summary.push(`servers.${alias} removed (renamed backend)`);
+	}
+	// Velocity rejects forced hosts that name an unregistered server.
+	const forcedHosts = root['forced-hosts'];
+	if (staleAliases.length > 0 && forcedHosts && typeof forcedHosts === 'object') {
+		const pruned: Record<string, unknown> = {};
+		for (const [host, targets] of Object.entries(forcedHosts as Record<string, unknown>)) {
+			if (!Array.isArray(targets)) {
+				pruned[host] = targets;
+				continue;
+			}
+			const kept = targets.filter((target) => !staleAliases.includes(String(target)));
+			if (kept.length > 0) pruned[host] = kept;
+		}
+		root['forced-hosts'] = pruned;
+	}
+
 	const tryOrder = members
 		.filter(({ member }) => member.inTry)
 		.sort((left, right) => left.member.tryIndex - right.member.tryIndex)
@@ -297,8 +341,8 @@ export const planNetworkApply = async (
 	if (!proxy) {
 		throw new Error('Assign a proxy server to this network before applying.');
 	}
-	if (resolveProviderKind(proxy.provider) !== 'proxy') {
-		throw new Error(`${proxy.name} is not a proxy server.`);
+	if (!isVelocityProxy(proxy)) {
+		throw new Error(`${proxy.name} is not a Velocity proxy.`);
 	}
 
 	const resolvedMembers = network.members
@@ -371,11 +415,11 @@ export const diagnoseNetwork = (
 			kind: 'config',
 			message: 'The assigned proxy server no longer exists.',
 		});
-	} else if (resolveProviderKind(proxy.provider) !== 'proxy') {
+	} else if (!isVelocityProxy(proxy)) {
 		diagnostics.push({
 			level: 'error',
 			kind: 'config',
-			message: `${proxy.name} is not a Velocity proxy and cannot route a network.`,
+			message: `${proxy.name} is not a Velocity proxy and cannot route a network (BungeeCord networks aren't supported yet).`,
 			serverId: proxy.id,
 		});
 	} else if (!isStoppedStatus(proxy.status)) {

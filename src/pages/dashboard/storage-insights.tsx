@@ -8,7 +8,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 
 import type { Server } from '@/data/servers';
-import { formatBytes } from '@/pages/server/server-utils';
+import { formatBytes } from '@/lib/utils';
 import { METRIC_COLORS } from '@/pages/server/stats/stats-utils';
 import { Skeleton } from '@/components/ui/skeleton';
 

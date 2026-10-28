@@ -85,3 +85,36 @@ describe('minimessage MOTD is unaffected by the legacy escaping', () => {
 		expect(getEditableMotdValue(stored, 'minimessage')).toBe(editable);
 	});
 });
+
+describe('MiniMessage preview closing tags', () => {
+	const runStyles = (value: string) =>
+		parseMotdPreviewLines(value, 'minimessage')[0].map((run) => ({
+			text: run.text,
+			bold: run.style.bold,
+			italic: run.style.italic,
+		}));
+
+	it('</italic> closes only the italic frame', () => {
+		expect(runStyles('<bold>a<italic>b</italic>c')).toEqual([
+			{ text: 'a', bold: true, italic: false },
+			{ text: 'b', bold: true, italic: true },
+			{ text: 'c', bold: true, italic: false },
+		]);
+	});
+
+	it('</bold> closes the bold frame and anything opened inside it', () => {
+		expect(runStyles('<italic>a<bold>b</bold>c')).toEqual([
+			{ text: 'a', bold: false, italic: true },
+			{ text: 'b', bold: true, italic: true },
+			{ text: 'c', bold: false, italic: true },
+		]);
+		expect(runStyles('<bold>a<italic>b</bold>c')[2]).toEqual({ text: 'c', bold: false, italic: false });
+	});
+
+	it('maps named and British-spelled colors', () => {
+		const [run] = parseMotdPreviewLines('<dark_grey>x', 'minimessage')[0];
+		expect(run.style.color).toBe('#555555');
+		const [legacy] = parseMotdPreviewLines('§ax', 'legacy')[0];
+		expect(legacy.style.color).toBe('#55ff55');
+	});
+});

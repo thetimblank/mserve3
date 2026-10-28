@@ -1,6 +1,11 @@
 import type { Server } from '@/data/servers';
 import type { InitServerResult, ServerSetupFormData, SyncedMserveConfig } from '@/lib/mserve-sync';
-import { DEFAULT_SERVER_PROVIDER } from '@/lib/mserve-consts';
+import {
+	DEFAULT_SERVER_PROVIDER,
+	DEFAULT_SLEEP_IDLE_MINUTES,
+	DEFAULT_TELEMETRY_HOST,
+	DEFAULT_TELEMETRY_PORT,
+} from '@/lib/mserve-consts';
 import { createProvider, isProxyProvider } from '@/lib/server-provider';
 
 export const getServerNameFromDirectory = (directory: string) => {
@@ -82,13 +87,13 @@ export const buildCreatedServer = (form: ServerSetupFormData, result: InitServer
 	backup_scope: ['worlds'],
 	auto_restart: form.auto_restart,
 	sleep_enabled: form.sleep_enabled,
-	sleep_idle_minutes: Math.max(1, Number(form.sleep_idle_minutes) || 15),
+	sleep_idle_minutes: Math.max(1, Number(form.sleep_idle_minutes) || DEFAULT_SLEEP_IDLE_MINUTES),
 	sleep_motd: form.sleep_motd,
 	java_installation: form.java_installation.trim() || undefined,
 	custom_flags: isProxyProvider(form.provider) ? [] : ['--nogui'],
 	provider: createProvider(form.provider ?? DEFAULT_SERVER_PROVIDER, { file: result.file }),
-	telemetry_host: '127.0.0.1',
-	telemetry_port: 25565,
+	telemetry_host: DEFAULT_TELEMETRY_HOST,
+	telemetry_port: DEFAULT_TELEMETRY_PORT,
 	created_at: new Date().toISOString(),
 });
 
@@ -108,7 +113,7 @@ export const buildImportedServer = (result: InitServerIdentity, config: SyncedMs
 	sleep_enabled: config.sleep_enabled,
 	sleep_idle_minutes: config.sleep_idle_minutes,
 	sleep_motd: config.sleep_motd,
-	java_installation: config.java_installation,
+	java_installation: config.java_installation ?? undefined,
 	custom_flags: config.custom_flags,
 	provider: createProvider(config.provider, { file: config.file }),
 	telemetry_host: config.telemetry_host,

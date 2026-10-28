@@ -2,6 +2,7 @@ import React from 'react';
 import { toast } from 'sonner';
 
 import { useUser } from '@/data/user';
+import { readStoredJson, writeStoredString } from '@/lib/local-storage';
 import { getDefaultServersRootPath } from '@/lib/server-root-path';
 import { readNetworksConfig, writeNetworksConfig } from '@/lib/network-config-engine';
 import {
@@ -27,33 +28,13 @@ interface NetworksContextValue {
 
 const STORAGE_KEY = 'mserve.networks.v1';
 
-const hasLocalStorage = () => {
-	try {
-		return typeof window !== 'undefined' && !!window.localStorage;
-	} catch {
-		return false;
-	}
-};
-
 const loadFromLocalStorage = (): ManagedNetwork[] => {
-	if (!hasLocalStorage()) return [];
-	const stored = window.localStorage.getItem(STORAGE_KEY);
-	if (!stored) return [];
-	try {
-		const parsed = JSON.parse(stored);
-		return Array.isArray(parsed) ? normalizeNetworks(parsed) : [];
-	} catch {
-		return [];
-	}
+	const parsed = readStoredJson(STORAGE_KEY);
+	return Array.isArray(parsed) ? normalizeNetworks(parsed) : [];
 };
 
 const saveToLocalStorage = (networks: ManagedNetwork[]) => {
-	if (!hasLocalStorage()) return;
-	try {
-		window.localStorage.setItem(STORAGE_KEY, JSON.stringify(networks));
-	} catch {
-		// Ignore storage errors
-	}
+	writeStoredString(STORAGE_KEY, JSON.stringify(networks));
 };
 
 const resolveRootPath = async (configuredPath: string): Promise<string> => {
@@ -81,26 +62,34 @@ export const NetworksProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
 		void (async () => {
 			const rootPath = await resolveRootPath(user.servers_root_path);
-			rootPathRef.current = rootPath;
 
 			let loaded: ManagedNetwork[] = [];
+			// Where saves go. Left empty when the disk file exists but can't be read
+			// or parsed: falling back to the localStorage copy is fine for this
+			// session, but writing it back would overwrite the user's file.
+			let writableRootPath = rootPath;
 			if (rootPath) {
 				try {
 					const result = await readNetworksConfig(rootPath);
 					if (result.content) {
 						const parsed = JSON.parse(result.content);
-						loaded = Array.isArray(parsed) ? normalizeNetworks(parsed) : [];
+						if (!Array.isArray(parsed)) throw new Error('networks.json is not a list of networks.');
+						loaded = normalizeNetworks(parsed);
 					} else {
 						loaded = loadFromLocalStorage();
 					}
-				} catch {
+				} catch (error) {
+					writableRootPath = '';
 					loaded = loadFromLocalStorage();
+					const message = error instanceof Error ? error.message : String(error);
+					toast.error(`Could not read networks.json (${message}). Network changes won't be saved to disk until it's fixed.`);
 				}
 			} else {
 				loaded = loadFromLocalStorage();
 			}
 
 			if (!active) return;
+			rootPathRef.current = writableRootPath;
 			setNetworks(loaded);
 			setIsReady(true);
 		})();

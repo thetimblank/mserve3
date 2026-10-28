@@ -107,24 +107,9 @@ export const MOTD_DECORATION_OPTIONS = [
 
 type RgbColor = { r: number; g: number; b: number };
 
-const LEGACY_COLOR_CODES: Record<string, string> = {
-	'0': '#000000',
-	'1': '#0000aa',
-	'2': '#00aa00',
-	'3': '#00aaaa',
-	'4': '#aa0000',
-	'5': '#aa00aa',
-	'6': '#ffaa00',
-	'7': '#aaaaaa',
-	'8': '#555555',
-	'9': '#5555ff',
-	a: '#55ff55',
-	b: '#55ffff',
-	c: '#ff5555',
-	d: '#ff55ff',
-	e: '#ffff55',
-	f: '#ffffff',
-};
+const LEGACY_COLOR_CODES: Record<string, string> = Object.fromEntries(
+	MOTD_COLOR_OPTIONS.map((option) => [option.legacyCode, option.hex]),
+);
 
 const DECORATION_CODES: Record<string, MotdDecorationKey> = {
 	l: 'bold',
@@ -135,46 +120,13 @@ const DECORATION_CODES: Record<string, MotdDecorationKey> = {
 };
 
 const MINI_MESSAGE_COLOR_CODES: Record<string, string> = {
-	black: '#000000',
-	dark_blue: '#0000aa',
-	dark_green: '#00aa00',
-	dark_aqua: '#00aaaa',
-	dark_red: '#aa0000',
-	dark_purple: '#aa00aa',
-	gold: '#ffaa00',
-	gray: '#aaaaaa',
-	dark_gray: '#555555',
-	blue: '#5555ff',
-	green: '#55ff55',
-	aqua: '#55ffff',
-	red: '#ff5555',
-	light_purple: '#ff55ff',
-	yellow: '#ffff55',
-	white: '#ffffff',
+	...Object.fromEntries(MOTD_COLOR_OPTIONS.map((option) => [option.miniMessageTag, option.hex])),
+	// MiniMessage also accepts the British spellings.
 	dark_grey: '#555555',
 	grey: '#aaaaaa',
 };
 
-const MINI_MESSAGE_COLOR_ALIASES = new Set([
-	'black',
-	'dark_blue',
-	'dark_green',
-	'dark_aqua',
-	'dark_red',
-	'dark_purple',
-	'gold',
-	'gray',
-	'dark_gray',
-	'blue',
-	'green',
-	'aqua',
-	'red',
-	'light_purple',
-	'yellow',
-	'white',
-	'dark_grey',
-	'grey',
-]);
+const MINI_MESSAGE_COLOR_ALIASES = new Set(Object.keys(MINI_MESSAGE_COLOR_CODES));
 
 const normalizeLineBreaks = (value: string) => value.replace(/\r\n?/g, '\n');
 
@@ -261,11 +213,11 @@ const popMatchingFrame = (
 	}
 };
 
-export const decodeLegacyMotdText = (value: string) => normalizeLineBreaks(value).replace(/\\u00a7/gi, '§');
+const decodeLegacyMotdText = (value: string) => normalizeLineBreaks(value).replace(/\\u00a7/gi, '§');
 
-export const encodeLegacyMotdText = (value: string) => decodeLegacyMotdText(value).replace(/§/g, '\\u00A7');
+const encodeLegacyMotdText = (value: string) => decodeLegacyMotdText(value).replace(/§/g, '\\u00A7');
 
-export const clampMotdLines = (value: string, maxLines = MOTD_MAX_LINES) =>
+const clampMotdLines = (value: string, maxLines = MOTD_MAX_LINES) =>
 	normalizeLineBreaks(value).split('\n').slice(0, maxLines).join('\n');
 
 export const getEditableMotdValue = (value: string, format: MotdFormat) => {
@@ -483,8 +435,13 @@ const closeMiniMessageFrame = (
 		return;
 	}
 
-	if (name === 'bold' || name === 'b' || name === 'italic' || name === 'i' || name === 'em') {
-		popMatchingFrame(stack, (kind) => kind === 'bold' || kind === 'italic');
+	if (name === 'bold' || name === 'b') {
+		popMatchingFrame(stack, (kind) => kind === 'bold');
+		return;
+	}
+
+	if (name === 'italic' || name === 'i' || name === 'em') {
+		popMatchingFrame(stack, (kind) => kind === 'italic');
 		return;
 	}
 
@@ -618,16 +575,6 @@ export const parseMotdPreviewLines = (value: string, format: MotdFormat): MotdPr
 				: parseMiniMessagePreviewLine(visibleLine);
 		});
 };
-
-export const stripMotdFormatting = (value: string, format: MotdFormat) =>
-	parseMotdPreviewLines(value, format)
-		.map((line) => line.map((run) => run.text).join(''))
-		.join('\n');
-
-export const getMotdVisibleLineLengths = (value: string, format: MotdFormat) =>
-	clampMotdLines(value)
-		.split('\n')
-		.map((line) => stripMotdFormatting(line, format).length);
 
 export const applyMotdAlignment = (value: string, format: MotdFormat, alignment: MotdAlignment) =>
 	clampMotdLines(value)

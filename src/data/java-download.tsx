@@ -18,6 +18,7 @@ import {
 } from '@/lib/java-runtime-service';
 import { useJavaRuntimes } from '@/data/java-runtimes';
 import { resolveServerJavaExecutable } from '@/lib/java-resolution';
+import { isJavaCompatible } from '@/lib/java-compatibility';
 import { useUser } from '@/data/user';
 import type { Server } from '@/data/servers';
 
@@ -26,6 +27,8 @@ type EnsureJavaContextValue = {
 	 * Ensures a Java runtime for `majorVersion` is available, prompting the user
 	 * to download Eclipse Temurin (with a Java-guide fallback). Resolves to the
 	 * installed runtime, or null if the user cancelled / chose the guide.
+	 * Concurrent requests for the same major share one prompt; requests for other
+	 * majors queue behind it (e.g. a staged network start).
 	 */
 	ensureJava: (majorVersion: number) => Promise<JavaRuntimeInfo | null>;
 };
@@ -42,6 +45,12 @@ type DialogState = {
 	error: string | null;
 };
 
+type JavaRequest = {
+	majorVersion: number;
+	promise: Promise<JavaRuntimeInfo | null>;
+	resolve: (runtime: JavaRuntimeInfo | null) => void;
+};
+
 const initialState: DialogState = {
 	open: false,
 	majorVersion: 0,
@@ -54,23 +63,45 @@ export const JavaDownloadProvider: React.FC<{ children: React.ReactNode }> = ({ 
 	const navigate = useNavigate();
 	const { rescan } = useJavaRuntimes();
 	const [state, setState] = React.useState<DialogState>(initialState);
-	const resolverRef = React.useRef<((runtime: JavaRuntimeInfo | null) => void) | null>(null);
+	// Pending requests, one per major; the head is the one the dialog shows.
+	const queueRef = React.useRef<JavaRequest[]>([]);
 
-	const settle = React.useCallback((runtime: JavaRuntimeInfo | null) => {
-		const resolve = resolverRef.current;
-		resolverRef.current = null;
-		setState((prev) => ({ ...prev, open: false }));
-		resolve?.(runtime);
+	const showHead = React.useCallback(() => {
+		const head = queueRef.current[0];
+		setState((prev) =>
+			head
+				? { open: true, majorVersion: head.majorVersion, phase: 'confirm', progress: 0, error: null }
+				: { ...prev, open: false },
+		);
 	}, []);
 
-	const ensureJava = React.useCallback((majorVersion: number) => {
-		// A previous request is superseded — resolve it as cancelled.
-		resolverRef.current?.(null);
-		return new Promise<JavaRuntimeInfo | null>((resolve) => {
-			resolverRef.current = resolve;
-			setState({ open: true, majorVersion, phase: 'confirm', progress: 0, error: null });
-		});
-	}, []);
+	/** Resolves the request for `majorVersion` (if still pending) and moves on. */
+	const settle = React.useCallback(
+		(majorVersion: number, runtime: JavaRuntimeInfo | null) => {
+			const index = queueRef.current.findIndex((request) => request.majorVersion === majorVersion);
+			if (index === -1) return;
+			const [request] = queueRef.current.splice(index, 1);
+			request.resolve(runtime);
+			if (index === 0) showHead();
+		},
+		[showHead],
+	);
+
+	const ensureJava = React.useCallback(
+		(majorVersion: number) => {
+			const pending = queueRef.current.find((request) => request.majorVersion === majorVersion);
+			if (pending) return pending.promise;
+
+			let resolve!: JavaRequest['resolve'];
+			const promise = new Promise<JavaRuntimeInfo | null>((done) => {
+				resolve = done;
+			});
+			queueRef.current.push({ majorVersion, promise, resolve });
+			if (queueRef.current.length === 1) showHead();
+			return promise;
+		},
+		[showHead],
+	);
 
 	const startDownload = React.useCallback(
 		async (majorVersion: number) => {
@@ -78,10 +109,13 @@ export const JavaDownloadProvider: React.FC<{ children: React.ReactNode }> = ({ 
 			try {
 				const runtime = await downloadJavaRuntime(majorVersion);
 				await rescan();
-				settle(runtime);
+				settle(majorVersion, runtime);
 			} catch (err) {
 				const message = err instanceof Error ? err.message : 'Java download failed.';
-				setState((prev) => ({ ...prev, phase: 'error', error: message }));
+				// The dialog may have moved on to another request meanwhile.
+				setState((prev) =>
+					prev.majorVersion === majorVersion ? { ...prev, phase: 'error', error: message } : prev,
+				);
 			}
 		},
 		[rescan, settle],
@@ -108,18 +142,21 @@ export const JavaDownloadProvider: React.FC<{ children: React.ReactNode }> = ({ 
 		};
 	}, [state.phase, state.majorVersion]);
 
+	// Choosing the guide means installing by hand, so every pending request ends.
 	const handleOpenGuide = React.useCallback(() => {
 		navigate('/java-guide', { state: { requiredMajor: state.majorVersion } });
-		settle(null);
-	}, [navigate, settle, state.majorVersion]);
+		const pending = queueRef.current.splice(0);
+		for (const request of pending) request.resolve(null);
+		showHead();
+	}, [navigate, showHead, state.majorVersion]);
 
 	const handleOpenChange = React.useCallback(
 		(open: boolean) => {
 			if (open) return;
 			if (state.phase === 'downloading') return; // don't cancel mid-download
-			settle(null);
+			settle(state.majorVersion, null);
 		},
-		[settle, state.phase],
+		[settle, state.majorVersion, state.phase],
 	);
 
 	const value = React.useMemo<EnsureJavaContextValue>(() => ({ ensureJava }), [ensureJava]);
@@ -205,7 +242,18 @@ export const useServerJavaResolver = () => {
 				runtimes,
 			});
 
-			if (resolution.status === 'resolved') {
+			// Automatic resolution falls back to the newest runtime even when it's too
+			// old. Only the detail page has the crash-and-retry loop that recovers from
+			// that, so these quick-start surfaces offer the download up front when
+			// the requirement is known for sure.
+			const knownIncompatible =
+				resolution.status === 'resolved' &&
+				!resolution.pinned &&
+				resolution.majorVersion != null &&
+				resolution.requirement.confidence === 'high' &&
+				!isJavaCompatible(resolution.majorVersion, resolution.requirement);
+
+			if (resolution.status === 'resolved' && !knownIncompatible) {
 				return resolution.executablePath;
 			}
 

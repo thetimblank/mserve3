@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { downloadAndResolveJarRow } from '@/lib/jar-download-service';
 import { createProvider } from '@/lib/server-provider';
+import { DEFAULT_TELEMETRY_HOST, DEFAULT_TELEMETRY_PORT } from '@/lib/mserve-consts';
 import { getServerNameFromDirectory } from '@/lib/mserve-server-mapper';
 import { type ServerUpdateTarget } from '@/lib/server-update-service';
 import { buildUpdateServerSettingsPayload, resolveNewDirectory } from '@/pages/server/server-utils';
@@ -50,8 +51,8 @@ const buildUpdatePayload = (
 		custom_flags: server.custom_flags,
 		java_installation: server.java_installation ?? '',
 		provider,
-		telemetry_host: server.telemetry_host ?? '127.0.0.1',
-		telemetry_port: Math.max(1, Number(server.telemetry_port) || 25565),
+		telemetry_host: server.telemetry_host ?? DEFAULT_TELEMETRY_HOST,
+		telemetry_port: Math.max(1, Number(server.telemetry_port) || DEFAULT_TELEMETRY_PORT),
 		jar_swap_path: downloadedJarPath,
 		new_directory: server.directory,
 	};

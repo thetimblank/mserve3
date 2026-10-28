@@ -33,6 +33,7 @@ import {
 import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { m } from 'motion/react';
+import { formatBytes } from '@/lib/utils';
 
 type ItemType = 'plugin' | 'mod' | 'world' | 'datapack';
 
@@ -62,19 +63,6 @@ type ServerItemListProps = {
 	onDeleteItem?: (item: Item, type: ItemType) => Promise<void> | void;
 	onUninstallItem?: (item: Item, type: ItemType) => Promise<void> | void;
 	onExportItem?: (item: Item, type: ItemType) => Promise<void> | void;
-};
-
-const formatBytes = (bytes?: number) => {
-	if (bytes === undefined) return null;
-	if (bytes < 1024) return `${bytes} B`;
-	const units = ['KB', 'MB', 'GB', 'TB'];
-	let value = bytes / 1024;
-	let unitIndex = 0;
-	while (value >= 1024 && unitIndex < units.length - 1) {
-		value /= 1024;
-		unitIndex += 1;
-	}
-	return `${value.toFixed(2)} ${units[unitIndex]}`;
 };
 
 const getItemPath = (serverDirectory: string, itemType: ItemType, item: Item) => {

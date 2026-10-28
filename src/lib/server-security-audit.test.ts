@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { auditServerProperties, summarizeSecurityFindings } from './server-security-audit';
+import { auditServerProperties, isNetworkBackend, summarizeSecurityFindings } from './server-security-audit';
 
 const props = (entries: Record<string, string>) => new Map(Object.entries(entries));
 const ctx = { maxRamGb: 4, whitelistCount: null };
@@ -16,6 +16,22 @@ describe('auditServerProperties', () => {
 			kind: 'properties',
 			updates: [{ key: 'online-mode', value: 'true' }],
 		});
+	});
+
+	it('accepts online-mode=false on a network backend (the proxy authenticates)', () => {
+		const finding = find(
+			auditServerProperties(props({ 'online-mode': 'false' }), { ...ctx, behindProxy: true }),
+			'online-mode',
+		);
+		expect(finding?.severity).toBe('pass');
+		expect(finding?.fix).toBeUndefined();
+	});
+
+	it('detects network backends only in networks that have a proxy', () => {
+		const member = { serverId: 'b' };
+		expect(isNetworkBackend('b', [{ proxyServerId: 'p', members: [member] }])).toBe(true);
+		expect(isNetworkBackend('b', [{ proxyServerId: null, members: [member] }])).toBe(false);
+		expect(isNetworkBackend('c', [{ proxyServerId: 'p', members: [member] }])).toBe(false);
 	});
 
 	it('passes online-mode when true or absent (vanilla default)', () => {

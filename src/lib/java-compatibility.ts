@@ -1,6 +1,6 @@
 import { resolveProvider } from '@/lib/server-provider';
 
-export type JavaCompatibilityConfidence = 'high' | 'medium';
+type JavaCompatibilityConfidence = 'high' | 'medium';
 
 export type JavaCompatibilityStatus = 'compatible' | 'needs-upgrade' | 'unknown';
 
@@ -11,66 +11,6 @@ export type JavaRequirement = {
 	summary: string;
 	notes: string[];
 };
-
-export type JavaCompatibilityMatrixRow = {
-	label: string;
-	serverScope: string;
-	minimumMajor: number;
-	recommendedMajor: number;
-	notes: string;
-};
-
-export const JAVA_COMPATIBILITY_MATRIX: JavaCompatibilityMatrixRow[] = [
-	{
-		label: 'Minecraft 26+',
-		serverScope: 'Vanilla, Paper, Folia, Spigot',
-		minimumMajor: 25,
-		recommendedMajor: 25,
-		notes: 'Current modern server versions should use Java 25.',
-	},
-	{
-		label: 'Minecraft 1.20.5 - 1.21',
-		serverScope: 'Vanilla, Paper, Folia, Spigot',
-		minimumMajor: 21,
-		recommendedMajor: 21,
-		notes: '1.20.5+ moved to Java 21 requirements.',
-	},
-	{
-		label: 'Minecraft 1.18 - 1.20.4',
-		serverScope: 'Vanilla, Paper, Folia, Spigot',
-		minimumMajor: 17,
-		recommendedMajor: 21,
-		notes: 'Java 17 is the baseline. Java 21 is recommended for long-term support.',
-	},
-	{
-		label: 'Minecraft 1.17.x',
-		serverScope: 'Vanilla, Paper, Spigot',
-		minimumMajor: 16,
-		recommendedMajor: 17,
-		notes: 'Java 16 is required. Java 17 often works but check your exact build.',
-	},
-	{
-		label: 'Minecraft 1.16.5 and older',
-		serverScope: 'Legacy Vanilla/Paper/Spigot',
-		minimumMajor: 8,
-		recommendedMajor: 8,
-		notes: 'Legacy builds usually target Java 8.',
-	},
-	{
-		label: 'Velocity 3.x+',
-		serverScope: 'Velocity proxy',
-		minimumMajor: 17,
-		recommendedMajor: 21,
-		notes: 'Use at least Java 17 for modern Velocity builds.',
-	},
-	{
-		label: 'BungeeCord / Waterfall',
-		serverScope: 'BungeeCord proxy',
-		minimumMajor: 8,
-		recommendedMajor: 17,
-		notes: 'Many legacy installs run on Java 8, but Java 17 is preferred when supported.',
-	},
-];
 
 type ParsedMinecraftVersion = {
 	/** 1 for the legacy `1.x` scheme; the year (>= 26) for the modern scheme. */
@@ -262,78 +202,4 @@ export const evaluateJavaCompatibilityStatus = (
 	}
 
 	return installedMajors.some((major) => major >= requirement.minimumMajor) ? 'compatible' : 'needs-upgrade';
-};
-
-export const explainCompatibility = (options: {
-	provider?: string | null;
-	version?: string | null;
-	installedMajors: number[];
-}) => {
-	const requirement = resolveJavaRequirement(options.provider, options.version);
-	const status = evaluateJavaCompatibilityStatus(options.installedMajors, requirement);
-	const bestInstalledMajor = chooseBestInstalledJava(options.installedMajors, requirement);
-
-	if (status === 'compatible') {
-		return {
-			requirement,
-			status,
-			bestInstalledMajor,
-			message: `Compatible. This server needs Java ${requirement.minimumMajor}+ and Java ${bestInstalledMajor} is available.`,
-		};
-	}
-
-	if (options.installedMajors.length === 0) {
-		return {
-			requirement,
-			status,
-			bestInstalledMajor,
-			message: `No Java runtime was detected. Install Java ${requirement.recommendedMajor} (minimum ${requirement.minimumMajor}).`,
-		};
-	}
-
-	const highestInstalled = Math.max(...options.installedMajors);
-	return {
-		requirement,
-		status,
-		bestInstalledMajor,
-		message: `Installed Java ${highestInstalled} is too old for this server. Install Java ${requirement.recommendedMajor} (minimum ${requirement.minimumMajor}).`,
-	};
-};
-
-export const describeWhatCanRunWithJava = (javaMajor: number): string[] => {
-	if (javaMajor >= 25) {
-		return [
-			'Minecraft 26+ on Vanilla/Paper/Folia/Spigot',
-			'Minecraft 1.20.5+ (including 1.21+)',
-			'Minecraft 1.18 - 1.20.4',
-			'Velocity 3.x+ proxies',
-		];
-	}
-
-	if (javaMajor >= 21) {
-		return [
-			'Minecraft 1.20.5+ (including 1.21+) on Vanilla/Paper/Folia/Spigot',
-			'Minecraft 1.18 - 1.20.4',
-			'Velocity 3.x+ proxies',
-			'BungeeCord/Waterfall setups that support newer Java releases',
-		];
-	}
-
-	if (javaMajor >= 17) {
-		return [
-			'Minecraft 1.18 - 1.20.4 on Vanilla/Paper/Folia/Spigot',
-			'Velocity 3.x+ proxies',
-			'Many legacy servers that accept newer Java versions',
-		];
-	}
-
-	if (javaMajor >= 16) {
-		return ['Minecraft 1.17.x', 'Most Minecraft 1.16.5 and older builds'];
-	}
-
-	if (javaMajor >= 8) {
-		return ['Minecraft 1.16.5 and older', 'Many BungeeCord/Waterfall legacy installs'];
-	}
-
-	return ['This Java runtime is too old for modern Minecraft servers.'];
 };

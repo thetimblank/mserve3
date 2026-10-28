@@ -12,13 +12,13 @@ import { invoke } from '@tauri-apps/api/core';
 import { CircleAlert, Moon, Archive, ShieldAlert, CheckCircle2 } from 'lucide-react';
 
 import { useServers, type Server } from '@/data/servers';
-import { useUser } from '@/data/user';
-import { useJavaRuntimes } from '@/data/java-runtimes';
+import { useServerJavaResolver } from '@/data/java-download';
 import { Button } from '@/components/ui/button';
 import { parsePropertiesMap } from '@/components/server-config-file-editor/properties-config';
-import { auditServerProperties } from '@/lib/server-security-audit';
-import { resolveAndStartServer } from '@/lib/server-actions';
-import { formatBytes } from '@/pages/server/server-utils';
+import { auditServerProperties, isNetworkBackend } from '@/lib/server-security-audit';
+import { startServer } from '@/lib/server-controls';
+import type { ManagedNetwork } from '@/lib/network-schema';
+import { formatBytes } from '@/lib/utils';
 
 import DashboardSection from './dashboard-section';
 import type { DashboardStorage } from './use-dashboard-storage';
@@ -44,29 +44,33 @@ const newestBackupAt = (server: Server): number | null => {
 	return newest;
 };
 
-/** Session cache of per-server critical security counts, keyed by directory. */
-const securityCache = new Map<string, number>();
+/** Session cache of per-server critical security counts, keyed by directory.
+ *  Network membership changes the online-mode verdict, so it's part of the entry. */
+const securityCache = new Map<string, { behindProxy: boolean; criticals: number }>();
 
-const NeedsAttention: React.FC<{ servers: Server[]; storage?: DashboardStorage }> = ({
-	servers,
-	storage,
-}) => {
+const cachedCriticals = () =>
+	new Map([...securityCache].map(([directory, entry]) => [directory, entry.criticals]));
+
+const NeedsAttention: React.FC<{
+	servers: Server[];
+	networks: ManagedNetwork[];
+	storage?: DashboardStorage;
+}> = ({ servers, networks, storage }) => {
 	const navigate = useNavigate();
 	const { setServerStatus, updateServerStats } = useServers();
-	const { user } = useUser();
-	const { runtimes } = useJavaRuntimes();
+	const resolveServerJava = useServerJavaResolver();
 	const [securityCriticals, setSecurityCriticals] = React.useState<Map<string, number>>(
-		new Map(securityCache),
+		cachedCriticals,
 	);
 
-	const startContext = React.useMemo(
-		() => ({
-			runtimes,
-			globalDefault: user.java_installation_default,
-			setServerStatus,
-			updateServerStats,
-		}),
-		[runtimes, user.java_installation_default, setServerStatus, updateServerStats],
+	// Restart a crashed server / wake a sleeping one (prompting for Java if needed).
+	const startFromFeed = React.useCallback(
+		async (server: Server) => {
+			const javaExecutable = await resolveServerJava(server);
+			if (!javaExecutable) return;
+			await startServer({ server, javaExecutable, setServerStatus, updateServerStats });
+		},
+		[resolveServerJava, setServerStatus, updateServerStats],
 	);
 
 	// Best-effort security scan: read each non-proxy server's properties once per
@@ -75,10 +79,10 @@ const NeedsAttention: React.FC<{ servers: Server[]; storage?: DashboardStorage }
 	React.useEffect(() => {
 		let active = true;
 		void (async () => {
-			const next = new Map(securityCache);
 			await Promise.all(
 				servers.map(async (server) => {
-					if (securityCache.has(server.directory)) return;
+					const behindProxy = isNetworkBackend(server.id, networks);
+					if (securityCache.get(server.directory)?.behindProxy === behindProxy) return;
 					try {
 						const result = await invoke<{ content: string }>('read_managed_server_config_file', {
 							payload: { directory: server.directory, fileName: 'server.properties' },
@@ -86,21 +90,21 @@ const NeedsAttention: React.FC<{ servers: Server[]; storage?: DashboardStorage }
 						const findings = auditServerProperties(parsePropertiesMap(result.content), {
 							maxRamGb: Math.max(1, server.ram || 1),
 							whitelistCount: null,
+							behindProxy,
 						});
 						const criticals = findings.filter((finding) => finding.severity === 'critical').length;
-						securityCache.set(server.directory, criticals);
-						next.set(server.directory, criticals);
+						securityCache.set(server.directory, { behindProxy, criticals });
 					} catch {
-						securityCache.set(server.directory, 0);
+						securityCache.set(server.directory, { behindProxy, criticals: 0 });
 					}
 				}),
 			);
-			if (active) setSecurityCriticals(new Map(next));
+			if (active) setSecurityCriticals(cachedCriticals());
 		})();
 		return () => {
 			active = false;
 		};
-	}, [directoriesKey, servers]);
+	}, [directoriesKey, servers, networks]);
 
 	const items = React.useMemo<AttentionItem[]>(() => {
 		const list: AttentionItem[] = [];
@@ -117,7 +121,7 @@ const NeedsAttention: React.FC<{ servers: Server[]; storage?: DashboardStorage }
 						</span>
 					),
 					actionLabel: 'Restart',
-					onAction: () => void resolveAndStartServer(server, startContext),
+					onAction: () => void startFromFeed(server),
 				});
 			} else if (server.status === 'sleeping') {
 				list.push({
@@ -130,7 +134,7 @@ const NeedsAttention: React.FC<{ servers: Server[]; storage?: DashboardStorage }
 						</span>
 					),
 					actionLabel: 'Awake',
-					onAction: () => void resolveAndStartServer(server, startContext),
+					onAction: () => void startFromFeed(server),
 				});
 			}
 		}
@@ -198,7 +202,7 @@ const NeedsAttention: React.FC<{ servers: Server[]; storage?: DashboardStorage }
 		}
 
 		return list;
-	}, [servers, storage, securityCriticals, startContext, navigate]);
+	}, [servers, storage, securityCriticals, startFromFeed, navigate]);
 
 	return (
 		<DashboardSection className='h-full' title='Could use a look'>

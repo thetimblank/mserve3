@@ -1,4 +1,4 @@
-import { TELEMETRY_POLLING } from './mserve-consts';
+import { DEFAULT_SLEEP_IDLE_MINUTES, DEFAULT_SLEEP_MOTD, TELEMETRY_POLLING } from './mserve-consts';
 
 export type AutoBackupMode = 'interval' | 'on_close' | 'on_start';
 /**
@@ -10,7 +10,7 @@ export type BackupPolicy = 'smart' | 'simple';
 /** What a backup snapshot captures. */
 export type BackupScopeItem = 'worlds' | 'plugins' | 'mods' | 'configs';
 
-export const BACKUP_SCOPE_ITEMS: BackupScopeItem[] = ['worlds', 'plugins', 'mods', 'configs'];
+const BACKUP_SCOPE_ITEMS: BackupScopeItem[] = ['worlds', 'plugins', 'mods', 'configs'];
 
 export const normalizeBackupPolicy = (raw: unknown): BackupPolicy =>
 	raw === 'simple' ? 'simple' : 'smart';
@@ -84,10 +84,6 @@ export type MserveJsonProps = {
 	provider: Provider;
 	telemetry_host: string;
 	telemetry_port: number;
-	/** Whether public tunneling (playit.gg) is enabled for this server. */
-	tunnel_enabled?: boolean;
-	/** Last-known public tunnel address (surfaced even while offline). */
-	tunnel_address?: string;
 };
 
 export type MserveStats = {
@@ -102,10 +98,6 @@ export type MserveStats = {
 	uptime: Date | null;
 	worlds_size_bytes: number;
 	backups_size_bytes: number;
-};
-
-export type MserveJsonWithStats = MserveJsonProps & {
-	stats: MserveStats;
 };
 
 export type MserveJsonFormProps = {
@@ -157,8 +149,8 @@ export const createDefaultMserveForm = (): MserveJsonFormProps => ({
 	storage_limit: 200,
 	auto_restart: false,
 	sleep_enabled: false,
-	sleep_idle_minutes: 15,
-	sleep_motd: '§eSleeping §7— join to wake this server',
+	sleep_idle_minutes: DEFAULT_SLEEP_IDLE_MINUTES,
+	sleep_motd: DEFAULT_SLEEP_MOTD,
 	auto_backup: ['on_close'],
 	auto_backup_interval: 120,
 	auto_agree_eula: true,

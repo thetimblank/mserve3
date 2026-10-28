@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { Provider } from '@/lib/mserve-schema';
 import { resolveProvider } from '@/lib/server-provider';
+import { formatBytes } from '@/lib/utils';
 
 export type ModrinthProjectType = 'plugin' | 'datapack' | 'mod' | 'modpack';
 
@@ -268,17 +269,7 @@ export const formatModrinthCategoryLabel = (name: string): string =>
 export const formatCompactCount = (value: number): string =>
 	new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(value);
 
-export const formatModrinthFileSize = (bytes: number): string => {
-	if (bytes < 1024) return `${bytes} B`;
-	const units = ['KB', 'MB', 'GB'];
-	let value = bytes / 1024;
-	let unitIndex = 0;
-	while (value >= 1024 && unitIndex < units.length - 1) {
-		value /= 1024;
-		unitIndex += 1;
-	}
-	return `${value.toFixed(1)} ${units[unitIndex]}`;
-};
+export const formatModrinthFileSize = (bytes: number): string => formatBytes(bytes, { fractionDigits: 1 });
 
 export const formatModrinthDate = (iso: string): string => {
 	const date = new Date(iso);

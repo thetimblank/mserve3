@@ -64,6 +64,14 @@ describe('checkServerJarUpdate (paper)', () => {
 		expect(result.status).toBe('up-to-date');
 	});
 
+	it('reports unsupported instead of up-to-date when the current version is unknown', async () => {
+		fetchRowsMock.mockResolvedValue([paperRow('1.21.4')]);
+		resolveRowMock.mockResolvedValue({ provider: paperProvider('500', '1.21.4') } as never);
+
+		const result = await checkServerJarUpdate(paperProvider('', ''));
+		expect(result.status).toBe('unsupported');
+	});
+
 	it('reports unsupported when the channel has no rows', async () => {
 		fetchRowsMock.mockResolvedValue([]);
 		const result = await checkServerJarUpdate(paperProvider('100', '1.20.1'));
