@@ -9,6 +9,18 @@ const dsn = import.meta.env.VITE_SENTRY_DSN as string | undefined;
 
 const isEnabled = Boolean(dsn);
 
+// Error messages and breadcrumbs carry server directories and Java paths, which
+// include the OS account name (`C:\Users\<name>`, `/home/<name>`). Replace it.
+const HOME_DIR_PATTERN = /([A-Za-z]:[\\/]+Users[\\/]+|\/home\/|\/Users\/)[^\\/"'\s]+/g;
+
+export const scrubHomeDirs = <T,>(value: T): T => {
+	try {
+		return JSON.parse(JSON.stringify(value).replace(HOME_DIR_PATTERN, '$1~')) as T;
+	} catch {
+		return value;
+	}
+};
+
 /**
  * Initialise error reporting. Call once, as early as possible, before the app
  * renders. Safe to call when no DSN is configured (does nothing).
@@ -31,6 +43,8 @@ export function initSentry(): void {
 		tracesSampleRate: 0,
 		// This app has no user accounts; don't collect IPs or other PII.
 		sendDefaultPii: false,
+		beforeSend: (event) => scrubHomeDirs(event),
+		beforeBreadcrumb: (breadcrumb) => scrubHomeDirs(breadcrumb),
 	});
 }
 

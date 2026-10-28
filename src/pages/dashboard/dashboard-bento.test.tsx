@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { UserProvider } from '@/data/user';
 import { ServersProvider } from '@/data/servers';
 import { JavaRuntimesProvider } from '@/data/java-runtimes';
+import { JavaDownloadProvider } from '@/data/java-download';
 
 import DashboardBento from './dashboard-bento';
 import type { DashboardActivity } from './use-dashboard-activity';
@@ -32,9 +33,11 @@ const renderBento = () =>
 		<MemoryRouter>
 			<UserProvider>
 				<JavaRuntimesProvider>
-					<ServersProvider>
-						<DashboardBento servers={[]} networks={[]} activity={activity} storage={storage} />
-					</ServersProvider>
+					<JavaDownloadProvider>
+						<ServersProvider>
+							<DashboardBento servers={[]} networks={[]} activity={activity} storage={storage} />
+						</ServersProvider>
+					</JavaDownloadProvider>
 				</JavaRuntimesProvider>
 			</UserProvider>
 		</MemoryRouter>,

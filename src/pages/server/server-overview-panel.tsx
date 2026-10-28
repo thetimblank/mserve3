@@ -48,8 +48,8 @@ import { type JavaRuntimeInfo } from '@/lib/java-runtime-service';
 import { javaResolutionLabel, resolveServerJavaExecutable } from '@/lib/java-resolution';
 import { isProxyProvider } from '@/lib/server-provider';
 import { getServerProviderCapabilities } from '@/lib/server-provider-capabilities';
-import { getPrimaryMinecraftVersion } from '@/lib/utils';
-import { formatBytes, formatUptime } from './server-utils';
+import { formatBytes, getPrimaryMinecraftVersion } from '@/lib/utils';
+import { formatDetailedUptime } from './server-utils';
 import { useServerTunnel } from './hooks/use-server-tunnel';
 import MetricCard from './stats/metric-card';
 import { useServerTelemetryHistory } from './stats/use-server-telemetry-history';
@@ -82,7 +82,7 @@ const UptimeText: React.FC<{ uptime: Date }> = React.memo(({ uptime }) => {
 		return () => window.clearInterval(intervalId);
 	}, [uptime]);
 
-	return <>{formatUptime(uptime)}</>;
+	return <>{formatDetailedUptime(uptime)}</>;
 });
 
 UptimeText.displayName = 'UptimeText';
@@ -123,7 +123,7 @@ const ServerOverviewPanel: React.FC<Props> = ({
 			: null;
 
 	const tunnel = useServerTunnel(server.directory);
-	const tunnelAddress = tunnel.address ?? server.tunnel_address ?? null;
+	const tunnelAddress = tunnel.address;
 	const showTunnel =
 		server.status === 'online' && tunnel.enabled && tunnel.status === 'online' && tunnelAddress != null;
 

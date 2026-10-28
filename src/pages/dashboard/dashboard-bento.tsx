@@ -74,7 +74,7 @@ const DashboardBento: React.FC<Props> = ({ servers, networks, activity, storage 
 		servers: { size: 'full', node: <DashboardServers servers={servers} /> },
 		storage: { size: 'lg', node: <StorageInsights servers={servers} storage={storage} /> },
 		activity: { size: 'lg', node: <ActivityInsights servers={servers} activity={activity} /> },
-		attention: { size: 'wide', node: <NeedsAttention servers={servers} storage={storage} /> },
+		attention: { size: 'wide', node: <NeedsAttention servers={servers} networks={networks} storage={storage} /> },
 		networks: { size: 'wide', node: <DashboardNetworks networks={networks} servers={servers} /> },
 	};
 

@@ -10,10 +10,15 @@
 import React from 'react';
 import { toast } from 'sonner';
 
-import type { Server } from '@/data/servers';
-import { useServers } from '@/data/servers';
+import { isStoppedStatus, useServers, type Server } from '@/data/servers';
 import { useServerJavaResolver } from '@/data/java-download';
-import { startServer, stopServer, waitForServerReady, type ServerControlContext } from '@/lib/server-controls';
+import {
+	startServer,
+	stopServer,
+	waitForServerReady,
+	waitForServerStopped,
+	type ServerControlContext,
+} from '@/lib/server-controls';
 import type { ManagedNetwork } from '@/lib/network-schema';
 
 export type OrchestrationMode = 'sequential' | 'staged';
@@ -41,15 +46,40 @@ export const useNetworkOrchestration = (network: ManagedNetwork | null, servers:
 	);
 
 	// Resolve the server's Java (prompting to download if missing) before start.
+	// The control helpers toast their own errors and resolve to false, so a
+	// failure is turned into a throw here to stop the sequence.
 	const startOne = React.useCallback(
 		async (server: Server) => {
 			const javaExecutable = await resolveServerJava(server);
 			if (!javaExecutable) {
 				throw new Error(`No Java runtime available for ${server.name}.`);
 			}
-			await startServer({ ...context(server), javaExecutable });
+			if (!(await startServer({ ...context(server), javaExecutable }))) {
+				throw new Error(`${server.name} failed to start.`);
+			}
 		},
 		[context, resolveServerJava],
+	);
+
+	const awaitReady = React.useCallback(async (server: Server) => {
+		if (!(await waitForServerReady(server))) {
+			throw new Error(`${server.name} didn't come online within 2 minutes.`);
+		}
+	}, []);
+
+	// Waits for the process to exit, not just for the stop to be accepted, so a
+	// restart's start step doesn't race the old JVM.
+	const stopOne = React.useCallback(
+		async (server: Server) => {
+			if (isStoppedStatus(server.status)) return;
+			if (!(await stopServer(context(server)))) {
+				throw new Error(`${server.name} failed to stop.`);
+			}
+			if (!(await waitForServerStopped(server))) {
+				throw new Error(`${server.name} didn't stop within 30 seconds.`);
+			}
+		},
+		[context],
 	);
 
 	const resolveServers = React.useCallback(() => {
@@ -71,21 +101,21 @@ export const useNetworkOrchestration = (network: ManagedNetwork | null, servers:
 				for (const backend of backends) {
 					setProgress({ action, mode, currentServerId: backend.id });
 					await startOne(backend);
-					await waitForServerReady(backend);
+					await awaitReady(backend);
 				}
 			} else {
 				setProgress({ action, mode, currentServerId: null });
 				await Promise.all(backends.map((backend) => startOne(backend)));
-				await Promise.all(backends.map((backend) => waitForServerReady(backend)));
+				await Promise.all(backends.map((backend) => awaitReady(backend)));
 			}
 
 			if (proxy) {
 				setProgress({ action, mode, currentServerId: proxy.id });
 				await startOne(proxy);
-				await waitForServerReady(proxy);
+				await awaitReady(proxy);
 			}
 		},
-		[resolveServers, startOne],
+		[resolveServers, startOne, awaitReady],
 	);
 
 	const runStop = React.useCallback(
@@ -94,20 +124,20 @@ export const useNetworkOrchestration = (network: ManagedNetwork | null, servers:
 
 			if (proxy) {
 				setProgress({ action, mode, currentServerId: proxy.id });
-				await stopServer(context(proxy));
+				await stopOne(proxy);
 			}
 
 			if (mode === 'sequential') {
 				for (const backend of backends) {
 					setProgress({ action, mode, currentServerId: backend.id });
-					await stopServer(context(backend));
+					await stopOne(backend);
 				}
 			} else {
 				setProgress({ action, mode, currentServerId: null });
-				await Promise.all(backends.map((backend) => stopServer(context(backend))));
+				await Promise.all(backends.map((backend) => stopOne(backend)));
 			}
 		},
-		[resolveServers, context],
+		[resolveServers, stopOne],
 	);
 
 	const withBusy = React.useCallback(

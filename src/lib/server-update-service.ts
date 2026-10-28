@@ -153,6 +153,14 @@ export const checkServerJarUpdate = async (provider: Provider): Promise<ServerUp
 	const latestRow = channelRows[0];
 
 	const current = parseVersionParts(providerId, provider.provider_version, provider.minecraft_version);
+	// Imported servers can have no recorded version; comparing '' against the
+	// list would otherwise report a blank "up to date".
+	if (!current.family) {
+		return {
+			status: 'unsupported',
+			reason: "This server's current version is unknown, so updates can't be compared.",
+		};
+	}
 
 	// Vanilla has no build to resolve, so a version comparison is enough; other
 	// providers need the resolved build number to detect same-version bumps.

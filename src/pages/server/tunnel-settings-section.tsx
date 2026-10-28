@@ -23,7 +23,7 @@ export const TunnelSettingsSection: React.FC<{ server: Server }> = ({ server }) 
 		});
 	}, []);
 
-	const displayAddress = tunnel.address ?? server.tunnel_address ?? null;
+	const displayAddress = tunnel.address;
 
 	return (
 		<div className='max-w-2xl space-y-8'>

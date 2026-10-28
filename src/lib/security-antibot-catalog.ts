@@ -14,7 +14,7 @@ export type AntiBotCandidate = {
 	note: string;
 };
 
-export const ANTI_BOT_CANDIDATES: AntiBotCandidate[] = [
+const ANTI_BOT_CANDIDATES: AntiBotCandidate[] = [
 	{
 		slug: 'sonar',
 		loaders: ['bukkit', 'bungeecord', 'folia', 'paper', 'purpur', 'spigot', 'velocity', 'waterfall'],

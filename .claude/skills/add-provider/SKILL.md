@@ -48,11 +48,17 @@ Proxies should be flagged so the supervisor uses SLP-only and skips RCON.
 
 ## 4. Capabilities & UI (frontend)
 
-In [src/lib/server-provider-capabilities.ts](../../../src/lib/server-provider-capabilities.ts)
-map the provider to its `kind` and capability flags (which tabs appear, whether
-EULA auto-agree applies, etc.). Related provider logic lives in
-`src/lib/server-provider.ts`. Verify the creation wizard
-(`src/pages/create-server/`) offers the provider.
+Add a descriptor to `PROVIDER_DESCRIPTORS` in
+[src/lib/server-provider.ts](../../../src/lib/server-provider.ts): its `kind` and
+`tab` (which tabs and config files appear), the `supports_*_command` flags,
+`default_jdk_versions`, `selectable` (offered in the wizard), and `aliases`.
+The aliases drive jar-name inference in
+[src/lib/server-provider-capabilities.ts](../../../src/lib/server-provider-capabilities.ts),
+which derives the capability flags from the descriptor. Inference checks vanilla
+last, like the backend's `normalize_provider_name`, so keep the two in sync.
+Verify the creation wizard (`src/pages/create-server/`) offers the provider.
+Networks are Velocity-only (`isVelocityProxy` in `lib/network-config-engine.ts`),
+so a new proxy won't be offered as a network proxy until the engine supports it.
 
 ## Verify
 - Resolve + download a jar for the new provider through the create flow.

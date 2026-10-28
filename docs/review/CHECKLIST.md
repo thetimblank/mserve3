@@ -151,7 +151,7 @@ updater config, and test helpers duplicated between testkit and e2e.
 
 ## C. Frontend state & services
 
-### [ ] C1 · Servers store (~800)
+### [x] C1 · Servers store (~800) — 2026-10-27, 3 findings (R-076, R-077, R-099). The persisted shape drops live status/stats, so the `.v4` key needed no bump. `server-lifecycle-actions.test.ts` is now on main. Observation, not logged: the context value isn't memoized, but `servers` changes on every telemetry tick anyway, so every `useServers` consumer re-renders per sample.
 - `src/data/servers.tsx` (694)
 - `src/data/server-updates.tsx`
 - `src/data/server-lifecycle-actions.test.ts` *(only exists on `fix/centralize-lifecycle-action-gating` until it merges)*
@@ -159,7 +159,7 @@ updater config, and test helpers duplicated between testkit and e2e.
 Focus: localStorage schema/versioning, merging disk mserve.json with the cached copy,
 action gating, and re-render cost of the context value.
 
-### [ ] C2 · Other stores (~740)
+### [x] C2 · Other stores (~740) — 2026-10-27, 4 findings (R-078–R-081). The `java-download-progress` listener handles the async-unlisten race correctly. Disk `networks.json` wins over localStorage, and localStorage is only the fallback.
 - `src/data/networks.tsx`
 - `src/data/user.tsx`
 - `src/data/java-runtimes.tsx`
@@ -168,7 +168,7 @@ action gating, and re-render cost of the context value.
 Focus: disk-vs-localStorage source of truth (networks), listener cleanup on the
 `java-download-progress` event, and duplicated persistence boilerplate across the providers.
 
-### [ ] C3 · mserve schema, sync, mapper (~390)
+### [x] C3 · mserve schema, sync, mapper (~390) — 2026-10-27, 2 findings (R-082, R-083). Defaults match Rust (RAM 4, storage 200, interval 120, sleep 15 min); the form's `['on_close']` auto-backup default is a UI choice, not drift. The repair controller's single-handler pattern is fine (the dialog queues requests).
 - `src/lib/mserve-schema.ts`
 - `src/lib/mserve-sync.ts`
 - `src/lib/mserve-server-mapper.ts`
@@ -180,7 +180,7 @@ Focus: disk-vs-localStorage source of truth (networks), listener cleanup on the
 Focus: field-by-field parity with the Rust `mserve_config.rs` struct (B1), defaults that disagree
 between TS and Rust, and the repair-controller event pattern.
 
-### [ ] C4 · Server lifecycle libs (~400)
+### [x] C4 · Server lifecycle libs (~400) — 2026-10-27, 1 finding (R-084); seed R-006 confirmed. The registry has one claimer (`use-server-runtime`), so a Set is enough. The state → status mapping covers all 7 lifecycle states.
 - `src/lib/server-actions.ts`
 - `src/lib/server-controls.ts`
 - `src/lib/server-runtime-registry.ts`
@@ -193,7 +193,7 @@ between TS and Rust, and the repair-controller event pattern.
 Focus: the start/stop duplication in seed R-006, registry claim/release correctness, and the
 lifecycle-state → UI-status mapping.
 
-### [ ] C5 · Providers & jars, TS side (~920)
+### [x] C5 · Providers & jars, TS side (~920) — 2026-10-27, 2 findings (R-085, R-086). The IPC payloads match the Rust structs (camelCase, optional hashes). Versions are ordered by the backend (newest first). Update checks run once per launch, gated by the user setting.
 - `src/lib/server-provider.ts`
 - `src/lib/server-provider-capabilities.ts`
 - `src/lib/jar-download-service.ts`
@@ -203,7 +203,7 @@ lifecycle-state → UI-status mapping.
 Focus: provider lists and capabilities duplicated with Rust (B3), version sorting, and the
 update-check cadence.
 
-### [ ] C6 · Java libs (~820)
+### [x] C6 · Java libs (~820) — 2026-10-27, 1 finding (R-087); dead code in R-098. The MC → Java table exists only in TS (Rust only reads Mojang's `javaVersion`). No bare `java`: legacy `java`/`java.exe` defaults are migrated to Automatic. Resolution order matches its doc comment and tests.
 - `src/lib/java-compatibility.ts`
 - `src/lib/java-compatibility.test.ts`
 - `src/lib/java-resolution.ts`
@@ -213,14 +213,14 @@ update-check cadence.
 Focus: does the MC-version → Java-version table exist in both TS and Rust? Also check the
 no-bare-`java` rule and the resolution order.
 
-### [ ] C7 · Network engine (~730)
+### [x] C7 · Network engine (~730) — 2026-10-27, 3 findings (R-088–R-090). Re-applying is idempotent for unchanged topologies (the second apply compares equal). Comments in velocity.toml / paper-global.yml are lost on the first apply (the TOML/YAML serializers drop them); D4 owns comment preservation.
 - `src/lib/network-config-engine.ts`
 - `src/lib/network-schema.ts`
 
 Focus: Velocity/Bungee config generation correctness, forwarding modes, and idempotent
 re-apply.
 
-### [ ] C8 · Content & config libs (~1.1k)
+### [x] C8 · Content & config libs (~1.1k) — 2026-10-27, 2 findings (R-091, R-092). Modrinth HTTP happens only in Rust; the TS module is thin wrappers. The properties parser is shared with D4 (`properties-config.ts`), not duplicated here.
 - `src/lib/modrinth-service.ts`
 - `src/lib/modrinth-service.test.ts`
 - `src/lib/server-config-files.ts` (380)
@@ -231,7 +231,7 @@ re-apply.
 Focus: do Modrinth API calls happen in both TS and Rust (B4)? Check config-file parsing
 duplicated with `components/server-config-file-editor/*` (D4), and the audit rule correctness.
 
-### [ ] C9 · Misc libs (~1.2k)
+### [x] C9 · Misc libs (~1.2k) — 2026-10-27, 6 findings (R-093–R-098). Sentry is opt-in by build-time DSN, and no CI workflow sets one. `ram-utils` heap formatting matches the backend's `-Xmx` rules.
 - `src/lib/motd-format.ts` (651)
 - `src/lib/motd-format.test.ts`
 - `src/lib/utils.ts`

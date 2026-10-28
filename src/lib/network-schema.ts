@@ -5,9 +5,9 @@
  * across the proxy and each backend. See {@link file://./network-config-engine.ts}.
  */
 
-export type NetworkForwardingMode = 'modern';
+type NetworkForwardingMode = 'modern';
 
-export interface NetworkForwarding {
+interface NetworkForwarding {
 	mode: NetworkForwardingMode;
 	/** Shared Velocity modern-forwarding secret synced proxy <-> backends. */
 	secret: string;
@@ -50,9 +50,9 @@ export interface ManagedNetwork {
 	layout: Record<string, NetworkNodePosition>;
 }
 
-export const DEFAULT_NETWORK_BASE_PORT = 25565;
+const DEFAULT_NETWORK_BASE_PORT = 25565;
 export const DEFAULT_BACKEND_HOST = '127.0.0.1';
-export const DEFAULT_PROXY_BIND_ADDRESS = '0.0.0.0';
+const DEFAULT_PROXY_BIND_ADDRESS = '0.0.0.0';
 export const FORWARDING_SECRET_FILE = 'forwarding.secret';
 export const PAPER_GLOBAL_CONFIG_RELATIVE = 'config/paper-global.yml';
 
@@ -77,7 +77,7 @@ export const generateForwardingSecret = (length = 24): string => {
 	return result;
 };
 
-export const generateNetworkId = (): string => {
+const generateNetworkId = (): string => {
 	if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
 		return crypto.randomUUID();
 	}
@@ -88,7 +88,7 @@ export const generateNetworkId = (): string => {
  * Turn an arbitrary server name into a Velocity-safe table key (lowercase,
  * alphanumeric + dashes). Velocity server names may not contain spaces.
  */
-export const sanitizeNetworkAlias = (value: string): string => {
+const sanitizeNetworkAlias = (value: string): string => {
 	const slug = value
 		.trim()
 		.toLowerCase()
@@ -98,7 +98,7 @@ export const sanitizeNetworkAlias = (value: string): string => {
 };
 
 /** Ensure an alias is unique within a set of already-used aliases. */
-export const uniqueNetworkAlias = (base: string, used: Set<string>): string => {
+const uniqueNetworkAlias = (base: string, used: Set<string>): string => {
 	const sanitized = sanitizeNetworkAlias(base);
 	if (!used.has(sanitized)) return sanitized;
 	for (let index = 2; index < 1000; index += 1) {
@@ -175,7 +175,7 @@ export const buildNetworkAliasMap = (
  * sequentially from `basePort`. `reserved` lets callers exclude known ports
  * (e.g. the proxy bind port).
  */
-export const assignMemberPorts = (
+const assignMemberPorts = (
 	members: NetworkMember[],
 	basePort: number,
 	reserved: number[] = [],

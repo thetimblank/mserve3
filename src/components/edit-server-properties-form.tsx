@@ -12,7 +12,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { TELEMETRY_POLLING } from '@/lib/mserve-consts';
+import {
+	DEFAULT_SLEEP_IDLE_MINUTES,
+	DEFAULT_TELEMETRY_HOST,
+	DEFAULT_TELEMETRY_PORT,
+	TELEMETRY_POLLING,
+} from '@/lib/mserve-consts';
 import { type Provider, type TelemetryKey } from '@/lib/mserve-schema';
 import { getDefaultProviderCommandSupport } from '@/lib/server-provider-capabilities';
 import {
@@ -79,13 +84,13 @@ const buildFormFromServer = (server: Server): ServerSettingsForm => ({
 	auto_backup_interval: Math.max(1, server.auto_backup_interval),
 	auto_restart: server.auto_restart,
 	sleep_enabled: server.sleep_enabled,
-	sleep_idle_minutes: Math.max(1, Number(server.sleep_idle_minutes) || 15),
+	sleep_idle_minutes: Math.max(1, Number(server.sleep_idle_minutes) || DEFAULT_SLEEP_IDLE_MINUTES),
 	sleep_motd: server.sleep_motd,
 	custom_flags: server.custom_flags,
 	java_installation: server.java_installation ?? '',
 	provider: createProvider(server.provider, { file: server.file }),
-	telemetry_host: server.telemetry_host ?? '127.0.0.1',
-	telemetry_port: Math.max(1, Number(server.telemetry_port) || 25565),
+	telemetry_host: server.telemetry_host ?? DEFAULT_TELEMETRY_HOST,
+	telemetry_port: Math.max(1, Number(server.telemetry_port) || DEFAULT_TELEMETRY_PORT),
 	jar_swap_path: '',
 	new_directory: server.directory,
 });
@@ -184,7 +189,7 @@ export const EditServerSettingsProvider: React.FC<EditServerSettingsProviderProp
 		}
 		if (!sameProvider(settingsForm.provider, server.provider)) return true;
 		if ((settingsForm.telemetry_host || '').trim() !== (server.telemetry_host || '').trim()) return true;
-		if (Number(settingsForm.telemetry_port) !== Number(server.telemetry_port || 25565)) return true;
+		if (Number(settingsForm.telemetry_port) !== Number(server.telemetry_port || DEFAULT_TELEMETRY_PORT)) return true;
 		if (settingsForm.jar_swap_path.trim().length > 0) return true;
 		if (settingsForm.new_directory.trim() !== server.directory.trim()) return true;
 

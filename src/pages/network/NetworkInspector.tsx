@@ -45,7 +45,7 @@ import {
 	type ManagedNetwork,
 	type NetworkMember,
 } from '@/lib/network-schema';
-import type { NetworkDiagnostic } from '@/lib/network-config-engine';
+import { isVelocityProxy, type NetworkDiagnostic } from '@/lib/network-config-engine';
 
 interface NetworkInspectorProps {
 	network: ManagedNetwork;
@@ -182,10 +182,8 @@ export const NetworkInspector: React.FC<NetworkInspectorProps> = ({
 	const [pendingRemoval, setPendingRemoval] = React.useState<{ serverId: string; name: string } | null>(null);
 	const [confirmDeleteOpen, setConfirmDeleteOpen] = React.useState(false);
 
-	const proxies = React.useMemo(
-		() => servers.filter((server) => resolveProviderKind(server.provider) === 'proxy'),
-		[servers],
-	);
+	// Only Velocity can route a network (see isVelocityProxy).
+	const proxies = React.useMemo(() => servers.filter(isVelocityProxy), [servers]);
 
 	const memberIds = React.useMemo(
 		() => new Set(network.members.map((member) => member.serverId)),

@@ -329,9 +329,10 @@ export default function ServerSettingsPanel({
 		() => getServerProviderCapabilities(server.provider).kind,
 		[server.provider],
 	);
+	const providerName = server.provider.name;
 	const managedConfigFileDefinitions = React.useMemo(
-		() => getManagedServerConfigFileDefinitions(providerKind),
-		[providerKind],
+		() => getManagedServerConfigFileDefinitions(providerKind, providerName),
+		[providerKind, providerName],
 	);
 
 	const refreshManagedConfigFiles = React.useCallback(async () => {
@@ -412,7 +413,7 @@ export default function ServerSettingsPanel({
 				auto_backup: synced.config.auto_backup,
 				auto_backup_interval: synced.config.auto_backup_interval,
 				auto_restart: synced.config.auto_restart,
-				java_installation: synced.config.java_installation,
+				java_installation: synced.config.java_installation ?? undefined,
 				custom_flags: synced.config.custom_flags,
 				provider: synced.config.provider,
 				telemetry_host: synced.config.telemetry_host,

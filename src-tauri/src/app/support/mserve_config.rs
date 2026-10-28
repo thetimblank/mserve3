@@ -198,20 +198,27 @@ pub(in crate::app) fn infer_provider_from_jar_file(file_name: &str) -> Option<St
     normalize_provider_name(file_name)
 }
 
+/// The first dotted numeric version in a jar name: `paper-1.20.1-196.jar` →
+/// `1.20.1`, `minecraft_server.1.21.jar` → `1.21`.
 pub(in crate::app) fn infer_version_from_jar_file(file_name: &str) -> Option<String> {
     let normalized = file_name.trim().to_lowercase();
-    if normalized.is_empty() {
-        return None;
-    }
+    let stem = normalized.strip_suffix(".jar").unwrap_or(&normalized);
 
-    for token in normalized
-        .split(|ch: char| !ch.is_ascii_alphanumeric() && ch != '.' && ch != '-')
+    for token in stem
+        .split(|ch: char| !ch.is_ascii_alphanumeric() && ch != '.')
         .filter(|token| !token.is_empty())
     {
-        let has_dot = token.contains('.');
-        let starts_with_number = token.chars().next().is_some_and(|ch| ch.is_ascii_digit());
-        if has_dot && starts_with_number {
-            return Some(token.to_string());
+        // Skip a word prefix glued on with a dot (`server.1.21`), then keep the
+        // run of numeric segments (`1.21`).
+        let version = token
+            .split('.')
+            .skip_while(|segment| !segment.starts_with(|ch: char| ch.is_ascii_digit()))
+            .take_while(|segment| {
+                !segment.is_empty() && segment.chars().all(|ch| ch.is_ascii_digit())
+            })
+            .collect::<Vec<_>>();
+        if version.len() >= 2 {
+            return Some(version.join("."));
         }
     }
 
@@ -1099,26 +1106,32 @@ mod tests {
 
     #[test]
     fn infers_version_token_from_jar_filename() {
-        // Works when the version sits in its own token (space/underscore-delimited)
-        // and starts with a digit.
         assert_eq!(
             infer_version_from_jar_file("fabric 1.20.1 server.jar").as_deref(),
             Some("1.20.1")
         );
         // No dotted numeric token -> None.
         assert_eq!(infer_version_from_jar_file("server.jar"), None);
+        assert_eq!(infer_version_from_jar_file("24w14a.jar"), None);
     }
 
     #[test]
-    fn hyphenated_version_is_not_extracted_known_limitation() {
-        // KNOWN LIMITATION (documented by this test): the tokenizer keeps `-` and
-        // `.` inside a token, so a typical provider filename is one token starting
-        // with a letter and no version is inferred. See the note in docs/testing.md.
-        assert_eq!(infer_version_from_jar_file("paper-1.20.1-196.jar"), None);
+    fn infers_version_from_provider_style_jar_names() {
         assert_eq!(
-            infer_version_from_jar_file("minecraft_server.1.21.jar"),
-            None
+            infer_version_from_jar_file("paper-1.20.1-196.jar").as_deref(),
+            Some("1.20.1")
         );
+        assert_eq!(
+            infer_version_from_jar_file("minecraft_server.1.21.jar").as_deref(),
+            Some("1.21")
+        );
+        assert_eq!(
+            infer_version_from_jar_file("fabric-server-mc.1.21.1-loader.0.16.9-launcher.1.0.1.jar")
+                .as_deref(),
+            Some("1.21.1")
+        );
+        // A bare build number is not a version.
+        assert_eq!(infer_version_from_jar_file("bungeecord-1922.jar"), None);
     }
 
     #[test]

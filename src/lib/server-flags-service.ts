@@ -8,7 +8,7 @@ import { invoke } from '@tauri-apps/api/core';
 /** Matches the flag in either the `--nogui` or bare `nogui` spelling. */
 const NOGUI_FLAG_PATTERN = /^--?nogui$/i;
 
-export const isNoguiFlag = (flag: string): boolean => NOGUI_FLAG_PATTERN.test(flag.trim());
+const isNoguiFlag = (flag: string): boolean => NOGUI_FLAG_PATTERN.test(flag.trim());
 
 export const hasNoguiFlag = (flags: readonly string[]): boolean => flags.some(isNoguiFlag);
 

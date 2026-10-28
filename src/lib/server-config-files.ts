@@ -1,4 +1,4 @@
-import type { ProviderKind } from '@/lib/mserve-schema';
+import type { ProviderKind, ProviderName } from '@/lib/mserve-schema';
 
 export type ManagedConfigFileFormat = 'json' | 'properties' | 'yaml' | 'toml';
 
@@ -45,6 +45,8 @@ export type ManagedServerConfigFileDefinition = {
 	title: string;
 	description: string;
 	providerKinds: ProviderKind[];
+	/** Narrows `providerKinds` to specific providers (velocity.toml isn't BungeeCord's). */
+	providerNames?: ProviderName[];
 	format: ManagedConfigFileFormat;
 	keywords: string[];
 	featuredProperties: ManagedConfigPropertyDefinition[];
@@ -241,7 +243,7 @@ const MANAGED_SERVER_CONFIG_FILE_DEFINITIONS: ManagedServerConfigFileDefinition[
 		fileName: 'server.properties',
 		title: 'server.properties',
 		description: 'Canonical server configuration for the running server software.',
-		providerKinds: ['plugin', 'vanilla'],
+		providerKinds: ['plugin', 'vanilla', 'modded'],
 		format: 'properties',
 		keywords: [
 			'motd',
@@ -260,7 +262,7 @@ const MANAGED_SERVER_CONFIG_FILE_DEFINITIONS: ManagedServerConfigFileDefinition[
 		fileName: 'ops.json',
 		title: 'ops.json',
 		description: 'Players with operator privileges.',
-		providerKinds: ['plugin', 'vanilla'],
+		providerKinds: ['plugin', 'vanilla', 'modded'],
 		format: 'json',
 		keywords: ['operators', 'ops', 'operators list'],
 		featuredProperties: [],
@@ -270,7 +272,7 @@ const MANAGED_SERVER_CONFIG_FILE_DEFINITIONS: ManagedServerConfigFileDefinition[
 		fileName: 'whitelist.json',
 		title: 'whitelist.json',
 		description: 'Players who can join while whitelist mode is enabled.',
-		providerKinds: ['plugin', 'vanilla'],
+		providerKinds: ['plugin', 'vanilla', 'modded'],
 		format: 'json',
 		keywords: ['whitelist', 'allowed players'],
 		featuredProperties: [],
@@ -280,7 +282,7 @@ const MANAGED_SERVER_CONFIG_FILE_DEFINITIONS: ManagedServerConfigFileDefinition[
 		fileName: 'banned-ips.json',
 		title: 'banned-ips.json',
 		description: 'IP addresses that are blocked from joining the server.',
-		providerKinds: ['plugin', 'vanilla'],
+		providerKinds: ['plugin', 'vanilla', 'modded'],
 		format: 'json',
 		keywords: ['bans', 'blocked addresses', 'ip bans'],
 		featuredProperties: [],
@@ -290,7 +292,7 @@ const MANAGED_SERVER_CONFIG_FILE_DEFINITIONS: ManagedServerConfigFileDefinition[
 		fileName: 'banned-players.json',
 		title: 'banned-players.json',
 		description: 'Players that are banned from joining the server.',
-		providerKinds: ['plugin', 'vanilla'],
+		providerKinds: ['plugin', 'vanilla', 'modded'],
 		format: 'json',
 		keywords: ['bans', 'blocked players', 'player bans'],
 		featuredProperties: [],
@@ -341,6 +343,7 @@ const MANAGED_SERVER_CONFIG_FILE_DEFINITIONS: ManagedServerConfigFileDefinition[
 		title: 'velocity.toml',
 		description: 'Main Velocity proxy configuration file.',
 		providerKinds: ['proxy'],
+		providerNames: ['velocity'],
 		format: 'toml',
 		keywords: ['motd', 'proxy', 'servers', 'forwarding', 'bind'],
 		featuredProperties: VELOCITY_FEATURED_PROPERTIES,
@@ -348,24 +351,12 @@ const MANAGED_SERVER_CONFIG_FILE_DEFINITIONS: ManagedServerConfigFileDefinition[
 	},
 ];
 
-export const getManagedServerConfigFileDefinitions = (providerKind: ProviderKind) =>
-	MANAGED_SERVER_CONFIG_FILE_DEFINITIONS.filter((definition) =>
-		definition.providerKinds.includes(providerKind),
+export const getManagedServerConfigFileDefinitions = (providerKind: ProviderKind, providerName?: ProviderName) =>
+	MANAGED_SERVER_CONFIG_FILE_DEFINITIONS.filter(
+		(definition) =>
+			definition.providerKinds.includes(providerKind) &&
+			(!definition.providerNames || (providerName != null && definition.providerNames.includes(providerName))),
 	);
-
-export const getManagedServerConfigFileDefinitionByKind = (kind: ManagedServerConfigFileKind) =>
-	MANAGED_SERVER_CONFIG_FILE_DEFINITIONS.find((definition) => definition.kind === kind) ?? null;
-
-export const getManagedServerConfigFileDefinitionByFileName = (fileName: string) => {
-	const normalized = fileName.trim().toLowerCase();
-	if (!normalized) return null;
-
-	return (
-		MANAGED_SERVER_CONFIG_FILE_DEFINITIONS.find(
-			(definition) => definition.fileName.toLowerCase() === normalized,
-		) ?? null
-	);
-};
 
 export const getManagedServerConfigFileKeywords = (definition: ManagedServerConfigFileDefinition) =>
 	Array.from(

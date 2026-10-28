@@ -24,7 +24,21 @@ export type SecurityAuditContext = {
 	maxRamGb: number;
 	/** Number of entries in whitelist.json, or null when unknown/unreadable. */
 	whitelistCount: number | null;
+	/**
+	 * True when the server is a backend in a network: the proxy authenticates
+	 * players, and the network apply sets online-mode=false on purpose.
+	 */
+	behindProxy?: boolean;
 };
+
+/** Whether a server is a backend member of any network that has a proxy. */
+export const isNetworkBackend = (
+	serverId: string,
+	networks: { proxyServerId: string | null; members: { serverId: string }[] }[],
+): boolean =>
+	networks.some(
+		(network) => network.proxyServerId != null && network.members.some((member) => member.serverId === serverId),
+	);
 
 /** Reads a property, treating a missing key as the vanilla default `fallback`. */
 const read = (props: Map<string, string>, key: string, fallback: string): string => {
@@ -54,7 +68,15 @@ export const auditServerProperties = (
 
 	// --- online-mode: the single most important setting for public servers.
 	const onlineMode = read(props, 'online-mode', 'true');
-	if (!isTrue(onlineMode)) {
+	if (!isTrue(onlineMode) && ctx.behindProxy) {
+		findings.push({
+			id: 'online-mode',
+			severity: 'pass',
+			title: 'Players are authenticated by the proxy',
+			explanation:
+				'This server is a network backend, so online-mode=false is expected: the proxy authenticates players and forwards them here. Keep the backend port closed to the internet.',
+		});
+	} else if (!isTrue(onlineMode)) {
 		findings.push({
 			id: 'online-mode',
 			severity: 'critical',

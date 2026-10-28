@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { chooseBestInstalledJava, type JavaRequirement } from './java-compatibility';
 
-export type JavaRuntimeSource = 'path' | 'java_home' | 'common_install_dir' | 'managed' | string;
+type JavaRuntimeSource = 'path' | 'java_home' | 'common_install_dir' | 'managed' | string;
 
 export type JavaRuntimeInfo = {
 	executablePath: string;
@@ -16,7 +16,7 @@ export type JavaRuntimeDetectionResult = {
 	scannedCandidates: number;
 };
 
-export const normalizeJavaExecutablePath = (value: string) => value.trim().replace(/\\/g, '/').toLowerCase();
+const normalizeJavaExecutablePath = (value: string) => value.trim().replace(/\\/g, '/').toLowerCase();
 
 export const findJavaRuntimeByExecutablePath = (
 	executablePath: string | null | undefined,
@@ -41,9 +41,6 @@ export const resolveJavaRuntimeForRequirement = (
 
 	return runtimes.find((runtime) => runtime.majorVersion === bestInstalledMajor) ?? null;
 };
-
-export const getJavaRuntimeBadgeLabel = (runtime: JavaRuntimeInfo | null | undefined) =>
-	runtime ? `Using Java ${runtime.majorVersion}` : null;
 
 export const detectJavaRuntimes = () =>
 	invoke<JavaRuntimeDetectionResult>('detect_java_runtimes').then((result) => ({

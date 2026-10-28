@@ -57,7 +57,8 @@ registry.
 
 ## State (Context, not Redux/Zustand)
 
-Five providers in `data/`, each backed by `localStorage` (and sometimes disk):
+Six providers in `data/` (plus the theme). Three persist to `localStorage`
+(through `lib/local-storage.ts`), and networks also persist to disk:
 
 | Provider | File | Storage key |
 | --- | --- | --- |
@@ -66,6 +67,7 @@ Five providers in `data/`, each backed by `localStorage` (and sometimes disk):
 | `UserProvider` | `data/user.tsx` | `mserve.user.v1` |
 | `JavaRuntimesProvider` | `data/java-runtimes.tsx` | none (rescanned on startup) |
 | `JavaDownloadProvider` | `data/java-download.tsx` | none (transient dialog state) |
+| `ServerUpdatesProvider` | `data/server-updates.tsx` | none (jar update checks, re-run each launch) |
 | Theme | `components/theme-provider.tsx` | `vite-ui-theme` (default `dark`) |
 
 > Bumping a persisted schema = bump the key version suffix (`.v4`, `.v1`) so old

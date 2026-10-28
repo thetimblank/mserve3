@@ -78,33 +78,40 @@ export const getServerProviderCapabilities = (
 	};
 };
 
+/** Lowercased jar file name without its directories or `.jar` extension, so
+ *  folder names (`…/servers/…`, `…/Minecraft/…`) can't influence inference. */
+const jarBaseName = (jarPath?: string | null): string =>
+	(jarPath ?? '')
+		.trim()
+		.split(/[\\/]/)
+		.pop()!
+		.toLowerCase()
+		.replace(/\.jar$/, '');
+
+/** Vanilla's aliases (`server`, `minecraft`) also occur in other providers' jar
+ *  names (`fabric-server-…`), so it is matched last, like the backend does. */
+const INFERENCE_ORDER = [...getProviderDescriptors()].sort(
+	(left, right) => Number(left.name === 'vanilla') - Number(right.name === 'vanilla'),
+);
+
 export const inferProviderFromJarPath = (jarPath?: string | null): ProviderName | null => {
-	const normalized = jarPath?.trim().toLowerCase();
-	if (!normalized) return null;
+	const name = jarBaseName(jarPath);
+	if (!name) return null;
 
-	for (const candidate of getProviderDescriptors()) {
-		if (
-			[candidate.name, ...candidate.aliases].some((hint) => {
-				const token = hint.trim().toLowerCase();
-				return token.length > 0 && normalized.includes(token);
-			})
-		) {
-			return candidate.name;
-		}
-	}
-
-	return null;
+	const match = INFERENCE_ORDER.find((candidate) =>
+		[candidate.name, ...candidate.aliases].some((hint) => name.includes(hint.toLowerCase())),
+	);
+	return match?.name ?? null;
 };
 
+/** The Minecraft version in a jar name (`paper-1.20.1-196.jar` → `1.20.1`). */
 export const inferVersionFromJarPath = (jarPath?: string | null): string | null => {
-	const normalized = jarPath?.trim().toLowerCase();
-	if (!normalized) return null;
+	const name = jarBaseName(jarPath);
+	if (!name) return null;
 
-	const minecraftMatch = normalized.match(/\b1\.\d{1,2}(?:\.\d{1,2})?(?:-[a-z0-9.-]+)?\b/);
-	if (minecraftMatch?.[0]) {
-		return minecraftMatch[0];
-	}
+	const minecraftMatch = name.match(/\b1\.\d{1,2}(?:\.\d{1,2})?(?:-(?:pre|rc)\d+)?\b/);
+	if (minecraftMatch) return minecraftMatch[0];
 
-	const genericMatch = normalized.match(/\b\d+(?:\.\d+){1,3}(?:-[a-z0-9.-]+)?\b/);
+	const genericMatch = name.match(/\b\d+(?:\.\d+){1,3}\b/);
 	return genericMatch?.[0] ?? null;
 };

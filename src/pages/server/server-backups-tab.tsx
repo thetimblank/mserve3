@@ -52,7 +52,8 @@ import type { AutoBackupMode, BackupPolicy, BackupScopeItem } from '@/lib/mserve
 import { getServerProviderCapabilities } from '@/lib/server-provider-capabilities';
 import { HelpButton } from '@/components/help/help-button';
 import type { BackupSettingsUpdate } from './hooks/use-server-backup-actions';
-import { formatBytes, getBackupNameFromPath } from './server-utils';
+import { formatBytes } from '@/lib/utils';
+import { getBackupNameFromPath } from './server-utils';
 
 type Backup = Server['backups'][number];
 

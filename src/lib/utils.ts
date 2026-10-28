@@ -7,17 +7,6 @@ export function cn(...inputs: ClassValue[]) {
 
 export const stripAnsi = (value: string) => value.replace(/\x1b\[[0-9;]*m/g, '');
 
-type RuntimeProviderKind = 'plugin' | 'vanilla' | 'proxy' | 'unknown';
-
-export const parseListPlayers = (line: string) => {
-	const match = line.match(/There are\s+(\d+)\s+of a max of\s+(\d+)\s+players online/i);
-	if (!match) return null;
-	return {
-		players: Number(match[1]),
-		capacity: Number(match[2]),
-	};
-};
-
 const JAVA_VERSION_ERROR_PATTERNS: RegExp[] = [
 	/UnsupportedClassVersionError/i,
 	/has been compiled by a more recent version of the Java Runtime/i,
@@ -61,30 +50,29 @@ export const isNoguiUnsupportedError = (line: string): boolean => {
 	return UNRECOGNIZED_OPTION_PATTERNS.some((pattern) => pattern.test(cleaned));
 };
 
-export const parseVersion = (line: string, providerKind: RuntimeProviderKind = 'unknown') => {
-	const pluginMatch = line.match(/This server is running\s+.+?\s+version\s+(.+)$/i);
-	if (pluginMatch) {
-		return pluginMatch[1]?.trim() || null;
-	}
-
-	if (providerKind === 'vanilla' || providerKind === 'unknown') {
-		const vanillaName = line.match(/\bname\s*=\s*(.+)$/i);
-		if (vanillaName) {
-			return vanillaName[1]?.trim() || null;
-		}
-
-		const vanillaId = line.match(/\bid\s*=\s*(.+)$/i);
-		if (vanillaId) {
-			return vanillaId[1]?.trim() || null;
-		}
-	}
-
-	return null;
-};
-
 export const getPrimaryMinecraftVersion = (versionText: string) => {
 	const match = versionText.match(/\b\d+\.\d+(?:\.\d+)?\b/);
 	return match ? match[0] : null;
+};
+
+/**
+ * Human-readable byte size, e.g. `1536` → `1.50 KB`. Takes an options object
+ * (not a positional digit count) so it can be passed straight to chart
+ * formatters that call it with `(value, index)`.
+ */
+export const formatBytes = (bytes?: number, options?: { fractionDigits?: number }) => {
+	const value = Math.max(0, Number(bytes) || 0);
+	if (value < 1024) return `${value} B`;
+
+	const units = ['KB', 'MB', 'GB', 'TB'];
+	let scaled = value / 1024;
+	let unitIndex = 0;
+	while (scaled >= 1024 && unitIndex < units.length - 1) {
+		scaled /= 1024;
+		unitIndex += 1;
+	}
+
+	return `${scaled.toFixed(options?.fractionDigits ?? 2)} ${units[unitIndex]}`;
 };
 
 /** Splits a millisecond duration into whole day/hour/minute/second components. */
@@ -105,17 +93,4 @@ export const formatUptime = (since: Date | null | undefined): string | null => {
 	if (hours > 0) return `${hours}h ${minutes}m`;
 	if (minutes < 1) return 'Now';
 	return `${minutes}m`;
-};
-
-export const shouldHideBackgroundLine = (cleaned: string) => {
-	return (
-		cleaned.includes('There are') ||
-		cleaned.includes('TPS from last 1m, 5m, 15m:') ||
-		cleaned.includes('Checking version, please wait...') ||
-		cleaned.includes('Server version info:') ||
-		cleaned.includes('This server is running') ||
-		/\b(?:id|name|data|series|protocol|build_time|pack_resource|pack_data|stable)\s*=\s*/i.test(cleaned) ||
-		cleaned.includes('version(s) behind') ||
-		cleaned.includes('Download the new version at:')
-	);
 };
