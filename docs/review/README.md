@@ -95,7 +95,7 @@ and finish the part you claimed.
 
 ### Unnecessary code
 - Exports, components, or hooks that nothing imports (`npx knip` helps; it's
-  configured in `knip.json` and ignores `src-tauri/`).
+  configured in `knip.json`; it only sees the JS/TS tree, so `src-tauri/` is out of scope).
 - Tauri commands registered in `generate_handler!` (`src-tauri/src/app/mod.rs`)
   that no frontend `invoke` calls. Check the reverse too.
 - Unused npm/cargo dependencies, unused feature flags, unused shadcn primitives.
