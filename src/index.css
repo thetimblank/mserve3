@@ -96,8 +96,6 @@
 	--muted-foreground: oklch(0.556 0 0);
 	--accent: oklch(0.6 0.18 304);
 	--accent-foreground: oklch(1 0 0);
-	/* --accent: oklch(88.224% 0.0001 271.152);
-	--accent-foreground: oklch(0.205 0 0); */
 	--warning: oklch(76.9% 0.188 70.08);
 	--warning-foreground: oklch(0.15 0 0);
 	--destructive: oklch(54.276% 0.22206 28.286);
@@ -140,8 +138,6 @@
 	--muted-foreground: oklch(0.708 0 0);
 	--accent: oklch(0.6 0.18 304);
 	--accent-foreground: oklch(1 0 0);
-	/* --accent: oklch(0.269 0 0);
-	--accent-foreground: oklch(0.985 0 0); */
 	--warning: oklch(85.2% 0.199 91.936);
 	--warning-foreground: oklch(0.985 0 0);
 	--destructive: oklch(44.926% 0.18437 29.223);
@@ -165,39 +161,6 @@
 	--sidebar-ring: oklch(0.556 0 0);
 }
 
-.box {
-	@apply dark:bg-secondary/20 border dark:border-none;
-}
-
-input.progress::-webkit-slider-thumb {
-	-webkit-appearance: none;
-	appearance: none;
-	width: 12px;
-	height: 12px;
-	border-radius: 9999px;
-	background: #22c55e;
-	opacity: 0;
-	transition: opacity 150ms ease;
-}
-
-input.progress:hover::-webkit-slider-thumb {
-	opacity: 1;
-}
-
-input.progress::-moz-range-thumb {
-	width: 12px;
-	height: 12px;
-	border-radius: 9999px;
-	background: #22c55e;
-	opacity: 0;
-	transition: opacity 150ms ease;
-	border: 0;
-}
-
-input.progress:hover::-moz-range-thumb {
-	opacity: 1;
-}
-
 @layer base {
 	* {
 		@apply border-border outline-ring/50;
@@ -212,30 +175,6 @@ input.progress:hover::-moz-range-thumb {
 		overflow: hidden;
 	}
 }
-
-/* @font-face {
-	font-family: 'Sora';
-	src: url('./lib/fonts/Sora-Variable.ttf') format('truetype');
-	font-weight: 100 900;
-	font-style: normal;
-	font-display: swap;
-}
-
-@font-face {
-	font-family: 'Sora';
-	src: url('./lib/fonts/Sora-VariableItalic.ttf') format('truetype');
-	font-weight: 100 900;
-	font-style: italic;
-	font-display: swap;
-}
-
-@font-face {
-	font-family: 'Manrope';
-	src: url('./lib/fonts/Manrope-Variable.ttf') format('truetype');
-	font-weight: 100 900;
-	font-style: normal;
-	font-display: swap;
-} */
 
 body {
 	font-family: 'Satoshi', sans-serif;

@@ -4,6 +4,7 @@ import { listen } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
 
 import type { PlayitTunnelStateEvent, ServerTunnelInfo, TunnelStatus } from '../server-types';
+import { getErrorMessage } from '@/lib/utils';
 
 export type ServerTunnel = {
 	/** Whether tunneling is enabled for this server. */
@@ -88,7 +89,7 @@ export function useServerTunnel(directory: string): ServerTunnel {
 					setStatus('offline');
 				}
 			} catch (err) {
-				const message = err instanceof Error ? err.message : 'Failed to update tunneling.';
+				const message = getErrorMessage(err, 'Failed to update tunneling.');
 				toast.error(message);
 			} finally {
 				setBusy(false);

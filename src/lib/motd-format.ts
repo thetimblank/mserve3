@@ -132,7 +132,7 @@ const normalizeLineBreaks = (value: string) => value.replace(/\r\n?/g, '\n');
 
 const cloneStyle = (style: MotdPreviewStyle): MotdPreviewStyle => ({ ...style });
 
-const baseStyle = (): MotdPreviewStyle => ({
+export const baseMotdStyle = (): MotdPreviewStyle => ({
 	color: undefined,
 	colorToken: undefined,
 	shadowColor: undefined,
@@ -144,7 +144,7 @@ const baseStyle = (): MotdPreviewStyle => ({
 	obfuscated: false,
 });
 
-const hexToRgb = (value: string): RgbColor | null => {
+export const hexToRgb = (value: string): RgbColor | null => {
 	const normalized = value.trim().replace(/^#/, '');
 	if (!/^[0-9a-f]{6}(?:[0-9a-f]{2})?$/i.test(normalized)) {
 		return null;
@@ -261,7 +261,7 @@ export const getStoredLiteralMotdValue = (value: string) => {
 
 const parseLegacyPreviewLine = (line: string): MotdPreviewLine => {
 	const runs: MotdPreviewRun[] = [];
-	let style = baseStyle();
+	let style = baseMotdStyle();
 	let buffer = '';
 
 	const flush = () => {
@@ -292,7 +292,7 @@ const parseLegacyPreviewLine = (line: string): MotdPreviewLine => {
 
 			if (code === 'r') {
 				flush();
-				style = baseStyle();
+				style = baseMotdStyle();
 				index += 1;
 				continue;
 			}
@@ -468,7 +468,7 @@ const closeMiniMessageFrame = (
 const parseMiniMessagePreviewLine = (line: string): MotdPreviewLine => {
 	const runs: MotdPreviewRun[] = [];
 	const stack: Array<{ kind: string; style: MotdPreviewStyle; effect?: MotdPreviewEffect }> = [
-		{ kind: 'base', style: baseStyle() },
+		{ kind: 'base', style: baseMotdStyle() },
 	];
 	let buffer = '';
 
@@ -513,7 +513,7 @@ const parseMiniMessagePreviewLine = (line: string): MotdPreviewLine => {
 			if (lower === 'reset') {
 				flush();
 				stack.splice(1);
-				stack[0] = { kind: 'base', style: baseStyle() };
+				stack[0] = { kind: 'base', style: baseMotdStyle() };
 				index = closeIndex;
 				continue;
 			}

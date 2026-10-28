@@ -1,9 +1,14 @@
-import type { AutoBackupMode } from '@/data/servers';
+import type { AutoBackupMode, Server } from '@/data/servers';
 import type { Provider, ProviderName } from '@/lib/mserve-schema';
 import { clampRamGb, formatHeapSize } from '@/lib/ram-utils';
-import { isProxyProvider } from '@/lib/server-provider';
+import { createProvider, isProxyProvider } from '@/lib/server-provider';
 import { getDurationParts } from '@/lib/utils';
-import { DEFAULT_SLEEP_IDLE_MINUTES, DEFAULT_TELEMETRY_PORT } from '@/lib/mserve-consts';
+import {
+	DEFAULT_SLEEP_IDLE_MINUTES,
+	DEFAULT_STORAGE_LIMIT_GB,
+	DEFAULT_TELEMETRY_HOST,
+	DEFAULT_TELEMETRY_PORT,
+} from '@/lib/mserve-consts';
 import type { ScannedBackupEntry, ServerSettingsForm, UpdateServerSettingsPayload } from './server-types';
 
 export const toggleBackupMode = (
@@ -24,13 +29,32 @@ export const mapScannedBackups = (backups: ScannedBackupEntry[]) =>
 		contents: backup.contents ?? undefined,
 	}));
 
+/** The settings form as it starts for a server: its saved settings, nothing pending. */
+export const buildSettingsFormFromServer = (server: Server): ServerSettingsForm => ({
+	ram: clampRamGb(server.ram),
+	storage_limit: Math.max(1, Number(server.storage_limit) || DEFAULT_STORAGE_LIMIT_GB),
+	auto_backup: server.auto_backup,
+	auto_backup_interval: Math.max(1, server.auto_backup_interval),
+	auto_restart: server.auto_restart,
+	sleep_enabled: server.sleep_enabled,
+	sleep_idle_minutes: Math.max(1, Number(server.sleep_idle_minutes) || DEFAULT_SLEEP_IDLE_MINUTES),
+	sleep_motd: server.sleep_motd,
+	custom_flags: server.custom_flags,
+	java_installation: server.java_installation ?? '',
+	provider: createProvider(server.provider, { file: server.file }),
+	telemetry_host: server.telemetry_host ?? DEFAULT_TELEMETRY_HOST,
+	telemetry_port: Math.max(1, Number(server.telemetry_port) || DEFAULT_TELEMETRY_PORT),
+	jar_swap_path: '',
+	new_directory: server.directory,
+});
+
 export const buildUpdateServerSettingsPayload = (
 	directory: string,
 	settingsForm: ServerSettingsForm,
 ): UpdateServerSettingsPayload => ({
 	directory,
 	ram: clampRamGb(settingsForm.ram),
-	storage_limit: Math.max(1, Number(settingsForm.storage_limit) || 200),
+	storage_limit: Math.max(1, Number(settingsForm.storage_limit) || DEFAULT_STORAGE_LIMIT_GB),
 	auto_backup: settingsForm.auto_backup,
 	auto_backup_interval: Math.max(1, Number(settingsForm.auto_backup_interval) || 1),
 	auto_restart: settingsForm.auto_restart,

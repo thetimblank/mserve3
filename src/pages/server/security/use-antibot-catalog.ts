@@ -12,6 +12,7 @@ import {
 } from '@/lib/modrinth-service';
 import { candidatesForLoaders } from '@/lib/security-antibot-catalog';
 import type { Server } from '@/data/servers';
+import { getErrorMessage } from '@/lib/utils';
 
 export type ResolvedAntiBot = {
 	slug: string;
@@ -98,7 +99,7 @@ export const useAntiBotCatalog = (server: Server) => {
 				toast.success(`Installed ${entry.project.title}.`);
 				await onInstalled?.();
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : `Could not install ${entry.project.title}.`);
+				toast.error(getErrorMessage(err, `Could not install ${entry.project.title}.`));
 			} finally {
 				setInstallingSlug(null);
 			}

@@ -48,6 +48,7 @@ import ServerContentTabs, {
 	getServerContentTabUrl,
 	isServerContentTab,
 } from './server/server-content-tabs';
+import { getErrorMessage } from '@/lib/utils';
 
 const Server: React.FC = () => {
 	const navigate = useNavigate();
@@ -107,7 +108,7 @@ const Server: React.FC = () => {
 
 	const showError = React.useCallback(
 		(error: unknown, fallback: string) => {
-			const message = error instanceof Error ? error.message : fallback;
+			const message = getErrorMessage(error, fallback);
 			setErrorMessage(message);
 			toast.error(message);
 			return message;
@@ -187,12 +188,7 @@ const Server: React.FC = () => {
 				toast.success(`Installed ${project.title} ${version.versionNumber}.`);
 				await handleItemsChanged();
 			} catch (err) {
-				const message =
-					typeof err === 'string'
-						? err
-						: err instanceof Error
-							? err.message
-							: `Failed to install ${project.title}.`;
+				const message = getErrorMessage(err, `Failed to install ${project.title}.`);
 				toast.error(message);
 			}
 		},
@@ -238,7 +234,7 @@ const Server: React.FC = () => {
 				toast.info(`Starting ${other.name}…`);
 			} catch (err) {
 				toast.error(
-					`${other.name}: ${err instanceof Error ? err.message : 'Failed to start.'}`,
+					`${other.name}: ${getErrorMessage(err, 'Failed to start.')}`,
 				);
 			}
 		}

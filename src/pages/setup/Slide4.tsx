@@ -15,6 +15,7 @@ import { useSetup } from './SetupContext';
 import { useUser } from '@/data/user';
 import { useServerJavaResolver } from '@/data/java-download';
 import { toast } from 'sonner';
+import { getErrorMessage } from '@/lib/utils';
 
 export default function Slide4() {
 	const { servers, setServerStatus, updateServerStats } = useServers();
@@ -64,7 +65,7 @@ export default function Slide4() {
 			setServerStatus(serverId, 'online');
 		} catch (err) {
 			setServerStatus(serverId, 'offline');
-			const message = err instanceof Error ? err.message : 'Failed to start server.';
+			const message = getErrorMessage(err, 'Failed to start server.');
 			toast.error(message);
 		} finally {
 			setIsBusy(false);

@@ -12,6 +12,7 @@ import { readManagedConfigFile, writeManagedConfigFile } from '@/components/serv
 import { parsePropertiesMap, serializePropertiesMap } from '@/components/server-config-file-editor/properties-config';
 import { resolveProviderKind } from '@/lib/server-provider-capabilities';
 import { resolveProvider } from '@/lib/server-provider';
+import { patchTomlText } from '@/lib/toml-patch';
 import { isStoppedStatus, type Server } from '@/data/servers';
 import {
 	buildNetworkAliasMap,
@@ -288,7 +289,10 @@ const buildVelocityChange = (
 
 	root.servers = servers;
 
-	const after = `${TOML.stringify(root as TOML.JsonMap).trimEnd()}\n`;
+	// Patch the existing file so Velocity's documentation comments survive.
+	const after =
+		(existing !== null ? patchTomlText(existing, root) : null) ??
+		`${TOML.stringify(root as TOML.JsonMap).trimEnd()}\n`;
 	if (existing !== null && after === existing) return null;
 
 	return {

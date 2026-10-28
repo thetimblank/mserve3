@@ -20,6 +20,8 @@ import { cn } from '@/lib/utils';
 import {
 	applyMotdAlignment,
 	applyMotdAlignmentEscape,
+	baseMotdStyle,
+	hexToRgb,
 	measureMotdRunsWidth,
 	measureMotdWidth,
 	motdCharAdvance,
@@ -60,36 +62,9 @@ type MotdEditorSelection = {
 type MotdRichLine = MotdPreviewRun[];
 
 const SECTION_SIGN = '\u00a7';
-const MINI_DECORATION_TAGS: Record<MotdDecorationKey, string> = {
-	bold: 'bold',
-	italic: 'italic',
-	underlined: 'underlined',
-	strikethrough: 'strikethrough',
-	obfuscated: 'obfuscated',
-};
-
-const EMPTY_STYLE: MotdPreviewStyle = {
-	color: undefined,
-	colorToken: undefined,
-	shadowColor: undefined,
-	shadowToken: undefined,
-	bold: false,
-	italic: false,
-	underlined: false,
-	strikethrough: false,
-	obfuscated: false,
-};
-
-const NORMALIZED_DECORATION_KEYS: MotdDecorationKey[] = [
-	'bold',
-	'italic',
-	'underlined',
-	'strikethrough',
-	'obfuscated',
-];
 
 const normalizeStyle = (style?: MotdPreviewStyle): MotdPreviewStyle => ({
-	...EMPTY_STYLE,
+	...baseMotdStyle(),
 	...style,
 	bold: Boolean(style?.bold),
 	italic: Boolean(style?.italic),
@@ -138,17 +113,6 @@ const toEditorCss = (run: MotdPreviewRun, colorOverride?: string): React.CSSProp
 		textDecorationLine: decorationLine || undefined,
 		textShadow: buildTextShadow(style, color ?? 'currentColor'),
 		whiteSpace: 'pre-wrap',
-	};
-};
-
-const hexToRgb = (value: string) => {
-	const normalized = value.replace(/^#/, '').trim();
-	if (!/^[0-9a-f]{6}$/i.test(normalized)) return null;
-
-	return {
-		r: Number.parseInt(normalized.slice(0, 2), 16),
-		g: Number.parseInt(normalized.slice(2, 4), 16),
-		b: Number.parseInt(normalized.slice(4, 6), 16),
 	};
 };
 
@@ -387,9 +351,9 @@ const serializeMiniMessageRuns = (runs: MotdPreviewRun[]) =>
 				tags.push(`shadow:${style.shadowToken}`);
 			}
 
-			for (const key of NORMALIZED_DECORATION_KEYS) {
-				if (style[key]) {
-					tags.push(MINI_DECORATION_TAGS[key]);
+			for (const option of MOTD_DECORATION_OPTIONS) {
+				if (style[option.key]) {
+					tags.push(option.miniMessageTag);
 				}
 			}
 

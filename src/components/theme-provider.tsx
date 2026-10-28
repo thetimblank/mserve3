@@ -32,17 +32,22 @@ export function ThemeProvider({
 
 	useEffect(() => {
 		const root = window.document.documentElement;
+		const apply = (resolved: 'dark' | 'light') => {
+			root.classList.remove('light', 'dark');
+			root.classList.add(resolved);
+		};
 
-		root.classList.remove('light', 'dark');
-
-		if (theme === 'system') {
-			const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-
-			root.classList.add(systemTheme);
+		if (theme !== 'system') {
+			apply(theme);
 			return;
 		}
 
-		root.classList.add(theme);
+		// Follow the OS while it's set to "System", not just at the moment it was picked.
+		const query = window.matchMedia('(prefers-color-scheme: dark)');
+		const applySystem = () => apply(query.matches ? 'dark' : 'light');
+		applySystem();
+		query.addEventListener('change', applySystem);
+		return () => query.removeEventListener('change', applySystem);
 	}, [theme]);
 
 	const value = {

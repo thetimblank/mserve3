@@ -5,6 +5,7 @@ import { openUrl } from '@tauri-apps/plugin-opener';
 import { toast } from 'sonner';
 
 import type { PlayitClaimStateEvent } from '@/pages/server/server-types';
+import { getErrorMessage } from '@/lib/utils';
 
 export type PlayitClaimState = {
 	status: 'idle' | 'pending' | 'claimed' | 'error';
@@ -91,7 +92,7 @@ export function usePlayitAccount(): PlayitAccount {
 			setClaimState({ status: 'pending', claimUrl: url, error: null });
 			await openUrl(url);
 		} catch (err) {
-			const message = err instanceof Error ? err.message : 'Failed to start the claim.';
+			const message = getErrorMessage(err, 'Failed to start the claim.');
 			setClaimState({ status: 'error', claimUrl: null, error: message });
 			toast.error(message);
 		} finally {
@@ -106,7 +107,7 @@ export function usePlayitAccount(): PlayitAccount {
 			setClaimed(false);
 			setClaimState({ status: 'idle', claimUrl: null, error: null });
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : 'Failed to disconnect.');
+			toast.error(getErrorMessage(err, 'Failed to disconnect.'));
 		} finally {
 			setBusy(false);
 		}

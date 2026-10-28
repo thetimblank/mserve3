@@ -23,6 +23,7 @@ import {
 import { Spinner } from '@/components/ui/spinner';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import JarVersionSelectorPane from './JarVersionSelectorPane';
+import { getErrorMessage } from '@/lib/utils';
 
 export type DownloadedJarSelection = {
 	filePath: string;
@@ -61,7 +62,7 @@ const JarDownloadModal: React.FC<JarDownloadModalProps> = ({ open, onOpenChange,
 			})
 			.catch((error) => {
 				if (!cancelled) {
-					const message = error instanceof Error ? error.message : 'Failed to fetch jar versions.';
+					const message = getErrorMessage(error, 'Failed to fetch jar versions.');
 					toast.error(message);
 					setRows([]);
 				}
@@ -93,7 +94,7 @@ const JarDownloadModal: React.FC<JarDownloadModalProps> = ({ open, onOpenChange,
 			});
 			onOpenChange(false);
 		} catch (error) {
-			const message = error instanceof Error ? error.message : 'Failed to download jar file.';
+			const message = getErrorMessage(error, 'Failed to download jar file.');
 			toast.error(message);
 		} finally {
 			setIsDownloading(false);

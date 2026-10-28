@@ -1,4 +1,11 @@
-import { DEFAULT_SLEEP_IDLE_MINUTES, DEFAULT_SLEEP_MOTD, TELEMETRY_POLLING } from './mserve-consts';
+import {
+	DEFAULT_AUTO_BACKUP_INTERVAL_MINUTES,
+	DEFAULT_RAM_GB,
+	DEFAULT_SLEEP_IDLE_MINUTES,
+	DEFAULT_SLEEP_MOTD,
+	DEFAULT_STORAGE_LIMIT_GB,
+	TELEMETRY_POLLING,
+} from './mserve-consts';
 
 export type AutoBackupMode = 'interval' | 'on_close' | 'on_start';
 /**
@@ -145,14 +152,14 @@ export const createDefaultMserveForm = (): MserveJsonFormProps => ({
 	directory: '',
 	create_directory_if_missing: true,
 	file: '',
-	ram: 4,
-	storage_limit: 200,
+	ram: DEFAULT_RAM_GB,
+	storage_limit: DEFAULT_STORAGE_LIMIT_GB,
 	auto_restart: false,
 	sleep_enabled: false,
 	sleep_idle_minutes: DEFAULT_SLEEP_IDLE_MINUTES,
 	sleep_motd: DEFAULT_SLEEP_MOTD,
 	auto_backup: ['on_close'],
-	auto_backup_interval: 120,
+	auto_backup_interval: DEFAULT_AUTO_BACKUP_INTERVAL_MINUTES,
 	auto_agree_eula: true,
 	java_installation: '',
 	provider: null,

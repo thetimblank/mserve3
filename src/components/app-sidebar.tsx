@@ -115,51 +115,42 @@ export function AppSidebar() {
 									</SidebarMenuButton>
 								</SidebarMenuItem>
 							)}
-							{servers.map((server) =>
-								(() => {
-									const providerCapabilities = getServerProviderCapabilities(server.provider);
-									const availableTabs = getAvailableServerContentTabs(providerCapabilities.kind);
+							{servers.map((server) => {
+								const serverUrl = `/servers/${encodeURIComponent(server.id)}`;
+								const isServerActive = location.pathname.startsWith(serverUrl);
+								const availableTabs = getAvailableServerContentTabs(
+									getServerProviderCapabilities(server.provider).kind,
+								);
 
-									return (
-										<SidebarMenuItem key={server.id}>
-											<SidebarMenuButton
-												className={
-													location.pathname.startsWith(
-														`/servers/${encodeURIComponent(server.id)}`,
-													)
-														? 'font-semibold bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground cursor-default'
-														: ''
-												}
-												asChild>
-												<Link to={`/servers/${encodeURIComponent(server.id)}`}>
-													<Server />
-													<span>{server.name}</span>
-												</Link>
-											</SidebarMenuButton>
+								return (
+									<SidebarMenuItem key={server.id}>
+										<SidebarMenuButton className={isServerActive ? NAV_ACTIVE_CLASS : ''} asChild>
+											<Link to={serverUrl}>
+												<Server />
+												<span>{server.name}</span>
+											</Link>
+										</SidebarMenuButton>
 
-											{location.pathname.startsWith(
-												`/servers/${encodeURIComponent(server.id)}`,
-											) && (
-												<div className='ml-4 flex flex-col'>
-													{availableTabs.map((tab) => (
-														<Link
-															key={tab}
-															className={clsx(
-																'border-l-2 py-1 capitalize pl-4 rounded-r-lg font-semibold',
-																location.pathname === getServerContentTabUrl(server.id, tab)
-																	? 'border-l-accent bg-accent/25 cursor-default'
-																	: 'text-muted-foreground hover:bg-muted hover:text-foreground',
-															)}
-															to={getServerContentTabUrl(server.id, tab)}>
-															{tab}
-														</Link>
-													))}
-												</div>
-											)}
-										</SidebarMenuItem>
-									);
-								})(),
-							)}
+										{isServerActive && (
+											<div className='ml-4 flex flex-col'>
+												{availableTabs.map((tab) => (
+													<Link
+														key={tab}
+														className={clsx(
+															'border-l-2 py-1 capitalize pl-4 rounded-r-lg font-semibold',
+															location.pathname === getServerContentTabUrl(server.id, tab)
+																? 'border-l-accent bg-accent/25 cursor-default'
+																: 'text-muted-foreground hover:bg-muted hover:text-foreground',
+														)}
+														to={getServerContentTabUrl(server.id, tab)}>
+														{tab}
+													</Link>
+												))}
+											</div>
+										)}
+									</SidebarMenuItem>
+								);
+							})}
 						</SidebarMenu>
 					</SidebarGroupContent>
 				</SidebarGroup>
@@ -168,20 +159,18 @@ export function AppSidebar() {
 					<SidebarGroupLabel>Help</SidebarGroupLabel>
 					<SidebarGroupContent>
 						<SidebarMenu>
-							{help
-								// .filter((item) => !item.bottom)
-								.map((item) => (
-									<SidebarMenuItem key={item.title}>
-										<SidebarMenuButton
-											asChild
-											className={isNavActive(item.url) ? NAV_ACTIVE_CLASS : ''}>
-											<Link to={item.url}>
-												<item.icon />
-												<span>{item.title}</span>
-											</Link>
-										</SidebarMenuButton>
-									</SidebarMenuItem>
-								))}
+							{help.map((item) => (
+								<SidebarMenuItem key={item.title}>
+									<SidebarMenuButton
+										asChild
+										className={isNavActive(item.url) ? NAV_ACTIVE_CLASS : ''}>
+										<Link to={item.url}>
+											<item.icon />
+											<span>{item.title}</span>
+										</Link>
+									</SidebarMenuButton>
+								</SidebarMenuItem>
+							))}
 						</SidebarMenu>
 					</SidebarGroupContent>
 				</SidebarGroup>

@@ -10,12 +10,15 @@ import { Clipboard, ClipboardCheck, Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
-const AddressRow: React.FC<{ label: string; value: string | null }> = ({ label, value }) => {
+/** `null` while loading, `false` when the lookup failed. */
+type AddressValue = string | null | false;
+
+const AddressRow: React.FC<{ label: string; value: AddressValue }> = ({ label, value }) => {
 	const [hidden, setHidden] = React.useState(true);
 	const [copied, setCopied] = React.useState(false);
 
 	const copy = React.useCallback(() => {
-		if (value == null) return;
+		if (!value) return;
 		navigator.clipboard.writeText(value).then(() => {
 			setCopied(true);
 			setTimeout(() => setCopied(false), 2000);
@@ -26,8 +29,10 @@ const AddressRow: React.FC<{ label: string; value: string | null }> = ({ label, 
 		<div className='flex items-center gap-2 rounded-md bg-secondary/50 px-3 py-1.5 text-sm'>
 			<span className='w-12 shrink-0 select-none text-left text-muted-foreground'>{label}</span>
 			<span className='flex-1 truncate text-left font-mono'>
-				{value == null ? (
+				{value === null ? (
 					<span className='select-none text-muted-foreground'>Loading…</span>
+				) : value === false ? (
+					<span className='select-none text-muted-foreground'>Unavailable</span>
 				) : hidden ? (
 					<span className='select-none blur-sm'>XXX.XXX.X.X</span>
 				) : (
@@ -52,7 +57,7 @@ const AddressRow: React.FC<{ label: string; value: string | null }> = ({ label, 
 						variant='ghost'
 						size='sm'
 						className='h-6 w-6 p-0 text-muted-foreground hover:text-foreground'
-						disabled={value == null}
+						disabled={!value}
 						onClick={copy}>
 						{copied ? <ClipboardCheck className='size-3.5' /> : <Clipboard className='size-3.5' />}
 					</Button>
@@ -64,21 +69,22 @@ const AddressRow: React.FC<{ label: string; value: string | null }> = ({ label, 
 };
 
 export const ConnectionAddresses: React.FC = () => {
-	const [localIp, setLocalIp] = React.useState<string | null>(null);
-	const [publicIp, setPublicIp] = React.useState<string | null>(null);
+	const [localIp, setLocalIp] = React.useState<AddressValue>(null);
+	const [publicIp, setPublicIp] = React.useState<AddressValue>(null);
 
 	React.useEffect(() => {
 		let active = true;
-		invoke<string>('get_local_ip')
-			.then((ip) => {
-				if (active) setLocalIp(ip);
-			})
-			.catch(() => {});
-		invoke<string>('get_public_ip')
-			.then((ip) => {
-				if (active) setPublicIp(ip);
-			})
-			.catch(() => {});
+		const load = (command: string, setValue: (value: AddressValue) => void) => {
+			invoke<string>(command)
+				.then((ip) => {
+					if (active) setValue(ip || false);
+				})
+				.catch(() => {
+					if (active) setValue(false);
+				});
+		};
+		load('get_local_ip', setLocalIp);
+		load('get_public_ip', setPublicIp);
 		return () => {
 			active = false;
 		};

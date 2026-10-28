@@ -129,7 +129,7 @@ export default function DarkVeil({
 	warpAmount = 0,
 	resolutionScale = 1,
 }: Props) {
-	const ref = useRef<HTMLCanvasElement>(null);
+	const ref = useRef<HTMLDivElement>(null);
 	const [isLight, setIsLight] = useState(() => !document.documentElement.classList.contains('dark'));
 
 	useEffect(() => {
@@ -139,9 +139,36 @@ export default function DarkVeil({
 		return () => observer.disconnect();
 	}, []);
 
+	// The render loop reads the latest props from here, so changing one (or the
+	// theme) doesn't rebuild the GL context, shaders and buffers.
+	const settingsRef = useRef({
+		hueShift,
+		noiseIntensity,
+		scanlineIntensity,
+		speed,
+		scanlineFrequency,
+		warpAmount,
+		resolutionScale,
+		isLight,
+	});
+	settingsRef.current = {
+		hueShift,
+		noiseIntensity,
+		scanlineIntensity,
+		speed,
+		scanlineFrequency,
+		warpAmount,
+		resolutionScale,
+		isLight,
+	};
+
 	useEffect(() => {
-		const canvas = ref.current as HTMLCanvasElement;
-		const parent = canvas.parentElement as HTMLElement;
+		// A canvas per mount: its context is lost on cleanup, so it can't be reused
+		// (StrictMode mounts twice in dev).
+		const parent = ref.current as HTMLDivElement;
+		const canvas = document.createElement('canvas');
+		canvas.className = 'w-full h-full block';
+		parent.appendChild(canvas);
 
 		const renderer = new Renderer({
 			dpr: Math.min(window.devicePixelRatio, 2),
@@ -157,38 +184,46 @@ export default function DarkVeil({
 			uniforms: {
 				uTime: { value: 0 },
 				uResolution: { value: new Vec2() },
-				uHueShift: { value: hueShift },
-				uNoise: { value: noiseIntensity },
-				uScan: { value: scanlineIntensity },
-				uScanFreq: { value: scanlineFrequency },
-				uWarp: { value: warpAmount },
-				uLightMode: { value: isLight ? 1 : 0 },
+				uHueShift: { value: 0 },
+				uNoise: { value: 0 },
+				uScan: { value: 0 },
+				uScanFreq: { value: 0 },
+				uWarp: { value: 0 },
+				uLightMode: { value: 0 },
 			},
 		});
 
 		const mesh = new Mesh(gl, { geometry, program });
 
+		let appliedScale = settingsRef.current.resolutionScale;
 		const resize = () => {
 			const w = parent.clientWidth,
 				h = parent.clientHeight;
-			renderer.setSize(w * resolutionScale, h * resolutionScale);
+			appliedScale = settingsRef.current.resolutionScale;
+			renderer.setSize(w * appliedScale, h * appliedScale);
 			program.uniforms.uResolution.value.set(w, h);
 		};
 
 		window.addEventListener('resize', resize);
 		resize();
 
-		const start = performance.now();
+		let elapsed = 0;
+		let last = performance.now();
 		let frame = 0;
 
 		const loop = () => {
-			program.uniforms.uTime.value = ((performance.now() - start) / 1000) * speed;
-			program.uniforms.uHueShift.value = hueShift;
-			program.uniforms.uNoise.value = noiseIntensity;
-			program.uniforms.uScan.value = scanlineIntensity;
-			program.uniforms.uScanFreq.value = scanlineFrequency;
-			program.uniforms.uWarp.value = warpAmount;
-			program.uniforms.uLightMode.value = isLight ? 1 : 0;
+			const settings = settingsRef.current;
+			if (settings.resolutionScale !== appliedScale) resize();
+			const now = performance.now();
+			elapsed += ((now - last) / 1000) * settings.speed;
+			last = now;
+			program.uniforms.uTime.value = elapsed;
+			program.uniforms.uHueShift.value = settings.hueShift;
+			program.uniforms.uNoise.value = settings.noiseIntensity;
+			program.uniforms.uScan.value = settings.scanlineIntensity;
+			program.uniforms.uScanFreq.value = settings.scanlineFrequency;
+			program.uniforms.uWarp.value = settings.warpAmount;
+			program.uniforms.uLightMode.value = settings.isLight ? 1 : 0;
 			renderer.render({ scene: mesh });
 			frame = requestAnimationFrame(loop);
 		};
@@ -198,7 +233,13 @@ export default function DarkVeil({
 		return () => {
 			cancelAnimationFrame(frame);
 			window.removeEventListener('resize', resize);
+			program.remove();
+			geometry.remove();
+			// Give the context back now instead of waiting for GC; Chromium caps how
+			// many can be alive at once.
+			gl.getExtension('WEBGL_lose_context')?.loseContext();
+			canvas.remove();
 		};
-	}, [hueShift, noiseIntensity, scanlineIntensity, speed, scanlineFrequency, warpAmount, resolutionScale, isLight]);
-	return <canvas ref={ref} className='w-full h-full block' />;
+	}, []);
+	return <div ref={ref} className='w-full h-full' />;
 }

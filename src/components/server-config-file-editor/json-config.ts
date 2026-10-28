@@ -29,13 +29,14 @@ const inferJsonColumnKind = (records: JsonRecord[], key: string): JsonColumnKind
 	return resolvedKind ?? 'string';
 };
 
-const defaultJsonColumnsForFile = (fileName: string): Array<Pick<JsonColumn, 'key' | 'label' | 'kind'>> => {
+const defaultJsonColumnsForFile = (fileName: string): JsonColumn[] => {
 	switch (fileName.trim().toLowerCase()) {
 		case 'ops.json':
 			return [
 				{ key: 'uuid', label: 'UUID', kind: 'string' },
 				{ key: 'name', label: 'Name', kind: 'string' },
-				{ key: 'level', label: 'Level', kind: 'number' },
+				// Level 0 is an op who can't run any commands; 4 is the server default.
+				{ key: 'level', label: 'Level', kind: 'number', defaultValue: '4' },
 				{ key: 'bypassesPlayerLimit', label: 'Bypasses player limit', kind: 'boolean' },
 			];
 		case 'whitelist.json':
@@ -118,8 +119,32 @@ export const inferJsonColumns = (records: JsonRecord[], fileName: string): JsonC
 		.filter((column): column is JsonColumn => Boolean(column));
 };
 
-export const jsonColumnDefaultValue = (kind: JsonColumnKind) => {
-	switch (kind) {
+/** Files whose entries the server identifies by UUID (it skips entries without a valid one). */
+const UUID_KEYED_FILES = new Set(['ops.json', 'whitelist.json', 'banned-players.json']);
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Throws when a row would be silently dropped by the server on load. `shouldCheck`
+ * limits it to rows the user touched, so an old hand-written entry doesn't block saving.
+ */
+export const validateJsonRecords = (
+	fileName: string,
+	records: JsonRecord[],
+	shouldCheck: (index: number) => boolean = () => true,
+) => {
+	if (!UUID_KEYED_FILES.has(fileName.trim().toLowerCase())) return;
+	records.forEach((record, index) => {
+		if (shouldCheck(index) && !UUID_PATTERN.test(String(record.uuid ?? '').trim())) {
+			throw new Error(
+				`Row ${index + 1} needs a valid player UUID; the server ignores entries without one. To add a player by name, use the in-game command instead.`,
+			);
+		}
+	});
+};
+
+export const jsonColumnDefaultValue = (column: Pick<JsonColumn, 'kind' | 'defaultValue'>) => {
+	if (column.defaultValue !== undefined) return column.defaultValue;
+	switch (column.kind) {
 		case 'number':
 			return '0';
 		case 'boolean':
@@ -131,11 +156,10 @@ export const jsonColumnDefaultValue = (kind: JsonColumnKind) => {
 	}
 };
 
-export const stringifyJsonRow = (record: JsonRecord, columns: JsonColumn[]) => {
+const stringifyJsonRow = (record: JsonRecord, columns: JsonColumn[]) => {
 	const values: PropertyValues = {};
 	for (const column of columns) {
-		values[column.key] =
-			stringifyStructuredValue(record[column.key]) || jsonColumnDefaultValue(column.kind);
+		values[column.key] = stringifyStructuredValue(record[column.key]) || jsonColumnDefaultValue(column);
 	}
 
 	for (const [key, value] of Object.entries(record)) {
@@ -146,7 +170,7 @@ export const stringifyJsonRow = (record: JsonRecord, columns: JsonColumn[]) => {
 	return values;
 };
 
-export const parseJsonCellValue = (kind: JsonColumnKind, value: string) => {
+const parseJsonCellValue = (kind: JsonColumnKind, value: string) => {
 	switch (kind) {
 		case 'number': {
 			const parsed = Number(value.trim());

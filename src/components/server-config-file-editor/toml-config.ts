@@ -1,6 +1,7 @@
 import * as TOML from '@iarna/toml';
 
 import { getEditableMotdValue, getStoredMotdValue } from '@/lib/motd-format';
+import { patchTomlText } from '@/lib/toml-patch';
 import type {
 	ManagedConfigPropertyDefinition,
 	ManagedServerConfigFileDefinition,
@@ -16,7 +17,7 @@ import {
 	stringifyStructuredValue,
 } from './utils';
 
-export const parseTomlValue = (templateValue: unknown, value: string): unknown => {
+const parseTomlValue = (templateValue: unknown, value: string): unknown => {
 	if (typeof templateValue === 'number') {
 		const parsed = Number(value.trim());
 		if (!Number.isFinite(parsed)) {
@@ -115,12 +116,15 @@ export const parseVelocityEditorState = (
 };
 
 export const createVelocityTomlContent = ({
+	content,
 	root,
 	values,
 	advancedKeys,
 	featuredKeySet,
 	definition,
 }: {
+	/** The file as loaded; unchanged entries (and all comments) are kept from it. */
+	content: string;
 	root: TomlRoot;
 	values: PropertyValues;
 	advancedKeys: string[];
@@ -128,7 +132,11 @@ export const createVelocityTomlContent = ({
 	definition: ManagedServerConfigFileDefinition;
 }) => {
 	const nextRoot: TomlRoot = { ...root };
-	const nextServers = isRecord(nextRoot.servers) ? { ...nextRoot.servers } : {};
+	const existingServers = isRecord(nextRoot.servers) ? nextRoot.servers : {};
+	// When the servers field is edited it's the whole list: a backend deleted
+	// from it must not come back from the file.
+	const editsServers = featuredKeySet.has('servers');
+	const nextServers: TomlRoot = editsServers ? {} : { ...existingServers };
 
 	for (const property of definition.featuredProperties) {
 		if (property.editor === 'motd') {
@@ -177,6 +185,10 @@ export const createVelocityTomlContent = ({
 		nextRoot[key] = parseTomlValue(root[key], values[key] ?? '');
 	}
 
+	if (editsServers && !('try' in nextServers) && 'try' in existingServers) {
+		nextServers.try = existingServers.try;
+	}
+
 	nextRoot.servers = nextServers;
-	return `${TOML.stringify(nextRoot as TOML.JsonMap).trimEnd()}\n`;
+	return patchTomlText(content, nextRoot) ?? `${TOML.stringify(nextRoot as TOML.JsonMap).trimEnd()}\n`;
 };

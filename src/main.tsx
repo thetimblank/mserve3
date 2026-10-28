@@ -32,6 +32,20 @@ import { CreateServerProvider } from './pages/create-server/CreateServerContext'
 import Feedback from './pages/Feedback';
 import { initSentry, reportError } from './lib/sentry';
 
+const THEME_STORAGE_KEY = 'vite-ui-theme';
+
+/** Every key the app stores starts with `mserve.` (plus the theme), so new stores are covered too. */
+const clearAppStorage = () => {
+	try {
+		const keys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index));
+		for (const key of keys) {
+			if (key && (key.startsWith('mserve.') || key === THEME_STORAGE_KEY)) localStorage.removeItem(key);
+		}
+	} catch {
+		// Storage unavailable; the reload still helps.
+	}
+};
+
 class AppErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
 	constructor(props: { children: React.ReactNode }) {
 		super(props);
@@ -79,9 +93,7 @@ class AppErrorBoundary extends React.Component<{ children: React.ReactNode }, { 
 							type='button'
 							className='rounded-xl border px-4 py-2 text-sm font-medium'
 							onClick={() => {
-								localStorage.removeItem('mserve.user.v1');
-								localStorage.removeItem('mserve.servers.v4');
-								localStorage.removeItem('vite-ui-theme');
+								clearAppStorage();
 								window.location.reload();
 							}}>
 							Clear app data and reload [THIS CANNOT BE UNDONE]
@@ -96,10 +108,10 @@ class AppErrorBoundary extends React.Component<{ children: React.ReactNode }, { 
 const RootLayout: React.FC = () => {
 	return (
 		<BrowserRouter>
-			<Toaster />
 			<NativeContextMenu />
 			<Animations>
-				<ThemeProvider defaultTheme='dark' storageKey='vite-ui-theme'>
+				<ThemeProvider defaultTheme='dark' storageKey={THEME_STORAGE_KEY}>
+					<Toaster />
 					<SidebarProvider className='h-svh overflow-hidden pt-10'>
 						<UserProvider>
 							<JavaRuntimesProvider>

@@ -18,7 +18,14 @@ import {
 	createDefaultServerSetupForm,
 } from '@/lib/mserve-sync';
 import { registerMserveRepairHandler } from '@/lib/mserve-repair-controller';
-import { DEFAULT_SLEEP_IDLE_MINUTES, DEFAULT_SLEEP_MOTD } from '@/lib/mserve-consts';
+import {
+	DEFAULT_AUTO_BACKUP_INTERVAL_MINUTES,
+	DEFAULT_RAM_GB,
+	DEFAULT_SLEEP_IDLE_MINUTES,
+	DEFAULT_SLEEP_MOTD,
+	DEFAULT_STORAGE_LIMIT_GB,
+} from '@/lib/mserve-consts';
+import { getErrorMessage } from '@/lib/utils';
 
 type RepairRequest = {
 	options: PromptMserveRepairOptions;
@@ -107,7 +114,7 @@ const MserveRepairDialog: React.FC = () => {
 				setError(null);
 			}
 		} catch (err) {
-			const message = err instanceof Error ? err.message : 'Could not open file picker.';
+			const message = getErrorMessage(err, 'Could not open file picker.');
 			setError(message);
 		}
 	};
@@ -142,14 +149,24 @@ const MserveRepairDialog: React.FC = () => {
 			directory: activeRequest.options.directory,
 			create_directory_if_missing: form.create_directory_if_missing,
 			file,
-			ram: Math.max(1, Number(form.ram) || 3),
-			storage_limit: Math.max(1, Number(form.storage_limit) || 200),
+			ram: Math.max(1, Number(form.ram) || DEFAULT_RAM_GB),
+			storage_limit: Math.max(1, Number(form.storage_limit) || DEFAULT_STORAGE_LIMIT_GB),
 			auto_backup: form.auto_backup,
-			auto_backup_interval: Math.max(1, Number(form.auto_backup_interval) || 120),
+			auto_backup_interval: Math.max(
+				1,
+				Number(form.auto_backup_interval) || DEFAULT_AUTO_BACKUP_INTERVAL_MINUTES,
+			),
 			auto_restart: form.auto_restart,
 			auto_agree_eula: form.auto_agree_eula,
 			java_installation: form.java_installation,
 			custom_flags: activeRequest.options.custom_flags,
+			// Not editable here, so carry the caller's values through instead of letting
+			// the backend reset them (a host pinned to `server-ip` would go back to loopback).
+			sleep_enabled: activeRequest.options.sleep_enabled,
+			sleep_idle_minutes: activeRequest.options.sleep_idle_minutes,
+			sleep_motd: activeRequest.options.sleep_motd,
+			telemetry_host: activeRequest.options.telemetry_host,
+			telemetry_port: activeRequest.options.telemetry_port,
 			provider: {
 				...form.provider,
 				file,

@@ -12,12 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import {
-	DEFAULT_SLEEP_IDLE_MINUTES,
-	DEFAULT_TELEMETRY_HOST,
-	DEFAULT_TELEMETRY_PORT,
-	TELEMETRY_POLLING,
-} from '@/lib/mserve-consts';
+import { TELEMETRY_POLLING } from '@/lib/mserve-consts';
 import { type Provider, type TelemetryKey } from '@/lib/mserve-schema';
 import { getDefaultProviderCommandSupport } from '@/lib/server-provider-capabilities';
 import {
@@ -28,13 +23,13 @@ import {
 } from '@/lib/server-provider';
 import { type JavaRuntimeInfo } from '@/lib/java-runtime-service';
 import { javaResolutionLabel, resolveServerJavaExecutable } from '@/lib/java-resolution';
-import { clampRamGb } from '@/lib/ram-utils';
 import { getEditableLiteralMotdValue, getStoredLiteralMotdValue } from '@/lib/motd-format';
 import MotdEditor from '@/components/motd-editor';
 import { examplePaths } from '@/lib/platform';
 import { getServerNameFromDirectory } from '@/lib/mserve-server-mapper';
 import {
 	buildServerRunCommandPreview,
+	buildSettingsFormFromServer,
 	buildUpdateServerSettingsPayload,
 	formatCustomFlagsInput,
 	parseCustomFlagsInput,
@@ -49,6 +44,7 @@ import JarDownloadModal, {
 } from '@/pages/create-server/slides/components/JarDownloadModal';
 import ServerJarUpdateSection from '@/components/server-jar-update-section';
 import { HelpButton } from './help/help-button';
+import { getErrorMessage } from '@/lib/utils';
 
 const TELEMETRY_LABELS: Record<TelemetryKey, string> = {
 	list: 'Players list polling',
@@ -60,12 +56,12 @@ const TELEMETRY_LABELS: Record<TelemetryKey, string> = {
 	provider: 'Provider version telemetry',
 };
 
-const sameStringList = (left: string[], right: string[]) => {
-	if (left.length !== right.length) return false;
-	return left.every((value, index) => value === right[index]);
+/** What saving `form` would write, so two forms that save the same compare equal. */
+const settingsFormKey = (directory: string, form: ServerSettingsForm) => {
+	const payload = buildUpdateServerSettingsPayload(directory, form);
+	payload.new_directory = resolveNewDirectory(payload, directory);
+	return JSON.stringify(payload);
 };
-
-const sameProvider = (left: Provider, right: Provider) => JSON.stringify(left) === JSON.stringify(right);
 
 const parseJdkVersions = (value: string): number[] =>
 	Array.from(
@@ -76,24 +72,6 @@ const parseJdkVersions = (value: string): number[] =>
 				.filter((token) => Number.isInteger(token) && token > 0),
 		),
 	);
-
-const buildFormFromServer = (server: Server): ServerSettingsForm => ({
-	ram: clampRamGb(server.ram),
-	storage_limit: Math.max(1, Number(server.storage_limit) || 200),
-	auto_backup: server.auto_backup,
-	auto_backup_interval: Math.max(1, server.auto_backup_interval),
-	auto_restart: server.auto_restart,
-	sleep_enabled: server.sleep_enabled,
-	sleep_idle_minutes: Math.max(1, Number(server.sleep_idle_minutes) || DEFAULT_SLEEP_IDLE_MINUTES),
-	sleep_motd: server.sleep_motd,
-	custom_flags: server.custom_flags,
-	java_installation: server.java_installation ?? '',
-	provider: createProvider(server.provider, { file: server.file }),
-	telemetry_host: server.telemetry_host ?? DEFAULT_TELEMETRY_HOST,
-	telemetry_port: Math.max(1, Number(server.telemetry_port) || DEFAULT_TELEMETRY_PORT),
-	jar_swap_path: '',
-	new_directory: server.directory,
-});
 
 type EditServerSettingsContextValue = {
 	server: Server;
@@ -125,7 +103,7 @@ type EditServerSettingsContextValue = {
 
 const EditServerSettingsContext = React.createContext<EditServerSettingsContextValue | null>(null);
 
-export const useEditServerSettings = (): EditServerSettingsContextValue => {
+const useEditServerSettings =(): EditServerSettingsContextValue => {
 	const context = React.useContext(EditServerSettingsContext);
 	if (!context) {
 		throw new Error('useEditServerSettings must be used within an EditServerSettingsProvider.');
@@ -157,9 +135,16 @@ export const EditServerSettingsProvider: React.FC<EditServerSettingsProviderProp
 	const [customFlagsDraft, setCustomFlagsDraft] = React.useState('');
 	const [jdkVersionsDraft, setJdkVersionsDraft] = React.useState('21');
 	const [isJarModalOpen, setIsJarModalOpen] = React.useState(false);
-	const [settingsForm, setSettingsForm] = React.useState<ServerSettingsForm>(() =>
-		buildFormFromServer(server),
+	// The saved settings. `server` changes on every telemetry sample, so key the
+	// reset on what would be saved rather than on object identity.
+	const baselineForm = React.useMemo(() => buildSettingsFormFromServer(server), [server]);
+	const baselineKey = React.useMemo(
+		() => settingsFormKey(server.directory, baselineForm),
+		[baselineForm, server.directory],
 	);
+	const baselineRef = React.useRef(baselineForm);
+	baselineRef.current = baselineForm;
+	const [settingsForm, setSettingsForm] = React.useState<ServerSettingsForm>(baselineForm);
 
 	const serverId = server.id;
 	const unsavedToastId = React.useMemo(() => `server-settings-unsaved-${serverId}`, [serverId]);
@@ -171,68 +156,24 @@ export const EditServerSettingsProvider: React.FC<EditServerSettingsProviderProp
 	const isFormLocked = Boolean(disabled || isSaving || !isStopped);
 	const isOffline = isStopped;
 
-	const hasUnsavedChanges = React.useMemo(() => {
-		// When running, backup settings are saved via their own inline button — the
-		// global unsaved-changes toast only applies to offline-only settings.
-		if (!isStoppedStatus(server.status)) return false;
-		if (settingsForm.ram !== clampRamGb(server.ram)) return true;
-		if (settingsForm.storage_limit !== Math.max(1, Number(server.storage_limit) || 200)) return true;
-		if (settingsForm.auto_backup_interval !== Math.max(1, server.auto_backup_interval)) return true;
-		if (settingsForm.auto_restart !== server.auto_restart) return true;
-		if (settingsForm.sleep_enabled !== server.sleep_enabled) return true;
-		if (settingsForm.sleep_idle_minutes !== server.sleep_idle_minutes) return true;
-		if (settingsForm.sleep_motd !== server.sleep_motd) return true;
-		if (!sameStringList(settingsForm.auto_backup, server.auto_backup)) return true;
-		if (!sameStringList(settingsForm.custom_flags, server.custom_flags)) return true;
-		if ((settingsForm.java_installation || '').trim() !== (server.java_installation || '').trim()) {
-			return true;
-		}
-		if (!sameProvider(settingsForm.provider, server.provider)) return true;
-		if ((settingsForm.telemetry_host || '').trim() !== (server.telemetry_host || '').trim()) return true;
-		if (Number(settingsForm.telemetry_port) !== Number(server.telemetry_port || DEFAULT_TELEMETRY_PORT)) return true;
-		if (settingsForm.jar_swap_path.trim().length > 0) return true;
-		if (settingsForm.new_directory.trim() !== server.directory.trim()) return true;
+	// When running, backup settings are saved via their own inline button — the
+	// global unsaved-changes toast only applies to offline-only settings.
+	const hasUnsavedChanges = React.useMemo(
+		() => isStopped && settingsFormKey(server.directory, settingsForm) !== baselineKey,
+		[baselineKey, isStopped, server.directory, settingsForm],
+	);
 
-		return false;
-	}, [
-		server.auto_backup,
-		server.auto_backup_interval,
-		server.auto_restart,
-		server.sleep_enabled,
-		server.sleep_idle_minutes,
-		server.sleep_motd,
-		server.custom_flags,
-		server.directory,
-		server.java_installation,
-		server.provider,
-		server.ram,
-		server.status,
-		server.storage_limit,
-		server.telemetry_host,
-		server.telemetry_port,
-		settingsForm,
-	]);
+	const resetToBaseline = React.useCallback(() => {
+		const baseline = baselineRef.current;
+		setSettingsForm(baseline);
+		setCustomFlagsDraft(formatCustomFlagsInput(baseline.custom_flags));
+		setJdkVersionsDraft(baseline.provider.jdk_versions.join(', '));
+		setSettingsError(null);
+	}, []);
 
 	React.useEffect(() => {
-		const provider = createProvider(server.provider, { file: server.file });
-		setSettingsForm(buildFormFromServer(server));
-		setCustomFlagsDraft(formatCustomFlagsInput(server.custom_flags));
-		setJdkVersionsDraft(provider.jdk_versions.join(', '));
-		setSettingsError(null);
-	}, [
-		server.auto_backup,
-		server.auto_backup_interval,
-		server.auto_restart,
-		server.custom_flags,
-		server.directory,
-		server.file,
-		server.java_installation,
-		server.provider,
-		server.ram,
-		server.storage_limit,
-		server.telemetry_host,
-		server.telemetry_port,
-	]);
+		resetToBaseline();
+	}, [baselineKey, resetToBaseline]);
 
 	React.useEffect(() => {
 		return () => {
@@ -286,7 +227,7 @@ export const EditServerSettingsProvider: React.FC<EditServerSettingsProviderProp
 				setSettingsError(null);
 			}
 		} catch (err) {
-			const message = err instanceof Error ? err.message : 'Could not open file picker.';
+			const message = getErrorMessage(err, 'Could not open file picker.');
 			setSettingsError(message);
 		}
 	}, [updateSettingsField]);
@@ -318,19 +259,15 @@ export const EditServerSettingsProvider: React.FC<EditServerSettingsProviderProp
 				setSettingsError(null);
 			}
 		} catch (err) {
-			const message = err instanceof Error ? err.message : 'Could not open directory picker.';
+			const message = getErrorMessage(err, 'Could not open directory picker.');
 			setSettingsError(message);
 		}
 	}, [updateSettingsField]);
 
 	const handleResetSettingsForm = React.useCallback(() => {
-		const provider = createProvider(server.provider, { file: server.file });
-		setSettingsForm(buildFormFromServer(server));
-		setCustomFlagsDraft(formatCustomFlagsInput(server.custom_flags));
-		setJdkVersionsDraft(provider.jdk_versions.join(', '));
-		setSettingsError(null);
+		resetToBaseline();
 		toast.dismiss(unsavedToastId);
-	}, [server, unsavedToastId]);
+	}, [resetToBaseline, unsavedToastId]);
 
 	const handleSaveSettings = React.useCallback(async () => {
 		if (isFormLocked) return;
@@ -348,7 +285,7 @@ export const EditServerSettingsProvider: React.FC<EditServerSettingsProviderProp
 			toast.promise(savePromise, {
 				loading: 'Saving server settings...',
 				success: 'Server settings updated',
-				error: (err) => (err instanceof Error ? err.message : 'Failed to update server settings.'),
+				error: (err) => getErrorMessage(err, 'Failed to update server settings.'),
 			});
 			const result = await savePromise;
 
@@ -379,22 +316,12 @@ export const EditServerSettingsProvider: React.FC<EditServerSettingsProviderProp
 			toast.dismiss(unsavedToastId);
 			await onSaved?.();
 		} catch (err) {
-			const message = err instanceof Error ? err.message : 'Failed to update server settings.';
+			const message = getErrorMessage(err, 'Failed to update server settings.');
 			setSettingsError(message);
 		} finally {
 			setIsSaving(false);
 		}
-	}, [
-		isFormLocked,
-		javaRuntimes,
-		onSaved,
-		server.directory,
-		serverId,
-		settingsForm,
-		unsavedToastId,
-		updateServer,
-		user.java_installation_default,
-	]);
+	}, [isFormLocked, onSaved, server.directory, serverId, settingsForm, unsavedToastId, updateServer]);
 
 	React.useEffect(() => {
 		if (isFormLocked || !hasUnsavedChanges) {
@@ -669,6 +596,7 @@ export const JavaSettingsSection: React.FC = () => {
 					<Label htmlFor='edit-java-runtime' className='text-xl'>
 						Java runtime
 					</Label>
+					<HelpButton topic='java' />
 					{effectiveJavaRuntimeLabel && (
 						<span className='rounded-full bg-accent px-2 py-1 text-xs font-medium text-accent-foreground'>
 							{effectiveJavaRuntimeLabel}
@@ -715,7 +643,7 @@ export const JavaSettingsSection: React.FC = () => {
 				{advancedMode && (
 					<Input
 						id='edit-jar-swap'
-						placeholder='C:\path\to\another-server.jar'
+						placeholder={examplePaths.serverJar}
 						value={settingsForm.jar_swap_path}
 						onChange={(event) => updateSettingsField('jar_swap_path', event.target.value)}
 					/>
@@ -1000,7 +928,7 @@ export const LocationSettingsSection: React.FC = () => {
 				<div className='flex gap-2'>
 					<Input
 						id='edit-new-location'
-						placeholder='C:\servers\MyServer'
+						placeholder={examplePaths.serverDirectory}
 						value={settingsForm.new_directory}
 						onChange={(event) => updateSettingsField('new_directory', event.target.value)}
 					/>

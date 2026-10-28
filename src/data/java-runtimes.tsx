@@ -1,5 +1,6 @@
 import React from 'react';
 import { detectJavaRuntimes, type JavaRuntimeInfo } from '@/lib/java-runtime-service';
+import { getErrorMessage } from '@/lib/utils';
 
 type JavaRuntimesContextValue = {
 	runtimes: JavaRuntimeInfo[];
@@ -37,7 +38,7 @@ export const JavaRuntimesProvider: React.FC<{ children: React.ReactNode }> = ({ 
 			setScannedCandidates(result.scannedCandidates);
 			return result.runtimes;
 		} catch (err) {
-			const message = err instanceof Error ? err.message : 'Failed to detect Java runtimes.';
+			const message = getErrorMessage(err, 'Failed to detect Java runtimes.');
 			setError(message);
 			setRuntimes([]);
 			return [];

@@ -1,5 +1,6 @@
 import { detectJavaRuntimes, JavaRuntimeDetectionResult } from '@/lib/java-runtime-service';
 import React, { createContext, useContext, useState } from 'react';
+import { getErrorMessage } from '@/lib/utils';
 
 export interface State {
 	error: string | null;
@@ -36,7 +37,7 @@ export const SlideProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 			const result = await detectJavaRuntimes();
 			setRuntime(result);
 		} catch (err) {
-			const message = err instanceof Error ? err.message : 'Failed to detect Java runtimes.';
+			const message = getErrorMessage(err, 'Failed to detect Java runtimes.');
 			setState({ ...state, error: message });
 		} finally {
 			setState({ ...state, is_loading: false });

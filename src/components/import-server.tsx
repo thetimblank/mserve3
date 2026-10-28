@@ -20,16 +20,21 @@ import { buildImportedServer, getServerNameFromDirectory } from '@/lib/mserve-se
 import { type InitServerResult, repairServerMserveJson, syncServerMserveJson } from '@/lib/mserve-sync';
 import { requestMserveRepair } from '@/lib/mserve-repair-controller';
 import { createProvider } from '@/lib/server-provider';
+import { examplePaths, isWindows } from '@/lib/platform';
 import { FolderOpen, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
+import { getErrorMessage } from '@/lib/utils';
 
 const defaultData = {
 	directory: '',
 };
 
-const normalizeDirectoryPath = (value: string) =>
-	value.trim().replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+// Only Windows paths are case-insensitive; on Linux `/srv/MC` and `/srv/mc` are two servers.
+const normalizeDirectoryPath = (value: string) => {
+	const normalized = value.trim().replace(/\\/g, '/').replace(/\/+$/, '');
+	return isWindows ? normalized.toLowerCase() : normalized;
+};
 
 const ImportServer: React.FC<React.HTMLAttributes<HTMLButtonElement>> = ({ ...props }) => {
 	const navigate = useNavigate();
@@ -56,7 +61,7 @@ const ImportServer: React.FC<React.HTMLAttributes<HTMLButtonElement>> = ({ ...pr
 				setError(null);
 			}
 		} catch (err) {
-			const message = err instanceof Error ? err.message : 'Could not open directory picker.';
+			const message = getErrorMessage(err, 'Could not open directory picker.');
 			setError(message);
 		}
 	};
@@ -150,21 +155,24 @@ const ImportServer: React.FC<React.HTMLAttributes<HTMLButtonElement>> = ({ ...pr
 				};
 			})();
 
-			await toast.promise(importAndSyncPromise, {
-				loading: 'Importing server...',
-				success: (result) =>
-					result.usedRepairDialog
-						? `Server "${getServerNameFromDirectory(directory)}" was imported and rebuilt mserve.json`
-						: result.autoRepaired
-							? `Server "${getServerNameFromDirectory(directory)}" was imported and automatically repaired mserve.json`
-							: `Server "${getServerNameFromDirectory(directory)}" has been imported`,
-				error: (err) => (err instanceof Error ? err.message : 'Failed to import server.'),
-			});
+			// `toast.promise` returns the toast id; `unwrap()` is what waits.
+			await toast
+				.promise(importAndSyncPromise, {
+					loading: 'Importing server...',
+					success: (result) =>
+						result.usedRepairDialog
+							? `Server "${getServerNameFromDirectory(directory)}" was imported and rebuilt mserve.json`
+							: result.autoRepaired
+								? `Server "${getServerNameFromDirectory(directory)}" was imported and automatically repaired mserve.json`
+								: `Server "${getServerNameFromDirectory(directory)}" has been imported`,
+					error: (err) => getErrorMessage(err, 'Failed to import server.'),
+				})
+				.unwrap();
 
 			resetForm();
 			setOpen(false);
 		} catch (err) {
-			const message = err instanceof Error ? err.message : 'Failed to import server.';
+			const message = getErrorMessage(err, 'Failed to import server.');
 			setError(message);
 		} finally {
 			setIsSubmitting(false);
@@ -193,7 +201,7 @@ const ImportServer: React.FC<React.HTMLAttributes<HTMLButtonElement>> = ({ ...pr
 							<div className='flex gap-2'>
 								<Input
 									id='server-directory'
-									placeholder='C:\servers\MyServer'
+									placeholder={examplePaths.serverDirectory}
 									value={form.directory}
 									onChange={(event) => updateField('directory', event.target.value)}
 									required

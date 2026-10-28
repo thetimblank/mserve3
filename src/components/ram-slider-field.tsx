@@ -1,5 +1,4 @@
 import * as React from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { CircleAlert, Info } from 'lucide-react';
 import { Field } from '@/components/ui/field';
 import { Label } from '@/components/ui/label';
@@ -12,6 +11,7 @@ import {
 	ramToSliderFraction,
 	sliderFractionToRam,
 } from '@/lib/ram-utils';
+import { useSystemMemoryGb } from '@/hooks/use-system-memory';
 
 type RamSliderFieldProps = {
 	id: string;
@@ -20,22 +20,11 @@ type RamSliderFieldProps = {
 	className?: string;
 };
 
-type NavigatorWithDeviceMemory = Navigator & {
-	deviceMemory?: number;
-};
-
 const ramMarkers = [0.25, 0.5, 1, 2, 4, 8, 16, 24, 32];
 const warningBufferGb = 4;
 /** Resolution of the underlying linear slider; RAM is derived from this position
  *  via the skewed scale, then snapped back to {@link RAM_MIN_GB} (256 MB) steps. */
 const SLIDER_RESOLUTION = 1000;
-
-const getNavigatorMemoryLimitGb = () => {
-	if (typeof navigator === 'undefined') return 16;
-	const deviceMemory = Number((navigator as NavigatorWithDeviceMemory).deviceMemory);
-	if (!Number.isFinite(deviceMemory) || deviceMemory < 1) return 16;
-	return Math.max(1, Math.ceil(deviceMemory));
-};
 
 const toRamPercent = (marker: number, max: number) => ramToSliderFraction(marker, RAM_MIN_GB, max) * 100;
 
@@ -53,33 +42,9 @@ const snapRam = (gb: number, max: number) => {
 };
 
 const RamSliderField: React.FC<RamSliderFieldProps> = ({ id, value, onChange, className }) => {
-	const fallbackMemoryLimitGb = React.useMemo(() => getNavigatorMemoryLimitGb(), []);
-	const [systemMemoryLimitGb, setSystemMemoryLimitGb] = React.useState(fallbackMemoryLimitGb);
+	const systemMemoryGb = useSystemMemoryGb();
 
-	React.useEffect(() => {
-		let active = true;
-
-		void invoke<number>('get_system_memory_gb')
-			.then((memoryGb) => {
-				if (!active) return;
-				const parsed = Number(memoryGb);
-				if (!Number.isFinite(parsed) || parsed < 1) {
-					setSystemMemoryLimitGb(fallbackMemoryLimitGb);
-					return;
-				}
-				setSystemMemoryLimitGb(Math.ceil(parsed));
-			})
-			.catch(() => {
-				if (!active) return;
-				setSystemMemoryLimitGb(fallbackMemoryLimitGb);
-			});
-
-		return () => {
-			active = false;
-		};
-	}, [fallbackMemoryLimitGb]);
-
-	const maxRam = Math.max(10, systemMemoryLimitGb);
+	const maxRam = Math.max(10, systemMemoryGb ?? 16);
 	const warningStartRam = Math.max(1, maxRam - warningBufferGb);
 	const clampedRam = Math.max(RAM_MIN_GB, Math.min(value, maxRam));
 	const sliderPosition = Math.round(
@@ -91,11 +56,12 @@ const RamSliderField: React.FC<RamSliderFieldProps> = ({ id, value, onChange, cl
 		[maxRam],
 	);
 
+	// Only clamp the stored value against real memory, never against the placeholder.
 	React.useEffect(() => {
-		if (value !== clampedRam) {
+		if (systemMemoryGb !== null && value !== clampedRam) {
 			onChange(clampedRam);
 		}
-	}, [clampedRam, onChange, value]);
+	}, [clampedRam, onChange, systemMemoryGb, value]);
 
 	return (
 		<Field className={className}>
@@ -113,7 +79,7 @@ const RamSliderField: React.FC<RamSliderFieldProps> = ({ id, value, onChange, cl
 						<br /> Diminishing returns usually start at 10GB.
 						<br /> The max recommended is 16GB even for heavily modded servers.
 						<br /> Too much can also cause system instability.
-						<br /> (detected system memory: {systemMemoryLimitGb} GB).
+						<br /> (detected system memory: {systemMemoryGb === null ? 'unknown' : `${systemMemoryGb} GB`}).
 					</TooltipContent>
 				</Tooltip>
 				<p className='text-sm font-medium text-muted-foreground'>{formatRamLabel(clampedRam)}</p>

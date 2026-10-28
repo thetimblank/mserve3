@@ -7,6 +7,16 @@ export function cn(...inputs: ClassValue[]) {
 
 export const stripAnsi = (value: string) => value.replace(/\x1b\[[0-9;]*m/g, '');
 
+/**
+ * The message to show for a caught error. Tauri rejects `invoke` with the
+ * command's `Err(String)` as a plain string, so strings are messages too.
+ */
+export const getErrorMessage = (err: unknown, fallback: string): string => {
+	if (typeof err === 'string' && err.trim()) return err;
+	if (err instanceof Error && err.message) return err.message;
+	return fallback;
+};
+
 const JAVA_VERSION_ERROR_PATTERNS: RegExp[] = [
 	/UnsupportedClassVersionError/i,
 	/has been compiled by a more recent version of the Java Runtime/i,

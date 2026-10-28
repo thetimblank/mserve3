@@ -5,11 +5,10 @@ import { isStoppedStatus, type Server, type ServerUpdate } from '@/data/servers'
 import type { AutoBackupMode, BackupPolicy, BackupScopeItem } from '@/lib/mserve-schema';
 import { getBackupNameFromPath } from '../server-utils';
 import type { CreateServerBackupResult, RestoreServerBackupResult } from '../server-types';
+import { getErrorMessage } from '@/lib/utils';
+import { DEFAULT_AUTO_BACKUP_INTERVAL_MINUTES, DEFAULT_STORAGE_LIMIT_GB } from '@/lib/mserve-consts';
 
 const BACKUP_STORAGE_LIMIT_ERROR_PREFIX = 'Backup storage limit exceeded';
-
-const toErrorMessage = (error: unknown, fallback: string) =>
-	error instanceof Error ? error.message : fallback;
 
 const isBackupStorageLimitError = (message: string) => message.startsWith(BACKUP_STORAGE_LIMIT_ERROR_PREFIX);
 
@@ -90,7 +89,7 @@ export const useServerBackupActions = ({
 				await syncServerContents();
 				toast.success('Backup created.');
 			} catch (err) {
-				const message = toErrorMessage(err, 'Failed to create backup.');
+				const message = getErrorMessage(err, 'Failed to create backup.');
 				if (isBackupStorageLimitError(message)) {
 					toast.error(message, { duration: Infinity, id: 'backup-storage-limit' });
 					return;
@@ -137,8 +136,8 @@ export const useServerBackupActions = ({
 		async (settings: BackupSettingsUpdate) => {
 			if (!server) return;
 
-			const storageLimit = Math.max(1, Math.round(Number(settings.storage_limit) || 200));
-			const interval = Math.max(1, Math.round(Number(settings.auto_backup_interval) || 120));
+			const storageLimit = Math.max(1, Math.round(Number(settings.storage_limit) || DEFAULT_STORAGE_LIMIT_GB));
+			const interval = Math.max(1, Math.round(Number(settings.auto_backup_interval) || DEFAULT_AUTO_BACKUP_INTERVAL_MINUTES));
 			const maxCount = Math.max(0, Math.round(Number(settings.backup_max_count) || 0));
 			const maxAgeDays = Math.max(0, Math.round(Number(settings.backup_max_age_days) || 0));
 
@@ -217,9 +216,11 @@ export const useServerBackupActions = ({
 				{
 					loading: 'Clearing all backups...',
 					success: (count) => `Cleared ${count} backups.`,
-					error: (err) => (err instanceof Error ? err.message : 'Failed to clear all backups.'),
+					error: (err) => getErrorMessage(err, 'Failed to clear all backups.'),
 				},
-			);
+			).unwrap();
+		} catch {
+			// Already surfaced by the toast.
 		} finally {
 			setIsBusy(false);
 		}
@@ -245,7 +246,7 @@ export const useServerBackupActions = ({
 				await syncServerContents();
 				toast.success(`Backup created and ${backupName} has been restored`, { id: loadingToastId });
 			} catch (err) {
-				const message = toErrorMessage(err, 'Failed to restore backup.');
+				const message = getErrorMessage(err, 'Failed to restore backup.');
 				if (isBackupStorageLimitError(message)) {
 					if (loadingToastId !== undefined) {
 						toast.dismiss(loadingToastId);

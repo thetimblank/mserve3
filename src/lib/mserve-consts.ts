@@ -5,6 +5,9 @@ export const TELEMETRY_POLLING = ['list', 'tps', 'version', 'online', 'ram', 'cp
 export const DEFAULT_SERVER_PROVIDER: ProviderName = 'vanilla';
 
 // Config defaults mirrored from the Rust side (`mserve_config.rs`).
+export const DEFAULT_RAM_GB = 4;
+export const DEFAULT_STORAGE_LIMIT_GB = 200;
+export const DEFAULT_AUTO_BACKUP_INTERVAL_MINUTES = 120;
 export const DEFAULT_SLEEP_MOTD = '§eSleeping §7— join to wake this server';
 export const DEFAULT_SLEEP_IDLE_MINUTES = 15;
 export const DEFAULT_TELEMETRY_HOST = '127.0.0.1';

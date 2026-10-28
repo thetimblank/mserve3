@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Container } from '@/components/ui/container';
+import { HelpButton } from '@/components/help/help-button';
 import { usePlayitAccount } from '@/hooks/use-playit-account';
 import type { Server } from '@/data/servers';
 
@@ -28,7 +29,10 @@ export const TunnelSettingsSection: React.FC<{ server: Server }> = ({ server }) 
 	return (
 		<div className='max-w-2xl space-y-8'>
 			<div className='space-y-1'>
-				<p className='text-xl'>Tunnel</p>
+				<div className='flex items-center gap-2'>
+					<p className='text-xl'>Tunnel</p>
+					<HelpButton topic='tunneling' />
+				</div>
 				<p className='text-sm text-muted-foreground'>
 					Make this server reachable from anywhere over the internet — no port forwarding — using a
 					free, persistent <span className='font-medium'>playit.gg</span> address.

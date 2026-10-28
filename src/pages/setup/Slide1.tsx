@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { useSetup } from './SetupContext';
 import { useUser } from '@/data/user';
+import { getErrorMessage } from '@/lib/utils';
 
 export default function Slide1() {
 	const { nextSlide, updated_ata, data } = useSetup();
@@ -45,13 +46,13 @@ export default function Slide1() {
 			toast.promise(forwardPromise, {
 				loading: `Adding firewall rules for port ${port}...`,
 				success: 'Firewall rules created.',
-				error: (err) => (err instanceof Error ? err.message : 'Failed to create firewall rules.'),
+				error: (err) => getErrorMessage(err, 'Failed to create firewall rules.'),
 			});
 
 			await forwardPromise;
 			nextSlide();
 		} catch (err) {
-			const message = err instanceof Error ? err.message : 'Failed to create firewall rules.';
+			const message = getErrorMessage(err, 'Failed to create firewall rules.');
 			setError(message);
 		} finally {
 			setIsSubmitting(false);

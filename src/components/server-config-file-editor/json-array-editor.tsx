@@ -1,6 +1,5 @@
 import React from 'react';
 import { ChevronLeft, ChevronRight, Plus, Trash } from 'lucide-react';
-import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -8,7 +7,6 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useUser } from '@/data/user';
 
-import { getManagedConfigToastId, readManagedConfigFile, writeManagedConfigFile } from './file-operations';
 import {
 	areJsonRowsEqual,
 	createJsonRows,
@@ -16,40 +14,31 @@ import {
 	jsonColumnDefaultValue,
 	jsonRowsToRecords,
 	parseJsonRecordList,
+	validateJsonRecords,
 } from './json-config';
 import { EditorError, EditorHeader, LoadingFileContents, NetworkingDisclaimer } from './layout';
 import type { JsonColumn, JsonRow, PropertyValues, ServerConfigFileEditorProps } from './types';
-import { useUnsavedChangesToast } from './use-unsaved-changes-toast';
-import { makeRowId, toErrorMessage } from './utils';
+import { useManagedConfigFile } from './use-managed-config-file';
+import { makeRowId, sameStringRecord } from './utils';
 
 const PAGE_SIZE = 10;
 
-const JsonArrayConfigFileEditor: React.FC<ServerConfigFileEditorProps> = ({
-	serverDirectory,
-	definition,
-	disabled,
-	onSaved,
-}) => {
+const JsonArrayConfigFileEditor: React.FC<ServerConfigFileEditorProps> = (props) => {
+	const { definition } = props;
 	const [columns, setColumns] = React.useState<JsonColumn[]>([]);
 	const [rows, setRows] = React.useState<JsonRow[]>([]);
 	const [originalRows, setOriginalRows] = React.useState<JsonRow[]>([]);
-	const [isLoading, setIsLoading] = React.useState(true);
-	const [isSaving, setIsSaving] = React.useState(false);
-	const [error, setError] = React.useState<string | null>(null);
 	const [isSelectionMode, setIsSelectionMode] = React.useState(false);
 	const [selectedRowIds, setSelectedRowIds] = React.useState<string[]>([]);
 	const [currentPage, setCurrentPage] = React.useState(1);
 	const { user } = useUser();
 
-	const isLocked = Boolean(disabled || isLoading || isSaving);
 	const isDirty = React.useMemo(() => !areJsonRowsEqual(rows, originalRows), [originalRows, rows]);
-	const toastId = React.useMemo(
-		() => getManagedConfigToastId(serverDirectory, definition.fileName),
-		[definition.fileName, serverDirectory],
-	);
 
-	const applyContent = React.useCallback(
-		(content: string) => {
+	const { isLoading, isLocked, error, setError, reload } = useManagedConfigFile({
+		...props,
+		isDirty,
+		applyContent: (content) => {
 			const parsedRecords = parseJsonRecordList(content);
 			const nextColumns = inferJsonColumns(parsedRecords, definition.fileName);
 			const nextRows = createJsonRows(parsedRecords, nextColumns);
@@ -61,27 +50,22 @@ const JsonArrayConfigFileEditor: React.FC<ServerConfigFileEditorProps> = ({
 			setIsSelectionMode(false);
 			setCurrentPage(1);
 		},
-		[definition.fileName],
-	);
-
-	const loadContent = React.useCallback(async () => {
-		if (!serverDirectory.trim()) return;
-
-		setIsLoading(true);
-		setError(null);
-		try {
-			const result = await readManagedConfigFile(serverDirectory, definition.fileName);
-			applyContent(result.content);
-		} catch (err) {
-			setError(toErrorMessage(err, `Could not load ${definition.fileName}.`));
-		} finally {
-			setIsLoading(false);
-		}
-	}, [applyContent, definition.fileName, serverDirectory]);
-
-	React.useEffect(() => {
-		void loadContent();
-	}, [loadContent]);
+		buildContent: () => {
+			const records = jsonRowsToRecords(rows, columns);
+			const originalById = new Map(originalRows.map((row) => [row.id, row.values]));
+			validateJsonRecords(definition.fileName, records, (index) => {
+				const original = originalById.get(rows[index].id);
+				return !original || !sameStringRecord(original, rows[index].values);
+			});
+			return `${JSON.stringify(records, null, 2)}\n`;
+		},
+		resetValues: () => {
+			setRows(originalRows);
+			setSelectedRowIds([]);
+			setIsSelectionMode(false);
+			setCurrentPage(1);
+		},
+	});
 
 	const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
 	React.useEffect(() => {
@@ -98,32 +82,23 @@ const JsonArrayConfigFileEditor: React.FC<ServerConfigFileEditorProps> = ({
 		visibleRows.length > 0 && visibleRows.every((row) => selectedRowIdSet.has(row.id));
 	const selectedCount = selectedRowIds.length;
 
-	const handleReset = React.useCallback(() => {
-		setRows(originalRows);
-		setError(null);
-		setSelectedRowIds([]);
-		setIsSelectionMode(false);
-		setCurrentPage(1);
-	}, [originalRows]);
-
-	const handleReload = React.useCallback(async () => {
-		await loadContent();
-	}, [loadContent]);
-
-	const updateRowValue = React.useCallback((rowId: string, key: string, value: string) => {
-		setRows((previous) =>
-			previous.map((row) =>
-				row.id === rowId ? { ...row, values: { ...row.values, [key]: value } } : row,
-			),
-		);
-		setError(null);
-	}, []);
+	const updateRowValue = React.useCallback(
+		(rowId: string, key: string, value: string) => {
+			setRows((previous) =>
+				previous.map((row) =>
+					row.id === rowId ? { ...row, values: { ...row.values, [key]: value } } : row,
+				),
+			);
+			setError(null);
+		},
+		[setError],
+	);
 
 	const handleAddRow = React.useCallback(() => {
 		setRows((previous) => {
 			const templateValues: PropertyValues = {};
 			for (const column of columns) {
-				templateValues[column.key] = jsonColumnDefaultValue(column.kind);
+				templateValues[column.key] = jsonColumnDefaultValue(column);
 			}
 
 			const nextRows = [...previous, { id: makeRowId(), values: templateValues }];
@@ -131,7 +106,7 @@ const JsonArrayConfigFileEditor: React.FC<ServerConfigFileEditorProps> = ({
 			return nextRows;
 		});
 		setError(null);
-	}, [columns]);
+	}, [columns, setError]);
 
 	const toggleRowSelection = React.useCallback((rowId: string, selected: boolean) => {
 		setSelectedRowIds((previous) => {
@@ -172,56 +147,26 @@ const JsonArrayConfigFileEditor: React.FC<ServerConfigFileEditorProps> = ({
 		[visibleRows],
 	);
 
-	const deleteRows = React.useCallback((rowIds: string[], exitSelectionMode = false) => {
-		const rowIdSet = new Set(rowIds);
-		setRows((previous) => previous.filter((row) => !rowIdSet.has(row.id)));
-		setSelectedRowIds((previous) => previous.filter((rowId) => !rowIdSet.has(rowId)));
-		setCurrentPage(1);
-		setError(null);
-		if (exitSelectionMode) {
-			setIsSelectionMode(false);
-		}
-	}, []);
-
-	const handleSave = React.useCallback(async () => {
-		if (isLocked) return;
-
-		setError(null);
-		setIsSaving(true);
-		try {
-			const normalizedRecords = jsonRowsToRecords(rows, columns);
-			const normalizedContent = `${JSON.stringify(normalizedRecords, null, 2)}\n`;
-			const result = await writeManagedConfigFile(
-				serverDirectory,
-				definition.fileName,
-				normalizedContent,
-			);
-
-			applyContent(result.content);
-			toast.success(`${definition.title} saved.`);
-			await onSaved?.();
-		} catch (err) {
-			setError(toErrorMessage(err, `Could not save ${definition.fileName}.`));
-		} finally {
-			setIsSaving(false);
-		}
-	}, [applyContent, columns, definition.fileName, definition.title, isLocked, onSaved, rows, serverDirectory]);
-
-	useUnsavedChangesToast({
-		toastId,
-		isDirty,
-		isLocked,
-		isSaving,
-		onReset: handleReset,
-		onSave: handleSave,
-	});
+	// The page clamp above keeps the view on the current page (or the new last one).
+	const deleteRows = React.useCallback(
+		(rowIds: string[], exitSelectionMode = false) => {
+			const rowIdSet = new Set(rowIds);
+			setRows((previous) => previous.filter((row) => !rowIdSet.has(row.id)));
+			setSelectedRowIds((previous) => previous.filter((rowId) => !rowIdSet.has(rowId)));
+			setError(null);
+			if (exitSelectionMode) {
+				setIsSelectionMode(false);
+			}
+		},
+		[setError],
+	);
 
 	return (
 		<div className='space-y-6'>
 			<EditorHeader
 				definition={definition}
 				isDirty={isDirty}
-				onReload={handleReload}
+				onReload={reload}
 				disabled={isLocked}
 			/>
 			<NetworkingDisclaimer user={user} definition={definition} />

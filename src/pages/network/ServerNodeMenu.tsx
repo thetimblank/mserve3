@@ -43,6 +43,7 @@ import {
 	AlertDialogHeader,
 	AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { getErrorMessage } from '@/lib/utils';
 
 interface ServerNodeMenuProps {
 	server: Server;
@@ -89,7 +90,7 @@ export const ServerNodeMenu: React.FC<ServerNodeMenuProps> = ({ server, role, on
 		try {
 			await invoke('open_server_folder', { directory: server.directory });
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : 'Failed to open folder.');
+			toast.error(getErrorMessage(err, 'Failed to open folder.'));
 		}
 	};
 

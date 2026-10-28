@@ -119,7 +119,10 @@ export const OnboardingOverlay: React.FC = () => {
 	const { theme, setTheme } = useTheme();
 
 	const [[slide, direction], setSlideState] = React.useState<[number, 1 | -1]>([0, 1]);
-	const [advanced, setAdvanced] = React.useState(false);
+	// `null` until the user picks: users from before the tour see it once too,
+	// and their saved setting must not be replaced by the tour's default.
+	const [advancedChoice, setAdvanced] = React.useState<boolean | null>(null);
+	const advanced = advancedChoice ?? user.advanced_mode;
 	const [goal, setGoal] = React.useState<OnboardingGoal | null>(null);
 
 	if (!isReady || user.onboarding_completed) return null;
@@ -128,7 +131,11 @@ export const OnboardingOverlay: React.FC = () => {
 	const goTo = (next: number, dir: 1 | -1) => setSlideState([Math.min(Math.max(next, 0), totalSlides - 1), dir]);
 
 	const finish = (destination?: string) => {
-		updateUser({ advanced_mode: advanced, onboarding_completed: true });
+		updateUser(
+			advancedChoice === null
+				? { onboarding_completed: true }
+				: { advanced_mode: advancedChoice, onboarding_completed: true },
+		);
 		if (destination) navigate(destination);
 	};
 
