@@ -30,6 +30,7 @@ backend → frontend events:
 | `server-telemetry` | `support/supervisor.rs` | a metrics sample (players, TPS, CPU, RAM, uptime) |
 | `server-output` | `support/runtime_io.rs` | a console line (also shown in the in-app terminal) |
 | `java-download-progress` | `commands/java_download.rs` | JDK download % |
+| `server-backups-changed` | `support/auto_backup.rs` | an automatic backup finished (or failed) |
 
 Frontend listeners: `components/server-runtime-monitor.tsx` (app-wide) and
 `pages/server/hooks/use-server-runtime.ts` (detail page). To trace an event,

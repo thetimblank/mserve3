@@ -31,7 +31,7 @@ const tabMeta: Record<ServerContentTab, { icon: React.ReactNode; label: string }
 	settings: { icon: <Settings />, label: 'Settings' },
 };
 
-export const SERVER_TABS: ServerContentTab[] = [
+const SERVER_TABS: ServerContentTab[] = [
 	'overview',
 	'statistics',
 	'settings',

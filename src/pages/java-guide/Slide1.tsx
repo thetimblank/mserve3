@@ -1,17 +1,12 @@
+import { SlideFrame, useSlideshow } from '@/components/slideshow';
 import Logo from '@/components/logo';
 import { Button } from '@/components/ui/button';
-import { m } from 'motion/react';
-import { useSlide } from './SlideContext';
 
 export default function Slide1() {
-	const { nextSlide } = useSlide();
+	const { nextSlide } = useSlideshow();
 
 	return (
-		<m.div
-			initial={{ scale: 0.75, y: 10, opacity: 0 }}
-			whileInView={{ scale: 1, y: 0, opacity: 1 }}
-			transition={{ type: 'spring', duration: 0.5, bounce: 0 }}
-			className='flex flex-col items-center text-center'>
+		<SlideFrame className='flex flex-col items-center text-center'>
 			<Logo size='lg' className='mb-6' />
 			<p className='text-3xl font-bold flex gap-5 items-center mb-2 w-fit'>We got you.</p>
 			<p>Mserve automatically manages Java versions.</p>
@@ -29,6 +24,6 @@ export default function Slide1() {
 			<Button className='ml-auto' onClick={nextSlide}>
 				Continue
 			</Button>
-		</m.div>
+		</SlideFrame>
 	);
 }

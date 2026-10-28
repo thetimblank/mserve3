@@ -1,7 +1,7 @@
 import React from 'react';
 import { toast } from 'sonner';
-import { repairServerMserveJson, syncServerMserveJson } from '@/lib/mserve-sync';
-import { requestMserveRepair } from '@/lib/mserve-repair-controller';
+import { syncMserveJsonWithRepair } from '@/lib/mserve-sync';
+import { mapSyncedConfigToServer } from '@/lib/mserve-server-mapper';
 import { type MserveJsonProps, type MserveStats, type Provider } from '@/lib/mserve-schema';
 import { createProvider, isProxyProvider } from '@/lib/server-provider';
 import { hasLocalStorage, readStoredJson, toDate, writeStoredString } from '@/lib/local-storage';
@@ -71,6 +71,16 @@ export const stopActionLabel = (status: ServerStatus): string =>
 /** Force-kill button label — a sleeping server has no process to kill, only state to drop. */
 export const forceKillActionLabel = (status: ServerStatus): string =>
 	status === 'sleeping' ? 'Shutdown' : 'Force Kill';
+
+/** Status dot color and label for compact status displays (dashboard tile, network node). */
+export const SERVER_STATUS_META: Record<ServerStatus, { dot: string; label: string }> = {
+	online: { dot: 'bg-green-500', label: 'Online' },
+	offline: { dot: 'bg-muted-foreground/40', label: 'Offline' },
+	starting: { dot: 'bg-yellow-500 animate-pulse', label: 'Starting' },
+	closing: { dot: 'bg-yellow-500 animate-pulse', label: 'Stopping' },
+	crashed: { dot: 'bg-red-500', label: 'Crashed' },
+	sleeping: { dot: 'bg-indigo-400', label: 'Sleeping' },
+};
 
 export interface Server extends MserveJsonProps {
 	id: string;
@@ -428,47 +438,20 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 		let active = true;
 
 		const syncServerFromDisk = async (server: Server) => {
-			let synced = await syncServerMserveJson(server.directory);
-
-			if (synced.status === 'needs_setup') {
-				const config = synced.config;
-				if (!config) {
-					throw new Error('Could not load fallback mserve configuration for repair.');
-				}
-
-				const repairPayload = await requestMserveRepair({
-					directory: server.directory,
-					file: server.file || config.file,
-					ram: server.ram,
-					storage_limit: server.storage_limit,
-					auto_backup: server.auto_backup,
-					auto_backup_interval: server.auto_backup_interval,
-					auto_restart: server.auto_restart,
-					sleep_enabled: server.sleep_enabled,
-					sleep_idle_minutes: server.sleep_idle_minutes,
-					sleep_motd: server.sleep_motd,
-					create_directory_if_missing: true,
-					auto_agree_eula: true,
-					java_installation: server.java_installation ?? '',
-					custom_flags: server.custom_flags,
-					provider: server.provider ?? createProvider(config.provider),
-					telemetry_host: server.telemetry_host ?? config.telemetry_host,
-					telemetry_port: server.telemetry_port ?? config.telemetry_port,
-				});
-
-				if (!repairPayload) {
-					toast.error(`Skipped rebuild for ${server.name} because setup was cancelled.`);
-					return;
-				}
-
-				synced = await repairServerMserveJson(repairPayload);
+			const synced = await syncMserveJsonWithRepair(server.directory, (fallback) => ({
+				...server,
+				file: server.file || fallback.file,
+				provider: server.provider ?? createProvider(fallback.provider),
+				telemetry_host: server.telemetry_host ?? fallback.telemetry_host,
+				telemetry_port: server.telemetry_port ?? fallback.telemetry_port,
+			}));
+			if (!synced) {
+				toast.error(`Skipped rebuild for ${server.name} because setup was cancelled.`);
+				return;
 			}
-
-			const config = synced.config;
-			if (!config) return;
-
 			if (!active) return;
 
+			const config = synced.config;
 			const configProvider = createProvider(config.provider, {
 				file: config.file,
 			});
@@ -501,29 +484,7 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 						return candidate;
 					}
 
-					return normalizeServer({
-						...candidate,
-						id: config.id,
-						file: config.file,
-						ram: config.ram,
-						storage_limit: config.storage_limit,
-						auto_backup: config.auto_backup,
-						auto_backup_interval: config.auto_backup_interval,
-						backup_policy: config.backup_policy,
-						backup_max_count: config.backup_max_count,
-						backup_max_age_days: config.backup_max_age_days,
-						backup_scope: config.backup_scope,
-						auto_restart: config.auto_restart,
-						sleep_enabled: config.sleep_enabled,
-						sleep_idle_minutes: config.sleep_idle_minutes,
-						sleep_motd: config.sleep_motd,
-						java_installation: config.java_installation ?? undefined,
-						custom_flags: config.custom_flags,
-						provider: configProvider,
-						telemetry_host: config.telemetry_host,
-						telemetry_port: config.telemetry_port,
-						created_at: config.created_at,
-					});
+					return normalizeServer({ ...candidate, ...mapSyncedConfigToServer(config) });
 				}),
 			);
 		};

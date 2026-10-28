@@ -39,7 +39,6 @@ import { getNetworkServerIds, type NetworkNodePosition } from '@/lib/network-sch
 import { NetworkCanvas } from './network/NetworkCanvas';
 import { NetworkInspector } from './network/NetworkInspector';
 import { ApplyChangesDrawer } from './network/ApplyChangesDrawer';
-import { useNetworkTelemetry } from './network/use-network-telemetry';
 import { useNetworkOrchestration, type OrchestrationMode } from './network/use-network-orchestration';
 
 const RunSubmenu: React.FC<{
@@ -84,7 +83,7 @@ const NetworkRunMenu: React.FC<{
 );
 
 const NetworkPage: React.FC = () => {
-	const { servers, isReady: serversReady, updateServerStats } = useServers();
+	const { servers, isReady: serversReady } = useServers();
 	const { networks, isReady: networksReady, createNetwork, updateNetwork, removeNetwork } = useNetworks();
 
 	// A dashboard network shortcut passes the target network id via router state.
@@ -146,8 +145,7 @@ const NetworkPage: React.FC = () => {
 	const runtimeBlockers = React.useMemo(() => getNetworkRuntimeBlockers(diagnostics), [diagnostics]);
 	const hasBlockingErrors = networkHasBlockingErrors(diagnostics);
 
-	// Keep node metrics live while the page is open, and drive whole-network runs.
-	useNetworkTelemetry(activeNetwork, servers);
+	// Node metrics stay live through the app-wide runtime monitor.
 	const { busy, progress, startNetwork, stopNetwork, restartNetwork } = useNetworkOrchestration(
 		activeNetwork,
 		servers,
@@ -229,13 +227,6 @@ const NetworkPage: React.FC = () => {
 		});
 		updateNetwork(activeNetwork.id, { layout });
 	}, [activeNetwork, updateNetwork]);
-
-	const handleApplied = React.useCallback(() => {
-		// Server config files changed on disk; nudge telemetry to re-read on next poll.
-		for (const server of servers) {
-			updateServerStats(server.id, {});
-		}
-	}, [servers, updateServerStats]);
 
 	return (
 		<main className='flex h-full w-full flex-col overflow-hidden px-8 py-10'>
@@ -389,7 +380,6 @@ const NetworkPage: React.FC = () => {
 					network={activeNetwork}
 					servers={servers}
 					runtimeBlockers={runtimeBlockers.map((blocker) => blocker.message)}
-					onApplied={handleApplied}
 				/>
 			)}
 		</main>

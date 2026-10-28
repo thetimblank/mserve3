@@ -37,7 +37,7 @@ const PROXY_STEP_SLIDES = [
 export const getCreateServerStepSlides = (provider?: Provider | null) =>
 	isProxyProvider(provider) ? PROXY_STEP_SLIDES : DEFAULT_STEP_SLIDES;
 
-export const getCreateServerFlowSlides = (provider?: Provider | null) =>
+const getCreateServerFlowSlides = (provider?: Provider | null) =>
 	[
 		CREATE_SERVER_SLIDE_INDEX.intro,
 		...getCreateServerStepSlides(provider),

@@ -99,8 +99,8 @@ export const buildCreatedServer = (form: ServerSetupFormData, result: InitServer
 	created_at: new Date().toISOString(),
 });
 
-export const buildImportedServer = (result: InitServerIdentity, config: SyncedMserveConfig): Server => ({
-	...buildServerShell(result.directory),
+/** The server fields mserve.json owns, from an already-sanitized synced config. */
+export const mapSyncedConfigToServer = (config: SyncedMserveConfig) => ({
 	id: config.id,
 	file: config.file,
 	ram: config.ram,
@@ -121,4 +121,9 @@ export const buildImportedServer = (result: InitServerIdentity, config: SyncedMs
 	telemetry_host: config.telemetry_host,
 	telemetry_port: config.telemetry_port,
 	created_at: config.created_at,
+});
+
+export const buildImportedServer = (result: InitServerIdentity, config: SyncedMserveConfig): Server => ({
+	...buildServerShell(result.directory),
+	...mapSyncedConfigToServer(config),
 });

@@ -1,6 +1,5 @@
 import React from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { invoke } from '@tauri-apps/api/core';
 import { isStoppedStatus, useServers } from '@/data/servers';
 import { useUser } from '@/data/user';
 import { useNetworks } from '@/data/networks';
@@ -28,11 +27,12 @@ import {
 } from '@/lib/modrinth-service';
 import type { ModrinthInstallTarget } from '@/components/modrinth/modrinth-project-detail';
 import { useJavaRuntimes } from '@/data/java-runtimes';
-import { resolveServerJavaExecutable } from '@/lib/java-resolution';
+import { useServerJavaResolver } from '@/data/java-download';
+import { startServer } from '@/lib/server-controls';
 
 import ServerTerminalPanel from './server/server-terminal-panel';
 import ServerBackupsTab from './server/server-backups-tab';
-import ServerSettingsTab from './server/server-settings-tab';
+import ServerSettingsPanel from './server/server-settings-panel';
 import ServerPageSkeleton from '@/pages/server/server-page-skeleton';
 import { useServerUiState } from './server/hooks/use-server-ui-state';
 import { useServerTerminal } from './server/hooks/use-server-terminal';
@@ -57,6 +57,7 @@ const Server: React.FC = () => {
 	const { user } = useUser();
 	const { servers, isReady, setServerStatus, updateServer, updateServerStats } = useServers();
 	const { runtimes: javaRuntimes } = useJavaRuntimes();
+	const resolveServerJava = useServerJavaResolver();
 	const { networks } = useNetworks();
 	const { isBusy, setIsBusy, errorMessage, setErrorMessage, terminalInput, setTerminalInput } =
 		useServerUiState();
@@ -97,14 +98,8 @@ const Server: React.FC = () => {
 	}, [activeTab, navigate, routeTab, server]);
 
 	const terminalStoreKey = server?.directory ?? '';
-	const {
-		terminalLines,
-		terminalOutputRef,
-		clearTerminalSession,
-		clearTerminalConsole,
-		jumpTerminalToBottom,
-		appendTerminalLine,
-	} = useServerTerminal(terminalStoreKey);
+	const { terminalLines, terminalOutputRef, clearTerminalSession, jumpTerminalToBottom, appendTerminalLine } =
+		useServerTerminal(terminalStoreKey);
 
 	const showError = React.useCallback(
 		(error: unknown, fallback: string) => {
@@ -134,7 +129,6 @@ const Server: React.FC = () => {
 
 	const {
 		syncServerContents,
-		handleItemsChanged,
 		handleStart,
 		handleStop,
 		handleSleep,
@@ -186,13 +180,13 @@ const Server: React.FC = () => {
 					pageUrl: project.pageUrl,
 				});
 				toast.success(`Installed ${project.title} ${version.versionNumber}.`);
-				await handleItemsChanged();
+				await syncServerContents();
 			} catch (err) {
 				const message = getErrorMessage(err, `Failed to install ${project.title}.`);
 				toast.error(message);
 			}
 		},
-		[server, modrinthBrowserType, handleItemsChanged],
+		[server, modrinthBrowserType, syncServerContents],
 	);
 
 	// If the server is part of a network, prompt whether to start alone or with
@@ -221,26 +215,18 @@ const Server: React.FC = () => {
 			(s) => otherServerIds.includes(s.id) && isStoppedStatus(s.status),
 		);
 
+		// The shared start path: resolves (or offers to download) Java, sets the
+		// optimistic status and toasts its own errors.
 		for (const other of otherServers) {
-			const resolution = resolveServerJavaExecutable({
-				provider: other.provider,
-				javaInstallation: other.java_installation,
-				globalDefault: user.java_installation_default,
-				runtimes: javaRuntimes,
-			});
-			const javaExecutable = resolution.status === 'resolved' ? resolution.executablePath : null;
-			try {
-				await invoke('start_server', { directory: other.directory, javaExecutable });
+			const javaExecutable = await resolveServerJava(other);
+			if (!javaExecutable) continue;
+			if (await startServer({ server: other, javaExecutable, setServerStatus, updateServerStats })) {
 				toast.info(`Starting ${other.name}…`);
-			} catch (err) {
-				toast.error(
-					`${other.name}: ${getErrorMessage(err, 'Failed to start.')}`,
-				);
 			}
 		}
 
 		void handleStart();
-	}, [server, serverNetwork, servers, javaRuntimes, user.java_installation_default, handleStart]);
+	}, [server, serverNetwork, servers, resolveServerJava, setServerStatus, updateServerStats, handleStart]);
 
 	if (!isReady) {
 		return <ServerPageSkeleton />;
@@ -260,6 +246,10 @@ const Server: React.FC = () => {
 			</main>
 		);
 	}
+
+	// Content files are read by a live (or starting, or adopted) JVM, so they
+	// only change while the process is fully stopped.
+	const isContentLocked = isBusy || !isStoppedStatus(server.status);
 
 	return (
 		<main className='w-full h-full relative overflow-y-auto app-scroll-area app-scroll-stable'>
@@ -328,9 +318,9 @@ const Server: React.FC = () => {
 						? server.mods
 						: server.plugins
 				).map((item) => item.file)}
-				installDisabled={isBusy || server.status === 'online'}
+				installDisabled={isContentLocked}
 				installDisabledReason={
-					server.status === 'online' ? 'Stop the server before installing content.' : undefined
+					isStoppedStatus(server.status) ? undefined : 'Stop the server before installing content.'
 				}
 				onInstallVersion={handleModrinthInstall}
 			/>
@@ -388,7 +378,7 @@ const Server: React.FC = () => {
 							terminalInput={terminalInput}
 							onTerminalInputChange={setTerminalInput}
 							onSubmit={handleTerminalCommandSubmit}
-							onClearConsole={clearTerminalConsole}
+							onClearConsole={clearTerminalSession}
 							onJumpToBottom={jumpTerminalToBottom}
 							terminalOutputRef={terminalOutputRef}
 						/>
@@ -406,8 +396,8 @@ const Server: React.FC = () => {
 						searchPlaceholder='Search for Plugin...'
 						emptyLabel='No Plugins were found.'
 						items={server.plugins}
-						onChanged={handleItemsChanged}
-						disabled={isBusy || server.status === 'online'}
+						onChanged={syncServerContents}
+						disabled={isContentLocked}
 						ctaLabel='Browse Modrinth'
 						onCta={() => setModrinthBrowserType('plugin')}
 					/>
@@ -421,8 +411,8 @@ const Server: React.FC = () => {
 						searchPlaceholder='Search for Mod...'
 						emptyLabel='No Mods were found.'
 						items={server.mods}
-						onChanged={handleItemsChanged}
-						disabled={isBusy || server.status === 'online'}
+						onChanged={syncServerContents}
+						disabled={isContentLocked}
 						ctaLabel='Browse Modrinth'
 						onCta={() => setModrinthBrowserType('mod')}
 					/>
@@ -436,8 +426,8 @@ const Server: React.FC = () => {
 						searchPlaceholder='Search for World...'
 						emptyLabel='No Worlds were found.'
 						items={server.worlds}
-						onChanged={handleItemsChanged}
-						disabled={isBusy || server.status === 'online'}
+						onChanged={syncServerContents}
+						disabled={isContentLocked}
 					/>
 				)}
 				{activeTab === 'datapacks' && providerCapabilities.kind !== 'proxy' && (
@@ -449,8 +439,8 @@ const Server: React.FC = () => {
 						searchPlaceholder='Search for Datapack...'
 						emptyLabel='No Datapacks were found.'
 						items={server.datapacks}
-						onChanged={handleItemsChanged}
-						disabled={isBusy || server.status === 'online'}
+						onChanged={syncServerContents}
+						disabled={isContentLocked}
 						ctaLabel='Browse Modrinth'
 						onCta={() => setModrinthBrowserType('datapack')}
 					/>
@@ -471,7 +461,7 @@ const Server: React.FC = () => {
 				)}
 				{activeTab === 'settings' && (
 					<div className='h-[calc(100vh-200px)] flex min-h-0 flex-col'>
-						<ServerSettingsTab
+						<ServerSettingsPanel
 							clearTerminalSession={clearTerminalSession}
 							server={server}
 							javaRuntimes={javaRuntimes}

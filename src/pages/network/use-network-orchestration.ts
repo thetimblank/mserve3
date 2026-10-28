@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import { isStoppedStatus, useServers, type Server } from '@/data/servers';
 import { useServerJavaResolver } from '@/data/java-download';
 import {
+	getServerRuntimeState,
 	startServer,
 	stopServer,
 	waitForServerReady,
@@ -48,9 +49,13 @@ export const useNetworkOrchestration = (network: ManagedNetwork | null, servers:
 
 	// Resolve the server's Java (prompting to download if missing) before start.
 	// The control helpers toast their own errors and resolve to false, so a
-	// failure is turned into a throw here to stop the sequence.
+	// failure is turned into a throw here to stop the sequence. A server that's
+	// already up (or coming up) is left alone; `awaitReady` covers it. The live
+	// backend state is used because a restart's server list predates its stop.
 	const startOne = React.useCallback(
 		async (server: Server) => {
+			const state = await getServerRuntimeState(server.directory).catch(() => 'offline' as const);
+			if (state === 'online' || state === 'starting' || state === 'running-external') return;
 			const javaExecutable = await resolveServerJava(server);
 			if (!javaExecutable) {
 				throw new Error(`No Java runtime available for ${server.name}.`);

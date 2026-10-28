@@ -1,6 +1,10 @@
 import React from 'react';
 import { m } from 'motion/react';
-import { useServers } from '../data/servers';
+import { isStoppedStatus, useServers } from '../data/servers';
+import { useNetworks } from '../data/networks';
+import { useUser } from '../data/user';
+import { useTheme } from '@/components/theme-provider';
+import { clearAppStorage } from '@/lib/local-storage';
 import { toast } from 'sonner';
 import SettingsAppearanceCard from './settings/settings-appearance-card';
 import SettingsBehaviorCard from './settings/settings-behavior-card';
@@ -11,7 +15,10 @@ import SettingsUpdateCard from './settings/settings-update-card';
 import { useAppUpdate } from './settings/hooks/use-app-update';
 
 const Settings: React.FC = () => {
-	const { resetServers } = useServers();
+	const { servers, resetServers } = useServers();
+	const { networks, removeNetwork } = useNetworks();
+	const { resetUser } = useUser();
+	const { setTheme } = useTheme();
 	const {
 		currentVersion,
 		isVersionReady,
@@ -24,8 +31,24 @@ const Settings: React.FC = () => {
 		installUpdate,
 	} = useAppUpdate();
 
+	// A running server would keep running with no way left to stop it.
+	const hasRunningServers = servers.some((server) => !isStoppedStatus(server.status));
+	// Installing an update closes mserve, which takes live server processes with it.
+	const liveServerNames = servers
+		.filter((server) => !isStoppedStatus(server.status) && server.status !== 'sleeping')
+		.map((server) => server.name);
+
 	const handleClearAllData = () => {
+		if (hasRunningServers) {
+			toast.error('Stop every server before clearing all data.');
+			return;
+		}
+		// Storage first: the resets below then persist their defaults.
+		clearAppStorage();
 		resetServers();
+		for (const network of networks) removeNetwork(network.id);
+		resetUser();
+		setTheme('dark');
 		toast.success('All data has been cleared!');
 	};
 
@@ -73,7 +96,7 @@ const Settings: React.FC = () => {
 						initial={{ scale: 0.75, y: 10, opacity: 0 }}
 						whileInView={{ scale: 1, y: 0, opacity: 1 }}
 						transition={{ type: 'spring', duration: 0.5, delay: 0.15, bounce: 0 }}>
-						<SettingsDataCard onClearAllData={handleClearAllData} />
+						<SettingsDataCard onClearAllData={handleClearAllData} canClearAllData={!hasRunningServers} />
 					</m.div>
 
 					<m.div
@@ -90,6 +113,7 @@ const Settings: React.FC = () => {
 							availableUpdateVersion={availableUpdate?.version ?? null}
 							onCheckForUpdates={checkForUpdates}
 							onInstallUpdate={installUpdate}
+							liveServerNames={liveServerNames}
 						/>
 					</m.div>
 				</div>

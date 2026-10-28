@@ -8,7 +8,7 @@ contract, event list, and release rule.
 | Path | Role |
 | --- | --- |
 | `main.tsx` | App root: providers + React Router routes |
-| `pages/` | One file per route (`Home`, `Server`, `Settings`, `Network`, `Setup`, `JavaGuide`, `CreateServer`) |
+| `pages/` | One file per route (`Home`, `Servers`, `Server`, `Settings`, `Network`, `Setup`, `JavaGuide`, `CreateServer`, `Feedback`) |
 | `pages/server/` | Server-detail building blocks: `hooks/`, `stats/`, panels, tabs, utils |
 | `pages/create-server/` | Multi-slide creation wizard + its own Context |
 | `pages/network/` | React Flow canvas + multi-server orchestration |
@@ -33,7 +33,7 @@ await invoke('start_server', { directory, javaExecutable });
 const unlisten = await listen('server-runtime-state', (e) => { /* e.payload */ });
 ```
 
-The nine backend → frontend events and where they're consumed:
+The ten backend → frontend events and where they're consumed:
 
 | Event | Payload (camelCase) | Primary consumer |
 | --- | --- | --- |
@@ -46,6 +46,7 @@ The nine backend → frontend events and where they're consumed:
 | `playit-claim-state` | `{ status, claimUrl, error }` | `hooks/use-playit-account.ts` |
 | `playit-tunnel-state` | `{ directory, status, address, error }` | `pages/server/hooks/use-server-tunnel.ts` |
 | `app-close-requested` | `{ runningServerDirectories }` | `components/close-warning-dialog.tsx` |
+| `server-backups-changed` | `{ directory, reason, deletedBackupsCount, error }` | `components/server-runtime-monitor.tsx` (rescans the server's backups) |
 
 `state` is the authoritative lifecycle string (`offline|starting|online|stopping|crashed|running-external|sleeping`).
 
@@ -53,7 +54,8 @@ The nine backend → frontend events and where they're consumed:
 that keeps the home/network views in sync. When the server-detail page mounts it
 "claims" that server (see `lib/server-runtime-registry.ts`) so the two don't fight
 over optimistic updates. If you add a new place that drives a server, respect the
-registry.
+registry. Both loops recover boot failures (wrong Java, unsupported `--nogui`)
+through the shared `lib/server-start-recovery.ts`.
 
 ## State (Context, not Redux/Zustand)
 
@@ -74,26 +76,30 @@ Six providers in `data/` (plus the theme). Three persist to `localStorage`
 > blobs don't deserialize into the new shape.
 
 Heavy per-page logic lives in hooks, not components — notably
-`pages/server/hooks/use-server-runtime.ts` (lifecycle, optimistic updates, Java
-fallback retry, auto-backups) and `use-server-terminal.ts` (per-server console
-history). Prefer extending these over inlining logic in JSX.
+`pages/server/hooks/use-server-runtime.ts` (lifecycle, optimistic updates, terminal
+output, start actions) and `use-server-terminal.ts` (per-server console history).
+Prefer extending these over inlining logic in JSX. Automatic backups aren't
+frontend logic: the backend supervisor runs them.
 
 ## Routing (React Router 7)
 
 ```
 /                          Home (dashboard)
+/servers                   all servers
 /setup                     initial setup
 /java-guide                Java compatibility guide
 /network                   network canvas
 /servers/new               creation wizard
 /servers/:serverId/:tab?   server detail (tab optional)
+/feedback                  feedback / bug report
 /settings                  app settings
 ```
 
-Server-detail tabs (`overview`, `statistics`, `plugins`, `worlds`, `datapacks`,
-`backups`, `settings`) are **gated by provider capability** — a Velocity proxy
-hides world/plugin tabs. The gate lives in `lib/server-provider-capabilities.ts`;
-tab routing in `pages/server/`.
+Server-detail tabs (`overview`, `statistics`, `plugins`, `mods`, `worlds`,
+`datapacks`, `backups`, `settings`) are **gated by provider capability**: modded
+servers get Mods instead of Plugins, vanilla gets neither, and a proxy hides
+Worlds, Datapacks and Backups. The gate lives in
+`lib/server-provider-capabilities.ts`; tab routing in `pages/server/`.
 
 ## Conventions
 

@@ -8,14 +8,13 @@
  */
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { invoke } from '@tauri-apps/api/core';
 import { CircleAlert, Moon, Archive, ShieldAlert, CheckCircle2 } from 'lucide-react';
 
 import { useServers, type Server } from '@/data/servers';
 import { useServerJavaResolver } from '@/data/java-download';
 import { Button } from '@/components/ui/button';
-import { parsePropertiesMap } from '@/components/server-config-file-editor/properties-config';
-import { auditServerProperties, isNetworkBackend } from '@/lib/server-security-audit';
+import { isNetworkBackend } from '@/lib/server-security-audit';
+import { countCriticalFindings, getCachedCriticalCounts } from '@/lib/server-security-scan';
 import { startServer } from '@/lib/server-controls';
 import type { ManagedNetwork } from '@/lib/network-schema';
 import { formatBytes } from '@/lib/utils';
@@ -44,12 +43,6 @@ const newestBackupAt = (server: Server): number | null => {
 	return newest;
 };
 
-/** Session cache of per-server critical security counts, keyed by directory.
- *  Network membership changes the online-mode verdict, so it's part of the entry. */
-const securityCache = new Map<string, { behindProxy: boolean; criticals: number }>();
-
-const cachedCriticals = () =>
-	new Map([...securityCache].map(([directory, entry]) => [directory, entry.criticals]));
 
 const NeedsAttention: React.FC<{
 	servers: Server[];
@@ -60,7 +53,7 @@ const NeedsAttention: React.FC<{
 	const { setServerStatus, updateServerStats } = useServers();
 	const resolveServerJava = useServerJavaResolver();
 	const [securityCriticals, setSecurityCriticals] = React.useState<Map<string, number>>(
-		cachedCriticals,
+		getCachedCriticalCounts,
 	);
 
 	// Restart a crashed server / wake a sleeping one (prompting for Java if needed).
@@ -73,38 +66,26 @@ const NeedsAttention: React.FC<{
 		[resolveServerJava, setServerStatus, updateServerStats],
 	);
 
-	// Best-effort security scan: read each non-proxy server's properties once per
-	// session and count criticals (online-mode off, etc.).
+	// Best-effort security scan: read each server's properties once per session
+	// (or after a fix is applied) and count criticals (online-mode off, etc.).
+	// Keyed on the directories, not `servers`, which changes every telemetry tick.
+	const serversRef = React.useRef(servers);
+	serversRef.current = servers;
 	const directoriesKey = servers.map((server) => server.directory).join('\n');
 	React.useEffect(() => {
 		let active = true;
 		void (async () => {
 			await Promise.all(
-				servers.map(async (server) => {
-					const behindProxy = isNetworkBackend(server.id, networks);
-					if (securityCache.get(server.directory)?.behindProxy === behindProxy) return;
-					try {
-						const result = await invoke<{ content: string }>('read_managed_server_config_file', {
-							payload: { directory: server.directory, fileName: 'server.properties' },
-						});
-						const findings = auditServerProperties(parsePropertiesMap(result.content), {
-							maxRamGb: Math.max(1, server.ram || 1),
-							whitelistCount: null,
-							behindProxy,
-						});
-						const criticals = findings.filter((finding) => finding.severity === 'critical').length;
-						securityCache.set(server.directory, { behindProxy, criticals });
-					} catch {
-						securityCache.set(server.directory, { behindProxy, criticals: 0 });
-					}
-				}),
+				serversRef.current.map((server) =>
+					countCriticalFindings(server, isNetworkBackend(server.id, networks)),
+				),
 			);
-			if (active) setSecurityCriticals(cachedCriticals());
+			if (active) setSecurityCriticals(getCachedCriticalCounts());
 		})();
 		return () => {
 			active = false;
 		};
-	}, [directoriesKey, servers, networks]);
+	}, [directoriesKey, networks]);
 
 	const items = React.useMemo<AttentionItem[]>(() => {
 		const list: AttentionItem[] = [];

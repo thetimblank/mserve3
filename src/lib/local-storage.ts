@@ -40,3 +40,18 @@ export const toDate = (value?: string | Date): Date => {
 	const parsed = new Date(value);
 	return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
 };
+
+/** The theme provider's key; every other key the app stores starts with `mserve.`. */
+export const THEME_STORAGE_KEY = 'vite-ui-theme';
+
+/** Removes everything the app keeps in localStorage, including stores added later. */
+export const clearAppStorage = (): void => {
+	try {
+		const keys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index));
+		for (const key of keys) {
+			if (key && (key.startsWith('mserve.') || key === THEME_STORAGE_KEY)) localStorage.removeItem(key);
+		}
+	} catch {
+		// Storage unavailable: nothing to clear.
+	}
+};

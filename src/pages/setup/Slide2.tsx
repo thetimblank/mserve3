@@ -1,4 +1,4 @@
-import { m } from 'motion/react';
+import { SlideFrame, useSlideshow } from '@/components/slideshow';
 import { Button } from '@/components/ui/button';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
@@ -6,14 +6,11 @@ import { SquareArrowOutUpRight } from 'lucide-react';
 import { useSetup } from './SetupContext';
 
 export default function Slide2() {
-	const { nextSlide, data } = useSetup();
+	const { nextSlide } = useSlideshow();
+	const { data } = useSetup();
 
 	return (
-		<m.div
-			initial={{ scale: 0.75, y: 10, opacity: 0 }}
-			whileInView={{ scale: 1, y: 0, opacity: 1 }}
-			transition={{ type: 'spring', duration: 0.5, bounce: 0 }}
-			className='flex flex-col items-center'>
+		<SlideFrame className='flex flex-col items-center'>
 			<p className='text-3xl text-center font-bold flex gap-5 items-center mb-2 w-fit'>
 				Setup Port Forwarding on your Network
 			</p>
@@ -56,7 +53,7 @@ export default function Slide2() {
 								<>Find an advanced menu or portforwarding menu</>,
 								<>Add a port forward (Sometimes you may have to select your device)</>,
 								<>
-									Enter 25565 (You may have to select UDP/TCP. You may also have to select
+									Enter {data.port} (You may have to select UDP/TCP. You may also have to select
 									Inbound/Outbound. Select both on these choices)
 								</>,
 								<>If required to, click save (You may have to restart your router)</>,
@@ -102,6 +99,6 @@ export default function Slide2() {
 					Continue
 				</Button>
 			</div>
-		</m.div>
+		</SlideFrame>
 	);
 }

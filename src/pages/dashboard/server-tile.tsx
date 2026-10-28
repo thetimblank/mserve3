@@ -17,68 +17,23 @@ import {
 	canStartStatus,
 	canStopStatus,
 	type Server,
-	type ServerStatus,
+	SERVER_STATUS_META,
 	startActionLabel,
 	stopActionLabel,
-	useServers,
 } from '@/data/servers';
-import { useServerJavaResolver } from '@/data/java-download';
-import { startServer, stopServer, type ServerControlContext } from '@/lib/server-controls';
+import { useServerControls } from '@/hooks/use-server-controls';
 import { getPrimaryMinecraftVersion } from '@/lib/utils';
-
-const STATUS_META: Record<ServerStatus, { dot: string; label: string }> = {
-	online: { dot: 'bg-green-500', label: 'Online' },
-	offline: { dot: 'bg-muted-foreground/40', label: 'Offline' },
-	starting: { dot: 'bg-yellow-500 animate-pulse', label: 'Starting' },
-	closing: { dot: 'bg-yellow-500 animate-pulse', label: 'Stopping' },
-	crashed: { dot: 'bg-red-500', label: 'Crashed' },
-	sleeping: { dot: 'bg-indigo-400', label: 'Sleeping' },
-};
 
 type Props = { server: Server; delay?: number };
 
 const ServerTile: React.FC<Props> = ({ server, delay = 0 }) => {
-	const { setServerStatus, updateServerStats } = useServers();
-	const resolveServerJava = useServerJavaResolver();
-	const [isBusy, setIsBusy] = React.useState(false);
+	const { isBusy, start: handleStart, stop: handleStop } = useServerControls(server);
 
 	const detailPath = `/servers/${encodeURIComponent(server.id)}`;
 	const version = server.stats.server_version ?? server.provider.minecraft_version ?? null;
-	const meta = STATUS_META[server.status];
+	const meta = SERVER_STATUS_META[server.status];
 	const running = server.status === 'online' || server.status === 'starting';
 
-	const controlContext = (javaExecutable?: string): ServerControlContext => ({
-		server,
-		javaExecutable,
-		setServerStatus,
-		updateServerStats,
-	});
-
-	const runControl = async (action: (context: ServerControlContext) => Promise<boolean>) => {
-		if (isBusy) return;
-		setIsBusy(true);
-		try {
-			await action(controlContext());
-		} finally {
-			setIsBusy(false);
-		}
-	};
-
-	// Start/wake needs a resolved Java runtime (and may prompt to download one).
-	const runStartControl = async (action: (context: ServerControlContext) => Promise<boolean>) => {
-		if (isBusy) return;
-		setIsBusy(true);
-		try {
-			const javaExecutable = await resolveServerJava(server);
-			if (!javaExecutable) return;
-			await action(controlContext(javaExecutable));
-		} finally {
-			setIsBusy(false);
-		}
-	};
-
-	const handleStart = () => void runStartControl(startServer);
-	const handleStop = () => void runControl(stopServer);
 
 	return (
 		<m.div

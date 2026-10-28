@@ -41,7 +41,7 @@ import RamSelector from './ram-selector';
 import JavaRuntimeSelect from './java-runtime-select';
 import JarDownloadModal, {
 	type DownloadedJarSelection,
-} from '@/pages/create-server/slides/components/JarDownloadModal';
+} from '@/components/jar-browser/jar-download-modal';
 import ServerJarUpdateSection from '@/components/server-jar-update-section';
 import { HelpButton } from './help/help-button';
 import { getErrorMessage } from '@/lib/utils';
@@ -304,8 +304,8 @@ export const EditServerSettingsProvider: React.FC<EditServerSettingsProviderProp
 				java_installation: payload.java_installation,
 				custom_flags: payload.custom_flags,
 				provider: createProvider(result.provider, { file: result.file }),
-				telemetry_host: result.telemetry_host,
-				telemetry_port: result.telemetry_port,
+				telemetry_host: result.telemetryHost,
+				telemetry_port: result.telemetryPort,
 			});
 
 			setSettingsForm((prev) => ({

@@ -2,7 +2,7 @@ import * as React from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
-import { ArrowRight, CircleHelp, Download, FolderOpen } from 'lucide-react';
+import { ArrowRight, Download, FolderOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Field } from '@/components/ui/field';
@@ -10,15 +10,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useUser } from '@/data/user';
 import { useJavaRuntimes } from '@/data/java-runtimes';
 import {
 	downloadAndResolveJarRow,
-	fetchJarRows,
-	getJarTabs,
 	type DownloadServerJarProgressEvent,
-	type JarTab,
 	type JarVersionRow,
 } from '@/lib/jar-download-service';
 import { inferProviderFromJarPath, inferVersionFromJarPath } from '@/lib/server-provider-capabilities';
@@ -30,7 +26,8 @@ import {
 } from '@/lib/server-provider';
 import ModrinthBrowser from '@/components/modrinth/modrinth-browser';
 import { useCreateServer, type PathValidationResult } from '../CreateServerContext';
-import JarVersionSelectorPane from './components/JarVersionSelectorPane';
+import JarBrowser from '@/components/jar-browser/jar-browser';
+import { examplePaths } from '@/lib/platform';
 import SlideShell from './SlideShell';
 import { getErrorMessage } from '@/lib/utils';
 
@@ -48,13 +45,9 @@ const SlideJarFile: React.FC = () => {
 	const { user } = useUser();
 	const { form, updateField, nextSlide, setError, clearError, modpack, setModpack } =
 		useCreateServer();
-	const tabs = React.useMemo(() => getJarTabs(), []);
-	const [activeTab, setActiveTab] = React.useState<JarTab>('plugin');
 	const [sourceMode, setSourceMode] = React.useState<'software' | 'modpack'>(
 		modpack ? 'modpack' : 'software',
 	);
-	const [includeUnstable, setIncludeUnstable] = React.useState(false);
-	const [rows, setRows] = React.useState<JarVersionRow[]>([]);
 	const [isLoadingRows, setIsLoadingRows] = React.useState(false);
 	const [selectedRow, setSelectedRow] = React.useState<JarVersionRow | null>(null);
 	const [isDownloading, setIsDownloading] = React.useState(false);
@@ -69,32 +62,6 @@ const SlideJarFile: React.FC = () => {
 	);
 
 	const isAdvancedMode = user.advanced_mode;
-
-	React.useEffect(() => {
-		let cancelled = false;
-		setIsLoadingRows(true);
-		setSelectedRow(null);
-
-		void fetchJarRows(activeTab, includeUnstable)
-			.then((result) => {
-				if (cancelled) return;
-				setRows(result);
-			})
-			.catch((error) => {
-				if (cancelled) return;
-				const message = getErrorMessage(error, 'Failed to fetch jar versions.');
-				setError(message);
-				setRows([]);
-			})
-			.finally(() => {
-				if (cancelled) return;
-				setIsLoadingRows(false);
-			});
-
-		return () => {
-			cancelled = true;
-		};
-	}, [activeTab, includeUnstable, setError]);
 
 	const applyInferredMetadata = React.useCallback(
 		(filePath: string) => {
@@ -345,48 +312,15 @@ const SlideJarFile: React.FC = () => {
 
 				{sourceMode === 'software' && (
 				<Field>
-					<div className='grid grid-cols-4 gap-2 mb-3'>
-						{tabs.map((tab) => (
-							<div key={tab.id} className='flex items-center gap-1'>
-								<Button
-									type='button'
-									className='flex-1'
-									variant={tab.id === activeTab ? 'default' : 'secondary'}
-									onClick={() => {
-										setActiveTab(tab.id);
-										setIncludeUnstable(false);
-									}}
-									disabled={isDownloading}>
-									{tab.label}
-									<Tooltip>
-										<TooltipTrigger asChild>
-											<button type='button' aria-label={`About ${tab.label}`}>
-												<CircleHelp className='size-4' />
-											</button>
-										</TooltipTrigger>
-										<TooltipContent sideOffset={8}>{tab.description}</TooltipContent>
-									</Tooltip>
-								</Button>
-							</div>
-						))}
-					</div>
-
-					{isLoadingRows ? (
-						<div className='rounded-md border-2 p-8 flex items-center justify-center gap-2 text-sm'>
-							<Spinner />
-							<span>Loading versions...</span>
-						</div>
-					) : (
-						<JarVersionSelectorPane
-							tab={activeTab}
-							rows={rows}
-							installedMajors={installedMajors}
-							isCheckingJavaCompatibility={isCheckingJavaCompatibility}
-							selectedRowId={selectedRow?.id ?? null}
-							onSelectRow={setSelectedRow}
-							onRequestUnstableVersions={() => setIncludeUnstable(true)}
-						/>
-					)}
+					<JarBrowser
+						selectedRowId={selectedRow?.id ?? null}
+						onSelectRow={setSelectedRow}
+						onLoadingChange={setIsLoadingRows}
+						onLoadError={setError}
+						disabled={isDownloading}
+						installedMajors={installedMajors}
+						isCheckingJavaCompatibility={isCheckingJavaCompatibility}
+					/>
 				</Field>
 				)}
 
@@ -397,7 +331,7 @@ const SlideJarFile: React.FC = () => {
 							<div className='flex gap-2'>
 								<Input
 									id='create-server-file'
-									placeholder='C:\servers\server-1.21.11.jar'
+									placeholder={examplePaths.serverJar}
 									value={form.file}
 									onChange={(event) => {
 										const nextFile = event.target.value;

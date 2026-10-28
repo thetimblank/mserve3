@@ -1,12 +1,10 @@
 import * as React from 'react';
-import { CircleHelp, Download } from 'lucide-react';
+import { Download } from 'lucide-react';
 import { toast } from 'sonner';
 import {
 	downloadAndResolveJarRow,
-	fetchJarRows,
 	getJarSelectionLabel,
 	getJarTabInfo,
-	getJarTabs,
 	type JarTab,
 	type JarVersionRow,
 } from '@/lib/jar-download-service';
@@ -21,8 +19,7 @@ import {
 	DialogTitle,
 } from '@/components/ui/dialog';
 import { Spinner } from '@/components/ui/spinner';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import JarVersionSelectorPane from './JarVersionSelectorPane';
+import JarBrowser from './jar-browser';
 import { getErrorMessage } from '@/lib/utils';
 
 export type DownloadedJarSelection = {
@@ -39,44 +36,10 @@ type JarDownloadModalProps = {
 };
 
 const JarDownloadModal: React.FC<JarDownloadModalProps> = ({ open, onOpenChange, onDownloaded }) => {
-	const tabs = React.useMemo(() => getJarTabs(), []);
 	const [activeTab, setActiveTab] = React.useState<JarTab>('plugin');
-	const [includeUnstable, setIncludeUnstable] = React.useState(false);
-	const [rows, setRows] = React.useState<JarVersionRow[]>([]);
 	const [isLoadingRows, setIsLoadingRows] = React.useState(false);
 	const [selectedRow, setSelectedRow] = React.useState<JarVersionRow | null>(null);
 	const [isDownloading, setIsDownloading] = React.useState(false);
-
-	React.useEffect(() => {
-		if (!open) return;
-
-		let cancelled = false;
-		setIsLoadingRows(true);
-		setSelectedRow(null);
-
-		void fetchJarRows(activeTab, includeUnstable)
-			.then((result) => {
-				if (!cancelled) {
-					setRows(result);
-				}
-			})
-			.catch((error) => {
-				if (!cancelled) {
-					const message = getErrorMessage(error, 'Failed to fetch jar versions.');
-					toast.error(message);
-					setRows([]);
-				}
-			})
-			.finally(() => {
-				if (!cancelled) {
-					setIsLoadingRows(false);
-				}
-			});
-
-		return () => {
-			cancelled = true;
-		};
-	}, [activeTab, includeUnstable, open]);
 
 	const confirmDisabled = !selectedRow || isDownloading || isLoadingRows;
 
@@ -119,60 +82,26 @@ const JarDownloadModal: React.FC<JarDownloadModalProps> = ({ open, onOpenChange,
 					</DialogDescription>
 				</DialogHeader>
 
-				<div className='flex min-h-0 flex-1 flex-col gap-4'>
-					<div className='grid grid-cols-3 gap-2'>
-						{tabs.map((tab) => {
-							const isActive = tab.id === activeTab;
-							return (
-								<div key={tab.id} className='flex items-center gap-1'>
-									<Button
-										type='button'
-										className='flex-1'
-										variant={isActive ? 'default' : 'secondary'}
-										onClick={() => {
-											setActiveTab(tab.id);
-											setIncludeUnstable(false);
-										}}
-										disabled={isDownloading}>
-										{tab.label}
-										<Tooltip>
-											<TooltipTrigger asChild>
-												<button type='button' aria-label={`About ${tab.label}`}>
-													<CircleHelp className='size-4' />
-												</button>
-											</TooltipTrigger>
-											<TooltipContent sideOffset={8}>{tab.description}</TooltipContent>
-										</Tooltip>
-									</Button>
-								</div>
-							);
-						})}
-					</div>
-
-					<div className='min-h-0 flex-1 overflow-y-auto'>
-						{isDownloading ? (
-							<div className='rounded-md border-2 p-8 flex flex-col items-center justify-center gap-3 text-sm'>
-								<Spinner className='size-5' />
-								<div className='flex items-center gap-2'>
-									<Download className='size-4' />
-									<span>Downloading selected jar...</span>
-								</div>
+				<div className='min-h-0 flex-1 overflow-y-auto'>
+					{isDownloading ? (
+						<div className='rounded-md border-2 p-8 flex flex-col items-center justify-center gap-3 text-sm'>
+							<Spinner className='size-5' />
+							<div className='flex items-center gap-2'>
+								<Download className='size-4' />
+								<span>Downloading selected jar...</span>
 							</div>
-						) : isLoadingRows ? (
-							<div className='rounded-md border-2 p-8 flex items-center justify-center gap-2 text-sm'>
-								<Spinner />
-								<span>Loading versions...</span>
-							</div>
-						) : (
-							<JarVersionSelectorPane
-								tab={activeTab}
-								rows={rows}
+						</div>
+					) : (
+						open && (
+							<JarBrowser
 								selectedRowId={selectedRow?.id ?? null}
 								onSelectRow={setSelectedRow}
-								onRequestUnstableVersions={() => setIncludeUnstable(true)}
+								onTabChange={setActiveTab}
+								onLoadingChange={setIsLoadingRows}
+								onLoadError={(message) => toast.error(message)}
 							/>
-						)}
-					</div>
+						)
+					)}
 				</div>
 
 				<DialogFooter>

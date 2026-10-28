@@ -17,8 +17,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useServers } from '@/data/servers';
 import { buildImportedServer, getServerNameFromDirectory } from '@/lib/mserve-server-mapper';
-import { type InitServerResult, repairServerMserveJson, syncServerMserveJson } from '@/lib/mserve-sync';
-import { requestMserveRepair } from '@/lib/mserve-repair-controller';
+import { type InitServerResult, syncMserveJsonWithRepair } from '@/lib/mserve-sync';
 import { createProvider } from '@/lib/server-provider';
 import { examplePaths, isWindows } from '@/lib/platform';
 import { FolderOpen, Plus } from 'lucide-react';
@@ -106,51 +105,18 @@ const ImportServer: React.FC<React.HTMLAttributes<HTMLButtonElement>> = ({ ...pr
 			const importAndSyncPromise = (async () => {
 				const result = await importPromise;
 
-				let synced = await syncServerMserveJson(result.directory);
-				let usedRepairDialog = false;
-				const fallbackConfig = synced.config;
-				if (!fallbackConfig) {
-					throw new Error('Could not load fallback mserve.json data for repair.');
-				}
-
-				if (synced.status === 'needs_setup') {
-					const repairPayload = await requestMserveRepair({
-						directory: result.directory,
-						file: result.file || 'server.jar',
-						ram: fallbackConfig.ram,
-						storage_limit: fallbackConfig.storage_limit,
-						auto_backup: fallbackConfig.auto_backup,
-						auto_backup_interval: fallbackConfig.auto_backup_interval,
-						auto_restart: fallbackConfig.auto_restart,
-						sleep_enabled: fallbackConfig.sleep_enabled,
-						sleep_idle_minutes: fallbackConfig.sleep_idle_minutes,
-						sleep_motd: fallbackConfig.sleep_motd,
-						create_directory_if_missing: true,
-						auto_agree_eula: true,
-						java_installation: fallbackConfig.java_installation ?? '',
-						custom_flags: fallbackConfig.custom_flags,
-						provider: createProvider(fallbackConfig.provider, {
-							file: fallbackConfig.file,
-						}),
-						telemetry_host: fallbackConfig.telemetry_host,
-						telemetry_port: fallbackConfig.telemetry_port,
-					});
-
-					if (!repairPayload) {
-						throw new Error('Import cancelled because mserve.json rebuild was not completed.');
-					}
-
-					synced = await repairServerMserveJson(repairPayload);
-					usedRepairDialog = true;
-				}
-
-				if (!synced.config) {
-					throw new Error('Could not resolve valid mserve.json data for this server.');
+				const synced = await syncMserveJsonWithRepair(result.directory, (fallback) => ({
+					...fallback,
+					file: result.file || 'server.jar',
+					provider: createProvider(fallback.provider, { file: fallback.file }),
+				}));
+				if (!synced) {
+					throw new Error('Import cancelled because mserve.json rebuild was not completed.');
 				}
 
 				addServer(buildImportedServer(result, synced.config));
 				return {
-					usedRepairDialog,
+					usedRepairDialog: synced.repaired,
 					autoRepaired: synced.updated,
 				};
 			})();

@@ -4,11 +4,14 @@ import { Field, FieldGroup } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useServers } from '@/data/servers';
-import { useCreateServer, type PathValidationResult } from '../CreateServerContext';
+import {
+	findServerByName,
+	useCreateServer,
+	validateServerName,
+	type PathValidationResult,
+} from '../CreateServerContext';
 import SlideShell from './SlideShell';
 import { AnimatePresence, m } from 'motion/react';
-
-const normalizeName = (value: string) => value.trim().toLowerCase();
 
 const SlideDirectory: React.FC = () => {
 	const { servers } = useServers();
@@ -23,23 +26,12 @@ const SlideDirectory: React.FC = () => {
 		nextSlide,
 	} = useCreateServer();
 
-	const duplicateServer =
-		servers.find((server) => normalizeName(server.name) === normalizeName(serverName)) ?? null;
+	const duplicateServer = findServerByName(servers, serverName);
 
 	const onContinue = async () => {
-		const trimmedName = serverName.trim();
-		if (!trimmedName) {
-			setError('Please enter a server name.');
-			return;
-		}
-
-		if (/[/\\]/.test(trimmedName)) {
-			setError('Server name cannot include path separators. Please choose another name.');
-			return;
-		}
-
-		if (duplicateServer) {
-			setError(`Server name already exists as "${duplicateServer.name}". Please choose another name.`);
+		const nameError = validateServerName(serverName, servers);
+		if (nameError) {
+			setError(nameError);
 			return;
 		}
 
@@ -56,8 +48,8 @@ const SlideDirectory: React.FC = () => {
 		if (resolvedDirectory) {
 			const pathResult = await invoke<PathValidationResult>('validate_path', {
 				path: resolvedDirectory,
-			});
-			if (pathResult.exists) {
+			}).catch(() => null);
+			if (pathResult?.exists) {
 				setError('A folder with this name already exists. Please choose another name.');
 				return;
 			}

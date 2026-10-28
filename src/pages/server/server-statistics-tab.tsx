@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
 import type { Server } from '@/data/servers';
 import { useUser } from '@/data/user';
-import { isProxyProvider } from '@/lib/server-provider';
+import { getServerProviderCapabilities } from '@/lib/server-provider-capabilities';
 import { cn } from '@/lib/utils';
 
 import TelemetryAreaChart from './stats/telemetry-area-chart';
@@ -22,7 +22,9 @@ import {
 	availabilityChartConfig,
 	cpuChartConfig,
 	formatBytes,
+	formatRamUsage,
 	getTimeRange,
+	latestReading,
 	maxPointsForRange,
 	playersChartConfig,
 	ramBytesChartConfig,
@@ -49,11 +51,8 @@ const latestBadge = (
 	key: keyof ChartPoint,
 	format: (value: number) => string,
 ): string | undefined => {
-	for (let index = data.length - 1; index >= 0; index -= 1) {
-		const value = data[index][key];
-		if (value != null) return format(Number(value));
-	}
-	return undefined;
+	const value = latestReading(data, key);
+	return value == null ? undefined : format(value);
 };
 
 const ServerStatisticsTab: React.FC<Props> = ({ server }) => {
@@ -61,7 +60,7 @@ const ServerStatisticsTab: React.FC<Props> = ({ server }) => {
 	const [ramUnit, setRamUnit] = React.useState<'pct' | 'bytes'>('pct');
 
 	const range = getTimeRange(rangeKey);
-	const isProxy = isProxyProvider(server.provider);
+	const { supportsTpsCommand } = getServerProviderCapabilities(server.provider);
 	const { user } = useUser();
 
 	const { points, isLoading, updatedAt } = useServerTelemetryHistory(server.id, range.ms, {
@@ -73,13 +72,8 @@ const ServerStatisticsTab: React.FC<Props> = ({ server }) => {
 		if (user.advanced_mode) {
 			const pct = latestBadge(data, 'ramUsed', pctTick);
 			if (!pct) return undefined;
-			let bytesVal: number | null = null;
-			for (let i = data.length - 1; i >= 0; i--) {
-				const b = data[i].ramBytes;
-				if (b != null) { bytesVal = b; break; }
-			}
-			if (bytesVal == null) return pct;
-			return `${pct} ${Math.round(bytesVal / 1048576)}mb/${server.ram * 1024}mb`;
+			const ramBytes = latestReading(data, 'ramBytes');
+			return ramBytes == null ? pct : `${pct} ${formatRamUsage(ramBytes, server.ram)}`;
 		}
 		return ramUnit === 'pct'
 			? latestBadge(data, 'ramUsed', pctTick)
@@ -186,7 +180,7 @@ const ServerStatisticsTab: React.FC<Props> = ({ server }) => {
 					stepped
 				/>
 
-				{!isProxy && (
+				{supportsTpsCommand && (
 					<TelemetryAreaChart
 						title='TPS'
 						icon={<Activity className='size-4' />}

@@ -33,6 +33,8 @@ type JarVersionSelectorPaneProps = {
 	rows: JarVersionRow[];
 	installedMajors?: number[];
 	isCheckingJavaCompatibility?: boolean;
+	/** Rows are (re)loading; the filters stay as they are. */
+	isLoading?: boolean;
 	selectedRowId: string | null;
 	onSelectRow: (row: JarVersionRow | null) => void;
 	onRequestUnstableVersions?: () => void;
@@ -43,6 +45,7 @@ const JarVersionSelectorPane: React.FC<JarVersionSelectorPaneProps> = ({
 	rows,
 	installedMajors = [],
 	isCheckingJavaCompatibility = false,
+	isLoading = false,
 	selectedRowId,
 	onSelectRow,
 	onRequestUnstableVersions,
@@ -252,7 +255,17 @@ const JarVersionSelectorPane: React.FC<JarVersionSelectorPaneProps> = ({
 						</tr>
 					</thead>
 					<tbody>
-						{visibleRows.map((row) => {
+						{isLoading && (
+							<tr>
+								<td className='px-3 py-5 text-muted-foreground' colSpan={4}>
+									<span className='flex items-center justify-center gap-2'>
+										<Loader2 className='size-4 animate-spin' />
+										Loading versions...
+									</span>
+								</td>
+							</tr>
+						)}
+						{!isLoading && visibleRows.map((row) => {
 							const selected = selectedRowId === row.id;
 							const compatibility = rowCompatibilityById.get(row.id);
 							const isCompatible = compatibility?.compatible ?? false;
@@ -308,7 +321,7 @@ const JarVersionSelectorPane: React.FC<JarVersionSelectorPaneProps> = ({
 								</tr>
 							);
 						})}
-						{visibleRows.length === 0 && (
+						{!isLoading && visibleRows.length === 0 && (
 							<tr>
 								<td className='px-3 py-5 text-muted-foreground text-center' colSpan={4}>
 									No versions found for the current search and filter selection.

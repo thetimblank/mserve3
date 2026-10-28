@@ -2,7 +2,7 @@ import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { AlertTriangle, Boxes, Clock, Cpu, Gauge, MemoryStick, Users, Network } from 'lucide-react';
 import clsx from 'clsx';
 
-import type { Server, ServerStatus } from '@/data/servers';
+import { SERVER_STATUS_META, type Server, type ServerStatus } from '@/data/servers';
 import type { NetworkMember } from '@/lib/network-schema';
 import { getProviderDisplayName } from '@/lib/server-provider';
 import { formatUptime } from '@/lib/utils';
@@ -29,19 +29,10 @@ export interface BackendNodeData extends Record<string, unknown> {
 	onRemove: () => void;
 }
 
-const STATUS_DOT: Record<ServerStatus, string> = {
-	online: 'bg-emerald-500',
-	offline: 'bg-muted-foreground/40',
-	starting: 'bg-amber-500',
-	closing: 'bg-amber-500',
-	crashed: 'bg-red-500',
-	sleeping: 'bg-indigo-400',
-};
-
 const StatusDot = ({ status }: { status: ServerStatus }) => (
-	<span className='inline-flex items-center gap-1.5 text-xs capitalize text-muted-foreground'>
-		<span className={clsx('size-2 rounded-full', STATUS_DOT[status])} />
-		{status}
+	<span className='inline-flex items-center gap-1.5 text-xs text-muted-foreground'>
+		<span className={clsx('size-2 rounded-full', SERVER_STATUS_META[status].dot)} />
+		{SERVER_STATUS_META[status].label}
 	</span>
 );
 
@@ -96,7 +87,7 @@ const NodeMetrics = ({ server }: { server: Server }) => {
 	);
 };
 
-export const ProxyNode = ({ data }: NodeProps) => {
+const ProxyNode = ({ data }: NodeProps) => {
 	const { server, memberCount, warningCount, bind, selected, onRemove } = data as ProxyNodeData;
 
 	return (
@@ -143,7 +134,7 @@ export const ProxyNode = ({ data }: NodeProps) => {
 	);
 };
 
-export const BackendNode = ({ data }: NodeProps) => {
+const BackendNode = ({ data }: NodeProps) => {
 	const { server, member, alias, kind, warning, selected, onRemove } = data as BackendNodeData;
 
 	return (

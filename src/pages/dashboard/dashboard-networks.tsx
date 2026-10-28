@@ -1,7 +1,7 @@
 /**
  * "Networks" bento row: a shortcut card per managed network showing its online
  * member count and proxy bind port. Clicking opens the Network page focused on
- * that network (via router state). Hidden when no networks exist.
+ * that network (via router state). With no networks it shows a create prompt.
  */
 import React from 'react';
 import { m } from 'motion/react';

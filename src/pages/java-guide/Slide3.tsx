@@ -1,12 +1,11 @@
+import { SlideFrame, useSlideshow } from '@/components/slideshow';
 import * as React from 'react';
-import { m } from 'motion/react';
 import { useLocation } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Download, ExternalLink } from 'lucide-react';
-import { useSlide } from './SlideContext';
 import { Container } from '@/components/ui/container';
 import { Spinner } from '@/components/ui/spinner';
 import { downloadJavaRuntime } from '@/lib/java-runtime-service';
@@ -36,7 +35,7 @@ const INSTALL_LINKS = [
 ];
 
 export default function Slide3() {
-	const { nextSlide } = useSlide();
+	const { nextSlide } = useSlideshow();
 	const { rescan } = useJavaRuntimes();
 	const location = useLocation();
 	const requiredMajor = (location.state as { requiredMajor?: number } | null)?.requiredMajor ?? null;
@@ -60,11 +59,7 @@ export default function Slide3() {
 	};
 
 	return (
-		<m.div
-			initial={{ scale: 0.75, y: 10, opacity: 0 }}
-			whileInView={{ scale: 1, y: 0, opacity: 1 }}
-			transition={{ type: 'spring', duration: 0.5, bounce: 0 }}
-			className='flex flex-col items-center'>
+		<SlideFrame className='flex flex-col items-center'>
 			<p className='text-3xl text-center font-bold flex gap-5 items-center mb-2 w-fit'>Install Java</p>
 			<p className='mb-12 text-center max-w-lg'>
 				mserve can download Eclipse Temurin (OpenJDK) for you, or you can install another build manually.
@@ -133,6 +128,6 @@ export default function Slide3() {
 					Continue
 				</Button>
 			</div>
-		</m.div>
+		</SlideFrame>
 	);
 }

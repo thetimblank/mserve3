@@ -241,6 +241,8 @@ struct RuntimeServerConfig {
     backup_max_count: Option<u32>,
     backup_max_age_days: Option<u32>,
     backup_scope: Option<Vec<String>>,
+    auto_backup: Option<Vec<String>>,
+    auto_backup_interval: Option<u32>,
     #[serde(default)]
     auto_restart: bool,
     #[serde(default)]
@@ -394,6 +396,9 @@ struct ServerRuntime {
     /// The run reached Online at least once. Gates backend auto-restart so
     /// boot failures (wrong Java, bad config) stay with the frontend retry.
     ever_online: bool,
+    /// The user force-killed this run, so its exit skips the on-close backup
+    /// (the world wasn't saved).
+    force_killed: bool,
     /// Sleep-mode config mirrored from mserve.json at spawn time.
     sleep_enabled: bool,
     sleep_idle_minutes: u32,

@@ -9,20 +9,14 @@ import { Container } from '@/components/ui/container';
 import { HelpButton } from '@/components/help/help-button';
 import { usePlayitAccount } from '@/hooks/use-playit-account';
 import type { Server } from '@/data/servers';
+import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 
 import { useServerTunnel } from './hooks/use-server-tunnel';
 
 export const TunnelSettingsSection: React.FC<{ server: Server }> = ({ server }) => {
 	const account = usePlayitAccount();
 	const tunnel = useServerTunnel(server.directory);
-	const [copied, setCopied] = React.useState(false);
-
-	const copyAddress = React.useCallback((text: string) => {
-		navigator.clipboard.writeText(text).then(() => {
-			setCopied(true);
-			setTimeout(() => setCopied(false), 2000);
-		});
-	}, []);
+	const { copied, copy: copyAddress } = useCopyToClipboard();
 
 	const displayAddress = tunnel.address;
 

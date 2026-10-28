@@ -1,7 +1,8 @@
 import React from 'react';
 
-const TERMINAL_STORAGE_LINE_LIMIT = 5000;
-const TERMINAL_RENDER_LINE_LIMIT = 400;
+// Lines kept per server, in memory and in localStorage. Only these are ever
+// shown, and every server shares the origin's ~5 MB storage quota.
+const TERMINAL_LINE_LIMIT = 400;
 const TERMINAL_FLUSH_INTERVAL_MS = 120;
 const TERMINAL_PERSIST_DEBOUNCE_MS = 1500;
 const TERMINAL_STORAGE_PREFIX = 'mserve.terminal.lines.v1:';
@@ -26,7 +27,7 @@ const readStoredLines = (storeKey: string): string[] => {
 
 		return parsed
 			.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
-			.slice(-TERMINAL_STORAGE_LINE_LIMIT);
+			.slice(-TERMINAL_LINE_LIMIT);
 	} catch {
 		return [];
 	}
@@ -74,10 +75,10 @@ export const useServerTerminal = (storeKey: string) => {
 		if (pendingLinesRef.current.length < 1) return;
 
 		allLinesRef.current = [...allLinesRef.current, ...pendingLinesRef.current].slice(
-			-TERMINAL_STORAGE_LINE_LIMIT,
+			-TERMINAL_LINE_LIMIT,
 		);
 		pendingLinesRef.current = [];
-		setTerminalLines(allLinesRef.current.slice(-TERMINAL_RENDER_LINE_LIMIT));
+		setTerminalLines(allLinesRef.current);
 		schedulePersist(storeKey);
 	}, [schedulePersist, storeKey]);
 
@@ -98,8 +99,8 @@ export const useServerTerminal = (storeKey: string) => {
 			return;
 		}
 
-		allLinesRef.current = readStoredLines(storeKey).slice(-TERMINAL_STORAGE_LINE_LIMIT);
-		setTerminalLines(allLinesRef.current.slice(-TERMINAL_RENDER_LINE_LIMIT));
+		allLinesRef.current = readStoredLines(storeKey);
+		setTerminalLines(allLinesRef.current);
 	}, [storeKey]);
 
 	React.useEffect(() => {
@@ -111,7 +112,7 @@ export const useServerTerminal = (storeKey: string) => {
 
 			if (pendingLinesRef.current.length > 0) {
 				allLinesRef.current = [...allLinesRef.current, ...pendingLinesRef.current].slice(
-					-TERMINAL_STORAGE_LINE_LIMIT,
+					-TERMINAL_LINE_LIMIT,
 				);
 				pendingLinesRef.current = [];
 			}
@@ -141,8 +142,6 @@ export const useServerTerminal = (storeKey: string) => {
 		setTerminalLines([]);
 		writeStoredLines(storeKey, []);
 	}, [storeKey]);
-
-	const clearTerminalConsole = clearTerminalSession;
 
 	const jumpTerminalToBottom = React.useCallback(() => {
 		const node = terminalOutputRef.current;
@@ -183,7 +182,6 @@ export const useServerTerminal = (storeKey: string) => {
 		terminalLines,
 		terminalOutputRef,
 		clearTerminalSession,
-		clearTerminalConsole,
 		jumpTerminalToBottom,
 		appendTerminalLine,
 	};
