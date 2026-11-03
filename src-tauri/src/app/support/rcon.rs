@@ -243,7 +243,7 @@ mod tests {
 
     #[test]
     fn stale_packets_from_another_request_are_skipped() {
-        // Regression (R-036): the client used to take whatever packet arrived
+        // Regression: the client used to take whatever packet arrived
         // next, so leftovers of an earlier split response desynced it.
         let port = scripted_server(|stream, command_id| {
             write_response(stream, command_id - 1, "stale fragment");

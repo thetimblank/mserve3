@@ -972,7 +972,7 @@ mod tests {
 
     #[test]
     fn telemetry_port_tolerates_spaces_around_the_separator() {
-        // Regression (R-039): the old hand-rolled parser required `server-port=`.
+        // Regression: the old hand-rolled parser required `server-port=`.
         let dir = std::env::temp_dir().join(format!("mserve-port-spaces-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("server.properties"), "server-port = 25570\n").unwrap();
