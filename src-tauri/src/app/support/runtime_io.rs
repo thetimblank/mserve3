@@ -190,7 +190,7 @@ mod tests {
 
     #[test]
     fn non_utf8_lines_decode_lossily_instead_of_ending_the_stream() {
-        // Regression (R-020): `lines()` errors on invalid UTF-8 and the reader
+        // Regression: `lines()` errors on invalid UTF-8 and the reader
         // used to stop there. Cp1252 "é" is 0xE9.
         let data: &[u8] = b"ok\n\xE9t\xE9\nafter\n";
         let mut reader = std::io::BufReader::new(data);

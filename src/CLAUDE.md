@@ -114,5 +114,10 @@ Worlds, Datapacks and Backups. The gate lives in
 - **Toasts:** user-facing errors go through `sonner` (`toast.error(...)`), not
   `alert`/`console`.
 - **Path alias:** `@/` → `src/` (configured in `tsconfig.json` + `vite.config.ts`).
+- **CSP:** release builds enforce the policy in `src-tauri/tauri.conf.json`
+  (`app.security.csp`). Remote images are allowed only from `cdn.modrinth.com`,
+  and the only remote `connect-src` is Sentry; fetch other remote data in Rust.
+  A new remote image host needs a CSP entry. `tauri dev` loads Vite directly and
+  skips the CSP, so check a CSP change with `npx tauri build --debug --no-bundle`.
 - TS is **strict** with `noUnusedLocals`/`noUnusedParameters` — `npm run build`
   fails on unused symbols, so clean them up.

@@ -364,7 +364,7 @@ mod tests {
 
     #[test]
     fn prune_is_due_hourly_and_only_once_per_interval() {
-        // Regression (R-034): retention used to run only at startup.
+        // Regression: retention used to run only at startup.
         let last = AtomicI64::new(0);
         let start = 10 * PRUNE_INTERVAL_MS;
         assert!(prune_due(&last, start));

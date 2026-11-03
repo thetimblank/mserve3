@@ -1414,7 +1414,7 @@ mod tests {
 
     #[test]
     fn bungeecord_stops_on_end_with_optional_reason() {
-        // Regression (R-027): `end` used to read as an unrequested exit, so the
+        // Regression: `end` used to read as an unrequested exit, so the
         // proxy auto-restarted right after the user shut it down.
         assert!(is_stop_command("end", BUNGEE, true));
         assert!(is_stop_command("end Maintenance", BUNGEE, true));

@@ -860,7 +860,7 @@ mod tests {
 
     #[test]
     fn adopted_server_keeps_stopping_while_port_still_accepts() {
-        // Regression (R-017): an RCON stop of an adopted server used to flip back
+        // Regression: an RCON stop of an adopted server used to flip back
         // to running-external on the next poll.
         let d = next_state(LifecycleState::Stopping, false, true, 0);
         assert_eq!(d.state, LifecycleState::Stopping);

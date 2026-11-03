@@ -584,7 +584,7 @@ mod tests {
 
     #[test]
     fn status_packet_length_is_bounded() {
-        // Regression (R-035): any positive VarInt (up to i32::MAX) used to size
+        // Regression: any positive VarInt (up to i32::MAX) used to size
         // the read buffer, i.e. a ~2 GiB allocation from a hostile responder.
         assert_eq!(status_packet_length(120), Ok(120));
         assert_eq!(status_packet_length(MAX_PACKET_LENGTH), Ok(2_097_151));
@@ -598,7 +598,7 @@ mod tests {
 
     #[test]
     fn cpu_is_a_share_of_the_whole_machine() {
-        // Regression (R-032): 3 busy cores on an 8-core box used to clamp to 100%.
+        // Regression: 3 busy cores on an 8-core box used to clamp to 100%.
         assert!((machine_cpu_percent(300.0, 8) - 37.5).abs() < 1e-9);
         assert!((machine_cpu_percent(50.0, 1) - 50.0).abs() < 1e-9);
         assert_eq!(machine_cpu_percent(900.0, 8), 100.0);
@@ -623,7 +623,7 @@ mod tests {
 
     #[test]
     fn default_target_follows_a_pinned_server_ip() {
-        // Regression (R-033): a server bound only to its LAN IP was probed on
+        // Regression: a server bound only to its LAN IP was probed on
         // 127.0.0.1 forever and never left `starting`.
         let dir = temp_server_dir("server-ip=192.168.1.10\nserver-port=25570\n");
         let config = RuntimeServerConfig {
