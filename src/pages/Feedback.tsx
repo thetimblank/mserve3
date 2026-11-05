@@ -150,7 +150,7 @@ const Feedback: React.FC = () => {
 										onChange={(e) => setDescription(e.target.value)}
 										placeholder={
 											isBug
-												? 'Describe the bug — what you expected vs. what actually happened.'
+												? 'Describe the bug: what you expected vs. what actually happened.'
 												: 'What would make mserve better for you?'
 										}
 										className='min-h-28'
@@ -184,8 +184,8 @@ const Feedback: React.FC = () => {
 									</Button>
 								</div>
 								<p className='text-xs text-muted-foreground'>
-									The GitHub button opens your browser with the details above pre-filled —
-									review and submit there. GitHub issues are public.
+									The GitHub button opens your browser with the details above pre-filled.
+									Review and submit there. GitHub issues are public.
 								</p>
 							</CardContent>
 						</Card>

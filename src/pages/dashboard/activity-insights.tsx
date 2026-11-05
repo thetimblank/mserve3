@@ -54,7 +54,7 @@ const ActivityInsights: React.FC<Props> = ({ servers, activity }) => {
 			description='Player patterns over the last 7 days. Sleeping windows read as offline.'>
 			{!hasActivity ? (
 				<p className='text-sm text-muted-foreground'>
-					Not enough player history yet — check back after some sessions.
+					Not enough player history yet. Check back after some sessions.
 				</p>
 			) : (
 				<div className='space-y-4'>

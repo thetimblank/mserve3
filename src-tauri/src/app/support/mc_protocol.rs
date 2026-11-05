@@ -249,9 +249,9 @@ mod tests {
 
     #[test]
     fn status_response_json_carries_motd_and_protocol() {
-        let json = build_status_response_json("Sleeping — join to wake", 765);
+        let json = build_status_response_json("Sleeping. Join to wake", 765);
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed["description"]["text"], "Sleeping — join to wake");
+        assert_eq!(parsed["description"]["text"], "Sleeping. Join to wake");
         assert_eq!(parsed["version"]["protocol"], 765);
         assert_eq!(parsed["players"]["online"], 0);
     }

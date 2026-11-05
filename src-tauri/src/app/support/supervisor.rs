@@ -157,7 +157,7 @@ fn maybe_auto_restart(
             app,
             &outcome.directory,
             format!(
-                "Auto-restart paused after {MAX_RESTARTS_IN_WINDOW} restarts in a short window — start the server manually once the cause is fixed."
+                "Auto-restart paused after {MAX_RESTARTS_IN_WINDOW} restarts in a short window. Start the server manually once the cause is fixed."
             ),
         );
         return;
@@ -171,7 +171,7 @@ fn maybe_auto_restart(
     emit_system_line(
         &app.clone(),
         &directory,
-        "Server exited unexpectedly — auto-restarting shortly…",
+        "Server exited unexpectedly. Auto-restarting shortly…",
     );
     std::thread::spawn(move || {
         std::thread::sleep(AUTO_RESTART_BACKOFF);
@@ -549,7 +549,7 @@ pub(in crate::app) fn spawn_supervisor(
                             emit_system_line(
                                 &app,
                                 &directory,
-                                "No players online — server is now sleeping. It will wake automatically when someone joins.",
+                                "No players online. The server is now sleeping and will wake automatically when someone joins.",
                             );
                             // The process saved and exited, like a graceful stop.
                             run_auto_backup(&app, &directory, AutoBackupReason::OnClose, None);
@@ -803,7 +803,7 @@ pub(in crate::app) fn spawn_supervisor(
                     &app,
                     &snapshot.directory,
                     format!(
-                        "No players for {} minute(s) — putting the server to sleep.",
+                        "No players for {} minute(s). Putting the server to sleep.",
                         snapshot.sleep_idle_minutes.max(1)
                     ),
                 );

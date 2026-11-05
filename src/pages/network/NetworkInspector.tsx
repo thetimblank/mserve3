@@ -460,7 +460,7 @@ export const NetworkInspector: React.FC<NetworkInspectorProps> = ({
 					<AlertDialogHeader>
 						<AlertDialogTitle>Delete "{network.name}"?</AlertDialogTitle>
 						<AlertDialogDescription>
-							This removes the network definition only — your servers and any config files already
+							This removes the network definition only. Your servers and any config files already
 							applied to them are untouched.
 						</AlertDialogDescription>
 					</AlertDialogHeader>

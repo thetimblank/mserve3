@@ -179,7 +179,7 @@ export const ApplyChangesDrawer: React.FC<ApplyChangesDrawerProps> = ({
 
 					{!loading && !error && changeCount === 0 && (
 						<div className='flex items-center gap-2 rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm text-emerald-600 dark:text-emerald-400'>
-							<CheckCircle2 className='size-4' /> Everything is already in sync — no changes needed.
+							<CheckCircle2 className='size-4' /> Everything is already in sync. No changes needed.
 						</div>
 					)}
 

@@ -87,7 +87,7 @@ const DashboardMetrics: React.FC<Props> = ({ servers, activity, storage, trailin
 			<StatCard
 				icon={<HardDrive />}
 				label='Storage used'
-				value={storage.isLoading && storage.totalBytes === 0 ? '—' : formatBytes(storage.totalBytes)}
+				value={storage.isLoading && storage.totalBytes === 0 ? '–' : formatBytes(storage.totalBytes)}
 				hint={largest && largest.bytes > 0 ? `${largest.name} is largest` : 'across all servers'}
 				color={METRIC_COLORS.tps}
 				delay={0.14}
@@ -95,7 +95,7 @@ const DashboardMetrics: React.FC<Props> = ({ servers, activity, storage, trailin
 			<StatCard
 				icon={<AlertTriangle />}
 				label='Downtime events'
-				value={activity.isLoading ? '—' : activity.totalInterruptions}
+				value={activity.isLoading ? '–' : activity.totalInterruptions}
 				hint={downtimeHint}
 				color={METRIC_COLORS.cpu}
 				delay={0.18}

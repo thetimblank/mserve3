@@ -242,7 +242,7 @@ fn wake_server(processes: &Processes, app: &tauri::AppHandle, params: &SleepList
     emit_system_line(
         app,
         &params.directory,
-        "A player is joining — waking the server…",
+        "A player is joining. Waking the server…",
     );
 
     if let Err(err) = super::super::commands::start_server_internal(

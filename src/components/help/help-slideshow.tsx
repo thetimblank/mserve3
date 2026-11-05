@@ -89,7 +89,21 @@ export const HelpSlideshow: React.FC<HelpSlideshowProps> = ({ topic, open, onOpe
 							{slide.body && (
 								<p className='text-sm leading-relaxed text-muted-foreground'>{slide.body}</p>
 							)}
-							{slide.content && <div className='mt-3 w-full'>{slide.content}</div>}
+							{slide.bullets && slide.bullets.length > 0 && (
+								<ul
+									className={clsx(
+										'w-full space-y-1.5 text-left text-sm leading-relaxed text-muted-foreground',
+										slide.body && 'mt-3',
+									)}>
+									{slide.bullets.map((bullet) => (
+										<li key={bullet} className='flex gap-2.5'>
+											<span aria-hidden className='mt-2 size-1.5 shrink-0 rounded-full bg-primary/60' />
+											<span>{bullet}</span>
+										</li>
+									))}
+								</ul>
+							)}
+							{slide.content &&<div className='mt-3 w-full'>{slide.content}</div>}
 						</m.div>
 					</AnimatePresence>
 				</div>

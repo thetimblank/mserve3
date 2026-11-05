@@ -49,7 +49,7 @@ const MetricCard: React.FC<Props> = ({
 						'text-2xl font-semibold tabular-nums',
 						hasValue ? 'text-foreground' : 'text-muted-foreground/50',
 					)}>
-					{hasValue ? value : '—'}
+					{hasValue ? value : '–'}
 				</div>
 			</div>
 			{sparkData && sparkKey && (

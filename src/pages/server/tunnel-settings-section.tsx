@@ -28,7 +28,7 @@ export const TunnelSettingsSection: React.FC<{ server: Server }> = ({ server }) 
 					<HelpButton topic='tunneling' />
 				</div>
 				<p className='text-sm text-muted-foreground'>
-					Make this server reachable from anywhere over the internet — no port forwarding — using a
+					Make this server reachable from anywhere over the internet (no port forwarding) using a
 					free, persistent <span className='font-medium'>playit.gg</span> address.
 				</p>
 			</div>
