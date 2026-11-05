@@ -110,7 +110,7 @@ export const HelpSlideshow: React.FC<HelpSlideshowProps> = ({ topic, open, onOpe
 
 				{definition.learnMore && isLast && (
 					<Button
-						variant='outline'
+						variant='secondary'
 						className='mx-auto -mt-2'
 						onClick={() => {
 							onOpenChange(false);

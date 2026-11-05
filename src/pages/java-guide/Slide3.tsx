@@ -101,7 +101,7 @@ export default function Slide3() {
 							<div key={link.url}>
 								<p className='font-medium'>{link.label}</p>
 								<p className='text-sm text-muted-foreground mt-1'>{link.description}</p>
-								<Button variant='outline' className='mt-3' onClick={() => openUrl(link.url)}>
+								<Button variant='secondary' className='mt-3' onClick={() => openUrl(link.url)}>
 									Open download page
 									<ExternalLink className='size-4' />
 								</Button>

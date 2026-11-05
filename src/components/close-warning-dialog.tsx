@@ -121,7 +121,7 @@ export const CloseWarningDialog: React.FC = () => {
 
 				<AlertDialogFooter>
 					<Button
-						variant='outline'
+						variant='secondary'
 						onClick={() => setOpen(false)}
 						disabled={isStopping}>
 						Cancel

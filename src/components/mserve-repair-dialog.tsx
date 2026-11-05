@@ -198,7 +198,7 @@ const MserveRepairDialog: React.FC = () => {
 					</FieldGroup>
 					<DialogFooter>
 						<Button
-							variant='outline'
+							variant='secondary'
 							type='button'
 							onClick={() => closeWith(null)}
 							disabled={isSubmitting}>

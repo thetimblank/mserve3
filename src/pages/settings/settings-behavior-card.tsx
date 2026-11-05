@@ -75,7 +75,7 @@ const SettingsBehaviorCard: React.FC = () => {
 				</div>
 				<div className='space-y-2'>
 					<Button
-						variant='outline'
+						variant='secondary'
 						size='sm'
 						onClick={() => {
 							updateUserField('onboarding_completed', false);

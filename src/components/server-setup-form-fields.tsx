@@ -45,7 +45,7 @@ export const ServerSetupFormFields: React.FC<ServerSetupFormFieldsProps> = ({
 								onChange={(event) => onFieldChange('directory', event.target.value)}
 								required
 							/>
-							<Button type='button' variant='outline' onClick={onPickDirectory}>
+							<Button type='button' variant='secondary' onClick={onPickDirectory}>
 								<FolderOpen /> Browse
 							</Button>
 						</div>
@@ -79,7 +79,7 @@ export const ServerSetupFormFields: React.FC<ServerSetupFormFieldsProps> = ({
 						onChange={(event) => onFieldChange('file', event.target.value)}
 						required
 					/>
-					<Button type='button' variant='outline' onClick={onPickServerFile}>
+					<Button type='button' variant='secondary' onClick={onPickServerFile}>
 						<FolderOpen /> Browse
 					</Button>
 				</div>

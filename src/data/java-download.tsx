@@ -198,7 +198,7 @@ export const JavaDownloadProvider: React.FC<{ children: React.ReactNode }> = ({ 
 					)}
 
 					<DialogFooter>
-						<Button type='button' variant='outline' onClick={handleOpenGuide}>
+						<Button type='button' variant='secondary' onClick={handleOpenGuide}>
 							<ExternalLink className='size-4' />
 							Open Java guide
 						</Button>

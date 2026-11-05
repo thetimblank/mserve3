@@ -1,7 +1,6 @@
 import * as React from 'react';
 import { CircleHelp } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { SegmentedControl, type SegmentedControlOption } from '@/components/ui/segmented-control';
 import { fetchJarRows, getJarTabs, type JarTab, type JarVersionRow } from '@/lib/jar-download-service';
 import { getErrorMessage } from '@/lib/utils';
 import JarVersionSelectorPane from './jar-version-selector-pane';
@@ -34,7 +33,21 @@ const JarBrowser: React.FC<JarBrowserProps> = ({
 	installedMajors,
 	isCheckingJavaCompatibility,
 }) => {
-	const tabs = React.useMemo(() => getJarTabs(), []);
+	const tabOptions = React.useMemo<SegmentedControlOption<JarTab>[]>(
+		() =>
+			getJarTabs().map((tab) => ({
+				value: tab.id,
+				label: (
+					<>
+						{tab.label}
+						<CircleHelp aria-hidden className='size-4 opacity-60' />
+					</>
+				),
+				ariaLabel: tab.label,
+				tooltip: tab.description,
+			})),
+		[],
+	);
 	const [activeTab, setActiveTab] = React.useState<JarTab>('plugin');
 	const [includeUnstable, setIncludeUnstable] = React.useState(false);
 	const [rows, setRows] = React.useState<JarVersionRow[]>([]);
@@ -82,28 +95,15 @@ const JarBrowser: React.FC<JarBrowserProps> = ({
 
 	return (
 		<>
-			<div className='grid grid-cols-4 gap-2 mb-3'>
-				{tabs.map((tab) => (
-					<div key={tab.id} className='flex items-center gap-1'>
-						<Button
-							type='button'
-							className='flex-1'
-							variant={tab.id === activeTab ? 'default' : 'secondary'}
-							onClick={() => selectTab(tab.id)}
-							disabled={disabled}>
-							{tab.label}
-							<Tooltip>
-								<TooltipTrigger asChild>
-									<button type='button' aria-label={`About ${tab.label}`}>
-										<CircleHelp className='size-4' />
-									</button>
-								</TooltipTrigger>
-								<TooltipContent sideOffset={8}>{tab.description}</TooltipContent>
-							</Tooltip>
-						</Button>
-					</div>
-				))}
-			</div>
+			<SegmentedControl
+				fullWidth
+				aria-label='Server type'
+				className='mb-3'
+				value={activeTab}
+				onValueChange={selectTab}
+				options={tabOptions}
+				disabled={disabled}
+			/>
 
 			<JarVersionSelectorPane
 				tab={activeTab}

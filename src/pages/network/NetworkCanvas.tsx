@@ -204,7 +204,7 @@ export const NetworkCanvas: React.FC<NetworkCanvasProps> = ({
 			<Controls showInteractive={false} />
 			{nodes.length > 1 && (
 				<Panel position='top-right'>
-					<Button variant='outline' size='sm' onClick={onAutoLayout} title='Arrange nodes neatly'>
+					<Button variant='secondary' size='sm' onClick={onAutoLayout} title='Arrange nodes neatly'>
 						<LayoutGrid /> Auto layout
 					</Button>
 				</Panel>

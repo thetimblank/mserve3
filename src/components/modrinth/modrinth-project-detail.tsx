@@ -3,12 +3,12 @@ import {
 	ArrowLeft,
 	ArrowUpRightFromSquare,
 	Check,
-	CircleX,
 	Download,
 	Heart,
 	Loader2,
 } from 'lucide-react';
 import { openUrl } from '@tauri-apps/plugin-opener';
+import EmptyState from '@/components/empty-state';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Spinner } from '@/components/ui/spinner';
@@ -245,10 +245,11 @@ const ModrinthProjectDetail: React.FC<ModrinthProjectDetailProps> = ({
 						)}
 
 						{versions && visibleVersions.length === 0 && (
-							<div className='my-10 text-muted-foreground text-center flex flex-col items-center gap-4'>
-								<CircleX className='size-14' />
-								<p>No matching versions for the current filters.</p>
-							</div>
+							<EmptyState
+								variant='no-results'
+								title='No matching versions'
+								description="None of this project's versions match the current filters."
+							/>
 						)}
 
 						<div className='rounded-md border-2 overflow-hidden'>

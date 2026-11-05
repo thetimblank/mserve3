@@ -199,7 +199,7 @@ export const ApplyChangesDrawer: React.FC<ApplyChangesDrawerProps> = ({
 
 				<DrawerFooter className='flex-row justify-end gap-2'>
 					<DrawerClose asChild>
-						<Button variant='outline'>Cancel</Button>
+						<Button variant='secondary'>Cancel</Button>
 					</DrawerClose>
 					<Button
 						onClick={handleApply}

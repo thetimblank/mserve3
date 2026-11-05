@@ -46,7 +46,7 @@ const CrashDetailsPanel: React.FC<Props> = ({ crash, isBusy, onRestart, onDismis
 
 			{hasStderr && (
 				<div className='space-y-2'>
-					<Button variant='outline' size='sm' onClick={() => setExpanded((value) => !value)}>
+					<Button variant='secondary' size='sm' onClick={() => setExpanded((value) => !value)}>
 						{expanded ? 'Hide' : 'Show'} last output ({crash.stderrTail.length} lines)
 					</Button>
 					{expanded && (

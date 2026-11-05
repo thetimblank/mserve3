@@ -16,6 +16,7 @@ import {
 
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
+import { SegmentedControl, type SegmentedControlOption } from '@/components/ui/segmented-control';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import {
@@ -41,6 +42,11 @@ import {
 	type MotdPreviewStyle,
 } from '@/lib/motd-format';
 import { Container } from './ui/container';
+
+const EDIT_MODE_OPTIONS: SegmentedControlOption<'editor' | 'source'>[] = [
+	{ value: 'editor', label: 'Editor', icon: Type },
+	{ value: 'source', label: 'Source', icon: Code },
+];
 
 type MotdEditorProps = {
 	value: string;
@@ -1300,26 +1306,14 @@ const MotdEditor: React.FC<MotdEditorProps> = ({
 					</Container>
 				</div>
 				{advancedMode && (
-					<Container className='p-0 flex items-center overflow-hidden'>
-						<div
-							className={cn(
-								'flex items-center gap-1 px-2 py-1 cursor-pointer',
-								!sourceMode && 'bg-accent text-accent-foreground',
-							)}
-							onMouseDown={toolbarMouseDown}
-							onClick={() => setSourceMode(false)}>
-							<Type className='size-3.5' /> Editor
-						</div>
-						<div
-							className={cn(
-								'flex items-center gap-1 px-2 py-1 cursor-pointer',
-								sourceMode && 'bg-accent text-accent-foreground',
-							)}
-							onMouseDown={toolbarMouseDown}
-							onClick={() => setSourceMode(true)}>
-							<Code className='size-3.5' /> Source
-						</div>
-					</Container>
+					<SegmentedControl
+						size='sm'
+						aria-label='Editing mode'
+						value={sourceMode ? 'source' : 'editor'}
+						onValueChange={(mode) => setSourceMode(mode === 'source')}
+						options={EDIT_MODE_OPTIONS}
+						onItemMouseDown={toolbarMouseDown}
+					/>
 				)}
 			</div>
 
@@ -1424,18 +1418,15 @@ const MotdEditor: React.FC<MotdEditorProps> = ({
 					{MOTD_COLOR_OPTIONS.map((option) => (
 						<Tooltip key={option.label}>
 							<TooltipTrigger asChild>
-								<Button
+								<button
 									type='button'
-									variant='outline'
-									size='icon-xs'
 									aria-label={option.label}
-									className='border-border p-0'
-									style={{ backgroundColor: option.hex, color: '#000' }}
+									className='size-6 cursor-pointer rounded-md border-2 border-border shadow-xs transition-transform outline-none hover:scale-110 focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50'
+									style={{ backgroundColor: option.hex }}
 									onMouseDown={toolbarMouseDown}
 									onClick={() => handleColorOption(option)}
-									disabled={isLocked}>
-									<span className='sr-only'>{option.label}</span>
-								</Button>
+									disabled={isLocked}
+								/>
 							</TooltipTrigger>
 							<TooltipContent>{option.label}</TooltipContent>
 						</Tooltip>

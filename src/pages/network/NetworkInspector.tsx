@@ -294,7 +294,7 @@ export const NetworkInspector: React.FC<NetworkInspectorProps> = ({
 				{proxies.length === 0 ? (
 					<div className='rounded-lg border border-dashed p-3 text-xs text-muted-foreground'>
 						<p>No Velocity proxy servers yet. A proxy is the front door players connect to.</p>
-						<Button asChild size='sm' variant='outline' className='mt-2 w-full'>
+						<Button asChild size='sm' variant='secondary' className='mt-2 w-full'>
 							<Link to='/servers/new'>Create a Velocity proxy</Link>
 						</Button>
 					</div>
@@ -411,10 +411,10 @@ export const NetworkInspector: React.FC<NetworkInspectorProps> = ({
 					<SectionLabel>Modern forwarding secret</SectionLabel>
 					<div className='flex items-center gap-2'>
 						<Input readOnly value={network.forwarding.secret} className='font-mono text-xs' />
-						<Button variant='outline' size='icon' onClick={copySecret} title='Copy secret'>
+						<Button variant='secondary' size='icon' onClick={copySecret} title='Copy secret'>
 							<Copy />
 						</Button>
-						<Button variant='outline' size='icon' onClick={regenerateSecret} title='Regenerate secret'>
+						<Button variant='secondary' size='icon' onClick={regenerateSecret} title='Regenerate secret'>
 							<RefreshCw />
 						</Button>
 					</div>

@@ -1,5 +1,6 @@
 import React from 'react';
-import { ChevronLeft, ChevronRight, CircleX, Download, Heart, Search } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, Heart, Search } from 'lucide-react';
+import EmptyState from '@/components/empty-state';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Container } from '@/components/ui/container';
@@ -71,6 +72,17 @@ const ModrinthBrowser: React.FC<ModrinthBrowserProps> = ({
 	const [isLoading, setIsLoading] = React.useState(true);
 	const [error, setError] = React.useState<string | null>(null);
 	const [selectedHit, setSelectedHit] = React.useState<ModrinthSearchHit | null>(null);
+
+	// Pins (server loader / version) are not cleared here: they keep results
+	// installable on this server, so only user-picked filters count.
+	const hasClearableSearch =
+		searchTerm.trim() !== '' || activeCategories.length > 0 || manualGameVersion !== ANY_VERSION;
+	const handleClearSearch = () => {
+		setSearchTerm('');
+		setActiveCategories([]);
+		setManualGameVersion(ANY_VERSION);
+		setOffset(0);
+	};
 
 	const hasLoaderPin = pinnedLoaders.length > 0;
 	const hasVersionPin = Boolean(pinnedGameVersion);
@@ -310,10 +322,14 @@ const ModrinthBrowser: React.FC<ModrinthBrowserProps> = ({
 							)}
 
 							{!isLoading && !error && result && result.hits.length === 0 && (
-								<div className='my-16 text-muted-foreground text-center flex flex-col items-center gap-4'>
-									<CircleX className='size-16' />
-									<p>No results for the current search and filters.</p>
-								</div>
+								<EmptyState
+									variant='no-results'
+									className='my-16'
+									title='No results'
+									description='Nothing on Modrinth matches the current search and filters.'
+									onClearSearch={hasClearableSearch ? handleClearSearch : undefined}
+									clearSearchLabel={searchTerm.trim() ? 'Clear search' : 'Clear filters'}
+								/>
 							)}
 
 							{!isLoading &&

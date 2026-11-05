@@ -239,7 +239,7 @@ const Server: React.FC = () => {
 					Server not found{resolvedServerId ? ` for id "${resolvedServerId}".` : '.'}
 				</div>
 				<div className='mt-6'>
-					<Button asChild variant='outline'>
+					<Button asChild variant='secondary'>
 						<Link to='/servers'>Back to All Servers</Link>
 					</Button>
 				</div>
@@ -330,7 +330,7 @@ const Server: React.FC = () => {
 					<div className='mb-4 rounded-lg border-2 border-destructive/40 bg-destructive/10 p-3'>
 						<div className='flex items-center justify-between gap-3'>
 							<p className='text-sm text-destructive'>{errorMessage}</p>
-							<Button variant='outline' size='sm' onClick={() => setErrorMessage(null)}>
+							<Button variant='secondary' size='sm' onClick={() => setErrorMessage(null)}>
 								Dismiss
 							</Button>
 						</div>
@@ -394,7 +394,7 @@ const Server: React.FC = () => {
 						serverDirectory={server.directory}
 						title='Plugins'
 						searchPlaceholder='Search for Plugin...'
-						emptyLabel='No Plugins were found.'
+						emptyLabel='No plugins yet'
 						items={server.plugins}
 						onChanged={syncServerContents}
 						disabled={isContentLocked}
@@ -409,7 +409,7 @@ const Server: React.FC = () => {
 						serverDirectory={server.directory}
 						title='Mods'
 						searchPlaceholder='Search for Mod...'
-						emptyLabel='No Mods were found.'
+						emptyLabel='No mods yet'
 						items={server.mods}
 						onChanged={syncServerContents}
 						disabled={isContentLocked}
@@ -424,7 +424,7 @@ const Server: React.FC = () => {
 						serverDirectory={server.directory}
 						title='Worlds'
 						searchPlaceholder='Search for World...'
-						emptyLabel='No Worlds were found.'
+						emptyLabel='No worlds yet'
 						items={server.worlds}
 						onChanged={syncServerContents}
 						disabled={isContentLocked}
@@ -437,7 +437,7 @@ const Server: React.FC = () => {
 						serverDirectory={server.directory}
 						title='Datapacks'
 						searchPlaceholder='Search for Datapack...'
-						emptyLabel='No Datapacks were found.'
+						emptyLabel='No datapacks yet'
 						items={server.datapacks}
 						onChanged={syncServerContents}
 						disabled={isContentLocked}

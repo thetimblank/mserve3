@@ -8,6 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { SegmentedControl, type SegmentedControlOption } from '@/components/ui/segmented-control';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
 import { useUser } from '@/data/user';
@@ -32,11 +33,18 @@ import { examplePaths } from '@/lib/platform';
 import SlideShell from './SlideShell';
 import { getErrorMessage } from '@/lib/utils';
 
+type SourceMode = 'software' | 'modpack';
+
+const SOURCE_MODE_OPTIONS: SegmentedControlOption<SourceMode>[] = [
+	{ value: 'software', label: 'Server Software' },
+	{ value: 'modpack', label: 'Modpacks' },
+];
+
 const SlideJarFile: React.FC = () => {
 	const { user } = useUser();
 	const { form, updateField, nextSlide, setError, clearError, modpack, setModpack } =
 		useCreateServer();
-	const [sourceMode, setSourceMode] = React.useState<'software' | 'modpack'>(
+	const [sourceMode, setSourceMode] = React.useState<SourceMode>(
 		modpack ? 'modpack' : 'software',
 	);
 	const [isLoadingRows, setIsLoadingRows] = React.useState(false);
@@ -244,22 +252,13 @@ const SlideJarFile: React.FC = () => {
 				</Button>
 			}>
 			<div className='flex flex-col gap-4'>
-				<div className='flex gap-2'>
-					<Button
-						type='button'
-						variant={sourceMode === 'software' ? 'default' : 'secondary'}
-						onClick={() => setSourceMode('software')}
-						disabled={isDownloading}>
-						Server Software
-					</Button>
-					<Button
-						type='button'
-						variant={sourceMode === 'modpack' ? 'default' : 'secondary'}
-						onClick={() => setSourceMode('modpack')}
-						disabled={isDownloading}>
-						Modpacks
-					</Button>
-				</div>
+				<SegmentedControl
+					aria-label='Server source'
+					value={sourceMode}
+					onValueChange={setSourceMode}
+					options={SOURCE_MODE_OPTIONS}
+					disabled={isDownloading}
+				/>
 
 				{sourceMode === 'modpack' && (
 					<>
@@ -330,7 +329,7 @@ const SlideJarFile: React.FC = () => {
 										applyInferredMetadata(nextFile);
 									}}
 								/>
-								<Button type='button' variant='outline' onClick={onPickServerFile}>
+								<Button type='button' variant='secondary' onClick={onPickServerFile}>
 									<FolderOpen /> Browse
 								</Button>
 							</div>
