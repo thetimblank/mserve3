@@ -6,12 +6,10 @@
 import React from 'react';
 import { Activity, Cpu, MemoryStick, Power, Users } from 'lucide-react';
 
-import { Button } from '@/components/ui/button';
-import { ButtonGroup } from '@/components/ui/button-group';
+import { SegmentedControl, type SegmentedControlOption } from '@/components/ui/segmented-control';
 import type { Server } from '@/data/servers';
 import { useUser } from '@/data/user';
 import { getServerProviderCapabilities } from '@/lib/server-provider-capabilities';
-import { cn } from '@/lib/utils';
 
 import TelemetryAreaChart from './stats/telemetry-area-chart';
 import { useServerTelemetryHistory } from './stats/use-server-telemetry-history';
@@ -39,6 +37,18 @@ type Props = {
 	server: Server;
 };
 
+type RamUnit = 'pct' | 'bytes';
+
+const RAM_UNIT_OPTIONS: SegmentedControlOption<RamUnit>[] = [
+	{ value: 'pct', label: 'RAM %' },
+	{ value: 'bytes', label: 'RAM MB' },
+];
+
+const TIME_RANGE_OPTIONS: SegmentedControlOption<TimeRangeKey>[] = TIME_RANGES.map((range) => ({
+	value: range.key,
+	label: range.label,
+}));
+
 const pctTick = (value: number) => `${Math.round(value)}%`;
 const countTick = (value: number) => String(Math.round(value));
 const tpsTick = (value: number) => value.toFixed(1);
@@ -57,7 +67,7 @@ const latestBadge = (
 
 const ServerStatisticsTab: React.FC<Props> = ({ server }) => {
 	const [rangeKey, setRangeKey] = React.useState<TimeRangeKey>(DEFAULT_TIME_RANGE);
-	const [ramUnit, setRamUnit] = React.useState<'pct' | 'bytes'>('pct');
+	const [ramUnit, setRamUnit] = React.useState<RamUnit>('pct');
 
 	const range = getTimeRange(rangeKey);
 	const { supportsTpsCommand } = getServerProviderCapabilities(server.provider);
@@ -92,35 +102,21 @@ const ServerStatisticsTab: React.FC<Props> = ({ server }) => {
 								? `Updated ${new Date(updatedAt).toLocaleTimeString()}`
 								: 'No data yet'}
 					</span>
-					<ButtonGroup>
-						<Button
-							size='sm'
-							variant={ramUnit === 'pct' ? 'default' : 'outline'}
-							className={cn(ramUnit === 'pct' && 'cursor-default')}
-							onClick={() => setRamUnit('pct')}>
-							RAM %
-						</Button>
-						<Button
-							size='sm'
-							variant={ramUnit === 'bytes' ? 'default' : 'outline'}
-							className={cn(ramUnit === 'bytes' && 'cursor-default')}
-							onClick={() => setRamUnit('bytes')}>
-							RAM MB
-						</Button>
-					</ButtonGroup>
+					<SegmentedControl
+						size='sm'
+						aria-label='RAM unit'
+						value={ramUnit}
+						onValueChange={setRamUnit}
+						options={RAM_UNIT_OPTIONS}
+					/>
 				</div>
-				<ButtonGroup>
-					{TIME_RANGES.map((option) => (
-						<Button
-							key={option.key}
-							size='sm'
-							variant={option.key === rangeKey ? 'default' : 'outline'}
-							className={cn(option.key === rangeKey && 'cursor-default')}
-							onClick={() => setRangeKey(option.key)}>
-							{option.label}
-						</Button>
-					))}
-				</ButtonGroup>
+				<SegmentedControl
+					size='sm'
+					aria-label='Time range'
+					value={rangeKey}
+					onValueChange={setRangeKey}
+					options={TIME_RANGE_OPTIONS}
+				/>
 			</div>
 
 			{/* Charts */}

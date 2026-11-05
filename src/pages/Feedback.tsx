@@ -7,12 +7,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { cn } from '@/lib/utils';
+import { SegmentedControl, type SegmentedControlOption } from '@/components/ui/segmented-control';
 
 const DISCORD_INVITE_URL = 'https://discord.gg/v9dA5B5qX4';
 const GITHUB_REPO_URL = 'https://github.com/thetimblank/mserve3';
 
 type FeedbackMode = 'bug' | 'feedback';
+
+const FEEDBACK_MODE_OPTIONS: SegmentedControlOption<FeedbackMode>[] = [
+	{ value: 'bug', label: 'Report a Bug', icon: Bug },
+	{ value: 'feedback', label: 'Share Feedback', icon: Lightbulb },
+];
 
 // Prefill a GitHub issue via query params so whatever the user typed here lands
 // straight in the issue body — no server, webhook or secret required.
@@ -95,31 +100,13 @@ const Feedback: React.FC = () => {
 						initial={{ scale: 0.75, y: 10, opacity: 0 }}
 						whileInView={{ scale: 1, y: 0, opacity: 1 }}
 						transition={{ type: 'spring', duration: 0.5, bounce: 0 }}
-						className='inline-flex rounded-lg border p-1 bg-muted/40'>
-						<button
-							type='button'
-							onClick={() => setMode('bug')}
-							className={cn(
-								'cursor-pointer inline-flex items-center gap-2 rounded-md px-4 py-1.5 text-sm font-medium transition-colors',
-								isBug
-									? 'bg-accent text-accent-foreground'
-									: 'text-muted-foreground hover:text-foreground',
-							)}>
-							<Bug className='w-4 h-4' />
-							Report a Bug
-						</button>
-						<button
-							type='button'
-							onClick={() => setMode('feedback')}
-							className={cn(
-								'cursor-pointer inline-flex items-center gap-2 rounded-md px-4 py-1.5 text-sm font-medium transition-colors',
-								!isBug
-									? 'bg-accent text-accent-foreground'
-									: 'text-muted-foreground hover:text-foreground',
-							)}>
-							<Lightbulb className='w-4 h-4' />
-							Share Feedback
-						</button>
+						className='w-fit'>
+						<SegmentedControl
+							aria-label='Feedback type'
+							value={mode}
+							onValueChange={setMode}
+							options={FEEDBACK_MODE_OPTIONS}
+						/>
 					</m.div>
 
 					<m.div
@@ -178,7 +165,7 @@ const Feedback: React.FC = () => {
 										<Github className='w-4 h-4' />
 										Open a GitHub issue
 									</Button>
-									<Button variant='outline' onClick={handleOpenDiscord}>
+									<Button variant='secondary' onClick={handleOpenDiscord}>
 										<MessageCircle className='w-4 h-4' />
 										{isBug ? 'Report on Discord' : 'Share on Discord'}
 									</Button>
@@ -209,11 +196,11 @@ const Feedback: React.FC = () => {
 							</CardHeader>
 							<CardContent>
 								<div className='flex flex-wrap gap-3'>
-									<Button variant='outline' onClick={handleOpenDiscord}>
+									<Button variant='secondary' onClick={handleOpenDiscord}>
 										<MessageCircle className='w-4 h-4' />
 										Join our Discord
 									</Button>
-									<Button variant='outline' onClick={handleBrowseGithub}>
+									<Button variant='secondary' onClick={handleBrowseGithub}>
 										<Github className='w-4 h-4' />
 										{isBug ? 'Browse open issues' : 'Browse pull requests'}
 										<ArrowUpRight className='w-4 h-4' />

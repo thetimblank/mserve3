@@ -107,7 +107,7 @@ const JarDownloadModal: React.FC<JarDownloadModalProps> = ({ open, onOpenChange,
 				<DialogFooter>
 					<Button
 						type='button'
-						variant='outline'
+						variant='secondary'
 						onClick={() => onOpenChange(false)}
 						disabled={isDownloading}>
 						Cancel

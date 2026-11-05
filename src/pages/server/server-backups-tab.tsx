@@ -2,7 +2,6 @@ import React from 'react';
 import {
 	Archive,
 	ArchiveRestore,
-	CircleX,
 	Clock3,
 	EllipsisVertical,
 	HardDrive,
@@ -13,6 +12,7 @@ import {
 	Trash,
 } from 'lucide-react';
 import OpenFolderButton from '@/components/open-folder-button';
+import EmptyState from '@/components/empty-state';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -355,7 +355,7 @@ const BackupSettingsDrawer: React.FC<{
 				</div>
 
 				<DrawerFooter className='flex-row justify-end gap-2'>
-					<Button variant='outline' onClick={() => onOpenChange(false)}>
+					<Button variant='secondary' onClick={() => onOpenChange(false)}>
 						Cancel
 					</Button>
 					<Button onClick={handleSave} disabled={isSaving || scope.length === 0}>
@@ -408,12 +408,12 @@ const ServerBackupsTab: React.FC<ServerBackupsTabProps> = ({
 					<HelpButton topic='backups' />
 				</p>
 				<div className='flex gap-2'>
-					<Button variant='outline' onClick={() => setIsSettingsOpen(true)}>
+					<Button variant='secondary' onClick={() => setIsSettingsOpen(true)}>
 						<Settings2 /> Settings
 					</Button>
 					<DropdownMenu>
 						<DropdownMenuTrigger asChild>
-							<Button variant='outline' size='icon'>
+							<Button variant='secondary' size='icon'>
 								<EllipsisVertical />
 								<span className='sr-only'>More backup actions</span>
 							</Button>
@@ -467,13 +467,21 @@ const ServerBackupsTab: React.FC<ServerBackupsTabProps> = ({
 			)}
 
 			{backups.length === 0 ? (
-				<div className='my-10 text-muted-foreground text-center flex flex-col items-center gap-4'>
-					<CircleX className='size-20' />
-					<p>No backups yet.</p>
-					<p className='max-w-md text-sm'>
-						Create one now, or open Settings to schedule automatic backups on start, on stop, or on a timer.
-					</p>
-				</div>
+				<EmptyState
+					icon={<Archive />}
+					title='No backups yet'
+					description='Create one now, or schedule automatic backups on start, on stop, or on a timer.'
+					action={{
+						label: 'Create Backup',
+						onClick: () => void onCreateBackup(),
+						disabled: isBusy || isOnline,
+					}}
+					secondaryAction={{
+						label: 'Backup settings',
+						icon: Settings2,
+						onClick: () => setIsSettingsOpen(true),
+					}}
+				/>
 			) : (
 				backups.map((backup) => (
 					<Card key={backup.directory}>

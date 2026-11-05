@@ -232,3 +232,10 @@ export const useUser = () => {
 	}
 	return context;
 };
+
+/**
+ * The user's "reduced motion" setting, or `false` outside a `UserProvider`, so
+ * shared UI primitives can honor it without requiring the provider.
+ */
+export const useReducedMotionSetting = () =>
+	React.useContext(UserContext)?.user.accessibility.reduced_motion ?? false;

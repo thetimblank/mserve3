@@ -9,7 +9,7 @@ type OpenFolderButtonProps = {
 	directory?: string;
 	targetPath?: string;
 	disabled?: boolean;
-	variant?: 'default' | 'secondary' | 'outline' | 'destructive' | 'ghost' | 'link';
+	variant?: 'default' | 'secondary' | 'destructive' | 'ghost' | 'link';
 	className?: string;
 	label?: string;
 	onError?: (message: string) => void;

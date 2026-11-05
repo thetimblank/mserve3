@@ -12,7 +12,6 @@ import {
 	UploadCloud,
 	Users,
 } from 'lucide-react';
-import clsx from 'clsx';
 
 import { useServers } from '@/data/servers';
 import { useNetworks } from '@/data/networks';
@@ -26,6 +25,7 @@ import {
 	DropdownMenuSubTrigger,
 	DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { SegmentedControl } from '@/components/ui/segmented-control';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { HelpButton } from '@/components/help/help-button';
 import {
@@ -70,7 +70,7 @@ const NetworkRunMenu: React.FC<{
 }> = ({ busy, disabled, onStart, onStop, onRestart }) => (
 	<DropdownMenu>
 		<DropdownMenuTrigger asChild>
-			<Button variant='outline' disabled={busy || disabled} title='Run the whole network'>
+			<Button variant='secondary' disabled={busy || disabled} title='Run the whole network'>
 				{busy ? <Loader2 className='animate-spin' /> : <Play />} Run <ChevronDown />
 			</Button>
 		</DropdownMenuTrigger>
@@ -276,7 +276,7 @@ const NetworkPage: React.FC = () => {
 							)}
 						</span>
 					)}
-					<Button variant='outline' onClick={handleCreateNetwork}>
+					<Button variant='secondary' onClick={handleCreateNetwork}>
 						<Plus /> New network
 					</Button>
 					{activeNetwork && (
@@ -304,21 +304,13 @@ const NetworkPage: React.FC = () => {
 			</div>
 
 			{networks.length > 1 && (
-				<div className='mt-4 flex flex-wrap gap-1.5'>
-					{networks.map((network) => (
-						<button
-							key={network.id}
-							onClick={() => setActiveNetworkId(network.id)}
-							className={clsx(
-								'rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors',
-								network.id === activeNetworkId
-									? 'bg-accent text-accent-foreground'
-									: 'text-muted-foreground hover:bg-muted',
-							)}>
-							{network.name}
-						</button>
-					))}
-				</div>
+				<SegmentedControl
+					aria-label='Network'
+					className='mt-4 flex-wrap'
+					value={activeNetworkId ?? ''}
+					onValueChange={setActiveNetworkId}
+					options={networks.map((network) => ({ value: network.id, label: network.name }))}
+				/>
 			)}
 
 			{!networksReady ? (

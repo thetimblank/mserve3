@@ -172,7 +172,7 @@ const ImportServer: React.FC<React.HTMLAttributes<HTMLButtonElement>> = ({ ...pr
 									onChange={(event) => updateField('directory', event.target.value)}
 									required
 								/>
-								<Button type='button' variant='outline' onClick={pickDirectory}>
+								<Button type='button' variant='secondary' onClick={pickDirectory}>
 									<FolderOpen /> Browse
 								</Button>
 							</div>
@@ -181,7 +181,7 @@ const ImportServer: React.FC<React.HTMLAttributes<HTMLButtonElement>> = ({ ...pr
 					</FieldGroup>
 					<DialogFooter>
 						<DialogClose asChild>
-							<Button variant='outline' type='button' onClick={resetForm} disabled={isSubmitting}>
+							<Button variant='secondary' type='button' onClick={resetForm} disabled={isSubmitting}>
 								Cancel
 							</Button>
 						</DialogClose>

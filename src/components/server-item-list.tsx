@@ -4,7 +4,6 @@ import { getCurrentWebview } from '@tauri-apps/api/webview';
 import {
 	Archive,
 	ArrowUpRightFromSquare,
-	CircleX,
 	HardDrive,
 	Link,
 	Link2,
@@ -18,6 +17,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import OpenFolderButton from '@/components/open-folder-button';
+import EmptyState from '@/components/empty-state';
 import clsx from 'clsx';
 import {
 	AlertDialog,
@@ -358,6 +358,11 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 		}
 	};
 
+	const handleCta = () => {
+		if (onCta) onCta();
+		else if (ctaUrl) void openUrl(ctaUrl);
+	};
+
 	return (
 		<div className='flex flex-col gap-1 min-h-100'>
 			<div className='flex items-center justify-between gap-5 min-h-10'>
@@ -370,7 +375,7 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 				</div>
 				{ctaLabel && (onCta || ctaUrl) && (
 					<Button
-						onClick={() => (onCta ? onCta() : ctaUrl && void openUrl(ctaUrl))}
+						onClick={handleCta}
 						variant='link'>
 						{ctaLabel}
 						{type === 'world' ? <Archive /> : <ArrowUpRightFromSquare />}
@@ -567,11 +572,26 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 				)}
 			</div>
 
-			{filtered.length === 0 && (
-				<div className='my-10 text-muted-foreground text-center flex flex-col items-center gap-4'>
-					<CircleX className='size-20' />
-					<p>{emptyLabel}</p>
-				</div>
+			{items.length === 0 ? (
+				<EmptyState
+					icon={icon}
+					title={emptyLabel}
+					description={disabled ? undefined : 'Drop files into the box above, or click it to pick them.'}
+					action={
+						ctaLabel && (onCta || ctaUrl)
+							? { label: ctaLabel, onClick: handleCta, disabled }
+							: undefined
+					}
+				/>
+			) : (
+				filtered.length === 0 && (
+					<EmptyState
+						variant='no-results'
+						title='No matches'
+						description={`Nothing here matches "${search.trim()}".`}
+						onClearSearch={() => setSearch('')}
+					/>
+				)
 			)}
 		</div>
 	);

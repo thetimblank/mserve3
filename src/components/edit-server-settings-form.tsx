@@ -620,13 +620,13 @@ export const JavaSettingsSection: React.FC = () => {
 				<div className='flex gap-2'>
 					<Button
 						type='button'
-						variant='outline'
+						variant='secondary'
 						onClick={() => setIsJarModalOpen(true)}
 						disabled={isFormLocked}>
 						<Download /> Download from provider
 					</Button>
 					{advancedMode && (
-						<Button type='button' variant='outline' onClick={pickSwapJarFile} disabled={isFormLocked}>
+						<Button type='button' variant='secondary' onClick={pickSwapJarFile} disabled={isFormLocked}>
 							<FolderOpen /> Browse files
 						</Button>
 					)}
@@ -923,7 +923,7 @@ export const LocationSettingsSection: React.FC = () => {
 						value={settingsForm.new_directory}
 						onChange={(event) => updateSettingsField('new_directory', event.target.value)}
 					/>
-					<Button type='button' variant='outline' onClick={pickNewDirectory}>
+					<Button type='button' variant='secondary' onClick={pickNewDirectory}>
 						<FolderOpen /> Browse
 					</Button>
 				</div>
