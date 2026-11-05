@@ -18,7 +18,7 @@ Wave 2 (after their deps):         D1 · D2 · O · A · C3 · F2 · J1 · J2 ·
 | --- | --- | --- | --- | --- |
 | W0-1 | `chore/rehaul-copy-pass` | S | none | [x] #21 |
 | W0-2a | `feat/ui-core-primitives` | M | W0-1 | [x] #23 |
-| W0-2b | `feat/ui-filterbar-duration` | M | W0-2a | [ ] |
+| W0-2b | `feat/ui-filterbar-duration` | M | W0-2a | [x] #25 |
 | W0-3 | `feat/experience-tiers` | M | W0-2a | [ ] |
 | B | `feat/settings-layout` | M/L | W0-3 | [ ] |
 | C1 | `feat/wizard-provider-version` | L | W0-2b, W0-3 | [ ] |
