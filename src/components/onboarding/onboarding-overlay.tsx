@@ -36,7 +36,7 @@ const GOALS: { id: OnboardingGoal; icon: React.ElementType; title: string; descr
 		id: 'survival',
 		icon: Swords,
 		title: 'A survival server for friends',
-		description: 'Classic SMP on the latest Minecraft version.',
+		description: 'Classic SMP on the latest Vanilla Minecraft version.',
 	},
 	{
 		id: 'modded',
@@ -86,7 +86,7 @@ const slideVariants = {
 const ChoiceCard: React.FC<{
 	icon: React.ElementType;
 	title: string;
-	description: string;
+	description?: string;
 	selected: boolean;
 	onSelect: () => void;
 }> = ({ icon: Icon, title, description, selected, onSelect }) => (
@@ -94,7 +94,7 @@ const ChoiceCard: React.FC<{
 		type='button'
 		onClick={onSelect}
 		className={clsx(
-			'flex w-full cursor-pointer items-start gap-3 rounded-2xl border-2 p-4 text-left transition-all',
+			'flex w-full cursor-pointer items-center gap-3 rounded-2xl border-2 p-4 text-left transition-all',
 			selected
 				? 'border-primary bg-primary/5 ring-2 ring-primary/25'
 				: 'border-border hover:border-muted-foreground/40 hover:bg-muted/40',
@@ -107,8 +107,8 @@ const ChoiceCard: React.FC<{
 			<Icon className='size-5' />
 		</span>
 		<span>
-			<span className='block font-semibold'>{title}</span>
-			<span className='block text-sm text-muted-foreground'>{description}</span>
+			<span className='font-semibold'>{title}</span>
+			{description && <span className='block text-sm text-muted-foreground'>{description}</span>}
 		</span>
 	</button>
 );
@@ -160,9 +160,7 @@ export const OnboardingOverlay: React.FC = () => {
 									<Logo size='lg' className='mb-8 scale-125' />
 									<h1 className='mb-3 text-4xl font-black'>Welcome to mserve</h1>
 									<p className='mb-8 max-w-md text-muted-foreground'>
-										Create, run, and manage Minecraft servers without touching a config file — backups,
-										plugins, networks, and sharing included. Let's set things up for you in under a
-										minute.
+										Create, run, and manage Minecraft servers easily. Setup takes less than a minute.
 									</p>
 									<Button size='lg' onClick={() => goTo(1, 1)}>
 										Get started <ArrowRight />
@@ -180,7 +178,7 @@ export const OnboardingOverlay: React.FC = () => {
 										<ChoiceCard
 											icon={Wand2}
 											title='Guided'
-											description='Sensible defaults and recommendations. Advanced options stay out of the way.'
+											description='Easy defaults and recommendations. Advanced options stay out of the way.'
 											selected={!advanced}
 											onSelect={() => setAdvanced(false)}
 										/>
@@ -198,26 +196,23 @@ export const OnboardingOverlay: React.FC = () => {
 							{slide === 2 && (
 								<>
 									<h2 className='mb-2 text-2xl font-bold'>Pick your look</h2>
-									<p className='mb-6 text-sm text-muted-foreground'>Applied instantly — see for yourself.</p>
+									<p className='mb-6 text-sm text-muted-foreground'>You can change this anytime in Settings.</p>
 									<div className='flex w-full flex-col gap-3'>
 										<ChoiceCard
 											icon={Moon}
 											title='Dark'
-											description='Easy on the eyes. The classic server-admin choice.'
 											selected={theme === 'dark'}
 											onSelect={() => setTheme('dark')}
 										/>
 										<ChoiceCard
 											icon={Sun}
 											title='Light'
-											description='Bright and crisp.'
 											selected={theme === 'light'}
 											onSelect={() => setTheme('light')}
 										/>
 										<ChoiceCard
 											icon={MonitorCog}
-											title='System'
-											description='Follow your operating system setting.'
+											title='Sync with System'
 											selected={theme === 'system'}
 											onSelect={() => setTheme('system')}
 										/>

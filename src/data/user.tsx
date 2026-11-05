@@ -6,6 +6,8 @@ export interface UserData {
 		logo_animation: boolean;
 		reduced_motion: boolean;
 	};
+	/** Show the animated DarkVeil backdrop (on a black canvas) behind the dashboard. */
+	dashboard_background: boolean;
 	java_installation_default: string;
 	servers_root_path: string;
 	advanced_mode: boolean;
@@ -94,6 +96,7 @@ const createDefaultUserData = (): UserData => {
 			logo_animation: true,
 			reduced_motion: false,
 		},
+		dashboard_background: false,
 		java_installation_default: '',
 		servers_root_path: '',
 		advanced_mode: false,
@@ -116,6 +119,7 @@ const normalizeUserData = (user: Partial<UserData> | null | undefined): UserData
 			logo_animation: user?.accessibility?.logo_animation ?? fallback.accessibility.logo_animation,
 			reduced_motion: user?.accessibility?.reduced_motion ?? fallback.accessibility.reduced_motion,
 		},
+		dashboard_background: user?.dashboard_background ?? fallback.dashboard_background,
 		// '' = Automatic (each server resolves its own runtime). Legacy values of
 		// `java`/`java.exe` were the old "use system PATH" sentinel — migrate them
 		// to Automatic so resolution picks a real, compatible runtime.

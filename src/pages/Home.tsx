@@ -9,6 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useServers } from '@/data/servers';
 import { useNetworks } from '@/data/networks';
 import { useUser } from '@/data/user';
+import { cn } from '@/lib/utils';
 
 import DashboardBento from './dashboard/dashboard-bento';
 import { useDashboardActivity } from './dashboard/use-dashboard-activity';
@@ -29,12 +30,15 @@ const Home: React.FC = () => {
 	const storage = useDashboardStorage(servers);
 
 	const reducedMotion = user.accessibility.reduced_motion;
+	const showBackground = user.dashboard_background;
 
 	return (
-		<main className='relative h-full w-full overflow-y-auto app-scroll-area dark:bg-black'>
-			<div aria-hidden className='pointer-events-none fixed inset-0 z-0 overflow-hidden opacity-50'>
-				<DarkVeil speed={reducedMotion ? 0 : 1} />
-			</div>
+		<main className={cn('relative h-full w-full overflow-y-auto app-scroll-area', showBackground && 'dark:bg-black')}>
+			{showBackground && (
+				<div aria-hidden className='pointer-events-none fixed inset-0 z-0 overflow-hidden opacity-50'>
+					<DarkVeil speed={reducedMotion ? 0 : 1} />
+				</div>
+			)}
 
 			<div className='relative z-10 p-8 lg:p-12'>
 				{!isReady && (

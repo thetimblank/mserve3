@@ -51,7 +51,6 @@ in-progress work — never force-overwrite it.
 
 ## 4. Implement
 
-Make the change. Carry the spirit of [docs/ai prompts/](../../../docs/ai%20prompts/):
 push back if you see a better approach before committing to the plan, keep it
 to one concern, and split out a follow-up issue/PR rather than folding in an
 unrelated fix you noticed along the way.
