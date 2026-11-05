@@ -104,6 +104,14 @@ the **run-debug** skill.
 - **Java is explicit:** servers store an absolute path to the `java` binary. There
   is intentionally **no bare-`java` fallback** — a missing/incompatible runtime is a
   hard error, surfaced to the user.
+- **No em dashes in UI copy:** user-visible text (TS strings/JSX, toasts, help
+  topics, and Rust strings that reach the UI such as command errors and `system`
+  console lines) never uses `—`. Rewrite with a period, comma, colon, or
+  parentheses. En dashes in number ranges (`2–4 GB`) and `–` as an empty-value
+  placeholder are fine; code comments are out of scope.
+- **Help slides use bullets:** in `components/help/help-topics.tsx`, list-like
+  facts go in a slide's `bullets` (2–4 short, scannable fragments), with `body`
+  kept for a one-liner or a short lead-in.
 
 ## How to find things
 

@@ -451,7 +451,7 @@ fn sanitize_provider(raw: Option<&serde_json::Value>, fallback_file: &str) -> Ms
 
 /// Default sleeping-server MOTD (legacy-§ colors), shared by config defaults and
 /// the runtime so a sleep-enabled server with no custom MOTD renders consistently.
-pub(in crate::app) const DEFAULT_SLEEP_MOTD: &str = "§eSleeping §7— join to wake this server";
+pub(in crate::app) const DEFAULT_SLEEP_MOTD: &str = "§eSleeping. §7Join to wake this server";
 /// Default idle window (minutes with no players) before a server sleeps.
 pub(in crate::app) const DEFAULT_SLEEP_IDLE_MINUTES: u32 = 15;
 

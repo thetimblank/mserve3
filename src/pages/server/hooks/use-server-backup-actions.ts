@@ -109,7 +109,7 @@ export const useServerBackupActions = ({
 						backup.directory === backupDirectory ? { ...backup, locked } : backup,
 					),
 				});
-				toast.success(locked ? 'Backup locked — retention will never remove it.' : 'Backup unlocked.');
+				toast.success(locked ? 'Backup locked. Retention will never remove it.' : 'Backup unlocked.');
 			} catch (err) {
 				showError(err, 'Failed to update the backup lock.');
 			}

@@ -297,7 +297,7 @@ const BackupSettingsDrawer: React.FC<{
 									</SelectTrigger>
 									<SelectContent>
 										<SelectItem value='smart'>Smart (recommended)</SelectItem>
-										<SelectItem value='simple'>Simple — only the limits below</SelectItem>
+										<SelectItem value='simple'>Simple (only the limits below)</SelectItem>
 									</SelectContent>
 								</Select>
 								<p className='text-xs text-muted-foreground'>
@@ -503,8 +503,8 @@ const ServerBackupsTab: React.FC<ServerBackupsTabProps> = ({
 									<TooltipContent>
 										<p className='font-bold'>
 											{backup.locked
-												? 'Unlock — retention may remove it again'
-												: 'Lock — retention will never remove it'}
+												? 'Unlock (retention may remove it again)'
+												: 'Lock (retention will never remove it)'}
 										</p>
 									</TooltipContent>
 								</Tooltip>
@@ -647,7 +647,7 @@ const ServerBackupsTab: React.FC<ServerBackupsTabProps> = ({
 						<AlertDialogDescription>
 							This moves every backup to your recycle bin
 							{lockedCount > 0
-								? ` — including ${lockedCount} locked backup${lockedCount === 1 ? '' : 's'}.`
+								? `, including ${lockedCount} locked backup${lockedCount === 1 ? '' : 's'}.`
 								: '.'}
 						</AlertDialogDescription>
 					</AlertDialogHeader>

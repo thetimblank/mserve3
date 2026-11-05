@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Settings2, Sparkles } from 'lucide-react';
+import { RotateCcw, Settings2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -81,7 +81,7 @@ const SettingsBehaviorCard: React.FC = () => {
 							updateUserField('onboarding_completed', false);
 							toast.success('Welcome tour will replay now.');
 						}}>
-						<Sparkles /> Replay welcome tour
+						<RotateCcw /> Replay welcome tour
 					</Button>
 					<p className='text-sm text-muted-foreground'>
 						Runs the first-launch setup again: experience level, theme, and starting point.

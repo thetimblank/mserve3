@@ -28,7 +28,7 @@ export const scrubHomeDirs = <T,>(value: T): T => {
 export function initSentry(): void {
 	if (!isEnabled) {
 		if (import.meta.env.DEV) {
-			console.info('[sentry] VITE_SENTRY_DSN not set — error reporting is disabled.');
+			console.info('[sentry] VITE_SENTRY_DSN not set, so error reporting is disabled.');
 		}
 		return;
 	}

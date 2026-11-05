@@ -488,7 +488,7 @@ export const useServerRuntime = ({
 			const java = await acquireJava();
 			if (!java) {
 				setOfflineState();
-				appendTerminalLine('[system] Start cancelled — no Java runtime available.');
+				appendTerminalLine('[system] Start cancelled: no Java runtime available.');
 				return;
 			}
 
@@ -571,7 +571,7 @@ export const useServerRuntime = ({
 			const java = await acquireJava();
 			if (!java) {
 				setOfflineState();
-				appendTerminalLine('[system] Restart cancelled — no Java runtime available.');
+				appendTerminalLine('[system] Restart cancelled: no Java runtime available.');
 				return;
 			}
 

@@ -8,6 +8,7 @@ import type { ReactNode } from 'react';
 import {
 	Archive,
 	ArrowDownUp,
+	BadgeCheck,
 	Boxes,
 	CalendarClock,
 	Coffee,
@@ -15,6 +16,7 @@ import {
 	Globe,
 	KeyRound,
 	Layers,
+	ListFilter,
 	Lock,
 	MemoryStick,
 	Network,
@@ -24,9 +26,9 @@ import {
 	Route,
 	Settings2,
 	ShieldCheck,
+	ThumbsUp,
 	Timer,
 	UploadCloud,
-	Wand2,
 	Wifi,
 	type LucideIcon,
 } from 'lucide-react';
@@ -36,8 +38,10 @@ import { ConnectionAddresses } from './help-connection-addresses';
 type HelpSlide = {
 	icon: LucideIcon;
 	title: string;
-	/** Plain-text explanation. Optional when `content` supplies the slide body instead. */
+	/** Plain-text explanation (a one-liner, or the lead-in for `bullets`). */
 	body?: string;
+	/** Short, scannable facts rendered as a list below `body`. Prefer these over a long `body`. */
+	bullets?: string[];
 	/** Live/interactive content rendered below (or instead of) `body`. */
 	content?: ReactNode;
 };
@@ -67,22 +71,38 @@ export const HELP_TOPICS: Record<HelpTopicId, HelpTopic> = {
 			{
 				icon: Archive,
 				title: 'Snapshots of your server',
-				body: 'A backup is a full copy of your chosen server contents at a moment in time. If a world corrupts or an update goes wrong, restore any backup with one click — mserve even snapshots the current state first, so a restore is never destructive.',
+				body: 'A backup is a full copy of your chosen server contents at a moment in time.',
+				bullets: [
+					'Restore any backup with one click if a world corrupts or an update goes wrong.',
+					'mserve snapshots the current state first, so a restore is never destructive.',
+				],
 			},
 			{
 				icon: CalendarClock,
 				title: 'Automatic backups',
-				body: 'In Settings you can back up automatically when the server starts, when it stops, or on a timer while it runs. Manual backups can be named, like "before 1.21 update".',
+				body: "Set these up in the server's Settings:",
+				bullets: [
+					'When the server starts',
+					'When it stops',
+					'On a timer while it runs',
+					'Manual backups can be named, like "before 1.21 update".',
+				],
 			},
 			{
 				icon: Layers,
 				title: 'Choose what gets saved',
-				body: 'By default backups capture your worlds (with their datapacks). You can also include plugins or mods with their configs, and core config files like server.properties and the whitelist.',
+				body: 'Backups capture your worlds (with their datapacks) by default. You can also include:',
+				bullets: ['Plugins or mods, with their configs', 'Core config files like server.properties and the whitelist'],
 			},
 			{
-				icon: Wand2,
+				icon: ListFilter,
 				title: 'Smart retention',
-				body: 'The smart policy keeps every backup from the last 2 days, then thins older ones to one per day, one per week, and one per month — so you keep useful history without filling your disk. Count, age, and storage limits can cap it further.',
+				body: 'The smart policy keeps useful history without filling your disk:',
+				bullets: [
+					'Every backup from the last 2 days',
+					'Older ones thinned to one per day, one per week, and one per month',
+					'Count, age, and storage limits can cap it further',
+				],
 			},
 			{
 				icon: Lock,
@@ -102,7 +122,11 @@ export const HELP_TOPICS: Record<HelpTopicId, HelpTopic> = {
 			{
 				icon: Route,
 				title: 'Proxy and backends',
-				body: 'The proxy is the front door — it owns the public port. Your normal servers become "backends" that only talk to the proxy. mserve assigns each backend a private port automatically.',
+				bullets: [
+					'The proxy is the front door: it owns the public port.',
+					'Your normal servers become "backends" that only talk to the proxy.',
+					'mserve assigns each backend a private port automatically.',
+				],
 			},
 			{
 				icon: KeyRound,
@@ -112,12 +136,21 @@ export const HELP_TOPICS: Record<HelpTopicId, HelpTopic> = {
 			{
 				icon: UploadCloud,
 				title: 'Nothing changes until you apply',
-				body: 'Edits on the canvas are just a plan. "Apply changes" shows exactly which config files will be written — with before/after — and only writes when you confirm. Servers must be stopped at that moment.',
+				body: 'Edits on the canvas are just a plan.',
+				bullets: [
+					'"Apply changes" shows exactly which config files will be written, with before/after.',
+					'Nothing is written until you confirm.',
+					'Servers must be stopped at that moment.',
+				],
 			},
 			{
 				icon: Rocket,
 				title: 'Run it as one unit',
-				body: 'The Run menu starts the whole network in the right order: backends first, proxy last (and stops in reverse). Right-click any node for per-server controls.',
+				bullets: [
+					'The Run menu starts the whole network in order: backends first, proxy last.',
+					'Stopping happens in reverse.',
+					'Right-click any node for per-server controls.',
+				],
 			},
 		],
 	},
@@ -127,12 +160,17 @@ export const HELP_TOPICS: Record<HelpTopicId, HelpTopic> = {
 			{
 				icon: MemoryStick,
 				title: 'What the slider sets',
-				body: "This sets the Java heap (-Xms/-Xmx) — the memory reserved for the Minecraft server itself. It's the biggest single factor in how many players and mods a server can handle smoothly.",
+				body: "This sets the Java heap (-Xms/-Xmx): the memory reserved for the Minecraft server itself. It's the biggest single factor in how many players and mods a server can handle smoothly.",
 			},
 			{
 				icon: Settings2,
 				title: 'How much is enough?',
-				body: 'A small vanilla or Paper server runs well on 2–4 GB. Add roughly 1 GB per 10 extra players, and expect modpacks to want 6–8 GB or more. Proxies need very little (512 MB–1 GB).',
+				bullets: [
+					'Small vanilla or Paper server: 2–4 GB',
+					'Add roughly 1 GB per 10 extra players',
+					'Modpacks: 6–8 GB or more',
+					'Proxies: very little (512 MB–1 GB)',
+				],
 			},
 			{
 				icon: Cpu,
@@ -147,12 +185,14 @@ export const HELP_TOPICS: Record<HelpTopicId, HelpTopic> = {
 			{
 				icon: Coffee,
 				title: 'Minecraft runs on Java',
-				body: 'Every server jar needs a Java runtime, and each Minecraft version has requirements: 1.21+ needs Java 21, 1.17–1.20 needs 17+. Older versions often need older Java.',
+				body: 'Every server jar needs a Java runtime, and each Minecraft version has requirements:',
+				bullets: ['1.21+ needs Java 21', '1.17–1.20 needs Java 17+', 'Older versions often need older Java'],
 			},
 			{
-				icon: Wand2,
+				icon: BadgeCheck,
 				title: 'mserve handles it',
-				body: "Servers resolve a compatible installed Java automatically — and if a start fails on the wrong version, mserve steps down through your runtimes, or offers to download the right JDK for you.",
+				body: 'Servers resolve a compatible installed Java automatically. If a start fails on the wrong version, mserve:',
+				bullets: ['Steps down through your other runtimes', 'Or offers to download the right JDK for you'],
 			},
 			{
 				icon: Settings2,
@@ -173,7 +213,7 @@ export const HELP_TOPICS: Record<HelpTopicId, HelpTopic> = {
 			{
 				icon: ShieldCheck,
 				title: 'Intentional stops are respected',
-				body: 'Stopping from the UI, the terminal ("stop"), or a restart never triggers an extra start — only unexpected exits do.',
+				body: 'Stopping from the UI, the terminal ("stop"), or a restart never triggers an extra start. Only unexpected exits do.',
 			},
 			{
 				icon: Timer,
@@ -188,20 +228,28 @@ export const HELP_TOPICS: Record<HelpTopicId, HelpTopic> = {
 			{
 				icon: Boxes,
 				title: 'What is a provider?',
-				body: 'The provider is the server software that runs your world: Vanilla is Mojang\'s original, Paper is a faster fork with plugin support, and Fabric/Forge/NeoForge load mods.',
+				body: 'The provider is the server software that runs your world:',
+				bullets: [
+					"Vanilla: Mojang's original",
+					'Paper: a faster fork with plugin support',
+					'Fabric, Forge, NeoForge: load mods',
+				],
 			},
 			{
 				icon: Package,
 				title: 'Plugins vs. mods',
-				body: 'Plugins (Paper/Spigot/Folia) extend the server only — players join with a normal client. Mods (Fabric/Forge/NeoForge) change the game itself and usually must be installed on every player\'s client too.',
+				bullets: [
+					'Plugins (Paper/Spigot/Folia) extend the server only. Players join with a normal client.',
+					"Mods (Fabric/Forge/NeoForge) change the game itself and usually must be installed on every player's client too.",
+				],
 			},
 			{
 				icon: Globe,
 				title: 'Proxies are special',
-				body: 'Velocity and BungeeCord don\'t host worlds at all — they route players between servers in a network. That\'s why proxy servers have no worlds, datapacks, or backups tabs.',
+				body: "Velocity and BungeeCord don't host worlds at all. They route players between servers in a network, which is why proxy servers have no worlds, datapacks, or backups tabs.",
 			},
 			{
-				icon: Wand2,
+				icon: ThumbsUp,
 				title: 'Not sure? Pick Paper',
 				body: 'Paper on the latest Minecraft version is the best default: fast, stable, compatible with vanilla worlds, and ready for plugins whenever you want them.',
 			},
@@ -213,12 +261,13 @@ export const HELP_TOPICS: Record<HelpTopicId, HelpTopic> = {
 			{
 				icon: Wifi,
 				title: 'Share without port forwarding',
-				body: 'Tunneling (via playit.gg) gives your server a public address that friends can join from anywhere — no router settings, no exposing your home IP.',
+				body: 'Tunneling (via playit.gg) gives your server a public address that friends can join from anywhere.',
+				bullets: ['No router settings', 'Your home IP stays hidden'],
 			},
 			{
 				icon: ArrowDownUp,
 				title: 'How it works',
-				body: 'A lightweight agent inside mserve keeps an outbound connection to the playit network. Player traffic enters through playit\'s servers and rides that connection back to you.',
+				body: "A lightweight agent inside mserve keeps an outbound connection to the playit network. Player traffic enters through playit's servers and rides that connection back to you.",
 			},
 			{
 				icon: ShieldCheck,
@@ -233,12 +282,15 @@ export const HELP_TOPICS: Record<HelpTopicId, HelpTopic> = {
 			{
 				icon: Globe,
 				title: 'Why ports matter',
-				body: 'Friends outside your home network can only reach your server if its port (default 25565) is reachable from the internet — either via port forwarding on your router or a tunnel.',
+				body: 'Friends outside your home network can only reach your server if its port (default 25565) is reachable from the internet, through either port forwarding on your router or a tunnel.',
 			},
 			{
 				icon: ArrowDownUp,
 				title: 'Two ways in',
-				body: 'Port forwarding is the classic route: fast and direct, but requires router access and shares your IP. Tunneling needs zero setup and hides your IP, at the cost of a small detour.',
+				bullets: [
+					'Port forwarding: the classic route. Fast and direct, but needs router access and shares your IP.',
+					'Tunneling: zero setup and hides your IP, at the cost of a small detour.',
+				],
 			},
 			{
 				icon: ShieldCheck,
@@ -259,7 +311,10 @@ export const HELP_TOPICS: Record<HelpTopicId, HelpTopic> = {
 			{
 				icon: Network,
 				title: 'Local IP vs. public IP',
-				body: 'Your local IP only works for other devices on the same Wi-Fi/network as this computer — great for family or roommates. Your public IP is how the internet sees you, and it only works once the port is forwarded or a tunnel is running.',
+				bullets: [
+					'Local IP: only works for devices on the same Wi-Fi/network as this computer. Great for family or roommates.',
+					'Public IP: how the internet sees you. It only works once the port is forwarded or a tunnel is running.',
+				],
 			},
 			{
 				icon: Globe,
@@ -270,12 +325,22 @@ export const HELP_TOPICS: Record<HelpTopicId, HelpTopic> = {
 			{
 				icon: ArrowDownUp,
 				title: 'Two ways to open your server',
-				body: 'Port forwarding is direct and fast but needs router access and exposes your public IP. Tunneling (playit.gg) needs zero router setup and hides your IP, at the cost of a small routing detour. Either one lets outside friends in.',
+				body: 'Either one lets outside friends in:',
+				bullets: [
+					'Port forwarding: direct and fast, but needs router access and exposes your public IP.',
+					'Tunneling (playit.gg): no router setup and hides your IP, at the cost of a small routing detour.',
+				],
 			},
 			{
 				icon: ShieldCheck,
 				title: 'Still stuck?',
-				body: 'Check that: the server is actually online, your OS firewall allows the port, the port forward (or tunnel) is set up correctly, and your friend is using the address that matches their situation — local or public.',
+				body: 'Check that:',
+				bullets: [
+					'The server is actually online',
+					'Your OS firewall allows the port',
+					'The port forward (or tunnel) is set up correctly',
+					'Your friend uses the address that matches where they are (local or public)',
+				],
 			},
 		],
 		learnMore: { label: 'Open the full hosting guide', to: '/setup' },

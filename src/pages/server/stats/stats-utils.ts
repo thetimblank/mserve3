@@ -53,7 +53,7 @@ export const formatAxisTime = (ts: number, rangeMs: number): string => {
 export const formatTooltipTime = (ts: number): string => new Date(ts).toLocaleString();
 
 export const formatPercent = (value: number | null | undefined): string =>
-	value == null ? '—' : `${value.toFixed(value < 10 ? 2 : 1)}%`;
+	value == null ? '–' : `${value.toFixed(value < 10 ? 2 : 1)}%`;
 
 export { formatBytes };
 

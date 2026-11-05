@@ -103,7 +103,7 @@ export const auditServerProperties = (
 			severity: 'warn',
 			title: 'Whitelist is disabled',
 			explanation:
-				'A whitelist is the simplest defense against bot joins and griefers — only listed players can connect. Add players in the whitelist.json section after enabling.',
+				'A whitelist is the simplest defense against bot joins and griefers: only listed players can connect. Add players in the whitelist.json section after enabling.',
 			fix: {
 				kind: 'properties',
 				updates: [
@@ -168,7 +168,7 @@ export const auditServerProperties = (
 			severity: 'info',
 			title: 'Proxy/VPN connections are allowed',
 			explanation:
-				'Enabling prevent-proxy-connections blocks players whose ISP differs from their Mojang-auth country, which stops many VPN-hopping bots — but can also block legitimate VPN users. Recommended for public survival servers.',
+				'Enabling prevent-proxy-connections blocks players whose ISP differs from their Mojang-auth country, which stops many VPN-hopping bots, but can also block legitimate VPN users. Recommended for public survival servers.',
 			fix: { kind: 'properties', updates: [{ key: 'prevent-proxy-connections', value: 'true' }] },
 		});
 	}

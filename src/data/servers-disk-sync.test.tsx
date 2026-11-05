@@ -34,7 +34,7 @@ const diskConfig = (id: string, ram: number) => ({
 	backup_scope: ['worlds'],
 	sleep_enabled: false,
 	sleep_idle_minutes: 15,
-	sleep_motd: '§eSleeping §7— join to wake this server',
+	sleep_motd: '§eSleeping. §7Join to wake this server',
 	java_installation: null,
 });
 

@@ -77,12 +77,12 @@ const NodeMetrics = ({ server }: { server: Server }) => {
 			<Metric icon={Users} value={`${stats.players_online ?? 0}/${stats.players_max ?? 0}`} />
 			<Metric
 				icon={Gauge}
-				value={tps !== null ? tps.toPrecision(3) : '—'}
+				value={tps !== null ? tps.toPrecision(3) : '–'}
 				valueClassName={tpsColorClass(tps)}
 			/>
-			<Metric icon={MemoryStick} value={stats.ram_used != null ? `${Math.round(stats.ram_used)}%` : '—'} />
-			<Metric icon={Cpu} value={stats.cpu_used != null ? `${Math.round(stats.cpu_used)}%` : '—'} />
-			<Metric icon={Clock} value={uptime ?? '—'} />
+			<Metric icon={MemoryStick} value={stats.ram_used != null ? `${Math.round(stats.ram_used)}%` : '–'} />
+			<Metric icon={Cpu} value={stats.cpu_used != null ? `${Math.round(stats.cpu_used)}%` : '–'} />
+			<Metric icon={Clock} value={uptime ?? '–'} />
 		</div>
 	);
 };

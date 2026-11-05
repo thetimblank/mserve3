@@ -321,7 +321,7 @@ fn loopback_target(port: u16) -> OriginTarget {
 fn map_tunnel_create_error(err: impl std::fmt::Display) -> String {
     let text = err.to_string();
     if text.contains("AgentVersionTooOld") || text.contains("AgentNotFound") {
-        return "playit didn't recognize the tunneling agent in time — it may not have \
+        return "playit didn't recognize the tunneling agent in time. It may not have \
                 finished connecting. Wait a moment and try again; if it keeps failing, \
                 make sure mserve can reach playit.gg (firewall/VPN)."
             .to_string();

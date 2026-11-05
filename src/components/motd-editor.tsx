@@ -4,10 +4,11 @@ import {
 	AlignLeft,
 	AlignRight,
 	Bold,
+	Code,
 	Italic,
 	Palette,
 	Paintbrush,
-	Sparkles,
+	Shuffle,
 	Strikethrough,
 	Type,
 	Underline,
@@ -784,7 +785,7 @@ const decorationIcon = (key: MotdDecorationKey) => {
 	if (key === 'italic') return <Italic className='size-3.5' />;
 	if (key === 'underlined') return <Underline className='size-3.5' />;
 	if (key === 'strikethrough') return <Strikethrough className='size-3.5' />;
-	return <Sparkles className='size-3.5' />;
+	return <Shuffle className='size-3.5' />;
 };
 
 const MotdEditor: React.FC<MotdEditorProps> = ({
@@ -1316,7 +1317,7 @@ const MotdEditor: React.FC<MotdEditorProps> = ({
 							)}
 							onMouseDown={toolbarMouseDown}
 							onClick={() => setSourceMode(true)}>
-							<Sparkles className='size-3.5' /> Source
+							<Code className='size-3.5' /> Source
 						</div>
 					</Container>
 				)}

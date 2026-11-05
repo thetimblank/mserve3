@@ -242,7 +242,7 @@ const NetworkPage: React.FC = () => {
 						<HelpButton topic='networks' />
 					</m.h1>
 					<p className='mt-1 text-sm text-muted-foreground'>
-						Group servers behind a Velocity proxy — one address for players, automatic ports and
+						Group servers behind a Velocity proxy: one address for players, automatic ports and
 						secure forwarding for you.
 					</p>
 				</div>

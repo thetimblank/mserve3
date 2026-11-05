@@ -121,6 +121,6 @@ pub(in crate::app) fn forward_port_linux_firewall(port: u16) -> Result<Vec<Strin
     }
 
     Ok(vec![format!(
-        "No active firewall (firewalld/ufw) detected — port {port} is not being blocked locally, so no rules were needed."
+        "No active firewall (firewalld/ufw) detected. Port {port} is not being blocked locally, so no rules were needed."
     )])
 }

@@ -13,14 +13,14 @@ import {
 	Blocks,
 	Compass,
 	Gauge,
+	Lightbulb,
 	Moon,
 	MonitorCog,
 	Network,
 	Plug,
-	Sparkles,
+	Signpost,
 	Sun,
 	Swords,
-	Wand2,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -66,9 +66,9 @@ const GOALS: { id: OnboardingGoal; icon: React.ElementType; title: string; descr
 
 const GOAL_RECOMMENDATIONS: Record<OnboardingGoal, string> = {
 	survival:
-		'In the wizard, pick Paper on the newest Minecraft version — it\'s marked Recommended and runs vanilla worlds faster.',
+		"In the wizard, pick Paper on the newest Minecraft version. It's marked Recommended and runs vanilla worlds faster.",
 	modded:
-		'In the wizard, choose Fabric — or pick a whole Modrinth modpack and mserve installs everything for you.',
+		'In the wizard, choose Fabric, or pick a whole Modrinth modpack and mserve installs everything for you.',
 	plugins:
 		'Pick Paper in the wizard, then install plugins straight from the built-in Modrinth browser on the server page.',
 	network:
@@ -176,7 +176,7 @@ export const OnboardingOverlay: React.FC = () => {
 									</p>
 									<div className='flex w-full flex-col gap-3'>
 										<ChoiceCard
-											icon={Wand2}
+											icon={Signpost}
 											title='Guided'
 											description='Easy defaults and recommendations. Advanced options stay out of the way.'
 											selected={!advanced}
@@ -243,7 +243,7 @@ export const OnboardingOverlay: React.FC = () => {
 											initial={{ opacity: 0, y: 8 }}
 											animate={{ opacity: 1, y: 0 }}
 											className='mt-4 flex items-start gap-2 rounded-xl bg-primary/5 p-3 text-left text-sm text-muted-foreground'>
-											<Sparkles className='mt-0.5 size-4 shrink-0 text-primary' />
+											<Lightbulb className='mt-0.5 size-4 shrink-0 text-primary' />
 											{GOAL_RECOMMENDATIONS[goal]}
 										</m.p>
 									)}

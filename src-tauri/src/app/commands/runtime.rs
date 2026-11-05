@@ -802,7 +802,7 @@ fn stop_server_blocking(
 
     let Some(rcon) = runtime.rcon.clone() else {
         return Err(
-            "This server was started outside mserve and has no RCON channel — use Force Kill."
+            "This server was started outside mserve and has no RCON channel. Use Force Kill."
                 .to_string(),
         );
     };
@@ -869,7 +869,7 @@ fn sleep_server_blocking(
     }
     if runtime.child.is_none() {
         return Err(
-            "This server was started outside mserve and can't be put to sleep — use Stop or Force Kill instead."
+            "This server was started outside mserve and can't be put to sleep. Use Stop or Force Kill instead."
                 .to_string(),
         );
     }
@@ -1004,7 +1004,7 @@ fn force_kill_server_blocking(
         Some(pid) => kill_process_tree(pid)
             .map(|()| format!("Force killed external server process (PID {pid})."))
             .map_err(|err| format!("Could not kill external server process (PID {pid}): {err}")),
-        None => Ok("Server process no longer exists — cleared its runtime state.".to_string()),
+        None => Ok("Server process no longer exists. Cleared its runtime state.".to_string()),
     };
 
     // Only clear the record we acted on; a start may have replaced it meanwhile.

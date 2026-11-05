@@ -70,7 +70,7 @@ export default function Slide3() {
 				<Container>
 					<p className='font-semibold mb-1'>Download with mserve (recommended)</p>
 					<p className='text-sm text-muted-foreground mb-3'>
-						One click — installed Temurin builds show up automatically in your Java picker.
+						One click. Installed Temurin builds show up automatically in your Java picker.
 					</p>
 					<div className='grid gap-2 sm:grid-cols-2'>
 						{DOWNLOADABLE_MAJORS.map(({ major, label }) => (

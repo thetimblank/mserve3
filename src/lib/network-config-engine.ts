@@ -430,7 +430,7 @@ export const diagnoseNetwork = (
 		diagnostics.push({
 			level: 'error',
 			kind: 'runtime',
-			message: `${proxy.name} is running — stop it before applying changes.`,
+			message: `${proxy.name} is running. Stop it before applying changes.`,
 			serverId: proxy.id,
 		});
 	}
@@ -452,7 +452,7 @@ export const diagnoseNetwork = (
 			diagnostics.push({
 				level: 'error',
 				kind: 'runtime',
-				message: `${server.name} is running — stop it before applying changes.`,
+				message: `${server.name} is running. Stop it before applying changes.`,
 				serverId: server.id,
 			});
 		}
@@ -462,7 +462,7 @@ export const diagnoseNetwork = (
 			diagnostics.push({
 				level: 'warning',
 				kind: 'config',
-				message: `${server.name} will be routed, but secure player forwarding needs a Paper/Folia backend — players may need online-mode workarounds.`,
+				message: `${server.name} will be routed, but secure player forwarding needs a Paper/Folia backend, so players may need online-mode workarounds.`,
 				serverId: server.id,
 			});
 		}

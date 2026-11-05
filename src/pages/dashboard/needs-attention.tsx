@@ -173,7 +173,7 @@ const NeedsAttention: React.FC<{
 					message: (
 						<span>
 							<span className='font-medium'>{server.name}</span> backups are{' '}
-							{formatBytes(info.backupsBytes)} of {formatBytes(info.totalBytes)} — review retention.
+							{formatBytes(info.backupsBytes)} of {formatBytes(info.totalBytes)}. Review retention.
 						</span>
 					),
 					actionLabel: 'Backups',
