@@ -1,7 +1,7 @@
 import * as React from 'react';
 import RamSliderField from '@/components/ram-slider-field';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { useUser } from '@/data/user';
+import { useExperience } from '@/data/user';
 import { useSystemMemoryGb } from '@/hooks/use-system-memory';
 import { isProxyProvider } from '@/lib/server-provider';
 import { CheckCircle2 } from 'lucide-react';
@@ -88,10 +88,10 @@ interface Props extends React.HTMLAttributes<HTMLDivElement> {
 }
 
 export default function RamSelector({ provider, ram, className, updateField, snapToPreset, ...props }: Props) {
-	const { user } = useUser();
+	const { atLeast } = useExperience();
 	const systemMemoryGb = useSystemMemoryGb();
 
-	const isAdvancedMode = user.advanced_mode;
+	const showSlider = atLeast('standard');
 	const basePresets = React.useMemo(
 		() => (isProxyProvider(provider) ? PROXY_RAM_PRESETS : GAMEPLAY_RAM_PRESETS),
 		[provider],
@@ -104,16 +104,16 @@ export default function RamSelector({ provider, ram, className, updateField, sna
 	const isPresetValue = visiblePresets.some((preset) => preset.ram === ram);
 
 	React.useEffect(() => {
-		if (!snapToPreset || isAdvancedMode || systemMemoryGb === null) return;
+		if (!snapToPreset || showSlider || systemMemoryGb === null) return;
 		if (visiblePresets.length === 0 || isPresetValue) return;
 		const recommended =
 			visiblePresets.find((preset) => preset.recommended) ?? visiblePresets[visiblePresets.length - 1];
 		updateField('ram', recommended.ram);
-	}, [isAdvancedMode, isPresetValue, snapToPreset, systemMemoryGb, updateField, visiblePresets]);
+	}, [showSlider, isPresetValue, snapToPreset, systemMemoryGb, updateField, visiblePresets]);
 
 	return (
 		<>
-			{isAdvancedMode ? (
+			{showSlider ? (
 				<RamSliderField
 					id='create-server-ram'
 					value={ram}

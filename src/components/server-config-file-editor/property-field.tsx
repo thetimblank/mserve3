@@ -6,7 +6,7 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/in
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { useUser } from '@/data/user';
+import { useExperience } from '@/data/user';
 import type { ManagedConfigPropertyDefinition } from '@/lib/server-config-files';
 
 const propertyLabel = (property: ManagedConfigPropertyDefinition) => (
@@ -39,10 +39,10 @@ const PropertyField: React.FC<{
 	onChange: (nextValue: string) => void;
 	disabled?: boolean;
 }> = ({ property, value, onChange, disabled }) => {
-	const { user } = useUser();
+	const { isAdvanced } = useExperience();
 	const id = `managed-config-${property.key}`;
 
-	if (property.network && !user.advanced_mode) return null;
+	if (property.network && !isAdvanced) return null;
 
 	if (property.type === 'boolean') {
 		return (

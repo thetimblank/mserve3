@@ -21,7 +21,7 @@ import { HelpButton } from '@/components/help/help-button';
 
 import type { Server } from '@/data/servers';
 import type { NetworkUpdate } from '@/data/networks';
-import { useUser } from '@/data/user';
+import { useExperience } from '@/data/user';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -172,7 +172,7 @@ export const NetworkInspector: React.FC<NetworkInspectorProps> = ({
 	onDelete,
 }) => {
 	const byId = React.useMemo(() => new Map(servers.map((server) => [server.id, server])), [servers]);
-	const { user } = useUser();
+	const { isAdvanced } = useExperience();
 	const [name, setName] = React.useState(network.name);
 	React.useEffect(() => setName(network.name), [network.name]);
 
@@ -349,7 +349,7 @@ export const NetworkInspector: React.FC<NetworkInspectorProps> = ({
 							server={byId.get(member.serverId)}
 							index={index}
 							total={orderedMembers.length}
-							advancedMode={user.advanced_mode}
+							advancedMode={isAdvanced}
 							onChange={(next) => updateMember(member.serverId, next)}
 							onMove={(direction) => moveMember(member.serverId, direction)}
 							onRemove={() =>
@@ -406,7 +406,7 @@ export const NetworkInspector: React.FC<NetworkInspectorProps> = ({
 				</div>
 			</div>
 
-			{user.advanced_mode && (
+			{isAdvanced && (
 				<div>
 					<SectionLabel>Modern forwarding secret</SectionLabel>
 					<div className='flex items-center gap-2'>

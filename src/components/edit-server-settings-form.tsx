@@ -1,11 +1,12 @@
 import React from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
-import { Download, FolderOpen, Info, Loader, RefreshCcw, Save, Trash } from 'lucide-react';
+import { Download, FolderOpen, Info, Loader, RefreshCcw, RotateCcw, Save, Trash } from 'lucide-react';
 import { toast } from 'sonner';
 import clsx from 'clsx';
 import { isStoppedStatus, type Server, useServers } from '@/data/servers';
-import { useUser } from '@/data/user';
+import { useExperience, useUser } from '@/data/user';
+import { useJavaDownload } from '@/data/java-download';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -21,9 +22,9 @@ import {
 	isServerProvider,
 	PROVIDER_NAMES,
 } from '@/lib/server-provider';
-import { parseJdkVersions } from '@/lib/java-compatibility';
+import { isJavaCompatible, parseJdkVersions } from '@/lib/java-compatibility';
 import { type JavaRuntimeInfo } from '@/lib/java-runtime-service';
-import { javaResolutionLabel, resolveServerJavaExecutable } from '@/lib/java-resolution';
+import { type JavaResolution, javaResolutionLabel, resolveServerJavaExecutable } from '@/lib/java-resolution';
 import { getEditableLiteralMotdValue, getStoredLiteralMotdValue } from '@/lib/motd-format';
 import MotdEditor from '@/components/motd-editor';
 import { examplePaths } from '@/lib/platform';
@@ -67,7 +68,6 @@ const settingsFormKey = (directory: string, form: ServerSettingsForm) => {
 type EditServerSettingsContextValue = {
 	server: Server;
 	javaRuntimes: JavaRuntimeInfo[];
-	advancedMode: boolean;
 	globalJavaDefault: string;
 	settingsForm: ServerSettingsForm;
 	customFlagsDraft: string;
@@ -84,6 +84,7 @@ type EditServerSettingsContextValue = {
 	pickNewDirectory: () => Promise<void>;
 	providerCommandSupport: ReturnType<typeof getDefaultProviderCommandSupport>;
 	runCommandPreview: string;
+	javaResolution: JavaResolution;
 	effectiveJavaRuntimeLabel: string | null;
 	settingsError: string | null;
 	isFormLocked: boolean;
@@ -373,7 +374,6 @@ export const EditServerSettingsProvider: React.FC<EditServerSettingsProviderProp
 	const value: EditServerSettingsContextValue = {
 		server,
 		javaRuntimes,
-		advancedMode: user.advanced_mode,
 		globalJavaDefault: user.java_installation_default,
 		settingsForm,
 		customFlagsDraft,
@@ -390,6 +390,7 @@ export const EditServerSettingsProvider: React.FC<EditServerSettingsProviderProp
 		pickNewDirectory,
 		providerCommandSupport,
 		runCommandPreview,
+		javaResolution,
 		effectiveJavaRuntimeLabel,
 		settingsError,
 		isFormLocked,
@@ -424,7 +425,7 @@ const SettingsErrorNote: React.FC = () => {
 export const GeneralSettingsSection: React.FC = () => {
 	const { server, settingsForm, updateSettingsField, onManualSync, isFormLocked, isOffline } =
 		useEditServerSettings();
-	const { user } = useUser();
+	const { isAdvanced } = useExperience();
 
 	const currentName = getServerNameFromDirectory(settingsForm.new_directory || server.directory);
 
@@ -447,7 +448,7 @@ export const GeneralSettingsSection: React.FC = () => {
 					value={currentName}
 					onChange={(event) => handleNameChange(event.target.value)}
 				/>
-				{user.advanced_mode && (
+				{isAdvanced && (
 					<p className='text-sm text-muted-foreground'>
 						Renaming will also rename the server folder on disk.
 					</p>
@@ -505,7 +506,8 @@ export const GeneralSettingsSection: React.FC = () => {
 };
 
 export const SleepModeSettingsSection: React.FC = () => {
-	const { settingsForm, updateSettingsField, isFormLocked, advancedMode } = useEditServerSettings();
+	const { settingsForm, updateSettingsField, isFormLocked } = useEditServerSettings();
+	const { isAdvanced } = useExperience();
 	const enabled = settingsForm.sleep_enabled;
 
 	return (
@@ -553,10 +555,71 @@ export const SleepModeSettingsSection: React.FC = () => {
 					updateSettingsField('sleep_motd', getStoredLiteralMotdValue(nextValue))
 				}
 				format='legacy'
-				advancedMode={advancedMode}
+				advancedMode={isAdvanced}
 				disabled={!enabled || isFormLocked}
 			/>
 		</SectionShell>
+	);
+};
+
+/**
+ * The beginner Java picker: no runtime list, only the automatic choice. Offers a
+ * download when no installed runtime fits, and a way back to automatic for a
+ * server pinned to a specific runtime at a higher level.
+ */
+const AutomaticJavaRuntime: React.FC = () => {
+	const { javaResolution, settingsForm, updateSettingsField, isFormLocked } = useEditServerSettings();
+	const { ensureJava } = useJavaDownload();
+	const { requirement } = javaResolution;
+	const neededMajor = requirement.recommendedMajor;
+
+	if (settingsForm.java_installation.trim() !== '') {
+		return (
+			<div className='space-y-3'>
+				<p className='text-sm text-muted-foreground'>
+					This server is set to a specific Java runtime. Switch to automatic to let mserve pick a
+					compatible one.
+				</p>
+				<Button
+					type='button'
+					variant='secondary'
+					onClick={() => updateSettingsField('java_installation', '')}
+					disabled={isFormLocked}>
+					<RotateCcw /> Use automatic
+				</Button>
+			</div>
+		);
+	}
+
+	// Same rule as the quick-start surfaces: only offer a download when the
+	// fallback runtime is known (not guessed) to be too old.
+	const fallbackMajor = javaResolution.status === 'resolved' ? javaResolution.majorVersion : null;
+	const isKnownIncompatible =
+		fallbackMajor !== null &&
+		requirement.confidence === 'high' &&
+		!isJavaCompatible(fallbackMajor, requirement);
+
+	if (javaResolution.status === 'missing' || isKnownIncompatible) {
+		return (
+			<div className='space-y-3'>
+				<p className='text-sm text-muted-foreground'>
+					{isKnownIncompatible
+						? `This server needs Java ${neededMajor}. The newest installed version (Java ${fallbackMajor}) is too old.`
+						: `This server needs Java ${neededMajor}, which isn't installed yet.`}
+				</p>
+				<Button type='button' onClick={() => void ensureJava(neededMajor)} disabled={isFormLocked}>
+					<Download /> Download Java {neededMajor}
+				</Button>
+			</div>
+		);
+	}
+
+	return (
+		<p className='text-sm text-muted-foreground'>
+			{javaResolution.pinned
+				? 'This server uses the default Java runtime chosen in Settings.'
+				: 'mserve picks a compatible Java version for this server automatically.'}
+		</p>
 	);
 };
 
@@ -569,7 +632,6 @@ export const JavaSettingsSection: React.FC = () => {
 		customFlagsDraft,
 		setCustomFlagsDraft,
 		runCommandPreview,
-		advancedMode,
 		settingsForm,
 		updateSettingsField,
 		isFormLocked,
@@ -579,12 +641,13 @@ export const JavaSettingsSection: React.FC = () => {
 		handleProviderJarDownloaded,
 		pickSwapJarFile,
 	} = useEditServerSettings();
+	const { isBeginner, isAdvanced } = useExperience();
 
 	return (
 		<SectionShell className='space-y-12'>
 			<div className='space-y-2 max-w-lg'>
 				<div className='flex items-center gap-2 flex-wrap'>
-					<Label htmlFor='edit-java-runtime' className='text-xl'>
+					<Label htmlFor={isBeginner ? undefined : 'edit-java-runtime'} className='text-xl'>
 						Java runtime
 					</Label>
 					<HelpButton topic='java' />
@@ -594,17 +657,23 @@ export const JavaSettingsSection: React.FC = () => {
 						</span>
 					)}
 				</div>
-				<p className='text-sm text-muted-foreground -mt-1 mb-2'>
-					Pick which detected JDK runs this server. "Automatic" uses the global default:{' '}
-					<span className='font-mono'>{globalJavaDefault}</span>
-				</p>
-				<JavaRuntimeSelect
-					id='edit-java-runtime'
-					provider={settingsForm.provider}
-					javaRuntimes={javaRuntimes}
-					value={settingsForm.java_installation}
-					onChange={(next) => updateSettingsField('java_installation', next)}
-				/>
+				{isBeginner ? (
+					<AutomaticJavaRuntime />
+				) : (
+					<>
+						<p className='text-sm text-muted-foreground -mt-1 mb-2'>
+							Pick which detected JDK runs this server. "Automatic" uses the global default:{' '}
+							<span className='font-mono'>{globalJavaDefault}</span>
+						</p>
+						<JavaRuntimeSelect
+							id='edit-java-runtime'
+							provider={settingsForm.provider}
+							javaRuntimes={javaRuntimes}
+							value={settingsForm.java_installation}
+							onChange={(next) => updateSettingsField('java_installation', next)}
+						/>
+					</>
+				)}
 			</div>
 
 			<ServerJarUpdateSection server={server} disabled={isFormLocked || !isOffline} />
@@ -625,13 +694,13 @@ export const JavaSettingsSection: React.FC = () => {
 						disabled={isFormLocked}>
 						<Download /> Download from provider
 					</Button>
-					{advancedMode && (
+					{isAdvanced && (
 						<Button type='button' variant='secondary' onClick={pickSwapJarFile} disabled={isFormLocked}>
 							<FolderOpen /> Browse files
 						</Button>
 					)}
 				</div>
-				{advancedMode && (
+				{isAdvanced && (
 					<Input
 						id='edit-jar-swap'
 						placeholder={examplePaths.serverJar}
@@ -654,7 +723,7 @@ export const JavaSettingsSection: React.FC = () => {
 				onDownloaded={handleProviderJarDownloaded}
 			/>
 
-			{advancedMode && (
+			{isAdvanced && (
 				<div className='space-y-2 max-w-lg'>
 					<Label htmlFor='edit-java-installation' className='text-xl'>
 						Java installation override
@@ -673,7 +742,7 @@ export const JavaSettingsSection: React.FC = () => {
 				</div>
 			)}
 
-			{advancedMode && (
+			{isAdvanced && (
 				<div className='space-y-2 max-w-lg'>
 					<Label htmlFor='edit-custom-flags' className='text-xl'>
 						Extra Java flags
@@ -703,7 +772,6 @@ export const JavaSettingsSection: React.FC = () => {
 
 export const ProviderTelemetrySettingsSection: React.FC = () => {
 	const {
-		advancedMode,
 		server,
 		settingsForm,
 		updateProvider,
@@ -713,10 +781,11 @@ export const ProviderTelemetrySettingsSection: React.FC = () => {
 		jdkVersionsDraft,
 		setJdkVersionsDraft,
 	} = useEditServerSettings();
+	const { isAdvanced } = useExperience();
 
 	return (
 		<SectionShell className='space-y-12'>
-			{advancedMode && (
+			{isAdvanced && (
 				<div className='space-y-4 max-w-2xl'>
 					<p className='text-xl flex items-center gap-2'>
 						Provider
@@ -878,7 +947,7 @@ export const ProviderTelemetrySettingsSection: React.FC = () => {
 				</div>
 			</div>
 
-			{advancedMode && (
+			{isAdvanced && (
 				<div className='space-y-4 max-w-lg'>
 					<p className='text-xl'>Telemetry target</p>
 					<div className='space-y-2'>

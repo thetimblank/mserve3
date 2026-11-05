@@ -41,7 +41,7 @@ import {
 	startActionLabel,
 	stopActionLabel,
 } from '@/data/servers';
-import { useUser } from '@/data/user';
+import { useExperience } from '@/data/user';
 import { useServerUpdates } from '@/data/server-updates';
 import { type JavaRuntimeInfo } from '@/lib/java-runtime-service';
 import { javaResolutionLabel, resolveServerJavaExecutable } from '@/lib/java-resolution';
@@ -115,7 +115,7 @@ const ServerOverviewPanel: React.FC<Props> = ({
 	const isSleeping = server.status === 'sleeping';
 	const isProxy = isProxyProvider(server.provider);
 	const capabilities = getServerProviderCapabilities(server.provider);
-	const { user } = useUser();
+	const showRamBytes = useExperience().atLeast('standard');
 	const { getEntry: getUpdateEntry } = useServerUpdates();
 	const updateEntry = getUpdateEntry(server.id);
 	const availableUpdate =
@@ -320,7 +320,7 @@ const ServerOverviewPanel: React.FC<Props> = ({
 								label='RAM'
 								color={METRIC_COLORS.ram}
 								value={
-									isOffline || server.stats.ram_used == null ? null : user.advanced_mode &&
+									isOffline || server.stats.ram_used == null ? null : showRamBytes &&
 									  latestRamBytes != null ? (
 										<>
 											{formatPercent(server.stats.ram_used)}

@@ -1,4 +1,5 @@
 import type { ProviderKind, ProviderName } from '@/lib/mserve-schema';
+import { type ExperienceLevel, isExperienceAtLeast } from '@/data/user';
 
 type ManagedConfigFileFormat = 'json' | 'properties' | 'yaml' | 'toml';
 
@@ -369,3 +370,20 @@ export const getManagedServerConfigFileKeywords = (definition: ManagedServerConf
 			...definition.featuredProperties.map((property) => property.label),
 		]),
 	);
+
+const BEGINNER_CONFIG_FILE_KINDS = new Set<ManagedServerConfigFileKind>(['server-properties', 'velocity-toml']);
+
+/**
+ * Which config file editors an experience tier gets: beginners only edit the
+ * featured fields of the main config (server.properties, or velocity.toml for a
+ * proxy), YAML editors are advanced-only, and the rest (JSON lists) start at
+ * standard.
+ */
+export const isConfigFileVisibleAtLevel = (
+	definition: Pick<ManagedServerConfigFileDefinition, 'kind' | 'format'>,
+	level: ExperienceLevel,
+) => {
+	if (!isExperienceAtLeast(level, 'standard')) return BEGINNER_CONFIG_FILE_KINDS.has(definition.kind);
+	if (definition.format === 'yaml') return isExperienceAtLeast(level, 'advanced');
+	return true;
+};

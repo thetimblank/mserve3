@@ -8,7 +8,7 @@ import { Activity, Cpu, MemoryStick, Power, Users } from 'lucide-react';
 
 import { SegmentedControl, type SegmentedControlOption } from '@/components/ui/segmented-control';
 import type { Server } from '@/data/servers';
-import { useUser } from '@/data/user';
+import { useExperience } from '@/data/user';
 import { getServerProviderCapabilities } from '@/lib/server-provider-capabilities';
 
 import TelemetryAreaChart from './stats/telemetry-area-chart';
@@ -71,7 +71,7 @@ const ServerStatisticsTab: React.FC<Props> = ({ server }) => {
 
 	const range = getTimeRange(rangeKey);
 	const { supportsTpsCommand } = getServerProviderCapabilities(server.provider);
-	const { user } = useUser();
+	const showRamBytes = useExperience().atLeast('standard');
 
 	const { points, isLoading, updatedAt } = useServerTelemetryHistory(server.id, range.ms, {
 		maxPoints: maxPointsForRange(range.ms),
@@ -79,7 +79,7 @@ const ServerStatisticsTab: React.FC<Props> = ({ server }) => {
 	const data = React.useMemo(() => toChartData(points), [points]);
 
 	const ramBadge = React.useMemo(() => {
-		if (user.advanced_mode) {
+		if (showRamBytes) {
 			const pct = latestBadge(data, 'ramUsed', pctTick);
 			if (!pct) return undefined;
 			const ramBytes = latestReading(data, 'ramBytes');
@@ -88,7 +88,7 @@ const ServerStatisticsTab: React.FC<Props> = ({ server }) => {
 		return ramUnit === 'pct'
 			? latestBadge(data, 'ramUsed', pctTick)
 			: latestBadge(data, 'ramBytes', formatBytes);
-	}, [user.advanced_mode, data, ramUnit, server.ram]);
+	}, [showRamBytes, data, ramUnit, server.ram]);
 
 	return (
 		<div className='h-[calc(100vh-200px)] overflow-y-auto app-scroll-area app-scroll-stable pb-4'>
