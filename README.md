@@ -77,3 +77,47 @@ Supported Providers
 - rehaul UI
 - remote start (SSH?)
 - let others connect to your mserve
+
+---
+
+### Potential future features
+
+Ideas from the UX rehaul planning ([docs/rehaul/](docs/rehaul/README.md)) that were
+deliberately left out for now.
+
+**Automatic port-forward check.** The hosting guide currently asks the user to test
+with a friend. An automated check needs a vantage point outside the user's network,
+because testing your own public IP from inside it is unreliable (many routers don't
+loop back). mserve can answer the test itself with its existing Server List Ping
+responder (the sleep-mode wake listener), so no real server has to run. Options:
+
+- mcsrvstat.us API: free, but sends the user's public IP to a third party and caches
+  results for a few minutes.
+- A small Cloudflare Worker we host that opens a TCP connection to `ip:port`: we
+  control it, and it could also back other relay features.
+- UPnP (crate such as `igd-next`): let mserve open the port automatically on routers
+  that allow it. It can only see mappings it created itself, and some users disable
+  UPnP on purpose, so this would be opt-in.
+
+**Feedback without a GitHub account (Sentry User Feedback).** Sentry is already
+wired in (`src/lib/sentry.ts`, opt-in via `VITE_SENTRY_DSN`). `Sentry.captureFeedback`
+would send a message (plus an optional email) to the Sentry dashboard with email
+alerts, so players without GitHub can report bugs. Security notes:
+
+- The DSN only allows *sending* events. It can't read, change, or delete anything,
+  and Sentry intends it to ship inside client apps. That's why it's safer than a
+  Discord webhook (which lets anyone post into the server).
+- Main risk: someone who extracts the DSN can send junk reports and use up quota.
+  Mitigate with per-key rate limits, spike protection, and inbound filters in the
+  Sentry project settings.
+- Privacy: feedback text is stored by Sentry. Keep `sendDefaultPii: false` and the
+  existing home-directory scrubbing, keep email optional, and tell the user what is
+  sent. Release builds need `VITE_SENTRY_DSN` set as a CI secret; builds without it
+  fall back to the GitHub link.
+
+**IPv6 address for advanced users.** Show the public IPv6 as a secondary address.
+IPv4 stays primary: about half of internet connections still lack IPv6, and Windows
+rotates temporary IPv6 addresses.
+
+**Player actions for Standard/Advanced.** The beginner player-actions panel could
+become an optional panel for the other tiers.
