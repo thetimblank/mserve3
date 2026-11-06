@@ -1291,7 +1291,7 @@ const MotdEditor: React.FC<MotdEditorProps> = ({
 	return (
 		<div className={cn('space-y-4 max-w-3xl', className)}>
 			<div className='space-y-1'>
-				<p className='text-xl font-semibold'>{label}</p>
+				<p className='text-base leading-snug font-semibold'>{label}</p>
 				<p className='text-sm text-muted-foreground'>{description}</p>
 			</div>
 

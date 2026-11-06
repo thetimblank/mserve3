@@ -50,7 +50,7 @@ const ServerPropertiesFileEditor: React.FC<ServerConfigFileEditorProps> = (props
 
 	return (
 		<div className='space-y-8'>
-			<EditorHeader definition={definition} isDirty={isDirty} onReload={reload} disabled={isLocked} />
+			<EditorHeader isDirty={isDirty} onReload={reload} disabled={isLocked} />
 			<NetworkingDisclaimer definition={definition} />
 			<AdvancedModeDisclaimer />
 			<FeaturedPropertyFields

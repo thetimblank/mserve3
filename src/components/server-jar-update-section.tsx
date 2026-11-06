@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { isStoppedStatus, type Server, useServers } from '@/data/servers';
 import { useServerUpdates } from '@/data/server-updates';
 import { Button } from '@/components/ui/button';
+import { SettingsRow } from '@/components/settings/settings-row';
 import {
 	AlertDialog,
 	AlertDialogCancel,
@@ -179,22 +180,16 @@ const ServerJarUpdateSection: React.FC<Props> = ({ server, disabled }) => {
 		entry.status === 'result' && entry.check.status !== 'unsupported' ? entry.check.currentLabel : null;
 
 	return (
-		<section className='space-y-3 max-w-lg'>
-			<div className='space-y-1'>
-				<p className='text-xl flex items-center gap-2'>
-					Updates
-					{hasUpdate && (
-						<span className='rounded-full bg-accent px-2 py-0.5 text-xs font-medium text-accent-foreground'>
-							Update available
-						</span>
-					)}
-				</p>
-				<p className='text-sm text-muted-foreground'>
-					Check the provider for a newer build and install it. The new jar is swapped in over the
-					existing one.
-				</p>
-			</div>
-
+		<SettingsRow
+			title='Updates'
+			titleAddon={
+				hasUpdate && (
+					<span className='rounded-full bg-accent px-2 py-0.5 text-xs font-medium text-accent-foreground'>
+						Update available
+					</span>
+				)
+			}
+			description='Check the provider for a newer build and install it. The new jar is swapped in over the existing one.'>
 			<div>
 				<p className='font-medium'>{currentLabel ?? 'Checking'}</p>
 				<p className={`text-sm ${isError ? 'text-destructive' : 'text-muted-foreground'}`}>{message}</p>
@@ -246,7 +241,7 @@ const ServerJarUpdateSection: React.FC<Props> = ({ server, disabled }) => {
 					</AlertDialogFooter>
 				</AlertDialogContent>
 			</AlertDialog>
-		</section>
+		</SettingsRow>
 	);
 };
 

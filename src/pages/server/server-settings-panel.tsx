@@ -1,9 +1,7 @@
 import React from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { useLocation, useNavigate } from 'react-router-dom';
-import clsx from 'clsx';
-import { Link2Off, Loader2, Lock, Search, Trash } from 'lucide-react';
-import { AnimatePresence, m } from 'motion/react';
+import { useNavigate } from 'react-router-dom';
+import { Link2Off, Lock, Trash } from 'lucide-react';
 import { toast } from 'sonner';
 
 import {
@@ -17,6 +15,9 @@ import {
 import SecuritySettingsSection from './security/security-settings-section';
 import ServerConfigFileEditor from '@/components/server-config-file-editor';
 import { TunnelSettingsSection } from './tunnel-settings-section';
+import { HelpButton } from '@/components/help/help-button';
+import { type SettingsGroup, type SettingsSection, SettingsLayout } from '@/components/settings/settings-layout';
+import { SettingsRow, SettingsRows } from '@/components/settings/settings-row';
 import { isExperienceAtLeast, useExperience } from '@/data/user';
 import { Button } from '@/components/ui/button';
 import {
@@ -30,8 +31,6 @@ import {
 	AlertDialogTitle,
 	AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { Container } from '@/components/ui/container';
-import { Input } from '@/components/ui/input';
 import { isStoppedStatus, Server, useServers } from '@/data/servers';
 import type { JavaRuntimeInfo } from '@/lib/java-runtime-service';
 import { syncMserveJsonWithRepair } from '@/lib/mserve-sync';
@@ -75,26 +74,43 @@ type SectionProps = Props & {
 	onConfigFilesChanged: () => Promise<void>;
 };
 
-type SectionConfig = {
+type GroupId = 'server' | 'config-files' | 'danger';
+
+type SectionConfig = Omit<SettingsSection, 'id' | 'group' | 'render'> & {
 	id: SectionId;
-	title: string;
-	description: string;
-	keywords: string[];
+	group: GroupId;
 	render: (props: SectionProps) => React.ReactNode;
 };
 
 // Granular "General" categories. Each renders a slice of the shared
 // EditServerSettingsProvider so edits + the single save flow are shared.
 const GENERAL_SECTION: SectionConfig = {
-	id: 'rename' as SectionId,
+	id: 'rename',
+	group: 'server',
 	title: 'General',
-	description: 'Server name.',
-	keywords: ['name', 'rename', 'title', 'general', 'ram', 'memory', 'xmx', 'xms', 'performance', 'heap'],
+	description: 'Name, memory, and crash recovery for this server.',
+	keywords: [
+		'name',
+		'rename',
+		'title',
+		'general',
+		'ram',
+		'memory',
+		'xmx',
+		'xms',
+		'performance',
+		'heap',
+		'auto restart',
+		'crash',
+		'sync',
+		'mserve.json',
+	],
 	render: () => <GeneralSettingsSection />,
 };
 
 const SLEEP_SECTION: SectionConfig = {
 	id: 'sleep',
+	group: 'server',
 	title: 'Sleep Mode',
 	description: 'Sleep an idle server and wake it automatically when a player joins.',
 	keywords: ['sleep', 'idle', 'wake', 'lazymc', 'power', 'motd', 'afk', 'auto stop', 'hibernate'],
@@ -103,8 +119,9 @@ const SLEEP_SECTION: SectionConfig = {
 
 const SECURITY_SECTION: SectionConfig = {
 	id: 'security',
+	group: 'server',
 	title: 'Security',
-	description: 'Audit exposure and bot-attack surface, with one-click hardening.',
+	description: 'A quick audit of this server’s exposure and bot-attack surface, with one-click hardening.',
 	keywords: [
 		'security',
 		'bot',
@@ -126,8 +143,9 @@ const SECURITY_SECTION: SectionConfig = {
 
 const JAVA_SECTION: SectionConfig = {
 	id: 'java',
+	group: 'server',
 	title: 'Java',
-	description: 'Choose the JDK and Java flags for this server.',
+	description: 'The Java runtime and server jar this server runs on.',
 	keywords: [
 		'java',
 		'jdk',
@@ -136,8 +154,6 @@ const JAVA_SECTION: SectionConfig = {
 		'nogui',
 		'installation',
 		'jar',
-		'sync',
-		'mserve.json',
 		'download',
 		'swap',
 		'update',
@@ -148,16 +164,20 @@ const JAVA_SECTION: SectionConfig = {
 
 const PROVIDER_TELEMETRY_SECTION: SectionConfig = {
 	id: 'provider-telemetry',
+	group: 'server',
 	title: 'Provider & Telemetry',
-	description: 'Provider metadata and telemetry options.',
+	description: 'Provider metadata and which telemetry mserve collects.',
 	keywords: ['provider', 'telemetry', 'tps', 'version', 'host', 'port', 'metadata'],
 	render: () => <ProviderTelemetrySettingsSection />,
 };
 
 const TUNNEL_SECTION: SectionConfig = {
 	id: 'tunnel',
+	group: 'server',
 	title: 'Tunnel',
-	description: 'Expose this server publicly via playit.gg.',
+	titleAddon: <HelpButton topic='tunneling' />,
+	description:
+		'Make this server reachable from anywhere over the internet (no port forwarding) using a free, persistent playit.gg address.',
 	keywords: [
 		'tunnel',
 		'playit',
@@ -175,6 +195,7 @@ const TUNNEL_SECTION: SectionConfig = {
 
 const LOCATION_SECTION: SectionConfig = {
 	id: 'location',
+	group: 'server',
 	title: 'Location',
 	description: 'Move the server to a new directory.',
 	keywords: ['move', 'location', 'directory', 'path', 'folder'],
@@ -183,8 +204,10 @@ const LOCATION_SECTION: SectionConfig = {
 
 const DANGER_ZONE_SECTION: SectionConfig = {
 	id: 'danger-zone',
+	group: 'danger',
 	title: 'Danger Zone',
-	description: 'Remove the server from mserve or delete it entirely.',
+	tone: 'destructive',
+	description: 'Remove the server from mserve or send its files to the recycle bin.',
 	keywords: ['delete', 'remove', 'trash', 'danger', 'recycle', 'wipe', 'destroy'],
 	render: (props) => <DangerZoneSection {...props} />,
 };
@@ -192,7 +215,7 @@ const DANGER_ZONE_SECTION: SectionConfig = {
 // Sections that must be locked while the server is not offline. Config file sections
 // not listed here (ops.json, whitelist.json, ban lists, help.yml, commands.yml) are
 // intentionally editable while the server is running.
-const LOCKED_SECTION_IDS = new Set<SectionId>([
+const LOCKED_SECTION_IDS: ReadonlySet<SectionId> = new Set<SectionId>([
 	'rename',
 	'java',
 	'provider-telemetry',
@@ -206,6 +229,7 @@ const LOCKED_SECTION_IDS = new Set<SectionId>([
 
 const getConfigFileSection = (definition: ManagedServerConfigFileDefinition): SectionConfig => ({
 	id: definition.kind,
+	group: 'config-files',
 	title: definition.title,
 	description: definition.description,
 	keywords: getManagedServerConfigFileKeywords(definition),
@@ -221,32 +245,15 @@ const getConfigFileSection = (definition: ManagedServerConfigFileDefinition): Se
 
 const managedConfigFileStatusCache = new Map<string, ManagedConfigFileStatus[]>();
 
-const normalizeQuery = (value: string) => value.trim().toLowerCase();
-
-const matchesSection = (section: SectionConfig, query: string) => {
-	const normalized = normalizeQuery(query);
-	if (!normalized) return true;
-
-	return [section.title, section.description, ...section.keywords]
-		.join(' ')
-		.toLowerCase()
-		.includes(normalized);
-};
-
 const DangerZoneSection: React.FC<SectionProps> = ({ server, isBusy, onRemoveServer, onDeleteServer }) => {
 	const disabled = isBusy || !isStoppedStatus(server.status);
 
 	return (
-		<div className='space-y-4'>
-			<div className='space-y-1'>
-				<p className='text-lg font-semibold text-destructive'>Danger Zone</p>
-				<p className='text-sm text-muted-foreground'>
-					Remove the server from mserve or send the files to the recycle bin.
-				</p>
-			</div>
-
-			<Container variant='destructive' className='space-y-4'>
-				<div className='flex flex-wrap gap-2'>
+		<SettingsRows>
+			<SettingsRow
+				title='Remove from mserve'
+				description='Forget this server in mserve. Its files and mserve.json stay on disk, so you can import it again later.'
+				control={
 					<AlertDialog>
 						<AlertDialogTrigger asChild>
 							<Button disabled={disabled} variant='destructive-secondary'>
@@ -265,16 +272,20 @@ const DangerZoneSection: React.FC<SectionProps> = ({ server, isBusy, onRemoveSer
 							</AlertDialogHeader>
 							<AlertDialogFooter>
 								<AlertDialogCancel>Cancel</AlertDialogCancel>
-								<AlertDialogAction
-									variant='destructive'
-									onClick={onRemoveServer}
-									className='capitalize'>
+								<AlertDialogAction variant='destructive' onClick={onRemoveServer} className='capitalize'>
 									Remove Server
 								</AlertDialogAction>
 							</AlertDialogFooter>
 						</AlertDialogContent>
 					</AlertDialog>
+				}
+			/>
 
+			<SettingsRow
+				title='Delete server'
+				tone='destructive'
+				description='Move the whole server folder, including worlds and backups, to the recycle bin.'
+				control={
 					<AlertDialog>
 						<AlertDialogTrigger asChild>
 							<Button disabled={disabled} variant='destructive'>
@@ -291,20 +302,29 @@ const DangerZoneSection: React.FC<SectionProps> = ({ server, isBusy, onRemoveSer
 							</AlertDialogHeader>
 							<AlertDialogFooter>
 								<AlertDialogCancel>Cancel</AlertDialogCancel>
-								<AlertDialogAction
-									variant='destructive'
-									className='capitalize'
-									onClick={onDeleteServer}>
+								<AlertDialogAction variant='destructive' className='capitalize' onClick={onDeleteServer}>
 									Delete Server
 								</AlertDialogAction>
 							</AlertDialogFooter>
 						</AlertDialogContent>
 					</AlertDialog>
-				</div>
-			</Container>
-		</div>
+				}
+			/>
+		</SettingsRows>
 	);
 };
+
+const LockedNotice: React.FC = () => (
+	<div className='flex flex-col items-center px-6 pt-6 text-center'>
+		<Lock className='mb-6 size-20' />
+		<p className='mb-2 w-fit text-2xl font-bold backdrop-blur-[1px]'>
+			Server must be offline to modify settings.
+		</p>
+		<p className='max-w-lg text-sm text-muted-foreground backdrop-blur-[2px]'>
+			You can still inspect categories, but editing is disabled while the server is online or busy.
+		</p>
+	</div>
+);
 
 export default function ServerSettingsPanel({
 	clearTerminalSession,
@@ -315,13 +335,8 @@ export default function ServerSettingsPanel({
 	syncServerContents,
 }: Props) {
 	const navigate = useNavigate();
-	const { hash } = useLocation();
 	const { removeServer, updateServer } = useServers();
 	const experienceLevel = useExperience().level;
-	const [query, setQuery] = React.useState('');
-	const [activeSectionId, setActiveSectionId] = React.useState<SectionId>(
-		() => (hash.slice(1) as SectionId) || 'rename',
-	);
 	const cacheKey = React.useMemo(() => server.directory.trim().toLowerCase(), [server.directory]);
 	const [managedConfigFileStatuses, setManagedConfigFileStatuses] = React.useState<
 		ManagedConfigFileStatus[]
@@ -444,60 +459,17 @@ export default function ServerSettingsPanel({
 		return sections;
 	}, [providerKind, experienceLevel]);
 
-	const visibleManagedConfigDefinitions = React.useMemo(() => {
+	const configFileSections = React.useMemo(() => {
 		const statusMap = new Map(managedConfigFileStatuses.map((entry) => [entry.fileName, entry.exists]));
-		return managedConfigFileDefinitions.filter((definition) => {
-			if (!statusMap.get(definition.fileName)) {
-				return false;
-			}
-
-			return isConfigFileVisibleAtLevel(definition, experienceLevel);
-		});
+		return managedConfigFileDefinitions
+			.filter(
+				(definition) =>
+					statusMap.get(definition.fileName) && isConfigFileVisibleAtLevel(definition, experienceLevel),
+			)
+			.map(getConfigFileSection);
 	}, [managedConfigFileDefinitions, managedConfigFileStatuses, experienceLevel]);
 
-	const configFileSections = React.useMemo(
-		() => visibleManagedConfigDefinitions.map(getConfigFileSection),
-		[visibleManagedConfigDefinitions],
-	);
-
-	const allSections = React.useMemo(
-		() => [...baseSections, ...configFileSections, DANGER_ZONE_SECTION],
-		[baseSections, configFileSections],
-	);
-
-	const visibleBaseSections = React.useMemo(
-		() => baseSections.filter((section) => matchesSection(section, query)),
-		[baseSections, query],
-	);
-	const visibleConfigFileSections = React.useMemo(
-		() => configFileSections.filter((section) => matchesSection(section, query)),
-		[configFileSections, query],
-	);
-	const isDangerVisible = matchesSection(DANGER_ZONE_SECTION, query);
-
-	const orderedVisibleSections = React.useMemo(
-		() => [
-			...visibleBaseSections,
-			...visibleConfigFileSections,
-			...(isDangerVisible ? [DANGER_ZONE_SECTION] : []),
-		],
-		[isDangerVisible, visibleBaseSections, visibleConfigFileSections],
-	);
-
-	React.useEffect(() => {
-		if (orderedVisibleSections.some((section) => section.id === activeSectionId)) {
-			return;
-		}
-
-		setActiveSectionId(orderedVisibleSections[0]?.id ?? GENERAL_SECTION.id);
-	}, [activeSectionId, orderedVisibleSections]);
-
-	const activeSection = React.useMemo(
-		() => allSections.find((section) => section.id === activeSectionId) ?? GENERAL_SECTION,
-		[activeSectionId, allSections],
-	);
-	const isNavigationLocked = isBusy;
-
+	const isLocked = isBusy || !isStoppedStatus(server.status);
 	const sectionProps: SectionProps = {
 		clearTerminalSession,
 		server,
@@ -505,126 +477,44 @@ export default function ServerSettingsPanel({
 		isBusy,
 		setIsBusy,
 		syncServerContents,
-		isLocked: isBusy || !isStoppedStatus(server.status),
+		isLocked,
 		onRemoveServer: handleRemoveServer,
 		onDeleteServer: handleDelete,
 		onConfigFilesChanged: refreshManagedConfigFiles,
 	};
 
-	const hasVisibleSections = orderedVisibleSections.length > 0;
+	const sections: SettingsSection[] = [...baseSections, ...configFileSections, DANGER_ZONE_SECTION].map(
+		(section) => ({ ...section, render: () => section.render(sectionProps) }),
+	);
+
 	// Only show the loading row on the very first scan; later refreshes (e.g. after
 	// saving a config file) keep the list visible to avoid a collapse/flicker.
 	const showConfigFileLoading = isScanningConfigFiles && managedConfigFileStatuses.length === 0;
-
-	const renderSectionButton = (section: SectionConfig) => {
-		const isActive = section.id === activeSection.id;
-		return (
-			<button
-				key={section.id}
-				type='button'
-				onClick={() => setActiveSectionId(section.id)}
-				disabled={isNavigationLocked}
-				className={clsx(
-					'flex w-[calc(100%-8px)] flex-col text-left transition-colors border-l-2 py-1 px-4 rounded-r-lg ml-2',
-					isActive
-						? 'border-accent bg-accent/25 text-foreground'
-						: 'cursor-pointer text-muted-foreground hover:border-border hover:bg-muted hover:text-foreground',
-				)}>
-				<span className='font-semibold'>{section.title}</span>
-			</button>
-		);
-	};
+	const groups: SettingsGroup[] = [
+		{ id: 'server', title: 'Server' },
+		{
+			id: 'config-files',
+			title: 'Config files',
+			loadingLabel: showConfigFileLoading ? 'Detecting config files...' : undefined,
+		},
+		{ id: 'danger' },
+	];
 
 	return (
-		<div className='grid h-full min-h-0 gap-6 lg:grid-cols-[18rem_minmax(0,1fr)]'>
-			<div className='flex flex-1 flex-col'>
-				<div className='relative'>
-					<Search className='pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground' />
-					<Input
-						value={query}
-						onChange={(event) => setQuery(event.target.value)}
-						placeholder='Search settings...'
-						className='pl-9'
-						disabled={isNavigationLocked}
-					/>
-				</div>
-
-				<div
-					aria-disabled={isNavigationLocked}
-					className='min-h-0 flex-1 overflow-y-auto overflow-x-hidden'>
-					{hasVisibleSections ? (
-						<>
-							{visibleBaseSections.map(renderSectionButton)}
-
-							{showConfigFileLoading ? (
-								<div className='ml-2 flex items-center gap-2 px-4 py-2 text-sm text-muted-foreground'>
-									<Loader2 className='size-4 animate-spin' />
-									<span>Detecting config files...</span>
-								</div>
-							) : (
-								<AnimatePresence initial>
-									{visibleConfigFileSections.map((section, index) => (
-										<m.div
-											key={section.id}
-											initial={{ height: 0, opacity: 0 }}
-											animate={{ height: 'auto', opacity: 1 }}
-											exit={{ height: 0, opacity: 0 }}
-											transition={{
-												type: 'spring',
-												duration: 0.25,
-												bounce: 0,
-												delay: index * 0.06,
-											}}
-											className='overflow-hidden'>
-											{renderSectionButton(section)}
-										</m.div>
-									))}
-								</AnimatePresence>
-							)}
-
-							{isDangerVisible && renderSectionButton(DANGER_ZONE_SECTION)}
-						</>
-					) : (
-						<div className='rounded-lg text-muted-foreground'>
-							No categories match "{query.length > 8 ? query.slice(0, 8) + '...' : query}".
-						</div>
-					)}
-				</div>
-			</div>
-
-			<div className='mb-6 relative'>
-				<EditServerSettingsProvider
-					server={server}
-					javaRuntimes={javaRuntimes}
-					disabled={isBusy}
-					onSaved={syncServerContents}
-					onManualSync={handleManualSync}>
-					{hasVisibleSections ? (
-						<div className='app-scroll-area flex h-full min-h-0 flex-1 flex-col overflow-y-auto p-4 md:p-6'>
-							{activeSection.render(sectionProps)}
-						</div>
-					) : (
-						<div className='flex h-full min-h-0 items-center justify-center p-8 text-center text-sm text-muted-foreground'>
-							No settings categories match the current search.
-						</div>
-					)}
-				</EditServerSettingsProvider>
-
-				{sectionProps.isLocked && LOCKED_SECTION_IDS.has(activeSectionId) && (
-					<div className='absolute top-0 z-10 flex items-center justify-center p-6 text-center w-full'>
-						<div className='flex flex-col items-center text-center max-w-lg'>
-							<Lock className='size-20 mb-6' />
-							<p className='text-2xl font-bold flex gap-5 items-center mb-2 w-fit backdrop-blur-[1px]'>
-								Server must be offline to modify settings.
-							</p>
-							<p className='text-sm text-muted-foreground backdrop-blur-[2px]'>
-								You can still inspect categories, but editing is disabled while the server is online
-								or busy.
-							</p>
-						</div>
-					</div>
-				)}
-			</div>
-		</div>
+		<EditServerSettingsProvider
+			server={server}
+			javaRuntimes={javaRuntimes}
+			disabled={isBusy}
+			onSaved={syncServerContents}
+			onManualSync={handleManualSync}>
+			<SettingsLayout
+				groups={groups}
+				sections={sections}
+				navigationDisabled={isBusy}
+				renderOverlay={(section) =>
+					isLocked && LOCKED_SECTION_IDS.has(section.id as SectionId) ? <LockedNotice /> : null
+				}
+			/>
+		</EditServerSettingsProvider>
 	);
 }

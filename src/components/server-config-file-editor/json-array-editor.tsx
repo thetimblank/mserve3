@@ -161,12 +161,7 @@ const JsonArrayConfigFileEditor: React.FC<ServerConfigFileEditorProps> = (props)
 
 	return (
 		<div className='space-y-6'>
-			<EditorHeader
-				definition={definition}
-				isDirty={isDirty}
-				onReload={reload}
-				disabled={isLocked}
-			/>
+			<EditorHeader isDirty={isDirty} onReload={reload} disabled={isLocked} />
 			<NetworkingDisclaimer definition={definition} />
 			<div className='space-y-4'>
 				<div className='flex flex-wrap items-center justify-between gap-3'>

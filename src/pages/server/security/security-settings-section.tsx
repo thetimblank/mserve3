@@ -4,7 +4,6 @@ import {
 	CircleCheck,
 	Info,
 	Loader2,
-	ShieldCheck,
 	TriangleAlert,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -89,16 +88,11 @@ const SecuritySettingsSection: React.FC<Props> = ({ server, onContentChanged }) 
 	};
 
 	return (
-		<div className='space-y-8 p-1'>
-			<div className='space-y-2 max-w-2xl'>
-				<div className='flex items-center gap-2'>
-					<ShieldCheck className='size-6 text-primary' />
-					<p className='text-xl font-semibold'>Security</p>
-				</div>
-				<p className='text-sm text-muted-foreground'>
-					A quick audit of this server’s exposure and bot-attack surface, with one-click hardening.
-					{!canFix && ' Stop the server to apply property changes.'}
-				</p>
+		<div className='space-y-8'>
+			<div className='space-y-2'>
+				{!canFix && (
+					<p className='text-sm text-muted-foreground'>Stop the server to apply property changes.</p>
+				)}
 				{!isLoading && (
 					<div className='flex flex-wrap gap-3 text-sm'>
 						<span className='text-destructive'>{counts.critical} critical</span>
@@ -136,9 +130,9 @@ const SecuritySettingsSection: React.FC<Props> = ({ server, onContentChanged }) 
 				</Button>
 			)}
 
-			<div className='space-y-3 max-w-2xl'>
+			<div className='space-y-3'>
 				<div className='space-y-1'>
-					<p className='text-lg font-semibold'>Anti-bot plugins</p>
+					<p className='text-base font-semibold'>Anti-bot plugins</p>
 					<p className='text-sm text-muted-foreground'>
 						Proven, actively-maintained plugins that stop bot floods and verify real players.
 						Installed from Modrinth for this server’s version.

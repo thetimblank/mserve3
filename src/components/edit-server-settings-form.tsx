@@ -1,9 +1,8 @@
 import React from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
-import { Download, FolderOpen, Info, Loader, RefreshCcw, RotateCcw, Save, Trash } from 'lucide-react';
+import { Download, FolderOpen, Loader, RefreshCcw, RotateCcw, Save, Trash } from 'lucide-react';
 import { toast } from 'sonner';
-import clsx from 'clsx';
 import { isStoppedStatus, type Server, useServers } from '@/data/servers';
 import { useExperience, useUser } from '@/data/user';
 import { useJavaDownload } from '@/data/java-download';
@@ -38,7 +37,6 @@ import {
 	resolveNewDirectory,
 } from '@/pages/server/server-utils';
 import type { ServerSettingsForm, UpdateServerSettingsResult } from '@/pages/server/server-types';
-import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import RamSelector from './ram-selector';
 import JavaRuntimeSelect from './java-runtime-select';
 import JarDownloadModal, {
@@ -46,7 +44,8 @@ import JarDownloadModal, {
 } from '@/components/jar-browser/jar-download-modal';
 import ServerJarUpdateSection from '@/components/server-jar-update-section';
 import { HelpButton } from './help/help-button';
-import { getErrorMessage } from '@/lib/utils';
+import { SettingsRow, SettingsRows } from './settings/settings-row';
+import { cn, getErrorMessage } from '@/lib/utils';
 
 const TELEMETRY_LABELS: Record<TelemetryKey, string> = {
 	list: 'Players list polling',
@@ -402,17 +401,14 @@ export const EditServerSettingsProvider: React.FC<EditServerSettingsProviderProp
 	return <EditServerSettingsContext.Provider value={value}>{children}</EditServerSettingsContext.Provider>;
 };
 
-const SectionShell: React.FC<{ children: React.ReactNode; className?: string }> = ({
-	children,
-	className,
-}) => {
+const SectionShell: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 	const { isFormLocked } = useEditServerSettings();
 	return (
-		<div
+		<SettingsRows
 			aria-disabled={isFormLocked}
-			className={clsx('transition-opacity', isFormLocked && 'opacity-50 pointer-events-none', className)}>
+			className={cn('transition-opacity', isFormLocked && 'pointer-events-none opacity-50')}>
 			{children}
-		</div>
+		</SettingsRows>
 	);
 };
 
@@ -437,70 +433,54 @@ export const GeneralSettingsSection: React.FC = () => {
 	};
 
 	return (
-		<SectionShell className='space-y-12'>
-			<div className='space-y-2 max-w-lg'>
-				<Label htmlFor='edit-server-name' className='text-xl'>
-					Server Name
-				</Label>
-				<Input
-					id='edit-server-name'
-					placeholder='MyServer'
-					value={currentName}
-					onChange={(event) => handleNameChange(event.target.value)}
-				/>
-				{isAdvanced && (
-					<p className='text-sm text-muted-foreground'>
-						Renaming will also rename the server folder on disk.
-					</p>
-				)}
-				<SettingsErrorNote />
-			</div>
-			<div className='space-y-2 max-w-lg'>
-				<div className='flex items-center gap-2'>
-					<p className='text-xl'>RAM</p>
-					<HelpButton topic='ram' />
+		<SectionShell>
+			<SettingsRow
+				title='Server name'
+				htmlFor='edit-server-name'
+				description={isAdvanced ? 'Renaming also renames the server folder on disk.' : undefined}>
+				<div className='space-y-2'>
+					<Input
+						id='edit-server-name'
+						placeholder='MyServer'
+						value={currentName}
+						onChange={(event) => handleNameChange(event.target.value)}
+					/>
+					<SettingsErrorNote />
 				</div>
+			</SettingsRow>
 
-				<RamSelector
-					provider={settingsForm.provider}
-					ram={settingsForm.ram}
-					updateField={updateSettingsField}
-					className='max-w-lg'
-				/>
-			</div>
-			<div className='space-y-2 max-w-lg'>
-				<div className='space-y-1'>
-					<p className='text-xl'>Sync mserve.json</p>
-					<p className='text-sm text-muted-foreground'>
-						Refresh the stored configuration and rebuild it if the file is missing.
-					</p>
-				</div>
-				<Button
-					variant='secondary'
-					className='w-fit'
-					onClick={onManualSync}
-					disabled={isFormLocked || !isOffline}>
-					<RefreshCcw />
-					<span>Sync mserve.json</span>
-				</Button>
-			</div>
+			<SettingsRow
+				title='Memory (RAM)'
+				titleAddon={<HelpButton topic='ram' />}
+				description='How much memory the server is allowed to use.'>
+				<RamSelector provider={settingsForm.provider} ram={settingsForm.ram} updateField={updateSettingsField} />
+			</SettingsRow>
 
-			<div className='space-y-2 max-w-lg'>
-				<p className='text-xl'>Auto Restart</p>
-				<Label className='flex items-center gap-3'>
+			<SettingsRow
+				title='Auto restart'
+				htmlFor='edit-auto-restart'
+				description='Restart the server when it crashes or closes unexpectedly. Runs in the background, so it works with this window closed, and pauses after repeated crashes in a short window so a broken server can’t loop forever.'
+				control={
 					<Checkbox
+						id='edit-auto-restart'
 						checked={settingsForm.auto_restart}
 						onCheckedChange={(checked) =>
 							updateSettingsField('auto_restart', typeof checked === 'boolean' ? checked : false)
 						}
 					/>
-					Auto restart server when it crashes or closes unexpectedly
-				</Label>
-				<p className='text-sm text-muted-foreground'>
-					Handled by mserve in the background, so it keeps working even with this window closed. Pauses
-					automatically after repeated crashes in a short window so a broken server can’t loop forever.
-				</p>
-			</div>
+				}
+			/>
+
+			<SettingsRow
+				title='Sync mserve.json'
+				description='Refresh the stored configuration and rebuild it if the file is missing.'
+				control={
+					<Button variant='secondary' onClick={onManualSync} disabled={isFormLocked || !isOffline}>
+						<RefreshCcw />
+						<span>Sync mserve.json</span>
+					</Button>
+				}
+			/>
 		</SectionShell>
 	);
 };
@@ -511,41 +491,43 @@ export const SleepModeSettingsSection: React.FC = () => {
 	const enabled = settingsForm.sleep_enabled;
 
 	return (
-		<SectionShell className='space-y-8'>
-			<div className='space-y-2 max-w-lg'>
-				<p className='text-xl'>Sleep Mode</p>
-				<Label className='flex items-center gap-3'>
+		<SectionShell>
+			<SettingsRow
+				title='Sleep when no one is playing'
+				htmlFor='edit-sleep-enabled'
+				description='After the server sits empty for a while, mserve stops it to free up memory and holds its port. Players still see it in their server list, and it boots back up the moment someone tries to join. Sleep state is in-memory, so it resets if mserve is closed.'
+				control={
 					<Checkbox
+						id='edit-sleep-enabled'
 						checked={enabled}
 						onCheckedChange={(checked) =>
 							updateSettingsField('sleep_enabled', typeof checked === 'boolean' ? checked : false)
 						}
 					/>
-					Sleep the server when no one is playing
-				</Label>
-				<p className='text-sm text-muted-foreground'>
-					After the server sits empty for a while, mserve stops it to free up memory and holds its port.
-					Players still see it in their server list, and the moment someone tries to join it boots back
-					up automatically. Sleep state is in-memory, so it resets if mserve is closed.
-				</p>
-			</div>
+				}
+			/>
 
-			<div className='space-y-2 max-w-xs'>
-				<Label htmlFor='sleep-idle-minutes'>Idle minutes before sleeping</Label>
-				<Input
-					id='sleep-idle-minutes'
-					type='number'
-					min={1}
-					value={settingsForm.sleep_idle_minutes}
-					disabled={!enabled || isFormLocked}
-					onChange={(event) =>
-						updateSettingsField(
-							'sleep_idle_minutes',
-							Math.max(1, Math.round(Number(event.target.value) || 1)),
-						)
-					}
-				/>
-			</div>
+			<SettingsRow
+				title='Idle minutes before sleeping'
+				htmlFor='sleep-idle-minutes'
+				description='How long the server stays empty before it goes to sleep.'
+				control={
+					<Input
+						id='sleep-idle-minutes'
+						type='number'
+						min={1}
+						className='w-24'
+						value={settingsForm.sleep_idle_minutes}
+						disabled={!enabled || isFormLocked}
+						onChange={(event) =>
+							updateSettingsField(
+								'sleep_idle_minutes',
+								Math.max(1, Math.round(Number(event.target.value) || 1)),
+							)
+						}
+					/>
+				}
+			/>
 
 			<MotdEditor
 				label='Sleeping server list message (MOTD)'
@@ -644,27 +626,32 @@ export const JavaSettingsSection: React.FC = () => {
 	const { isBeginner, isAdvanced } = useExperience();
 
 	return (
-		<SectionShell className='space-y-12'>
-			<div className='space-y-2 max-w-lg'>
-				<div className='flex items-center gap-2 flex-wrap'>
-					<Label htmlFor={isBeginner ? undefined : 'edit-java-runtime'} className='text-xl'>
-						Java runtime
-					</Label>
-					<HelpButton topic='java' />
-					{effectiveJavaRuntimeLabel && (
-						<span className='rounded-full bg-accent px-2 py-1 text-xs font-medium text-accent-foreground'>
-							{effectiveJavaRuntimeLabel}
-						</span>
-					)}
-				</div>
-				{isBeginner ? (
-					<AutomaticJavaRuntime />
-				) : (
-					<>
-						<p className='text-sm text-muted-foreground -mt-1 mb-2'>
-							Pick which detected JDK runs this server. "Automatic" uses the global default:{' '}
-							<span className='font-mono'>{globalJavaDefault}</span>
-						</p>
+		<>
+			<SectionShell>
+				<SettingsRow
+					title='Java runtime'
+					htmlFor={isBeginner ? undefined : 'edit-java-runtime'}
+					titleAddon={
+						<>
+							<HelpButton topic='java' />
+							{effectiveJavaRuntimeLabel && (
+								<span className='rounded-full bg-accent px-2 py-1 text-xs font-medium text-accent-foreground'>
+									{effectiveJavaRuntimeLabel}
+								</span>
+							)}
+						</>
+					}
+					description={
+						isBeginner ? undefined : (
+							<>
+								Pick which detected JDK runs this server. "Automatic" uses the global default:{' '}
+								<span className='font-mono'>{globalJavaDefault}</span>
+							</>
+						)
+					}>
+					{isBeginner ? (
+						<AutomaticJavaRuntime />
+					) : (
 						<JavaRuntimeSelect
 							id='edit-java-runtime'
 							provider={settingsForm.provider}
@@ -672,101 +659,99 @@ export const JavaSettingsSection: React.FC = () => {
 							value={settingsForm.java_installation}
 							onChange={(next) => updateSettingsField('java_installation', next)}
 						/>
-					</>
-				)}
-			</div>
-
-			<ServerJarUpdateSection server={server} disabled={isFormLocked || !isOffline} />
-
-			<div className='space-y-2 max-w-lg'>
-				<Label htmlFor='edit-jar-swap' className='text-xl'>
-					Swap Server Jar
-				</Label>
-				<p className='text-sm text-muted-foreground'>
-					Download a newer build straight from the provider, or point to a jar file on disk. The jar is
-					swapped in when you save.
-				</p>
-				<div className='flex gap-2'>
-					<Button
-						type='button'
-						variant='secondary'
-						onClick={() => setIsJarModalOpen(true)}
-						disabled={isFormLocked}>
-						<Download /> Download from provider
-					</Button>
-					{isAdvanced && (
-						<Button type='button' variant='secondary' onClick={pickSwapJarFile} disabled={isFormLocked}>
-							<FolderOpen /> Browse files
-						</Button>
 					)}
-				</div>
-				{isAdvanced && (
-					<Input
-						id='edit-jar-swap'
-						placeholder={examplePaths.serverJar}
-						value={settingsForm.jar_swap_path}
-						onChange={(event) => updateSettingsField('jar_swap_path', event.target.value)}
-					/>
-				)}
-				{settingsForm.jar_swap_path.trim().length > 0 && (
-					<p className='text-sm text-muted-foreground break-all'>
-						Pending jar: {settingsForm.jar_swap_path}
-					</p>
-				)}
-			</div>
+				</SettingsRow>
 
-			<SettingsErrorNote />
+				<ServerJarUpdateSection server={server} disabled={isFormLocked || !isOffline} />
+
+				<SettingsRow
+					title='Swap server jar'
+					htmlFor={isAdvanced ? 'edit-jar-swap' : undefined}
+					description='Download a newer build straight from the provider, or point to a jar file on disk. The jar is swapped in when you save.'
+					control={
+						<>
+							<Button
+								type='button'
+								variant='secondary'
+								onClick={() => setIsJarModalOpen(true)}
+								disabled={isFormLocked}>
+								<Download /> Download
+							</Button>
+							{isAdvanced && (
+								<Button type='button' variant='secondary' onClick={pickSwapJarFile} disabled={isFormLocked}>
+									<FolderOpen /> Browse
+								</Button>
+							)}
+						</>
+					}>
+					{isAdvanced && (
+						<Input
+							id='edit-jar-swap'
+							placeholder={examplePaths.serverJar}
+							value={settingsForm.jar_swap_path}
+							onChange={(event) => updateSettingsField('jar_swap_path', event.target.value)}
+						/>
+					)}
+					{settingsForm.jar_swap_path.trim().length > 0 && (
+						<p className='text-sm text-muted-foreground break-all'>
+							Pending jar: {settingsForm.jar_swap_path}
+						</p>
+					)}
+					<SettingsErrorNote />
+				</SettingsRow>
+
+				{isAdvanced && (
+					<SettingsRow
+						title='Java installation override'
+						htmlFor='edit-java-installation'
+						description={
+							<>
+								Point to a specific <span className='font-mono'>java</span> executable. Leave blank to
+								use the dropdown / global default.
+							</>
+						}>
+						<Input
+							className='font-mono'
+							id='edit-java-installation'
+							placeholder={examplePaths.javaExecutable}
+							value={settingsForm.java_installation}
+							onChange={(event) => updateSettingsField('java_installation', event.target.value)}
+						/>
+					</SettingsRow>
+				)}
+
+				{isAdvanced && (
+					<SettingsRow
+						title='Extra Java flags'
+						htmlFor='edit-custom-flags'
+						description='Added to the start command, one flag per line.'>
+						<Textarea
+							id='edit-custom-flags'
+							className='min-h-32 font-mono'
+							placeholder='--nogui'
+							value={customFlagsDraft}
+							onChange={(event) => {
+								const nextValue = event.target.value;
+								setCustomFlagsDraft(nextValue);
+								updateSettingsField('custom_flags', parseCustomFlagsInput(nextValue));
+							}}
+						/>
+						<div className='space-y-2'>
+							<p className='text-sm font-medium'>Resolved start command preview</p>
+							<p className='font-mono text-xs px-3 py-1 border-2 border-border rounded-md'>
+								{runCommandPreview}
+							</p>
+						</div>
+					</SettingsRow>
+				)}
+			</SectionShell>
 
 			<JarDownloadModal
 				open={isJarModalOpen}
 				onOpenChange={setIsJarModalOpen}
 				onDownloaded={handleProviderJarDownloaded}
 			/>
-
-			{isAdvanced && (
-				<div className='space-y-2 max-w-lg'>
-					<Label htmlFor='edit-java-installation' className='text-xl'>
-						Java installation override
-					</Label>
-					<p className='text-sm text-muted-foreground -mt-1 mb-2'>
-						Point to a specific <span className='font-mono'>java</span> executable. Leave blank to use
-						the dropdown / global default.
-					</p>
-					<Input
-						className='font-mono'
-						id='edit-java-installation'
-						placeholder={examplePaths.javaExecutable}
-						value={settingsForm.java_installation}
-						onChange={(event) => updateSettingsField('java_installation', event.target.value)}
-					/>
-				</div>
-			)}
-
-			{isAdvanced && (
-				<div className='space-y-2 max-w-lg'>
-					<Label htmlFor='edit-custom-flags' className='text-xl'>
-						Extra Java flags
-					</Label>
-					<Textarea
-						id='edit-custom-flags'
-						className='min-h-32 font-mono'
-						placeholder='--nogui'
-						value={customFlagsDraft}
-						onChange={(event) => {
-							const nextValue = event.target.value;
-							setCustomFlagsDraft(nextValue);
-							updateSettingsField('custom_flags', parseCustomFlagsInput(nextValue));
-						}}
-					/>
-					<div className='space-y-2'>
-						<Label className='text-xl mt-4'>Resolved start command preview</Label>
-						<p className='font-mono text-xs px-3 py-1 border-2 border-border rounded-md'>
-							{runCommandPreview}
-						</p>
-					</div>
-				</div>
-			)}
-		</SectionShell>
+		</>
 	);
 };
 
@@ -784,21 +769,12 @@ export const ProviderTelemetrySettingsSection: React.FC = () => {
 	const { isAdvanced } = useExperience();
 
 	return (
-		<SectionShell className='space-y-12'>
+		<SectionShell>
 			{isAdvanced && (
-				<div className='space-y-4 max-w-2xl'>
-					<p className='text-xl flex items-center gap-2'>
-						Provider
-						<Tooltip>
-							<TooltipTrigger>
-								<Info className='size-5' />
-							</TooltipTrigger>
-							<TooltipContent>
-								Provider metadata controls telemetry and runtime compatibility hints.
-							</TooltipContent>
-						</Tooltip>
-					</p>
-					<div className='grid md:grid-cols-2 gap-4 items-start'>
+				<SettingsRow
+					title='Provider'
+					description='Provider metadata controls telemetry and runtime compatibility hints.'>
+					<div className='grid @md:grid-cols-2 gap-4 items-start'>
 						<div className='space-y-2'>
 							<Label htmlFor='edit-provider'>Provider name</Label>
 							<Select
@@ -914,15 +890,13 @@ export const ProviderTelemetrySettingsSection: React.FC = () => {
 							/>
 						</div>
 					</div>
-				</div>
+				</SettingsRow>
 			)}
 
-			<div className='space-y-2 max-w-2xl'>
-				<Label className='text-xl'>Supported telemetry</Label>
-				<p className='text-sm text-muted-foreground -mt-2 mb-4'>
-					Toggles control which telemetry checks are allowed for this server provider.
-				</p>
-				<div className='flex flex-col gap-2'>
+			<SettingsRow
+				title='Supported telemetry'
+				description='Which telemetry checks mserve is allowed to run for this server provider.'>
+				<div className='flex flex-col gap-3'>
 					{TELEMETRY_POLLING.map((telemetryKey) => {
 						const checked = settingsForm.provider.supported_telemetry.includes(telemetryKey);
 						const disabled =
@@ -934,10 +908,7 @@ export const ProviderTelemetrySettingsSection: React.FC = () => {
 									checked={checked}
 									disabled={disabled}
 									onCheckedChange={(value) =>
-										toggleSupportedTelemetry(
-											telemetryKey,
-											typeof value === 'boolean' ? value : false,
-										)
+										toggleSupportedTelemetry(telemetryKey, typeof value === 'boolean' ? value : false)
 									}
 								/>
 								{TELEMETRY_LABELS[telemetryKey]}
@@ -945,33 +916,34 @@ export const ProviderTelemetrySettingsSection: React.FC = () => {
 						);
 					})}
 				</div>
-			</div>
+			</SettingsRow>
 
 			{isAdvanced && (
-				<div className='space-y-4 max-w-lg'>
-					<p className='text-xl'>Telemetry target</p>
-					<div className='space-y-2'>
-						<Label htmlFor='edit-telemetry-host'>Telemetry host</Label>
-						<Input
-							id='edit-telemetry-host'
-							placeholder='127.0.0.1'
-							value={settingsForm.telemetry_host}
-							onChange={(event) => updateSettingsField('telemetry_host', event.target.value)}
-						/>
+				<SettingsRow title='Telemetry target' description='The address mserve polls for telemetry.'>
+					<div className='grid gap-4 @md:grid-cols-[minmax(0,1fr)_10rem]'>
+						<div className='space-y-2'>
+							<Label htmlFor='edit-telemetry-host'>Telemetry host</Label>
+							<Input
+								id='edit-telemetry-host'
+								placeholder='127.0.0.1'
+								value={settingsForm.telemetry_host}
+								onChange={(event) => updateSettingsField('telemetry_host', event.target.value)}
+							/>
+						</div>
+						<div className='space-y-2'>
+							<Label htmlFor='edit-telemetry-port'>Telemetry port</Label>
+							<Input
+								id='edit-telemetry-port'
+								type='number'
+								min={1}
+								max={65535}
+								placeholder='25565'
+								value={settingsForm.telemetry_port}
+								onChange={(event) => updateSettingsField('telemetry_port', Number(event.target.value))}
+							/>
+						</div>
 					</div>
-					<div className='space-y-2'>
-						<Label htmlFor='edit-telemetry-port'>Telemetry port</Label>
-						<Input
-							id='edit-telemetry-port'
-							type='number'
-							min={1}
-							max={65535}
-							placeholder='25565'
-							value={settingsForm.telemetry_port}
-							onChange={(event) => updateSettingsField('telemetry_port', Number(event.target.value))}
-						/>
-					</div>
-				</div>
+				</SettingsRow>
 			)}
 		</SectionShell>
 	);
@@ -981,23 +953,25 @@ export const LocationSettingsSection: React.FC = () => {
 	const { settingsForm, updateSettingsField, pickNewDirectory } = useEditServerSettings();
 	return (
 		<SectionShell>
-			<div className='space-y-2 max-w-lg'>
-				<Label htmlFor='edit-new-location' className='text-xl'>
-					Move server location
-				</Label>
-				<div className='flex gap-2'>
-					<Input
-						id='edit-new-location'
-						placeholder={examplePaths.serverDirectory}
-						value={settingsForm.new_directory}
-						onChange={(event) => updateSettingsField('new_directory', event.target.value)}
-					/>
-					<Button type='button' variant='secondary' onClick={pickNewDirectory}>
-						<FolderOpen /> Browse
-					</Button>
+			<SettingsRow
+				title='Server folder'
+				htmlFor='edit-new-location'
+				description='The folder is moved when you save.'>
+				<div className='space-y-2'>
+					<div className='flex gap-2'>
+						<Input
+							id='edit-new-location'
+							placeholder={examplePaths.serverDirectory}
+							value={settingsForm.new_directory}
+							onChange={(event) => updateSettingsField('new_directory', event.target.value)}
+						/>
+						<Button type='button' variant='secondary' onClick={pickNewDirectory}>
+							<FolderOpen /> Browse
+						</Button>
+					</div>
+					<SettingsErrorNote />
 				</div>
-				<SettingsErrorNote />
-			</div>
+			</SettingsRow>
 		</SectionShell>
 	);
 };
