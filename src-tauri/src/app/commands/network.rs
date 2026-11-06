@@ -1,8 +1,8 @@
 #[cfg(target_os = "linux")]
 use super::super::support::forward_port_linux_firewall;
 use super::super::support::{
-    Checksum, download_to_file, http_client, move_file_with_fallback, resolve_local_ip,
-    resolve_public_ip, scratch_dir,
+    Checksum, download_to_file, http_client, move_file_with_fallback, resolve_default_gateway,
+    resolve_local_ip, resolve_public_ip, scratch_dir,
 };
 #[cfg(target_os = "windows")]
 use super::super::support::{
@@ -158,6 +158,17 @@ pub(in crate::app) fn validate_path(path: String) -> Result<PathValidationResult
 #[tauri::command]
 pub(in crate::app) fn get_local_ip() -> Result<String, String> {
     resolve_local_ip().ok_or_else(|| "Unable to determine local IP address.".to_string())
+}
+
+/// The IPv4 default gateway, which on a home network is the router whose admin
+/// page the hosting guide opens.
+#[tauri::command]
+pub(in crate::app) async fn get_default_gateway() -> Result<String, String> {
+    run_blocking(|| {
+        resolve_default_gateway()
+            .ok_or_else(|| "Unable to determine your router's address.".to_string())
+    })
+    .await
 }
 
 #[tauri::command]

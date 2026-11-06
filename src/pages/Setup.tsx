@@ -10,6 +10,7 @@ import SlideRouter from './setup/SlideRouter';
 import SlideFirewall from './setup/SlideFirewall';
 import SlideAddress from './setup/SlideAddress';
 import SlideStart from './setup/SlideStart';
+import SlideFriendTest from './setup/SlideFriendTest';
 import { SetupProvider, useSetup } from './setup/SetupContext';
 import { resolveSetupSteps, type SetupStepId } from './setup/setup-steps';
 import { useUser } from '@/data/user';
@@ -23,6 +24,7 @@ const STEP_SLIDES: Record<Exclude<SetupStepId, 'intro'>, React.FC> = {
 	'forward-firewall': SlideFirewall,
 	'forward-address': SlideAddress,
 	'forward-start': SlideStart,
+	'forward-test': SlideFriendTest,
 };
 
 /** The slides for the branch picked so far (intro + choice until a path is chosen). */

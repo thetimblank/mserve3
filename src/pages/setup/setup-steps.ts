@@ -10,13 +10,14 @@ export type SetupStepId =
 	| 'forward-router'
 	| 'forward-firewall'
 	| 'forward-address'
-	| 'forward-start';
+	| 'forward-start'
+	| 'forward-test';
 
 const SHARED_STEPS: readonly SetupStepId[] = ['intro', 'choose'];
 
 const BRANCH_STEPS: Record<HostingPath, readonly SetupStepId[]> = {
 	tunnel: ['tunnel-account', 'tunnel-server'],
-	forward: ['forward-prereq', 'forward-router', 'forward-firewall', 'forward-address', 'forward-start'],
+	forward: ['forward-prereq', 'forward-router', 'forward-firewall', 'forward-address', 'forward-start', 'forward-test'],
 };
 
 /** Index of the first slide after the path choice. */

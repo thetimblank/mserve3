@@ -34,7 +34,7 @@ src/app/
 │   ├── java.rs           detect_java_runtimes (registry/PATH/JAVA_HOME scan)
 │   ├── java_download.rs   download_java_runtime (+ java-download-progress event)
 │   ├── network.rs        firewall port forwarding (per-OS dispatch), local/public IP,
-│   │                     validate_path, get_system_memory_gb, download_server_jar
+│   │                     default gateway (router address), validate_path, get_system_memory_gb, download_server_jar
 │   │                     (+ server-jar-download-progress event)
 │   ├── networks.rs       networks.json + per-server network file (Velocity forwarding)
 │   ├── settings.rs       update_server_settings / backup settings, Java + custom flags,
@@ -59,6 +59,8 @@ src/app/
     ├── content_meta.rs    .mserve-content.json provenance sidecar for installed content
     ├── download.rs        HTTP client, per-user scratch dir (not /tmp on Linux), verified
     │                      streaming download that removes partial files
+    ├── gateway.rs         default gateway detection (`route print` on Windows,
+    │                      /proc/net/route on Linux), no extra crate
     ├── playit.rs          playit.gg tunneling: REST claim/tunnel + in-process agent
     │                      (set_server_tunnel/get_server_tunnel live in commands/runtime.rs;
     │                      emits playit-claim-state + playit-tunnel-state)
