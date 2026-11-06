@@ -8,7 +8,6 @@ import SlideAutoRestart from './create-server/slides/SlideAutoRestart';
 import SlideBackups from './create-server/slides/SlideBackups';
 import SlideDirectory from './create-server/slides/SlideDirectory';
 import SlideDone from './create-server/slides/SlideDone';
-import SlideEula from './create-server/slides/SlideEula';
 import SlideIntro from './create-server/slides/SlideIntro';
 import SlideProvider from './create-server/slides/SlideProvider';
 import SlideRam from './create-server/slides/SlideRam';
@@ -66,7 +65,6 @@ const CreateServerContent: React.FC = () => {
 		<SlideRam key='ram' />,
 		<SlideAutoRestart key='auto-restart' />,
 		<SlideBackups key='backups' />,
-		<SlideEula key='eula' />,
 		<SlideReview key='review' />,
 		<SlideDone key='done' />,
 	];

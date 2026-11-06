@@ -36,12 +36,12 @@ const SlideDirectory: React.FC = () => {
 		}
 
 		if (isResolvingServersRootPath) {
-			setError('Still resolving server root path. Please wait a moment and try again.');
+			setError('Still finding your servers root path. Try again in a moment.');
 			return;
 		}
 
 		if (!serversRootPath.trim()) {
-			setError('Set your servers root path in Settings before creating a server.');
+			setError('Set a servers root path in Settings > Data & storage first.');
 			return;
 		}
 
@@ -50,7 +50,7 @@ const SlideDirectory: React.FC = () => {
 				path: resolvedDirectory,
 			}).catch(() => null);
 			if (pathResult?.exists) {
-				setError('A folder with this name already exists. Please choose another name.');
+				setError('A folder with this name already exists. Choose another name.');
 				return;
 			}
 		}
@@ -61,8 +61,8 @@ const SlideDirectory: React.FC = () => {
 
 	return (
 		<SlideShell
-			title='What should this server be called?'
-			description='Your server folder will be created automatically under your configured servers root path.'
+			title='Name your server'
+			description="Pick a name you'll recognize. mserve creates the server's folder for you."
 			actions={
 				<Button type='button' onClick={onContinue}>
 					Continue
@@ -88,7 +88,7 @@ const SlideDirectory: React.FC = () => {
 							animate={{ height: 'auto', opacity: 1 }}
 							transition={{ type: 'spring', duration: 0.2, bounce: 0 }}
 							className='text-sm text-destructive'>
-							Name already exists. Please choose a different server name.
+							You already have a server with this name.
 						</m.p>
 					)}
 				</AnimatePresence>

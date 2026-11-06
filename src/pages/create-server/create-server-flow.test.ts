@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createProvider } from '@/lib/server-provider';
 import {
 	CREATE_SERVER_SLIDE_INDEX as SLIDE,
+	createServerNeedsEula,
 	getCreateServerCurrentStep,
 	getCreateServerNextSlide,
 	getCreateServerPreviousSlide,
@@ -19,16 +20,33 @@ describe('create server flow', () => {
 	});
 
 	it('counts provider and version as separate steps', () => {
-		expect(getCreateServerStepSlides(null)).toHaveLength(8);
+		expect(getCreateServerStepSlides(null)).toHaveLength(7);
 		expect(getCreateServerCurrentStep(SLIDE.provider, null)).toBe(2);
 		expect(getCreateServerCurrentStep(SLIDE.version, null)).toBe(3);
 	});
 
-	it('skips backups and EULA for proxies', () => {
+	it('goes from backups straight to review (the EULA is a checkbox there)', () => {
+		expect(getCreateServerNextSlide(SLIDE.backups, null)).toBe(SLIDE.review);
+		expect(getCreateServerPreviousSlide(SLIDE.review, null)).toBe(SLIDE.backups);
+		expect(getCreateServerNextSlide(SLIDE.review, null)).toBe(SLIDE.done);
+	});
+
+	it('skips backups for proxies', () => {
 		const velocity = createProvider('velocity');
 		expect(getCreateServerStepSlides(velocity)).toHaveLength(6);
 		expect(getCreateServerNextSlide(SLIDE.autoRestart, velocity)).toBe(SLIDE.review);
 		expect(getCreateServerPreviousSlide(SLIDE.review, velocity)).toBe(SLIDE.autoRestart);
+	});
+});
+
+describe('createServerNeedsEula', () => {
+	it('asks for the EULA unless the server is a proxy', () => {
+		expect(createServerNeedsEula(createProvider('paper'))).toBe(true);
+		expect(createServerNeedsEula(createProvider('vanilla'))).toBe(true);
+		// A modpack has no provider until it installs.
+		expect(createServerNeedsEula(null)).toBe(true);
+		expect(createServerNeedsEula(createProvider('velocity'))).toBe(false);
+		expect(createServerNeedsEula(createProvider('bungeecord'))).toBe(false);
 	});
 });
 
