@@ -398,8 +398,7 @@ const Server: React.FC = () => {
 						items={server.plugins}
 						onChanged={syncServerContents}
 						disabled={isContentLocked}
-						ctaLabel='Browse Modrinth'
-						onCta={() => setModrinthBrowserType('plugin')}
+						onFindOnModrinth={() => setModrinthBrowserType('plugin')}
 					/>
 				)}
 				{activeTab === 'mods' && providerCapabilities.kind === 'modded' && (
@@ -413,8 +412,7 @@ const Server: React.FC = () => {
 						items={server.mods}
 						onChanged={syncServerContents}
 						disabled={isContentLocked}
-						ctaLabel='Browse Modrinth'
-						onCta={() => setModrinthBrowserType('mod')}
+						onFindOnModrinth={() => setModrinthBrowserType('mod')}
 					/>
 				)}
 				{activeTab === 'worlds' && providerCapabilities.kind !== 'proxy' && (
@@ -441,8 +439,7 @@ const Server: React.FC = () => {
 						items={server.datapacks}
 						onChanged={syncServerContents}
 						disabled={isContentLocked}
-						ctaLabel='Browse Modrinth'
-						onCta={() => setModrinthBrowserType('datapack')}
+						onFindOnModrinth={() => setModrinthBrowserType('datapack')}
 					/>
 				)}
 				{activeTab === 'backups' && providerCapabilities.kind !== 'proxy' && (
