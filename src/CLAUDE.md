@@ -41,7 +41,7 @@ The ten backend → frontend events and where they're consumed:
 | `server-telemetry` | `{ directory, sample }` | `server-runtime-monitor.tsx`, `use-server-runtime.ts` |
 | `server-output` | `{ directory, stream, line }` (`stream`: `stdout`/`stderr`/`system`) | `server-runtime-monitor.tsx`, `use-server-runtime.ts` |
 | `java-download-progress` | `{ majorVersion, downloadedBytes, totalBytes, progress, done }` | `data/java-download.tsx` |
-| `server-jar-download-progress` | `{ downloadId, downloadedBytes, totalBytes, progress, done }` | `pages/create-server/slides/SlideJarFile.tsx` |
+| `server-jar-download-progress` | `{ downloadId, downloadedBytes, totalBytes, progress, done }` | `pages/create-server/slides/SlideVersion.tsx` |
 | `modpack-install-progress` | `{ installId, stage, message, filesDone, filesTotal, progress, done }` | `pages/create-server/CreateServerContext.tsx` |
 | `playit-claim-state` | `{ status, claimUrl, error }` | `hooks/use-playit-account.ts` |
 | `playit-tunnel-state` | `{ directory, status, address, error }` | `pages/server/hooks/use-server-tunnel.ts` |

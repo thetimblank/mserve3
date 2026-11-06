@@ -2,10 +2,17 @@ import * as React from 'react';
 import { CircleHelp } from 'lucide-react';
 import { SegmentedControl, type SegmentedControlOption } from '@/components/ui/segmented-control';
 import { fetchJarRows, getJarTabs, type JarTab, type JarVersionRow } from '@/lib/jar-download-service';
+import type { ProviderName } from '@/lib/mserve-schema';
+import { getProviderDescriptor } from '@/lib/server-provider';
 import { getErrorMessage } from '@/lib/utils';
 import JarVersionSelectorPane from './jar-version-selector-pane';
 
 type JarBrowserProps = {
+	/**
+	 * Locks the picker to one provider: its tab is fixed (no tab control) and only
+	 * its versions are listed. Omit to browse every provider by tab.
+	 */
+	provider?: ProviderName;
 	selectedRowId: string | null;
 	/** Must keep one identity: the pane clears the selection through it. */
 	onSelectRow: (row: JarVersionRow | null) => void;
@@ -19,11 +26,13 @@ type JarBrowserProps = {
 
 /**
  * Server-jar picker: provider tabs over a filterable version list, loaded from
- * the backend. Shared by the create wizard and the jar-swap dialog. The list
+ * the backend. Shared by the create wizard (locked to the provider picked on
+ * the previous slide) and the jar-swap dialog. The list
  * stays mounted while rows reload, so its filters survive (turning on unstable
  * builds triggers a reload).
  */
 const JarBrowser: React.FC<JarBrowserProps> = ({
+	provider,
 	selectedRowId,
 	onSelectRow,
 	onTabChange,
@@ -48,7 +57,9 @@ const JarBrowser: React.FC<JarBrowserProps> = ({
 			})),
 		[],
 	);
-	const [activeTab, setActiveTab] = React.useState<JarTab>('plugin');
+	const lockedTab = provider ? getProviderDescriptor(provider)?.tab : undefined;
+	const [selectedTab, setActiveTab] = React.useState<JarTab>('plugin');
+	const activeTab = lockedTab ?? selectedTab;
 	const [includeUnstable, setIncludeUnstable] = React.useState(false);
 	const [rows, setRows] = React.useState<JarVersionRow[]>([]);
 	const [isLoading, setIsLoading] = React.useState(false);
@@ -93,21 +104,29 @@ const JarBrowser: React.FC<JarBrowserProps> = ({
 		setIncludeUnstable(false);
 	};
 
+	const visibleRows = React.useMemo(
+		() => (provider ? rows.filter((row) => row.providerId === provider) : rows),
+		[provider, rows],
+	);
+
 	return (
 		<>
-			<SegmentedControl
-				fullWidth
-				aria-label='Server type'
-				className='mb-3'
-				value={activeTab}
-				onValueChange={selectTab}
-				options={tabOptions}
-				disabled={disabled}
-			/>
+			{!lockedTab && (
+				<SegmentedControl
+					fullWidth
+					aria-label='Server type'
+					className='mb-3'
+					value={activeTab}
+					onValueChange={selectTab}
+					options={tabOptions}
+					disabled={disabled}
+				/>
+			)}
 
 			<JarVersionSelectorPane
 				tab={activeTab}
-				rows={rows}
+				provider={provider}
+				rows={visibleRows}
 				isLoading={isLoading}
 				installedMajors={installedMajors}
 				isCheckingJavaCompatibility={isCheckingJavaCompatibility}

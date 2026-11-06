@@ -325,3 +325,18 @@ export const downloadAndResolveJarRow = async (
 
 	return { result, provider: { ...provider, file: result.path } };
 };
+
+const STABLE_JAR_STABILITIES: ReadonlySet<JarStability> = new Set(['stable', 'release']);
+
+/**
+ * The newest stable row of each provider, which the picker tags **Latest**.
+ * Relies on the backend listing each provider's versions newest-first.
+ */
+export const resolveLatestJarRowIds = (rows: JarVersionRow[]): Set<string> => {
+	const latestByProvider = new Map<ProviderName, string>();
+	for (const row of rows) {
+		if (!STABLE_JAR_STABILITIES.has(row.stability) || latestByProvider.has(row.providerId)) continue;
+		latestByProvider.set(row.providerId, row.id);
+	}
+	return new Set(latestByProvider.values());
+};
