@@ -1,6 +1,6 @@
 /**
  * Aggregates recent telemetry history across every server for the dashboard's
- * "most used" ranking and the global activity metrics. For each server we pull a
+ * activity metrics. For each server we pull a
  * bucket-averaged 7-day window from the SQLite store (the same
  * `get_server_telemetry_history` command the Statistics page uses) and derive:
  *
@@ -10,7 +10,7 @@
  *   - interruptions  online → offline transitions (a proxy for crashes/downtime)
  *
  * These are cheap local queries, so we fan out in parallel and refresh on a slow
- * interval. Servers with no history yet simply score zero and fall to the bottom.
+ * interval. Servers with no history yet report `hasData: false`.
  */
 import React from 'react';
 import { invoke } from '@tauri-apps/api/core';
@@ -43,14 +43,10 @@ type ServerActivity = {
 	trend: PlayerTrend;
 	/** Player-count sum by local hour-of-day (length 24). */
 	hourBuckets: number[];
-	/** Blended ranking score (higher = more used). */
-	score: number;
 };
 
 export type DashboardActivity = {
 	byServer: Map<string, ServerActivity>;
-	/** Servers ordered most-used first (only those with telemetry data). */
-	ranked: ServerActivity[];
 	totalInterruptions: number;
 	/** Summed player counts by local hour-of-day across all servers (length 24). */
 	hourHistogram: number[];
@@ -117,8 +113,6 @@ const summarize = (serverId: string, points: TelemetryHistoryPoint[]): ServerAct
 	const availability = points.length > 0 ? onlineCount / points.length : 0;
 	const sleeping = points.length > 0 ? sleepingCount / points.length : 0;
 	const avgPlayers = playerSamples > 0 ? playerSum / playerSamples : 0;
-	// Weight live activity (players) above mere uptime, but reward both.
-	const score = avgPlayers * 12 + peakPlayers * 3 + availability * 10;
 
 	return {
 		serverId,
@@ -131,7 +125,6 @@ const summarize = (serverId: string, points: TelemetryHistoryPoint[]): ServerAct
 		chart,
 		trend: computeTrend(points),
 		hourBuckets: buildHourBuckets(points),
-		score,
 	};
 };
 
@@ -184,9 +177,6 @@ export const useDashboardActivity = (servers: Server[]): DashboardActivity => {
 
 	return React.useMemo(() => {
 		const all = Array.from(byServer.values());
-		const ranked = all
-			.filter((activity) => activity.hasData && activity.score > 0)
-			.sort((left, right) => right.score - left.score);
 		const totalInterruptions = all.reduce((sum, activity) => sum + activity.interruptions, 0);
 
 		const hourHistogram = new Array<number>(24).fill(0);
@@ -198,6 +188,6 @@ export const useDashboardActivity = (servers: Server[]): DashboardActivity => {
 		const maxHour = Math.max(...hourHistogram);
 		const peakHour = maxHour > 0 ? hourHistogram.indexOf(maxHour) : null;
 
-		return { byServer, ranked, totalInterruptions, hourHistogram, peakHour, isLoading };
+		return { byServer, totalInterruptions, hourHistogram, peakHour, isLoading };
 	}, [byServer, isLoading]);
 };

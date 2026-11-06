@@ -12,6 +12,7 @@ import { useUser } from '@/data/user';
 import { cn } from '@/lib/utils';
 
 import DashboardBento from './dashboard/dashboard-bento';
+import { BENTO_CLUSTER_GRID_CLASSES, BENTO_METRICS_GRID_CLASSES } from './dashboard/bento-shapes';
 import { useDashboardActivity } from './dashboard/use-dashboard-activity';
 import { useDashboardStorage } from './dashboard/use-dashboard-storage';
 
@@ -42,17 +43,18 @@ const Home: React.FC = () => {
 
 			<div className='relative z-10 p-8 lg:p-12'>
 				{!isReady && (
-					<div className='space-y-6'>
+					<div className='@container space-y-10'>
 						<Skeleton className='h-10 w-72' />
-						<div className='grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-6'>
-							<Skeleton className='h-28' />
-							<Skeleton className='h-28' />
-							<Skeleton className='h-28' />
-							<Skeleton className='h-28' />
-							<Skeleton className='h-28' />
-							<Skeleton className='h-28' />
+						<div className={BENTO_METRICS_GRID_CLASSES}>
+							{Array.from({ length: 6 }, (_, index) => (
+								<Skeleton key={index} className='h-28' />
+							))}
 						</div>
-						<Skeleton className='h-64 w-full' />
+						<div className={BENTO_CLUSTER_GRID_CLASSES}>
+							{Array.from({ length: 4 }, (_, index) => (
+								<Skeleton key={index} className='h-full' />
+							))}
+						</div>
 					</div>
 				)}
 

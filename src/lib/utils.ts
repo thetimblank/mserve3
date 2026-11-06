@@ -70,6 +70,9 @@ export const getPrimaryMinecraftVersion = (versionText: string) => {
  * (not a positional digit count) so it can be passed straight to chart
  * formatters that call it with `(value, index)`.
  */
+/** `1 world`, `3 worlds`. */
+export const pluralize = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
+
 export const formatBytes = (bytes?: number, options?: { fractionDigits?: number }) => {
 	const value = Math.max(0, Number(bytes) || 0);
 	if (value < 1024) return `${value} B`;

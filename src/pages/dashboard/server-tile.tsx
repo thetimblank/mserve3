@@ -34,7 +34,6 @@ const ServerTile: React.FC<Props> = ({ server, delay = 0 }) => {
 	const meta = SERVER_STATUS_META[server.status];
 	const running = server.status === 'online' || server.status === 'starting';
 
-
 	return (
 		<m.div
 			initial={{ scale: 0.96, opacity: 0 }}
@@ -78,7 +77,7 @@ const ServerTile: React.FC<Props> = ({ server, delay = 0 }) => {
 					) : null}
 				</div>
 
-				<div className='mt-3 flex items-center gap-2'>
+				<div className='mt-3 flex flex-wrap items-center gap-2'>
 					{canStartStatus(server.status) && (
 						<Button size='sm' onClick={handleStart} disabled={isBusy}>
 							{server.status === 'sleeping' ? <Moon /> : <CircleCheck />}
