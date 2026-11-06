@@ -57,7 +57,6 @@ src/app/
     ├── server_properties.rs  server.properties read/update, RCON provisioning
     ├── rcon.rs            hand-rolled Source RCON client
     ├── players.rs         `list` + keepInventory over RCON, ops/whitelist lookup (players panel)
-    ├── players.rs         `list` + keepInventory over RCON, ops/whitelist lookup
     ├── mc_protocol.rs     Minecraft VarInt/String codec, handshake + status packets
     ├── sleep_listener.rs  sleep-mode wake listener (holds the port, answers pings, wakes on join)
     ├── content_meta.rs    .mserve-content.json provenance sidecar for installed content

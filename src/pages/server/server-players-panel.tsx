@@ -186,10 +186,11 @@ const ServerPlayersPanel: React.FC<Props> = ({ directory, minecraftVersion, play
 	const modernCommands = supportsModernCommands(minecraftVersion);
 	const disabled = isBusy || isSending;
 
-	// The server's answer replaces an optimistic toggle.
+	// Every answer from the server (a new `data` object, even with the same
+	// value) replaces an optimistic toggle.
 	React.useEffect(() => {
 		setKeepInventory(data?.keepInventory ?? null);
-	}, [data?.keepInventory]);
+	}, [data]);
 
 	const send = React.useCallback(
 		async (command: string | null, success: string): Promise<boolean> => {
