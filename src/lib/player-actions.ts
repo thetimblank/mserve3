@@ -22,6 +22,8 @@ export type OnlinePlayers = {
 	keepInventory: boolean | null;
 	/** The rule name the server understood (`keepInventory` before 1.21.11). */
 	keepInventoryRule: string | null;
+	/** Banned player names, from `banned-players.json`. */
+	banned: string[];
 };
 
 export const GAME_MODES = ['survival', 'creative', 'adventure', 'spectator'] as const;
@@ -39,6 +41,7 @@ export type PlayerAction =
 	| { kind: 'deop' }
 	| { kind: 'kick' }
 	| { kind: 'ban' }
+	| { kind: 'pardon' }
 	| { kind: 'whitelist-add' }
 	| { kind: 'lightning' }
 	| { kind: 'heal' }
@@ -83,6 +86,8 @@ export const buildPlayerActionCommand = (action: PlayerAction, player: string): 
 			return `kick ${player}`;
 		case 'ban':
 			return `ban ${player}`;
+		case 'pardon':
+			return `pardon ${player}`;
 		case 'whitelist-add':
 			return buildWhitelistAddCommand(player);
 		case 'lightning':
@@ -105,6 +110,8 @@ export const describePlayerAction = (action: PlayerAction, player: string): stri
 			return `Kicked ${player}.`;
 		case 'ban':
 			return `Banned ${player}.`;
+		case 'pardon':
+			return `Unbanned ${player}. They can join again.`;
 		case 'whitelist-add':
 			return `Added ${player} to the whitelist.`;
 		case 'lightning':

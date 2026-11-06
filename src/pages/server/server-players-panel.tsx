@@ -12,6 +12,7 @@ import {
 	Save,
 	Shield,
 	ShieldCheck,
+	ShieldMinus,
 	ShieldOff,
 	Sun,
 	User,
@@ -172,10 +173,11 @@ type Props = {
 };
 
 /**
- * The beginner overview's players panel: who is online, a menu of quick
- * actions per player, and a row of world actions. Shown for an online game
- * server (proxies have no player list here). Every command is built by
- * `lib/player-actions.ts`, which refuses unsafe names and text.
+ * The overview's players panel (every experience tier): who is online, a
+ * menu of quick actions per player, who is banned (with Unban), and a row of
+ * world actions. Shown for an online game server (proxies have no player list
+ * here). Every command is built by `lib/player-actions.ts`, which refuses
+ * unsafe names and text.
  */
 const ServerPlayersPanel: React.FC<Props> = ({ directory, minecraftVersion, playersOnline, isBusy, className }) => {
 	const { data, error, refresh } = useOnlinePlayers({ directory, enabled: true, playersOnline });
@@ -252,6 +254,7 @@ const ServerPlayersPanel: React.FC<Props> = ({ directory, minecraftVersion, play
 	};
 
 	const players = data?.players ?? [];
+	const banned = data?.banned ?? [];
 
 	return (
 		<section
@@ -293,6 +296,30 @@ const ServerPlayersPanel: React.FC<Props> = ({ directory, minecraftVersion, play
 					</ul>
 				)}
 			</div>
+
+			{banned.length > 0 && (
+				<div className='border-t-2 px-6 py-3 dark:border-background/60'>
+					<h3 className='text-xs font-semibold uppercase tracking-wide text-muted-foreground'>Banned</h3>
+					<ul className='max-h-48 divide-y overflow-y-auto app-scroll-area'>
+						{banned.map((name) => (
+							<li key={name} className='flex items-center gap-3 py-2'>
+								<span className='flex size-7 shrink-0 items-center justify-center rounded-lg bg-secondary text-muted-foreground [&_svg]:size-4'>
+									<Ban />
+								</span>
+								<p className='min-w-0 flex-1 truncate text-sm font-medium'>{name}</p>
+								<Button
+									variant='secondary'
+									size='sm'
+									disabled={disabled}
+									onClick={() => handlePlayerAction({ kind: 'pardon' }, name)}>
+									<ShieldMinus />
+									Unban
+								</Button>
+							</li>
+						))}
+					</ul>
+				</div>
+			)}
 
 			<div className='mt-auto flex flex-col gap-3 border-t-2 px-6 py-4 dark:border-background/60'>
 				<h3 className='text-xs font-semibold uppercase tracking-wide text-muted-foreground'>World</h3>
@@ -343,8 +370,8 @@ const ServerPlayersPanel: React.FC<Props> = ({ directory, minecraftVersion, play
 					<AlertDialogHeader>
 						<AlertDialogTitle>Ban {banTarget}?</AlertDialogTitle>
 						<AlertDialogDescription>
-							They are kicked and can't join again until you unban them with the console command{' '}
-							<code>pardon {banTarget}</code>.
+							They are kicked and can't join again until you unban them. Banned players are listed
+							in this panel with an Unban button.
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>
