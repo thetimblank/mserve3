@@ -32,7 +32,7 @@ Wave 2 (after their deps):         D1 · D2 · O · A · C3 · F2 · J1 · J2 ·
 | O | `feat/beginner-overview` | S | B | [x] #47 |
 | A | `feat/onboarding-rework` | M | C1 | [x] #49 |
 | C3 | `feat/wizard-slide-cleanup` | M | C1, W0-2b | [ ] |
-| F2 | `feat/hosting-guide-router-test` | M | F1 | [ ] |
+| F2 | `feat/hosting-guide-router-test` | M | F1 | [x] #55 |
 | J1 | `feat/beginner-activity-feed` | M | O | [ ] |
 | J2 | `feat/beginner-player-actions` | L | J1 | [ ] |
 | I1 | `feat/auto-ram` | L | C3, D1 | [ ] |
