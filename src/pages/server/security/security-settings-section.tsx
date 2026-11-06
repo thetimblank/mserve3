@@ -9,8 +9,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { Container } from '@/components/ui/container';
 import { Skeleton } from '@/components/ui/skeleton';
-import ModrinthProjectIcon from '@/components/modrinth/modrinth-project-icon';
-import { formatCompactCount } from '@/lib/modrinth-service';
 import {
 	SEVERITY_ORDER,
 	summarizeSecurityFindings,
@@ -19,9 +17,9 @@ import {
 } from '@/lib/server-security-audit';
 import { isStoppedStatus, type Server } from '@/data/servers';
 import { useSecurityAudit } from './use-security-audit';
-import { useAntiBotCatalog } from './use-antibot-catalog';
+import SecurityPluginGuide from './security-plugin-guide';
 
-type Props = { server: Server; onContentChanged?: () => void | Promise<void> };
+type Props = { server: Server };
 
 const SEVERITY_META: Record<
 	SecuritySeverity,
@@ -65,10 +63,9 @@ const FindingRow: React.FC<{
 	);
 };
 
-const SecuritySettingsSection: React.FC<Props> = ({ server, onContentChanged }) => {
-	const { findings, isLoading, isApplying, applyPropertyUpdates, applyAllRecommended, refresh } =
+const SecuritySettingsSection: React.FC<Props> = ({ server }) => {
+	const { findings, isLoading, isApplying, applyPropertyUpdates, applyAllRecommended } =
 		useSecurityAudit(server);
-	const antiBot = useAntiBotCatalog(server);
 
 	// server.properties is read at boot, so fixes only make sense while stopped.
 	const canFix = isStoppedStatus(server.status);
@@ -130,53 +127,7 @@ const SecuritySettingsSection: React.FC<Props> = ({ server, onContentChanged }) 
 				</Button>
 			)}
 
-			<div className='space-y-3'>
-				<div className='space-y-1'>
-					<p className='text-base font-semibold'>Anti-bot plugins</p>
-					<p className='text-sm text-muted-foreground'>
-						Proven, actively-maintained plugins that stop bot floods and verify real players.
-						Installed from Modrinth for this server’s version.
-					</p>
-				</div>
-
-				{antiBot.isLoading ? (
-					<div className='space-y-2'>
-						<Skeleton className='h-16 w-full' />
-						<Skeleton className='h-16 w-full' />
-					</div>
-				) : antiBot.resolved.length === 0 ? (
-					<p className='text-sm text-muted-foreground'>
-						No compatible anti-bot plugin was found for this server’s loader and version.
-					</p>
-				) : (
-					antiBot.resolved.map((entry) => (
-						<Container key={entry.slug} className='flex items-center gap-3'>
-							<ModrinthProjectIcon
-								iconUrl={entry.project.iconUrl}
-								title={entry.project.title}
-								className='size-12'
-							/>
-							<div className='min-w-0 flex-1 space-y-0.5'>
-								<p className='font-medium'>{entry.project.title}</p>
-								<p className='truncate text-sm text-muted-foreground'>{entry.note}</p>
-								<p className='text-xs text-muted-foreground'>
-									{formatCompactCount(entry.project.downloads)} downloads
-								</p>
-							</div>
-							<Button
-								size='sm'
-								className='shrink-0'
-								disabled={antiBot.installingSlug !== null}
-								onClick={() => void antiBot.install(entry, onContentChanged ?? refresh)}>
-								{antiBot.installingSlug === entry.slug && (
-									<Loader2 className='size-4 animate-spin' />
-								)}
-								Install
-							</Button>
-						</Container>
-					))
-				)}
-			</div>
+			<SecurityPluginGuide server={server} />
 		</div>
 	);
 };

@@ -56,7 +56,7 @@ type Props = {
 };
 
 type FormSectionId =
-	| 'rename'
+	| 'general'
 	| 'performance'
 	| 'java'
 	| 'sleep'
@@ -85,10 +85,10 @@ type SectionConfig = Omit<SettingsSection, 'id' | 'group' | 'render'> & {
 // Granular "General" categories. Each renders a slice of the shared
 // EditServerSettingsProvider so edits + the single save flow are shared.
 const GENERAL_SECTION: SectionConfig = {
-	id: 'rename',
+	id: 'general',
 	group: 'server',
 	title: 'General',
-	description: 'Name, memory, and crash recovery for this server.',
+	description: 'Name, memory, crash recovery, and the server jar.',
 	keywords: [
 		'name',
 		'rename',
@@ -102,6 +102,13 @@ const GENERAL_SECTION: SectionConfig = {
 		'heap',
 		'auto restart',
 		'crash',
+		'jar',
+		'download',
+		'swap',
+		'update',
+		'upgrade',
+		'build',
+		'version',
 		'sync',
 		'mserve.json',
 	],
@@ -133,32 +140,24 @@ const SECURITY_SECTION: SectionConfig = {
 		'audit',
 		'anti-bot',
 		'antibot',
+		'anti-cheat',
+		'anticheat',
+		'cheat',
+		'hack',
+		'permissions',
+		'plugins',
 		'harden',
 		'exploit',
 	],
-	render: (props) => (
-		<SecuritySettingsSection server={props.server} onContentChanged={props.syncServerContents} />
-	),
+	render: (props) => <SecuritySettingsSection server={props.server} />,
 };
 
 const JAVA_SECTION: SectionConfig = {
 	id: 'java',
 	group: 'server',
 	title: 'Java',
-	description: 'The Java runtime and server jar this server runs on.',
-	keywords: [
-		'java',
-		'jdk',
-		'runtime',
-		'flags',
-		'nogui',
-		'installation',
-		'jar',
-		'download',
-		'swap',
-		'update',
-		'build',
-	],
+	description: 'The Java runtime this server runs on.',
+	keywords: ['java', 'jdk', 'runtime', 'flags', 'nogui', 'installation'],
 	render: () => <JavaSettingsSection />,
 };
 
@@ -216,7 +215,7 @@ const DANGER_ZONE_SECTION: SectionConfig = {
 // not listed here (ops.json, whitelist.json, ban lists, help.yml, commands.yml) are
 // intentionally editable while the server is running.
 const LOCKED_SECTION_IDS: ReadonlySet<SectionId> = new Set<SectionId>([
-	'rename',
+	'general',
 	'java',
 	'provider-telemetry',
 	'location',
