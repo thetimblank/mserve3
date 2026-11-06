@@ -9,9 +9,8 @@ export const CREATE_SERVER_SLIDE_INDEX = {
 	ram: 4,
 	autoRestart: 5,
 	backups: 6,
-	eula: 7,
-	review: 8,
-	done: 9,
+	review: 7,
+	done: 8,
 } as const;
 
 export type CreateServerSlideIndex =
@@ -24,7 +23,6 @@ const DEFAULT_STEP_SLIDES = [
 	CREATE_SERVER_SLIDE_INDEX.ram,
 	CREATE_SERVER_SLIDE_INDEX.autoRestart,
 	CREATE_SERVER_SLIDE_INDEX.backups,
-	CREATE_SERVER_SLIDE_INDEX.eula,
 	CREATE_SERVER_SLIDE_INDEX.review,
 ] as const;
 
@@ -39,6 +37,13 @@ const PROXY_STEP_SLIDES = [
 
 export const getCreateServerStepSlides = (provider?: Provider | null) =>
 	isProxyProvider(provider) ? PROXY_STEP_SLIDES : DEFAULT_STEP_SLIDES;
+
+/**
+ * Whether creating this server needs the user to accept Mojang's EULA (the
+ * Review slide's required checkbox). Proxies don't run a Minecraft server, so
+ * they don't; a modpack (no provider until it installs) does.
+ */
+export const createServerNeedsEula = (provider?: Provider | null) => !isProxyProvider(provider);
 
 const getCreateServerFlowSlides = (provider?: Provider | null) =>
 	[

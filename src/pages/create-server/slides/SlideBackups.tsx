@@ -1,6 +1,4 @@
 import { Button } from '@/components/ui/button';
-import { FieldGroup } from '@/components/ui/field';
-import { Container } from '@/components/ui/container';
 import { AutoBackupFields } from '@/components/auto-backup-fields';
 import { useCreateServer } from '../CreateServerContext';
 import SlideShell from './SlideShell';
@@ -10,19 +8,20 @@ const SlideBackups: React.FC = () => {
 
 	return (
 		<SlideShell
-			title='Backup settings'
-			description='Choose backup behavior and limits.'
+			title='Backups'
+			description='A backup is a copy of your server you can go back to if something breaks.'
 			helpTopic='backups'
 			actions={
 				<Button type='button' onClick={continueToNext}>
 					Continue
 				</Button>
 			}>
-			<FieldGroup className='gap-0'>
-				<Container>
-					<AutoBackupFields values={form} onFieldChange={updateField} idPrefix='create-server' />
-				</Container>
-			</FieldGroup>
+			<AutoBackupFields
+				values={form}
+				onFieldChange={updateField}
+				idPrefix='create-server'
+				showOnStart={false}
+			/>
 		</SlideShell>
 	);
 };
