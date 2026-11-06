@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { TELEMETRY_POLLING } from '@/lib/mserve-consts';
+import { SLEEP_IDLE_PRESETS_MINUTES, TELEMETRY_POLLING } from '@/lib/mserve-consts';
 import { type Provider, type TelemetryKey } from '@/lib/mserve-schema';
 import { getDefaultProviderCommandSupport } from '@/lib/server-provider-capabilities';
 import {
@@ -26,6 +26,7 @@ import { type JavaRuntimeInfo } from '@/lib/java-runtime-service';
 import { type JavaResolution, javaResolutionLabel, resolveServerJavaExecutable } from '@/lib/java-resolution';
 import { getEditableLiteralMotdValue, getStoredLiteralMotdValue } from '@/lib/motd-format';
 import MotdEditor from '@/components/motd-editor';
+import { DurationPicker } from '@/components/duration-picker';
 import { examplePaths } from '@/lib/platform';
 import { getServerNameFromDirectory } from '@/lib/mserve-server-mapper';
 import {
@@ -419,8 +420,18 @@ const SettingsErrorNote: React.FC = () => {
 };
 
 export const GeneralSettingsSection: React.FC = () => {
-	const { server, settingsForm, updateSettingsField, onManualSync, isFormLocked, isOffline } =
-		useEditServerSettings();
+	const {
+		server,
+		settingsForm,
+		updateSettingsField,
+		onManualSync,
+		isFormLocked,
+		isOffline,
+		isJarModalOpen,
+		setIsJarModalOpen,
+		handleProviderJarDownloaded,
+		pickSwapJarFile,
+	} = useEditServerSettings();
 	const { isAdvanced } = useExperience();
 
 	const currentName = getServerNameFromDirectory(settingsForm.new_directory || server.directory);
@@ -433,55 +444,100 @@ export const GeneralSettingsSection: React.FC = () => {
 	};
 
 	return (
-		<SectionShell>
-			<SettingsRow
-				title='Server name'
-				htmlFor='edit-server-name'
-				description={isAdvanced ? 'Renaming also renames the server folder on disk.' : undefined}>
-				<div className='space-y-2'>
-					<Input
-						id='edit-server-name'
-						placeholder='MyServer'
-						value={currentName}
-						onChange={(event) => handleNameChange(event.target.value)}
-					/>
-					<SettingsErrorNote />
-				</div>
-			</SettingsRow>
+		<>
+			<SectionShell>
+				<SettingsRow
+					title='Server name'
+					htmlFor='edit-server-name'
+					description={isAdvanced ? 'Renaming also renames the server folder on disk.' : undefined}>
+					<div className='space-y-2'>
+						<Input
+							id='edit-server-name'
+							placeholder='MyServer'
+							value={currentName}
+							onChange={(event) => handleNameChange(event.target.value)}
+						/>
+						<SettingsErrorNote />
+					</div>
+				</SettingsRow>
 
-			<SettingsRow
-				title='Memory (RAM)'
-				titleAddon={<HelpButton topic='ram' />}
-				description='How much memory the server is allowed to use.'>
-				<RamSelector provider={settingsForm.provider} ram={settingsForm.ram} updateField={updateSettingsField} />
-			</SettingsRow>
+				<SettingsRow
+					title='Memory (RAM)'
+					titleAddon={<HelpButton topic='ram' />}
+					description='How much memory the server is allowed to use.'>
+					<RamSelector provider={settingsForm.provider} ram={settingsForm.ram} updateField={updateSettingsField} />
+				</SettingsRow>
 
-			<SettingsRow
-				title='Auto restart'
-				htmlFor='edit-auto-restart'
-				description='Restart the server when it crashes or closes unexpectedly. Runs in the background, so it works with this window closed, and pauses after repeated crashes in a short window so a broken server can’t loop forever.'
-				control={
-					<Checkbox
-						id='edit-auto-restart'
-						checked={settingsForm.auto_restart}
-						onCheckedChange={(checked) =>
-							updateSettingsField('auto_restart', typeof checked === 'boolean' ? checked : false)
-						}
-					/>
-				}
+				<SettingsRow
+					title='Auto restart'
+					htmlFor='edit-auto-restart'
+					description='Restart the server when it crashes or closes unexpectedly. Runs in the background, so it works with this window closed, and pauses after repeated crashes in a short window so a broken server can’t loop forever.'
+					control={
+						<Checkbox
+							id='edit-auto-restart'
+							checked={settingsForm.auto_restart}
+							onCheckedChange={(checked) =>
+								updateSettingsField('auto_restart', typeof checked === 'boolean' ? checked : false)
+							}
+						/>
+					}
+				/>
+
+				<ServerJarUpdateSection server={server} disabled={isFormLocked || !isOffline} />
+
+				<SettingsRow
+					title='Swap server jar'
+					htmlFor={isAdvanced ? 'edit-jar-swap' : undefined}
+					description='Download a newer build straight from the provider, or point to a jar file on disk. The jar is swapped in when you save.'
+					control={
+						<>
+							<Button
+								type='button'
+								variant='secondary'
+								onClick={() => setIsJarModalOpen(true)}
+								disabled={isFormLocked}>
+								<Download /> Download
+							</Button>
+							{isAdvanced && (
+								<Button type='button' variant='secondary' onClick={pickSwapJarFile} disabled={isFormLocked}>
+									<FolderOpen /> Browse
+								</Button>
+							)}
+						</>
+					}>
+					{isAdvanced && (
+						<Input
+							id='edit-jar-swap'
+							placeholder={examplePaths.serverJar}
+							value={settingsForm.jar_swap_path}
+							onChange={(event) => updateSettingsField('jar_swap_path', event.target.value)}
+						/>
+					)}
+					{settingsForm.jar_swap_path.trim().length > 0 && (
+						<p className='text-sm text-muted-foreground break-all'>
+							Pending jar: {settingsForm.jar_swap_path}
+						</p>
+					)}
+				</SettingsRow>
+
+				<SettingsRow
+					title='Sync mserve.json'
+					description='Refresh the stored configuration and rebuild it if the file is missing.'
+					control={
+						<Button variant='secondary' onClick={onManualSync} disabled={isFormLocked || !isOffline}>
+							<RefreshCcw />
+							<span>Sync mserve.json</span>
+						</Button>
+					}
+				/>
+			</SectionShell>
+
+			<JarDownloadModal
+				open={isJarModalOpen}
+				onOpenChange={setIsJarModalOpen}
+				onDownloaded={handleProviderJarDownloaded}
 			/>
-
-			<SettingsRow
-				title='Sync mserve.json'
-				description='Refresh the stored configuration and rebuild it if the file is missing.'
-				control={
-					<Button variant='secondary' onClick={onManualSync} disabled={isFormLocked || !isOffline}>
-						<RefreshCcw />
-						<span>Sync mserve.json</span>
-					</Button>
-				}
-			/>
-		</SectionShell>
+		</>
 	);
 };
 
@@ -508,26 +564,17 @@ export const SleepModeSettingsSection: React.FC = () => {
 			/>
 
 			<SettingsRow
-				title='Idle minutes before sleeping'
-				htmlFor='sleep-idle-minutes'
-				description='How long the server stays empty before it goes to sleep.'
-				control={
-					<Input
-						id='sleep-idle-minutes'
-						type='number'
-						min={1}
-						className='w-24'
-						value={settingsForm.sleep_idle_minutes}
-						disabled={!enabled || isFormLocked}
-						onChange={(event) =>
-							updateSettingsField(
-								'sleep_idle_minutes',
-								Math.max(1, Math.round(Number(event.target.value) || 1)),
-							)
-						}
-					/>
-				}
-			/>
+				title={<span id='sleep-idle-label'>Idle time before sleeping</span>}
+				description='How long the server stays empty before it goes to sleep.'>
+				<DurationPicker
+					aria-labelledby='sleep-idle-label'
+					value={settingsForm.sleep_idle_minutes}
+					presets={SLEEP_IDLE_PRESETS_MINUTES}
+					min={1}
+					disabled={!enabled || isFormLocked}
+					onValueChange={(minutes) => updateSettingsField('sleep_idle_minutes', minutes)}
+				/>
+			</SettingsRow>
 
 			<MotdEditor
 				label='Sleeping server list message (MOTD)'
@@ -607,7 +654,6 @@ const AutomaticJavaRuntime: React.FC = () => {
 
 export const JavaSettingsSection: React.FC = () => {
 	const {
-		server,
 		globalJavaDefault,
 		javaRuntimes,
 		effectiveJavaRuntimeLabel,
@@ -616,142 +662,91 @@ export const JavaSettingsSection: React.FC = () => {
 		runCommandPreview,
 		settingsForm,
 		updateSettingsField,
-		isFormLocked,
-		isOffline,
-		isJarModalOpen,
-		setIsJarModalOpen,
-		handleProviderJarDownloaded,
-		pickSwapJarFile,
 	} = useEditServerSettings();
 	const { isBeginner, isAdvanced } = useExperience();
 
 	return (
-		<>
-			<SectionShell>
-				<SettingsRow
-					title='Java runtime'
-					htmlFor={isBeginner ? undefined : 'edit-java-runtime'}
-					titleAddon={
+		<SectionShell>
+			<SettingsRow
+				title='Java runtime'
+				htmlFor={isBeginner ? undefined : 'edit-java-runtime'}
+				titleAddon={
+					<>
+						<HelpButton topic='java' />
+						{effectiveJavaRuntimeLabel && (
+							<span className='rounded-full bg-accent px-2 py-1 text-xs font-medium text-accent-foreground'>
+								{effectiveJavaRuntimeLabel}
+							</span>
+						)}
+					</>
+				}
+				description={
+					isBeginner ? undefined : (
 						<>
-							<HelpButton topic='java' />
-							{effectiveJavaRuntimeLabel && (
-								<span className='rounded-full bg-accent px-2 py-1 text-xs font-medium text-accent-foreground'>
-									{effectiveJavaRuntimeLabel}
-								</span>
-							)}
+							Pick which detected JDK runs this server. "Automatic" uses the global default:{' '}
+							<span className='font-mono'>{globalJavaDefault}</span>
 						</>
-					}
+					)
+				}>
+				{isBeginner ? (
+					<AutomaticJavaRuntime />
+				) : (
+					<JavaRuntimeSelect
+						id='edit-java-runtime'
+						provider={settingsForm.provider}
+						javaRuntimes={javaRuntimes}
+						value={settingsForm.java_installation}
+						onChange={(next) => updateSettingsField('java_installation', next)}
+					/>
+				)}
+				<SettingsErrorNote />
+			</SettingsRow>
+
+			{isAdvanced && (
+				<SettingsRow
+					title='Java installation override'
+					htmlFor='edit-java-installation'
 					description={
-						isBeginner ? undefined : (
-							<>
-								Pick which detected JDK runs this server. "Automatic" uses the global default:{' '}
-								<span className='font-mono'>{globalJavaDefault}</span>
-							</>
-						)
-					}>
-					{isBeginner ? (
-						<AutomaticJavaRuntime />
-					) : (
-						<JavaRuntimeSelect
-							id='edit-java-runtime'
-							provider={settingsForm.provider}
-							javaRuntimes={javaRuntimes}
-							value={settingsForm.java_installation}
-							onChange={(next) => updateSettingsField('java_installation', next)}
-						/>
-					)}
-				</SettingsRow>
-
-				<ServerJarUpdateSection server={server} disabled={isFormLocked || !isOffline} />
-
-				<SettingsRow
-					title='Swap server jar'
-					htmlFor={isAdvanced ? 'edit-jar-swap' : undefined}
-					description='Download a newer build straight from the provider, or point to a jar file on disk. The jar is swapped in when you save.'
-					control={
 						<>
-							<Button
-								type='button'
-								variant='secondary'
-								onClick={() => setIsJarModalOpen(true)}
-								disabled={isFormLocked}>
-								<Download /> Download
-							</Button>
-							{isAdvanced && (
-								<Button type='button' variant='secondary' onClick={pickSwapJarFile} disabled={isFormLocked}>
-									<FolderOpen /> Browse
-								</Button>
-							)}
+							Point to a specific <span className='font-mono'>java</span> executable. Leave blank to
+							use the dropdown / global default.
 						</>
 					}>
-					{isAdvanced && (
-						<Input
-							id='edit-jar-swap'
-							placeholder={examplePaths.serverJar}
-							value={settingsForm.jar_swap_path}
-							onChange={(event) => updateSettingsField('jar_swap_path', event.target.value)}
-						/>
-					)}
-					{settingsForm.jar_swap_path.trim().length > 0 && (
-						<p className='text-sm text-muted-foreground break-all'>
-							Pending jar: {settingsForm.jar_swap_path}
-						</p>
-					)}
-					<SettingsErrorNote />
+					<Input
+						className='font-mono'
+						id='edit-java-installation'
+						placeholder={examplePaths.javaExecutable}
+						value={settingsForm.java_installation}
+						onChange={(event) => updateSettingsField('java_installation', event.target.value)}
+					/>
 				</SettingsRow>
+			)}
 
-				{isAdvanced && (
-					<SettingsRow
-						title='Java installation override'
-						htmlFor='edit-java-installation'
-						description={
-							<>
-								Point to a specific <span className='font-mono'>java</span> executable. Leave blank to
-								use the dropdown / global default.
-							</>
-						}>
-						<Input
-							className='font-mono'
-							id='edit-java-installation'
-							placeholder={examplePaths.javaExecutable}
-							value={settingsForm.java_installation}
-							onChange={(event) => updateSettingsField('java_installation', event.target.value)}
-						/>
-					</SettingsRow>
-				)}
-
-				{isAdvanced && (
-					<SettingsRow
-						title='Extra Java flags'
-						htmlFor='edit-custom-flags'
-						description='Added to the start command, one flag per line.'>
-						<Textarea
-							id='edit-custom-flags'
-							className='min-h-32 font-mono'
-							placeholder='--nogui'
-							value={customFlagsDraft}
-							onChange={(event) => {
-								const nextValue = event.target.value;
-								setCustomFlagsDraft(nextValue);
-								updateSettingsField('custom_flags', parseCustomFlagsInput(nextValue));
-							}}
-						/>
-						<div className='space-y-2'>
-							<p className='text-sm font-medium'>Resolved start command preview</p>
-							<p className='font-mono text-xs px-3 py-1 border-2 border-border rounded-md'>
-								{runCommandPreview}
-							</p>
-						</div>
-					</SettingsRow>
-				)}
-			</SectionShell>
-
-			<JarDownloadModal
-				open={isJarModalOpen}
-				onOpenChange={setIsJarModalOpen}
-				onDownloaded={handleProviderJarDownloaded}
-			/>
-		</>
+			{isAdvanced && (
+				<SettingsRow
+					title='Extra Java flags'
+					htmlFor='edit-custom-flags'
+					description='Added to the start command, one flag per line.'>
+					<Textarea
+						id='edit-custom-flags'
+						className='min-h-32 font-mono'
+						placeholder='--nogui'
+						value={customFlagsDraft}
+						onChange={(event) => {
+							const nextValue = event.target.value;
+							setCustomFlagsDraft(nextValue);
+							updateSettingsField('custom_flags', parseCustomFlagsInput(nextValue));
+						}}
+					/>
+					<div className='space-y-2'>
+						<p className='text-sm font-medium'>Resolved start command preview</p>
+						<p className='font-mono text-xs px-3 py-1 border-2 border-border rounded-md'>
+							{runCommandPreview}
+						</p>
+					</div>
+				</SettingsRow>
+			)}
+		</SectionShell>
 	);
 };
 

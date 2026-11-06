@@ -12,5 +12,7 @@ export const DEFAULT_AUTO_BACKUP_INTERVAL_MINUTES = 120;
 export const AUTO_BACKUP_INTERVAL_PRESETS_MINUTES: readonly number[] = [30, 60, 120, 360, 720, 1440];
 export const DEFAULT_SLEEP_MOTD = '§eSleeping. §7Join to wake this server';
 export const DEFAULT_SLEEP_IDLE_MINUTES = 15;
+/** DurationPicker chips for the sleep idle timeout. Includes the 15m default so it opens on a chip. */
+export const SLEEP_IDLE_PRESETS_MINUTES: readonly number[] = [5, 10, 15, 30, 60, 120];
 export const DEFAULT_TELEMETRY_HOST = '127.0.0.1';
 export const DEFAULT_TELEMETRY_PORT = 25565;

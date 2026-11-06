@@ -6,10 +6,8 @@
 
 export type SecuritySeverity = 'pass' | 'info' | 'warn' | 'critical';
 
-/** A one-click remediation: either write server.properties keys or install a plugin. */
-type SecurityFix =
-	| { kind: 'properties'; updates: { key: string; value: string }[] }
-	| { kind: 'plugin' };
+/** A one-click remediation: write these server.properties keys. */
+type SecurityFix = { kind: 'properties'; updates: { key: string; value: string }[] };
 
 export type SecurityFinding = {
 	id: string;
@@ -113,8 +111,9 @@ export const auditServerProperties = (
 			},
 		});
 	} else if (!isTrue(enforceWhitelist)) {
+		// Same id as the other whitelist states, so fixing it updates that row in place.
 		findings.push({
-			id: 'enforce-whitelist',
+			id: 'white-list',
 			severity: 'warn',
 			title: 'Whitelist is not enforced live',
 			explanation:
@@ -145,6 +144,13 @@ export const auditServerProperties = (
 				'enforce-secure-profile=false lets clients connect without signed chat, which some chat-spam bots rely on. Re-enable it unless a mod requires otherwise.',
 			fix: { kind: 'properties', updates: [{ key: 'enforce-secure-profile', value: 'true' }] },
 		});
+	} else {
+		findings.push({
+			id: 'enforce-secure-profile',
+			severity: 'pass',
+			title: 'Secure chat profiles are enforced',
+			explanation: 'Clients must sign their chat, which shuts out many chat-spam bots.',
+		});
 	}
 
 	// --- connection rate limit.
@@ -157,6 +163,13 @@ export const auditServerProperties = (
 			explanation:
 				'rate-limit=0 disables the built-in per-connection packet cap, making the server easier to flood. A modest cap (e.g. 100) drops abusive connections.',
 			fix: { kind: 'properties', updates: [{ key: 'rate-limit', value: '100' }] },
+		});
+	} else {
+		findings.push({
+			id: 'rate-limit',
+			severity: 'pass',
+			title: 'Packet rate limit is on',
+			explanation: `Connections sending more than ${rateLimit} packets per second are dropped.`,
 		});
 	}
 
@@ -171,6 +184,14 @@ export const auditServerProperties = (
 				'Enabling prevent-proxy-connections blocks players whose ISP differs from their Mojang-auth country, which stops many VPN-hopping bots, but can also block legitimate VPN users. Recommended for public survival servers.',
 			fix: { kind: 'properties', updates: [{ key: 'prevent-proxy-connections', value: 'true' }] },
 		});
+	} else {
+		findings.push({
+			id: 'prevent-proxy-connections',
+			severity: 'pass',
+			title: 'Proxy/VPN connections are blocked',
+			explanation:
+				'Players whose ISP differs from their Mojang-auth country are turned away, which stops many VPN-hopping bots.',
+		});
 	}
 
 	// --- spawn protection.
@@ -183,6 +204,14 @@ export const auditServerProperties = (
 			explanation:
 				'spawn-protection=0 lets non-operators build and break at spawn. A small radius (e.g. 16) protects the spawn area from griefers.',
 			fix: { kind: 'properties', updates: [{ key: 'spawn-protection', value: '16' }] },
+		});
+	} else {
+		const area = Number.isFinite(spawnProtection) ? `${spawnProtection} blocks around spawn are` : 'Spawn is';
+		findings.push({
+			id: 'spawn-protection',
+			severity: 'pass',
+			title: 'Spawn is protected',
+			explanation: `${area} protected from non-operators. This only applies once the server has at least one operator.`,
 		});
 	}
 
@@ -200,6 +229,13 @@ export const auditServerProperties = (
 				updates: [{ key: 'network-compression-threshold', value: '256' }],
 			},
 		});
+	} else {
+		findings.push({
+			id: 'network-compression-threshold',
+			severity: 'pass',
+			title: 'Packet compression is on',
+			explanation: 'Large packets are compressed, so a packet flood costs less bandwidth.',
+		});
 	}
 
 	// --- RCON broadcast to ops.
@@ -214,6 +250,13 @@ export const auditServerProperties = (
 				'broadcast-rcon-to-ops=true echoes RCON command output to online ops, which can leak admin actions. mserve provisions this as false; imported servers may not.',
 			fix: { kind: 'properties', updates: [{ key: 'broadcast-rcon-to-ops', value: 'false' }] },
 		});
+	} else {
+		findings.push({
+			id: 'broadcast-rcon-to-ops',
+			severity: 'pass',
+			title: 'RCON commands stay private',
+			explanation: 'RCON command output is not echoed to online operators.',
+		});
 	}
 
 	// --- max-players sanity vs allocated RAM (~ a player needs headroom).
@@ -225,6 +268,15 @@ export const auditServerProperties = (
 			severity: 'warn',
 			title: 'Max players looks high for the allocated RAM',
 			explanation: `max-players=${maxPlayers} may overcommit ${ctx.maxRamGb} GB of RAM. A packed server is also a bigger denial-of-service target. Consider lowering it or allocating more memory.`,
+		});
+	} else {
+		findings.push({
+			id: 'max-players',
+			severity: 'pass',
+			title: 'Max players fits the allocated RAM',
+			explanation: Number.isFinite(maxPlayers)
+				? `max-players=${maxPlayers} is a reasonable cap for ${ctx.maxRamGb} GB of RAM.`
+				: `The player cap is reasonable for ${ctx.maxRamGb} GB of RAM.`,
 		});
 	}
 

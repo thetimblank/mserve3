@@ -414,7 +414,7 @@ const ServerOverviewPanel: React.FC<Props> = ({
 						{availableUpdate && (
 							<DetailItem icon={<ArrowUpCircle />} label='Update'>
 								<Link
-									to={`/servers/${server.id}/settings#java`}
+									to={`/servers/${server.id}/settings#general`}
 									className='inline-flex items-center gap-1.5 rounded-full bg-accent px-2 py-0.5 text-xs font-medium text-accent-foreground hover:opacity-80'>
 									<ArrowUpCircle className='size-3.5' />
 									{availableUpdate.latestLabel} available

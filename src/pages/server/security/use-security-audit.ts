@@ -72,5 +72,5 @@ export const useSecurityAudit = (server: Server) => {
 		await applyPropertyUpdates(merged, 'Applied all recommended security fixes.');
 	}, [findings, applyPropertyUpdates]);
 
-	return { findings, isLoading, isApplying, refresh, applyPropertyUpdates, applyAllRecommended };
+	return { findings, isLoading, isApplying, applyPropertyUpdates, applyAllRecommended };
 };

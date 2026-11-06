@@ -58,7 +58,12 @@ describe('auditServerProperties', () => {
 			props({ 'white-list': 'true', 'enforce-whitelist': 'false' }),
 			ctx,
 		);
-		expect(find(findings, 'enforce-whitelist')?.severity).toBe('warn');
+		const finding = find(findings, 'white-list');
+		expect(finding?.severity).toBe('warn');
+		expect(finding?.fix).toEqual({
+			kind: 'properties',
+			updates: [{ key: 'enforce-whitelist', value: 'true' }],
+		});
 	});
 
 	it('passes and reports the count when whitelist is fully enforced', () => {
@@ -82,10 +87,11 @@ describe('auditServerProperties', () => {
 		expect(find(findings, 'network-compression-threshold')?.severity).toBe('warn');
 	});
 
-	it('only flags broadcast-rcon-to-ops when rcon is enabled', () => {
+	it('passes broadcast-rcon-to-ops while rcon is off and warns once it is on', () => {
 		expect(
-			find(auditServerProperties(props({ 'broadcast-rcon-to-ops': 'true' }), ctx), 'broadcast-rcon-to-ops'),
-		).toBeUndefined();
+			find(auditServerProperties(props({ 'broadcast-rcon-to-ops': 'true' }), ctx), 'broadcast-rcon-to-ops')
+				?.severity,
+		).toBe('pass');
 		const withRcon = auditServerProperties(
 			props({ 'enable-rcon': 'true', 'broadcast-rcon-to-ops': 'true' }),
 			ctx,
@@ -97,13 +103,79 @@ describe('auditServerProperties', () => {
 		// 4 GB → sane cap ~100; 500 is well over.
 		const findings = auditServerProperties(props({ 'max-players': '500' }), { maxRamGb: 4, whitelistCount: null });
 		expect(find(findings, 'max-players')?.severity).toBe('warn');
-		// A reasonable value produces no finding.
-		expect(find(auditServerProperties(props({ 'max-players': '20' }), ctx), 'max-players')).toBeUndefined();
+		// A reasonable value passes.
+		expect(find(auditServerProperties(props({ 'max-players': '20' }), ctx), 'max-players')?.severity).toBe(
+			'pass',
+		);
 	});
 
 	it('treats enforce-secure-profile=false as a warning', () => {
 		const findings = auditServerProperties(props({ 'enforce-secure-profile': 'false' }), ctx);
 		expect(find(findings, 'enforce-secure-profile')?.severity).toBe('warn');
+	});
+
+	it('reports every rule as passing on a hardened server', () => {
+		const hardened = props({
+			'online-mode': 'true',
+			'white-list': 'true',
+			'enforce-whitelist': 'true',
+			'enforce-secure-profile': 'true',
+			'rate-limit': '100',
+			'prevent-proxy-connections': 'true',
+			'spawn-protection': '16',
+			'network-compression-threshold': '256',
+			'enable-rcon': 'true',
+			'broadcast-rcon-to-ops': 'false',
+			'max-players': '20',
+		});
+		const findings = auditServerProperties(hardened, ctx);
+		expect(findings.map((finding) => finding.id).sort()).toEqual(
+			[
+				'broadcast-rcon-to-ops',
+				'enforce-secure-profile',
+				'max-players',
+				'network-compression-threshold',
+				'online-mode',
+				'prevent-proxy-connections',
+				'rate-limit',
+				'spawn-protection',
+				'white-list',
+			].sort(),
+		);
+		for (const finding of findings) {
+			expect(finding.severity).toBe('pass');
+			expect(finding.fix).toBeUndefined();
+		}
+	});
+
+	// A fixed item moves to passing under the same id instead of disappearing.
+	it.each([
+		[
+			'white-list',
+			{ 'white-list': 'true', 'enforce-whitelist': 'false' },
+			{ 'white-list': 'true', 'enforce-whitelist': 'true' },
+		],
+		['rate-limit', { 'rate-limit': '0' }, { 'rate-limit': '100' }],
+		['enforce-secure-profile', { 'enforce-secure-profile': 'false' }, { 'enforce-secure-profile': 'true' }],
+		['prevent-proxy-connections', {}, { 'prevent-proxy-connections': 'true' }],
+		['spawn-protection', { 'spawn-protection': '0' }, { 'spawn-protection': '16' }],
+		[
+			'network-compression-threshold',
+			{ 'network-compression-threshold': '-1' },
+			{ 'network-compression-threshold': '256' },
+		],
+		[
+			'broadcast-rcon-to-ops',
+			{ 'enable-rcon': 'true', 'broadcast-rcon-to-ops': 'true' },
+			{ 'enable-rcon': 'true', 'broadcast-rcon-to-ops': 'false' },
+		],
+		['max-players', { 'max-players': '500' }, { 'max-players': '20' }],
+	] as const)('moves %s to pass once fixed', (id, before, after) => {
+		const failing = find(auditServerProperties(props(before), ctx), id);
+		expect(failing?.severity).not.toBe('pass');
+		const passing = find(auditServerProperties(props(after), ctx), id);
+		expect(passing?.severity).toBe('pass');
+		expect(passing?.fix).toBeUndefined();
 	});
 
 	it('summarizes counts by severity', () => {
