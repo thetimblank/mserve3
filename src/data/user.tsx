@@ -17,6 +17,45 @@ export const normalizeExperienceLevel = (value: unknown): ExperienceLevel =>
 export const isExperienceAtLeast = (level: ExperienceLevel, minimum: ExperienceLevel) =>
 	EXPERIENCE_LEVELS.indexOf(level) >= EXPERIENCE_LEVELS.indexOf(minimum);
 
+/**
+ * Overview display overrides. `null` = follow the experience tier's default
+ * (hidden for beginners, shown otherwise); a boolean is the user's explicit choice.
+ */
+export interface ServerPageDisplayPrefs {
+	show_live_stats: boolean | null;
+	show_details: boolean | null;
+}
+
+export type ServerPageDisplay = {
+	showLiveStats: boolean;
+	showDetails: boolean;
+};
+
+/** What a tier shows on the server overview when the user hasn't chosen. */
+export const isServerPageSectionShownByDefault = (level: ExperienceLevel) => level !== 'beginner';
+
+/** Resolve the overview toggles: an explicit pref wins, otherwise the tier default. */
+export const resolveServerPageDisplay = (
+	prefs: ServerPageDisplayPrefs,
+	level: ExperienceLevel,
+): ServerPageDisplay => {
+	const fallback = isServerPageSectionShownByDefault(level);
+	return {
+		showLiveStats: prefs.show_live_stats ?? fallback,
+		showDetails: prefs.show_details ?? fallback,
+	};
+};
+
+const toOptionalBoolean = (value: unknown): boolean | null => (typeof value === 'boolean' ? value : null);
+
+const normalizeServerPageDisplayPrefs = (value: unknown): ServerPageDisplayPrefs => {
+	const prefs = value && typeof value === 'object' ? (value as Partial<Record<string, unknown>>) : {};
+	return {
+		show_live_stats: toOptionalBoolean(prefs.show_live_stats),
+		show_details: toOptionalBoolean(prefs.show_details),
+	};
+};
+
 export interface UserData {
 	accessibility: {
 		logo_animation: boolean;
@@ -38,6 +77,8 @@ export interface UserData {
 	dashboard_hidden_cards: string[];
 	/** True once the first-launch welcome tour has been finished or skipped. */
 	onboarding_completed: boolean;
+	/** Server overview sections. Read through `useServerPageDisplay()`. */
+	server_page_display: ServerPageDisplayPrefs;
 	created_at: Date;
 	updated_at: Date;
 }
@@ -124,6 +165,7 @@ const createDefaultUserData = (): UserData => {
 		dashboard_card_order: [...DASHBOARD_CARD_IDS],
 		dashboard_hidden_cards: [],
 		onboarding_completed: false,
+		server_page_display: { show_live_stats: null, show_details: null },
 		created_at: now,
 		updated_at: now,
 	};
@@ -150,6 +192,7 @@ const normalizeUserData = (user: Partial<UserData> | null | undefined): UserData
 		dashboard_card_order: normalizeDashboardCardOrder(user?.dashboard_card_order),
 		dashboard_hidden_cards: normalizeDashboardHiddenCards(user?.dashboard_hidden_cards),
 		onboarding_completed: user?.onboarding_completed ?? false,
+		server_page_display: normalizeServerPageDisplayPrefs(user?.server_page_display),
 		created_at: toDate(user?.created_at ?? fallback.created_at),
 		updated_at: toDate(user?.updated_at ?? fallback.updated_at),
 	};
@@ -276,5 +319,16 @@ export const useExperience = (): Experience => {
 			atLeast: (minimum: ExperienceLevel) => isExperienceAtLeast(level, minimum),
 		}),
 		[level],
+	);
+};
+
+/** Which optional server overview sections to show, after tier defaults. */
+export const useServerPageDisplay = (): ServerPageDisplay => {
+	const { user } = useUser();
+	const { show_live_stats, show_details } = user.server_page_display;
+	const level = user.experience_level;
+	return React.useMemo(
+		() => resolveServerPageDisplay({ show_live_stats, show_details }, level),
+		[show_live_stats, show_details, level],
 	);
 };

@@ -41,7 +41,7 @@ import {
 	startActionLabel,
 	stopActionLabel,
 } from '@/data/servers';
-import { useExperience } from '@/data/user';
+import { useExperience, useServerPageDisplay } from '@/data/user';
 import { useServerUpdates } from '@/data/server-updates';
 import { type JavaRuntimeInfo } from '@/lib/java-runtime-service';
 import { javaResolutionLabel, resolveServerJavaExecutable } from '@/lib/java-resolution';
@@ -116,6 +116,7 @@ const ServerOverviewPanel: React.FC<Props> = ({
 	const isProxy = isProxyProvider(server.provider);
 	const capabilities = getServerProviderCapabilities(server.provider);
 	const showRamBytes = useExperience().atLeast('standard');
+	const { showLiveStats, showDetails } = useServerPageDisplay();
 	const { getEntry: getUpdateEntry } = useServerUpdates();
 	const updateEntry = getUpdateEntry(server.id);
 	const availableUpdate =
@@ -168,7 +169,7 @@ const ServerOverviewPanel: React.FC<Props> = ({
 	const { points } = useServerTelemetryHistory(server.id, SPARK_WINDOW_MS, {
 		maxPoints: 40,
 		refreshMs: 10000,
-		enabled: !isOffline,
+		enabled: !isOffline && showLiveStats,
 	});
 	const sparkData = React.useMemo(() => toChartData(points), [points]);
 
@@ -301,167 +302,171 @@ const ServerOverviewPanel: React.FC<Props> = ({
 							)}
 						</div>
 						{/* Live metric cards */}
-						<div className='grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5'>
-							<MetricCard
-								icon={<Cpu />}
-								label='CPU'
-								color={METRIC_COLORS.cpu}
-								value={
-									isOffline || server.stats.cpu_used == null
-										? null
-										: formatPercent(server.stats.cpu_used)
-								}
-								sparkData={sparkData}
-								sparkKey='cpuUsed'
-								sparkDomain={[0, 100]}
-							/>
-							<MetricCard
-								icon={<MemoryStick />}
-								label='RAM'
-								color={METRIC_COLORS.ram}
-								value={
-									isOffline || server.stats.ram_used == null ? null : showRamBytes &&
-									  latestRamBytes != null ? (
-										<>
-											{formatPercent(server.stats.ram_used)}
-											<div className='text-xs font-normal text-muted-foreground mt-0.5 leading-none'>
-												{formatRamUsage(latestRamBytes, server.ram)}
-											</div>
-										</>
-									) : (
-										formatPercent(server.stats.ram_used)
-									)
-								}
-								sparkData={sparkData}
-								sparkKey='ramUsed'
-								sparkDomain={[0, 100]}
-							/>
-							<MetricCard
-								icon={<Users />}
-								label='Players'
-								color={METRIC_COLORS.players}
-								value={
-									server.status === 'online'
-										? `${server.stats.players_online ?? 0}/${server.stats.players_max ?? 0}`
-										: null
-								}
-								sparkData={sparkData}
-								sparkKey='playersOnline'
-								sparkDomain={[0, 'auto']}
-							/>
-							{capabilities.supportsTpsCommand && (
+						{showLiveStats && (
+							<div className='grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5'>
 								<MetricCard
-									icon={<Activity />}
-									label='TPS'
-									color={METRIC_COLORS.tps}
-									value={isOffline || server.stats.tps == null ? null : server.stats.tps.toFixed(2)}
+									icon={<Cpu />}
+									label='CPU'
+									color={METRIC_COLORS.cpu}
+									value={
+										isOffline || server.stats.cpu_used == null
+											? null
+											: formatPercent(server.stats.cpu_used)
+									}
 									sparkData={sparkData}
-									sparkKey='tps'
-									sparkDomain={[0, 20]}
+									sparkKey='cpuUsed'
+									sparkDomain={[0, 100]}
 								/>
-							)}
-							<MetricCard
-								icon={<Clock />}
-								label='Uptime'
-								color={METRIC_COLORS.online}
-								value={
-									server.status === 'online' && server.stats.uptime ? (
-										<UptimeText uptime={server.stats.uptime} />
-									) : null
-								}
-							/>
-						</div>
+								<MetricCard
+									icon={<MemoryStick />}
+									label='RAM'
+									color={METRIC_COLORS.ram}
+									value={
+										isOffline || server.stats.ram_used == null ? null : showRamBytes &&
+										  latestRamBytes != null ? (
+											<>
+												{formatPercent(server.stats.ram_used)}
+												<div className='text-xs font-normal text-muted-foreground mt-0.5 leading-none'>
+													{formatRamUsage(latestRamBytes, server.ram)}
+												</div>
+											</>
+										) : (
+											formatPercent(server.stats.ram_used)
+										)
+									}
+									sparkData={sparkData}
+									sparkKey='ramUsed'
+									sparkDomain={[0, 100]}
+								/>
+								<MetricCard
+									icon={<Users />}
+									label='Players'
+									color={METRIC_COLORS.players}
+									value={
+										server.status === 'online'
+											? `${server.stats.players_online ?? 0}/${server.stats.players_max ?? 0}`
+											: null
+									}
+									sparkData={sparkData}
+									sparkKey='playersOnline'
+									sparkDomain={[0, 'auto']}
+								/>
+								{capabilities.supportsTpsCommand && (
+									<MetricCard
+										icon={<Activity />}
+										label='TPS'
+										color={METRIC_COLORS.tps}
+										value={isOffline || server.stats.tps == null ? null : server.stats.tps.toFixed(2)}
+										sparkData={sparkData}
+										sparkKey='tps'
+										sparkDomain={[0, 20]}
+									/>
+								)}
+								<MetricCard
+									icon={<Clock />}
+									label='Uptime'
+									color={METRIC_COLORS.online}
+									value={
+										server.status === 'online' && server.stats.uptime ? (
+											<UptimeText uptime={server.stats.uptime} />
+										) : null
+									}
+								/>
+							</div>
+						)}
 					</div>
 				</div>
 
 				{/* Static details */}
-				<div className='space-y-3'>
-					<h3 className='text-xs font-semibold uppercase tracking-wide text-muted-foreground'>
-						Details
-					</h3>
-					<div className='grid gap-x-8 gap-y-2.5 sm:grid-cols-2'>
-						{displayVersion &&
-							(() => {
-								const primary = getPrimaryMinecraftVersion(displayVersion);
-								return (
-									<DetailItem icon={<ArrowDownToLine />} label='Version'>
-										{primary ? (
-											<Tooltip>
-												<TooltipTrigger asChild>
-													<span>{primary}</span>
-												</TooltipTrigger>
-												<TooltipContent className='max-w-40 text-wrap text-white dark:text-black'>
-													{displayVersion}
-												</TooltipContent>
-											</Tooltip>
-										) : (
-											displayVersion
-										)}
-									</DetailItem>
-								);
-							})()}
-						<DetailItem icon={<Package />} label='Provider'>
-							{server.provider.name}
-						</DetailItem>
-						{displayProviderVersion && (
-							<DetailItem icon={<Boxes />} label='Detected runtime'>
-								{displayProviderVersion}
+				{showDetails && (
+					<div className='space-y-3'>
+						<h3 className='text-xs font-semibold uppercase tracking-wide text-muted-foreground'>
+							Details
+						</h3>
+						<div className='grid gap-x-8 gap-y-2.5 sm:grid-cols-2'>
+							{displayVersion &&
+								(() => {
+									const primary = getPrimaryMinecraftVersion(displayVersion);
+									return (
+										<DetailItem icon={<ArrowDownToLine />} label='Version'>
+											{primary ? (
+												<Tooltip>
+													<TooltipTrigger asChild>
+														<span>{primary}</span>
+													</TooltipTrigger>
+													<TooltipContent className='max-w-40 text-wrap text-white dark:text-black'>
+														{displayVersion}
+													</TooltipContent>
+												</Tooltip>
+											) : (
+												displayVersion
+											)}
+										</DetailItem>
+									);
+								})()}
+							<DetailItem icon={<Package />} label='Provider'>
+								{server.provider.name}
 							</DetailItem>
-						)}
-						<DetailItem icon={<Boxes />} label='Jar file'>
-							{server.file}
-						</DetailItem>
-						{availableUpdate && (
-							<DetailItem icon={<ArrowUpCircle />} label='Update'>
-								<Link
-									to={`/servers/${server.id}/settings#general`}
-									className='inline-flex items-center gap-1.5 rounded-full bg-accent px-2 py-0.5 text-xs font-medium text-accent-foreground hover:opacity-80'>
-									<ArrowUpCircle className='size-3.5' />
-									{availableUpdate.latestLabel} available
-								</Link>
+							{displayProviderVersion && (
+								<DetailItem icon={<Boxes />} label='Detected runtime'>
+									{displayProviderVersion}
+								</DetailItem>
+							)}
+							<DetailItem icon={<Boxes />} label='Jar file'>
+								{server.file}
 							</DetailItem>
-						)}
-						{server.ram != null && (
-							<DetailItem icon={<MemoryStick />} label='Allocated RAM'>
-								{server.ram}GB
-							</DetailItem>
-						)}
-						{effectiveJavaRuntimeLabel && (
-							<DetailItem icon={<Coffee />} label='Java runtime'>
-								{effectiveJavaRuntimeLabel}
-							</DetailItem>
-						)}
-						{shouldShowWorldAndBackupSizes && (
-							<DetailItem icon={<Globe />} label='Worlds size'>
-								{formatBytes(server.stats.worlds_size_bytes)}
-							</DetailItem>
-						)}
-						{shouldShowWorldAndBackupSizes && (
-							<DetailItem icon={<Archive />} label='Backups size'>
-								{formatBytes(server.stats.backups_size_bytes)}
-							</DetailItem>
-						)}
-						{createdDateText && (
-							<DetailItem icon={<Clock />} label='Created'>
-								{createdDateText}
-							</DetailItem>
-						)}
-						{server.auto_restart && (
-							<DetailItem icon={<RefreshCcw />} label='Auto-restart'>
-								Enabled
-							</DetailItem>
-						)}
-					</div>
-					{shouldShowWorldAndBackupSizes && isBackupsNearStorageLimit && (
-						<div className='flex items-center gap-2 text-sm text-yellow-700 dark:text-yellow-400'>
-							<TriangleAlert className='size-4 shrink-0' />
-							<p>
-								Backups are using at least <span className='font-bold'>90%</span> of the storage
-								limit.
-							</p>
+							{availableUpdate && (
+								<DetailItem icon={<ArrowUpCircle />} label='Update'>
+									<Link
+										to={`/servers/${server.id}/settings#general`}
+										className='inline-flex items-center gap-1.5 rounded-full bg-accent px-2 py-0.5 text-xs font-medium text-accent-foreground hover:opacity-80'>
+										<ArrowUpCircle className='size-3.5' />
+										{availableUpdate.latestLabel} available
+									</Link>
+								</DetailItem>
+							)}
+							{server.ram != null && (
+								<DetailItem icon={<MemoryStick />} label='Allocated RAM'>
+									{server.ram}GB
+								</DetailItem>
+							)}
+							{effectiveJavaRuntimeLabel && (
+								<DetailItem icon={<Coffee />} label='Java runtime'>
+									{effectiveJavaRuntimeLabel}
+								</DetailItem>
+							)}
+							{shouldShowWorldAndBackupSizes && (
+								<DetailItem icon={<Globe />} label='Worlds size'>
+									{formatBytes(server.stats.worlds_size_bytes)}
+								</DetailItem>
+							)}
+							{shouldShowWorldAndBackupSizes && (
+								<DetailItem icon={<Archive />} label='Backups size'>
+									{formatBytes(server.stats.backups_size_bytes)}
+								</DetailItem>
+							)}
+							{createdDateText && (
+								<DetailItem icon={<Clock />} label='Created'>
+									{createdDateText}
+								</DetailItem>
+							)}
+							{server.auto_restart && (
+								<DetailItem icon={<RefreshCcw />} label='Auto-restart'>
+									Enabled
+								</DetailItem>
+							)}
 						</div>
-					)}
-				</div>
+					</div>
+				)}
+				{/* A warning, not a detail: shown even when Details is hidden. */}
+				{shouldShowWorldAndBackupSizes && isBackupsNearStorageLimit && (
+					<div className='flex items-center gap-2 text-sm text-yellow-700 dark:text-yellow-400'>
+						<TriangleAlert className='size-4 shrink-0' />
+						<p>
+							Backups are using at least <span className='font-bold'>90%</span> of the storage limit.
+						</p>
+					</div>
+				)}
 			</CardContent>
 		</Card>
 	);
