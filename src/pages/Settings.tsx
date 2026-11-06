@@ -11,11 +11,11 @@ import SettingsAppearanceSection from './settings/settings-appearance-section';
 import SettingsBehaviorSection from './settings/settings-behavior-section';
 import SettingsTunnelSection from './settings/settings-tunnel-section';
 import SettingsJavaSection from './settings/settings-java-section';
+import SettingsServerPageSection from './settings/settings-server-page-section';
 import SettingsDataSection from './settings/settings-data-section';
 import SettingsUpdateSection from './settings/settings-update-section';
 import { useAppUpdate } from './settings/hooks/use-app-update';
 
-// Unit O adds a "Server page display" section to the Servers group.
 const SETTINGS_GROUPS: SettingsGroup[] = [
 	{ id: 'app', title: 'App' },
 	{ id: 'servers', title: 'Servers' },
@@ -111,6 +111,26 @@ const Settings: React.FC = () => {
 					liveServerNames={liveServerNames}
 				/>
 			),
+		},
+		{
+			id: 'server-page',
+			group: 'servers',
+			title: 'Server page display',
+			description: "What a server's overview shows besides its status, controls, and address.",
+			keywords: [
+				'overview',
+				'stats',
+				'metrics',
+				'live',
+				'details',
+				'cpu',
+				'ram',
+				'players',
+				'tps',
+				'uptime',
+				'display',
+			],
+			render: () => <SettingsServerPageSection />,
 		},
 		{
 			id: 'java',

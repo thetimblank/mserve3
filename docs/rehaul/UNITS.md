@@ -29,7 +29,7 @@ Wave 2 (after their deps):         D1 · D2 · O · A · C3 · F2 · J1 · J2 ·
 | H | `feat/dashboard-bento-v2` | L | W0-2a | [x] #41 |
 | D1 | `feat/server-settings-tidy` | S/M | B | [x] #43 |
 | D2 | `feat/motd-server-list` | M | B, D1 | [x] #45 |
-| O | `feat/beginner-overview` | S | B | [ ] |
+| O | `feat/beginner-overview` | S | B | [x] |
 | A | `feat/onboarding-rework` | M | C1 | [ ] |
 | C3 | `feat/wizard-slide-cleanup` | M | C1, W0-2b | [ ] |
 | F2 | `feat/hosting-guide-router-test` | M | F1 | [ ] |
