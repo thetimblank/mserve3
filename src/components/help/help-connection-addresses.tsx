@@ -11,7 +11,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 import { useLocalIp, usePublicIp, type IpAddressValue } from '@/hooks/use-ip-address';
 
-const AddressRow: React.FC<{ label: string; value: IpAddressValue }> = ({ label, value }) => {
+export const AddressRow: React.FC<{ label: string; value: IpAddressValue }> = ({ label, value }) => {
 	const [hidden, setHidden] = React.useState(true);
 	const { copied, copy } = useCopyToClipboard();
 

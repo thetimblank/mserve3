@@ -262,7 +262,11 @@ export const HELP_TOPICS: Record<HelpTopicId, HelpTopic> = {
 				icon: Wifi,
 				title: 'Share without port forwarding',
 				body: 'Tunneling (via playit.gg) gives your server a public address that friends can join from anywhere.',
-				bullets: ['No router settings', 'Your home IP stays hidden'],
+				bullets: [
+					'No router settings',
+					'Works where forwarding is blocked (CGNAT, dorms, apartments)',
+					'Your home IP stays hidden',
+				],
 			},
 			{
 				icon: ArrowDownUp,
@@ -270,11 +274,21 @@ export const HELP_TOPICS: Record<HelpTopicId, HelpTopic> = {
 				body: "A lightweight agent inside mserve keeps an outbound connection to the playit network. Player traffic enters through playit's servers and rides that connection back to you.",
 			},
 			{
+				icon: Timer,
+				title: 'The trade-offs',
+				bullets: [
+					'A bit more ping, depending on the nearest playit location',
+					'Depends on playit.gg being up and on your account',
+					"Players show up with a local address, so IP bans don't work (ban by name)",
+				],
+			},
+			{
 				icon: ShieldCheck,
 				title: 'One account, per-server tunnels',
 				body: 'Claim your free playit account once in mserve, then flip the tunnel switch on any server. The public address stays the same across restarts.',
 			},
 		],
+		learnMore: { label: 'Open the hosting setup', to: '/setup' },
 	},
 	'port-forwarding': {
 		title: 'Hosting & ports',
@@ -282,15 +296,33 @@ export const HELP_TOPICS: Record<HelpTopicId, HelpTopic> = {
 			{
 				icon: Globe,
 				title: 'Why ports matter',
-				body: 'Friends outside your home network can only reach your server if its port (default 25565) is reachable from the internet, through either port forwarding on your router or a tunnel.',
+				body: 'Friends outside your home network can only reach your server if its port (default 25565) is reachable from the internet. You can skip forwarding only when:',
+				bullets: [
+					'Everyone is on your Wi-Fi or home network (they use the local IP)',
+					'You use a tunnel',
+					'Your router opens ports on its own (UPnP), which the Minecraft server does not ask for',
+				],
 			},
 			{
 				icon: ArrowDownUp,
 				title: 'Two ways in',
 				bullets: [
 					'Port forwarding: the classic route. Fast and direct, but needs router access and shares your IP.',
-					'Tunneling: zero setup and hides your IP, at the cost of a small detour.',
+					'Tunneling: no router setup and hides your IP, at the cost of a small detour.',
 				],
+			},
+			{
+				icon: Route,
+				title: 'What to forward',
+				bullets: [
+					'Port 25565 (or your server port), protocol TCP, incoming',
+					"Point it at this PC's local IP, and reserve that IP in the router (DHCP reservation)",
+				],
+			},
+			{
+				icon: Network,
+				title: 'When forwarding cannot work',
+				body: 'Behind CGNAT (common on 5G home internet, Starlink and some fiber), your provider shares one public IP between many homes, so a forward never receives players. Use a tunnel.',
 			},
 			{
 				icon: ShieldCheck,
@@ -337,9 +369,9 @@ export const HELP_TOPICS: Record<HelpTopicId, HelpTopic> = {
 				body: 'Check that:',
 				bullets: [
 					'The server is actually online',
-					'Your OS firewall allows the port',
-					'The port forward (or tunnel) is set up correctly',
+					'The port forward (TCP, to this PC) or the tunnel is set up, and your OS firewall allows the port',
 					'Your friend uses the address that matches where they are (local or public)',
+					'Behind CGNAT, only a tunnel works',
 				],
 			},
 		],
