@@ -22,7 +22,7 @@ Wave 2 (after their deps):         D1 · D2 · O · A · C3 · F2 · J1 · J2 ·
 | W0-3 | `feat/experience-tiers` | M | W0-2a | [x] #27 |
 | B | `feat/settings-layout` | M/L | W0-3 | [x] #29 |
 | C1 | `feat/wizard-provider-version` | L | W0-2b, W0-3 | [x] #31 |
-| C2 | `feat/browser-filterbars` | M | W0-2b | [ ] |
+| C2 | `feat/browser-filterbars` | M | W0-2b | [x] #33 |
 | E | `feat/content-tabs-rework` | M | W0-2b | [ ] |
 | G | `feat/java-guide-feedback-polish` | S | W0-2a | [ ] |
 | F1 | `feat/hosting-guide-split-path` | L | W0-3 | [ ] |
