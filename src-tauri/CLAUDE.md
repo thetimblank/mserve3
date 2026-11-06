@@ -27,7 +27,8 @@ src/app/
 ├── mod.rs            # Tauri builder, managed state, struct/enum definitions, generate_handler!
 ├── commands/         # #[tauri::command] IPC handlers — the frontend-facing API
 │   ├── runtime.rs        start/stop/sleep/restart/force-kill, send command, runtime snapshot,
-│   │                     background mode, set/get_server_tunnel, delete_server
+│   │                     background mode, set/get_server_tunnel, delete_server,
+│   │                     get_online_players (players panel)
 │   ├── setup.rs          initialize/import a server, sync & repair mserve.json
 │   ├── providers.rs      list/resolve provider versions (+ the cached-fetch and Fabric
 │   │                     helpers that modrinth.rs/modpack.rs reuse)
@@ -54,6 +55,8 @@ src/app/
     ├── mserve_config.rs   mserve.json read/normalize/write (atomic), provider inference
     ├── server_properties.rs  server.properties read/update, RCON provisioning
     ├── rcon.rs            hand-rolled Source RCON client
+    ├── players.rs         `list` + keepInventory over RCON, ops/whitelist lookup (players panel)
+    ├── players.rs         `list` + keepInventory over RCON, ops/whitelist lookup
     ├── mc_protocol.rs     Minecraft VarInt/String codec, handshake + status packets
     ├── sleep_listener.rs  sleep-mode wake listener (holds the port, answers pings, wakes on join)
     ├── content_meta.rs    .mserve-content.json provenance sidecar for installed content

@@ -23,6 +23,8 @@ pub(in crate::app) struct FakeServerConfig {
     pub tps_response: Option<String>,
     /// Reply to the vanilla `tick query` command, if any.
     pub tick_query_response: Option<String>,
+    /// Extra RCON command → reply pairs (unknown commands reply with "").
+    pub commands: Vec<(String, String)>,
 }
 
 impl Default for FakeServerConfig {
@@ -34,6 +36,7 @@ impl Default for FakeServerConfig {
             rcon_password: Some("secret".to_string()),
             tps_response: Some("TPS from last 1m, 5m, 15m: 20.0, 20.0, 19.9".to_string()),
             tick_query_response: None,
+            commands: Vec::new(),
         }
     }
 }
@@ -69,6 +72,7 @@ impl FakeMinecraftServer {
             if let Some(tick) = config.tick_query_response.clone() {
                 commands.insert("tick query".to_string(), tick);
             }
+            commands.extend(config.commands.iter().cloned());
             thread::spawn(move || {
                 for stream in rcon_listener.incoming() {
                     let Ok(stream) = stream else { continue };

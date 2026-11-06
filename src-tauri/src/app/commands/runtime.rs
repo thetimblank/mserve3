@@ -1,12 +1,13 @@
 use super::super::support::playit;
 use super::super::support::wait_for_auto_backup;
 use super::super::support::{
-    RconClient, emit_output_reader, emit_system_line, ensure_rcon_enabled, get_runtime_config,
-    infer_provider_version, is_restoring, isolate_in_own_process_group, kill_child_process_group,
-    kill_process_tree, next_generation, no_window_command, offline_state_event, patch_mserve_json,
-    pid_listening_on_port, probe_port, read_rcon_config, release_child_from_app_lifetime,
-    remove_if_current, resolve_telemetry_target, server_key, set_server_port, spawn_supervisor,
-    state_event, stop_request, terminate_runtime, tie_child_to_app_lifetime, wait_for_port_release,
+    OnlinePlayers, RconClient, emit_output_reader, emit_system_line, ensure_rcon_enabled,
+    get_runtime_config, infer_provider_version, is_restoring, isolate_in_own_process_group,
+    kill_child_process_group, kill_process_tree, next_generation, no_window_command,
+    offline_state_event, patch_mserve_json, pid_listening_on_port, probe_port,
+    query_online_players, read_rcon_config, release_child_from_app_lifetime, remove_if_current,
+    resolve_telemetry_target, server_key, set_server_port, spawn_supervisor, state_event,
+    stop_request, terminate_runtime, tie_child_to_app_lifetime, wait_for_port_release,
     write_stdin_line,
 };
 use super::super::{
@@ -1117,6 +1118,36 @@ pub(in crate::app) async fn send_server_command(
 ) -> Result<(), String> {
     let processes = state.processes.clone();
     run_blocking(move || send_server_command_blocking(&directory, &command, &processes, &app)).await
+}
+
+fn get_online_players_blocking(
+    directory: &str,
+    processes: &Processes,
+) -> Result<OnlinePlayers, String> {
+    let key = server_key(directory);
+    let (rcon, host, is_proxy) = {
+        let guard = processes.lock().map_err(|_| "Runtime lock failed.")?;
+        let runtime = guard
+            .get(&key)
+            .ok_or_else(|| "Server is not running.".to_string())?;
+        (runtime.rcon.clone(), runtime.host.clone(), runtime.is_proxy)
+    };
+    if is_proxy {
+        return Err("Proxies don't have a player list.".to_string());
+    }
+    let rcon = rcon.ok_or_else(|| "RCON isn't set up for this server.".to_string())?;
+    query_online_players(&host, &rcon, Path::new(directory))
+}
+
+/// Who is online (names, op and whitelist status) plus the keep inventory rule,
+/// read over RCON for the beginner players panel. Proxies are unsupported.
+#[tauri::command]
+pub(in crate::app) async fn get_online_players(
+    directory: String,
+    state: State<'_, RuntimeState>,
+) -> Result<OnlinePlayers, String> {
+    let processes = state.processes.clone();
+    run_blocking(move || get_online_players_blocking(&directory, &processes)).await
 }
 
 fn snapshot_from(runtime: &ServerRuntime) -> ServerRuntimeSnapshot {
