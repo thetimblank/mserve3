@@ -1,10 +1,8 @@
+import { HelpButton } from '@/components/help/help-button';
+import { ToggleCard } from '@/components/toggle-card';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Field } from '@/components/ui/field';
-import { Label } from '@/components/ui/label';
 import { useCreateServer } from '../CreateServerContext';
 import SlideShell from './SlideShell';
-import { Container } from '@/components/ui/container';
 
 const SlideAutoRestart: React.FC = () => {
 	const { form, updateField, continueToNext } = useCreateServer();
@@ -12,28 +10,20 @@ const SlideAutoRestart: React.FC = () => {
 	return (
 		<SlideShell
 			title='Auto restart'
-			description='Automatically restart this server after it closes.'
-			helpTopic='auto-restart'
+			description='Keep the server up without having to watch it.'
 			actions={
 				<Button type='button' onClick={continueToNext}>
 					Continue
 				</Button>
 			}>
-			<div className='flex items-center justify-center'>
-				<Field className='w-auto '>
-					<Container>
-						<Label className='flex items-center gap-3'>
-							<Checkbox
-								checked={form.auto_restart}
-								onCheckedChange={(checked) =>
-									updateField('auto_restart', typeof checked === 'boolean' ? checked : false)
-								}
-							/>
-							Auto restart server when it closes
-						</Label>
-					</Container>
-				</Field>
-			</div>
+			<ToggleCard
+				id='create-server-auto-restart'
+				title='Restart after a crash'
+				description='Starts the server again when it closes without you stopping it.'
+				titleAddon={<HelpButton topic='auto-restart' />}
+				checked={form.auto_restart}
+				onCheckedChange={(checked) => updateField('auto_restart', checked)}
+			/>
 		</SlideShell>
 	);
 };

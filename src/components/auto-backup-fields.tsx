@@ -1,18 +1,20 @@
 import * as React from 'react';
-import { TriangleAlert } from 'lucide-react';
 import { AnimatePresence, m } from 'motion/react';
-import { Checkbox } from '@/components/ui/checkbox';
+import { DurationPicker } from '@/components/duration-picker';
+import { ToggleCard } from '@/components/toggle-card';
 import { Field } from '@/components/ui/field';
 import { Label } from '@/components/ui/label';
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group';
-import type { MserveJsonFormProps } from '@/lib/mserve-schema';
-import { backupChoices } from '@/pages/server/server-constants';
+import { AUTO_BACKUP_INTERVAL_PRESETS_MINUTES } from '@/lib/mserve-consts';
+import type { AutoBackupMode, MserveJsonFormProps } from '@/lib/mserve-schema';
 import { toggleBackupMode } from '@/pages/server/server-utils';
 
 type AutoBackupFieldsProps = {
 	values: Pick<MserveJsonFormProps, 'auto_backup' | 'storage_limit' | 'auto_backup_interval'>;
 	onFieldChange: <K extends keyof MserveJsonFormProps>(key: K, value: MserveJsonFormProps[K]) => void;
 	idPrefix: string;
+	/** Offer the "when it starts" mode too. The wizard leaves it out to stay short. */
+	showOnStart?: boolean;
 };
 
 // Never below 0, but 0 is allowed while typing (an emptied field), so the user
@@ -23,87 +25,87 @@ const parseNonNegative = (value: string, fallback: number) => {
 };
 
 const reveal = {
-	initial: { height: 0, marginTop: 0, opacity: 0 },
-	animate: { height: 'auto', marginTop: 24, opacity: 1 },
-	exit: { height: 0, marginTop: 0, opacity: 0 },
+	initial: { height: 0, opacity: 0 },
+	animate: { height: 'auto', opacity: 1 },
+	exit: { height: 0, opacity: 0 },
 	transition: { type: 'spring', duration: 0.2, bounce: 0 },
 } as const;
 
-/** Auto-backup modes, plus the storage limit and interval they need. */
-export const AutoBackupFields: React.FC<AutoBackupFieldsProps> = ({ values, onFieldChange, idPrefix }) => (
-	<>
-		<Field>
-			<Label>Auto backup modes</Label>
-			<div className='space-y-2'>
-				{backupChoices.map((choice) => (
-					<Label key={choice.value} className='flex items-center gap-3'>
-						<Checkbox
-							checked={values.auto_backup.includes(choice.value)}
-							onCheckedChange={(checked) =>
-								onFieldChange(
-									'auto_backup',
-									toggleBackupMode(values.auto_backup, choice.value, checked === true),
-								)
-							}
-						/>
-						{choice.label}
-					</Label>
-				))}
-			</div>
-		</Field>
-		<AnimatePresence>
-			{values.auto_backup.length > 0 && (
-				<m.div {...reveal}>
-					<Field>
-						<Label htmlFor={`${idPrefix}-storage-limit`}>Backup storage limit</Label>
-						<InputGroup>
-							<InputGroupInput
-								id={`${idPrefix}-storage-limit`}
-								type='number'
-								min={1}
-								value={values.storage_limit}
-								onChange={(event) =>
-									onFieldChange('storage_limit', parseNonNegative(event.target.value, values.storage_limit))
-								}
-							/>
-							<InputGroupAddon className='font-mono font-bold uppercase text-xs' align='inline-end'>
-								Gigabytes
-							</InputGroupAddon>
-						</InputGroup>
-						<p className='text-sm text-muted-foreground'>
-							<TriangleAlert className='size-4 inline-flex mr-1 mb-0.5' />
-							Backups can grow quickly. Set a limit to avoid filling the disk. The oldest backup(s) will
-							be deleted once the limit is reached to make space for the new one.
-						</p>
-					</Field>
-				</m.div>
+/** Automatic backup modes as toggle cards, plus the storage limit they share. */
+export const AutoBackupFields: React.FC<AutoBackupFieldsProps> = ({
+	values,
+	onFieldChange,
+	idPrefix,
+	showOnStart = true,
+}) => {
+	const isOn = (mode: AutoBackupMode) => values.auto_backup.includes(mode);
+	const setMode = (mode: AutoBackupMode, enabled: boolean) =>
+		onFieldChange('auto_backup', toggleBackupMode(values.auto_backup, mode, enabled));
+
+	return (
+		<div className='space-y-3'>
+			<ToggleCard
+				id={`${idPrefix}-backup-interval`}
+				title='Back up on a timer'
+				description='Saves a copy while the server is running.'
+				checked={isOn('interval')}
+				onCheckedChange={(enabled) => setMode('interval', enabled)}>
+				<div className='space-y-2'>
+					<Label id={`${idPrefix}-backup-interval-label`}>Back up every</Label>
+					<DurationPicker
+						aria-labelledby={`${idPrefix}-backup-interval-label`}
+						value={values.auto_backup_interval}
+						presets={AUTO_BACKUP_INTERVAL_PRESETS_MINUTES}
+						min={1}
+						onValueChange={(minutes) => onFieldChange('auto_backup_interval', minutes)}
+					/>
+				</div>
+			</ToggleCard>
+			<ToggleCard
+				id={`${idPrefix}-backup-on-close`}
+				title='Also back up when it stops'
+				description='Saves a copy each time the server stops or crashes.'
+				checked={isOn('on_close')}
+				onCheckedChange={(enabled) => setMode('on_close', enabled)}
+			/>
+			{showOnStart && (
+				<ToggleCard
+					id={`${idPrefix}-backup-on-start`}
+					title='Back up when it starts'
+					description='Saves a copy right after the server starts.'
+					checked={isOn('on_start')}
+					onCheckedChange={(enabled) => setMode('on_start', enabled)}
+				/>
 			)}
-		</AnimatePresence>
-		<AnimatePresence>
-			{values.auto_backup.includes('interval') && (
-				<m.div {...reveal}>
-					<Field>
-						<Label htmlFor={`${idPrefix}-backup-interval`}>Backup interval</Label>
-						<InputGroup>
-							<InputGroupInput
-								id={`${idPrefix}-backup-interval`}
-								type='number'
-								min={1}
-								value={values.auto_backup_interval}
-								onChange={(event) =>
-									onFieldChange(
-										'auto_backup_interval',
-										parseNonNegative(event.target.value, values.auto_backup_interval),
-									)
-								}
-							/>
-							<InputGroupAddon className='font-mono font-bold uppercase text-xs' align='inline-end'>
-								Minutes
-							</InputGroupAddon>
-						</InputGroup>
-					</Field>
-				</m.div>
-			)}
-		</AnimatePresence>
-	</>
-);
+			<AnimatePresence initial={false}>
+				{values.auto_backup.length > 0 && (
+					<m.div {...reveal} className='overflow-hidden'>
+						<Field className='pt-3'>
+							<Label htmlFor={`${idPrefix}-storage-limit`}>Space for backups</Label>
+							<InputGroup>
+								<InputGroupInput
+									id={`${idPrefix}-storage-limit`}
+									type='number'
+									min={1}
+									value={values.storage_limit}
+									onChange={(event) =>
+										onFieldChange(
+											'storage_limit',
+											parseNonNegative(event.target.value, values.storage_limit),
+										)
+									}
+								/>
+								<InputGroupAddon className='font-mono font-bold uppercase text-xs' align='inline-end'>
+									GB
+								</InputGroupAddon>
+							</InputGroup>
+							<p className='text-sm text-muted-foreground'>
+								When backups reach this size, the oldest ones are deleted to make room.
+							</p>
+						</Field>
+					</m.div>
+				)}
+			</AnimatePresence>
+		</div>
+	);
+};

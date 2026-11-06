@@ -1,12 +1,17 @@
+import { ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { CREATE_SERVER_SLIDE_INDEX, getCreateServerStepSlides } from '../create-server-flow';
+import { Checkbox } from '@/components/ui/checkbox';
+import { CREATE_SERVER_SLIDE_INDEX, createServerNeedsEula, getCreateServerStepSlides } from '../create-server-flow';
 import { useCreateServer } from '../CreateServerContext';
+import { describeAutoBackup } from '../review-summary';
 import SlideShell from './SlideShell';
 import { Container } from '@/components/ui/container';
 
 const SlideReview: React.FC = () => {
 	const {
 		form,
+		updateField,
+		clearError,
 		serverName,
 		resolvedDirectory,
 		isSubmitting,
@@ -17,7 +22,8 @@ const SlideReview: React.FC = () => {
 	} = useCreateServer();
 	const visibleStepSlides = getCreateServerStepSlides(form.provider);
 	const showBackups = visibleStepSlides.some((step) => step === CREATE_SERVER_SLIDE_INDEX.backups);
-	const showEula = visibleStepSlides.some((step) => step === CREATE_SERVER_SLIDE_INDEX.eula);
+	const needsEula = createServerNeedsEula(form.provider);
+	const canCreate = !needsEula || form.auto_agree_eula;
 
 	return (
 		<SlideShell
@@ -28,7 +34,7 @@ const SlideReview: React.FC = () => {
 					<Button variant='secondary' type='button' onClick={prevSlide} disabled={isSubmitting}>
 						Back
 					</Button>
-					<Button type='button' onClick={createServer} disabled={isSubmitting}>
+					<Button type='button' onClick={createServer} disabled={isSubmitting || !canCreate}>
 						{isSubmitting ? 'Creating...' : 'Create server'}
 					</Button>
 				</>
@@ -85,31 +91,17 @@ const SlideReview: React.FC = () => {
 					</div>
 					{showBackups && (
 						<div>
-							<p className='text-sm text-muted-foreground'>Backup modes</p>
-							<p>{form.auto_backup.length > 0 ? form.auto_backup.join(', ') : 'Disabled'}</p>
+							<p className='text-sm text-muted-foreground'>Backups</p>
+							<p>{describeAutoBackup(form.auto_backup, form.auto_backup_interval)}</p>
 						</div>
 					)}
-					{showEula && (
+					{showBackups && form.auto_backup.length > 0 && (
 						<div>
-							<p className='text-sm text-muted-foreground'>Auto agree EULA</p>
-							<p>{form.auto_agree_eula ? 'Enabled' : 'Disabled'}</p>
+							<p className='text-sm text-muted-foreground'>Space for backups</p>
+							<p>{form.storage_limit} GB</p>
 						</div>
 					)}
 				</div>
-				{showBackups && form.auto_backup.length > 0 && (
-					<div className='grid grid-cols-2 gap-4'>
-						<div>
-							<p className='text-sm text-muted-foreground'>Storage limit</p>
-							<p>{form.storage_limit} GB</p>
-						</div>
-						{form.auto_backup.includes('interval') && (
-							<div>
-								<p className='text-sm text-muted-foreground'>Backup interval</p>
-								<p>{form.auto_backup_interval} minutes</p>
-							</div>
-						)}
-					</div>
-				)}
 				{isSubmitting && modpackInstallProgress && (
 					<div className='space-y-2 rounded-md border-2 p-3'>
 						<p className='text-sm'>{modpackInstallProgress.message}</p>
@@ -126,6 +118,37 @@ const SlideReview: React.FC = () => {
 					</div>
 				)}
 			</Container>
+			{needsEula && (
+				<Container className='mt-4 flex items-start gap-3'>
+					<Checkbox
+						id='create-server-eula'
+						className='mt-0.5 size-5'
+						aria-describedby='create-server-eula-description'
+						checked={form.auto_agree_eula}
+						disabled={isSubmitting}
+						onCheckedChange={(checked) => {
+							updateField('auto_agree_eula', checked === true);
+							clearError();
+						}}
+					/>
+					<div className='space-y-1'>
+						<label htmlFor='create-server-eula' className='cursor-pointer font-semibold leading-snug'>
+							I accept Mojang&apos;s Server EULA
+						</label>
+						<p id='create-server-eula-description' className='text-sm text-muted-foreground'>
+							Required to run a Minecraft server. mserve accepts it in the server folder for you.
+						</p>
+						<a
+							href='https://aka.ms/MinecraftEULA'
+							target='_blank'
+							rel='noreferrer'
+							className='inline-flex items-center gap-1 text-sm underline underline-offset-4'>
+							Read the EULA
+							<ExternalLink className='size-3.5' />
+						</a>
+					</div>
+				</Container>
+			)}
 		</SlideShell>
 	);
 };

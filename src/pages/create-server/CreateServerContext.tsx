@@ -24,6 +24,7 @@ import { createProvider, isProxyProvider } from '@/lib/server-provider';
 import { getDefaultServersRootPath } from '@/lib/server-root-path';
 import {
 	CREATE_SERVER_SLIDE_INDEX,
+	createServerNeedsEula,
 	getCreateServerCurrentStep,
 	getCreateServerNextSlide,
 	getCreateServerPreviousSlide,
@@ -51,7 +52,15 @@ type ModpackSelection = {
 };
 
 const DONE_SLIDE_INDEX = CREATE_SERVER_SLIDE_INDEX.done;
-const DEFAULT_FORM = createDefaultServerSetupForm();
+/**
+ * The wizard's starting form. The EULA starts unaccepted: the Review slide's
+ * checkbox is the user agreeing to it, so it can't come pre-ticked.
+ */
+const createWizardForm = (): ServerSetupFormData => ({
+	...createDefaultServerSetupForm(),
+	auto_agree_eula: false,
+});
+const DEFAULT_FORM = createWizardForm();
 
 const sameArray = (left: string[], right: string[]) => {
 	if (left.length !== right.length) return false;
@@ -70,10 +79,10 @@ export const findServerByName = (servers: Pick<Server, 'name'>[], name: string) 
 /** Why a server name can't be used, or `null` when it's fine (before checking the disk). */
 export const validateServerName = (name: string, servers: Pick<Server, 'name'>[]): string | null => {
 	const trimmed = name.trim();
-	if (!trimmed) return 'Please enter a server name.';
-	if (/[/\\]/.test(trimmed)) return 'Server name cannot include path separators. Please choose another name.';
+	if (!trimmed) return 'Enter a name for the server.';
+	if (/[/\\]/.test(trimmed)) return "The name can't include / or \\.";
 	const existing = findServerByName(servers, trimmed);
-	if (existing) return `Server name already exists as "${existing.name}". Please choose another name.`;
+	if (existing) return `You already have a server named "${existing.name}".`;
 	return null;
 };
 
@@ -262,7 +271,7 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 		}
 
 		// A provider template up front lets the step count (proxies skip backups
-		// and EULA) and the manual jar fields follow the pick before a download.
+		// and the EULA) and the manual jar fields follow the pick before a download.
 		const provider = createProvider(choice.provider);
 		providerRef.current = provider;
 		setModpackState(null);
@@ -293,7 +302,7 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 	}, []);
 
 	const resetDraft = React.useCallback(() => {
-		setForm(createDefaultServerSetupForm());
+		setForm(createWizardForm());
 		providerRef.current = DEFAULT_FORM.provider;
 		setServerNameState('');
 		setSlide(CREATE_SERVER_SLIDE_INDEX.intro);
@@ -317,14 +326,20 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 	const createServer = React.useCallback(async () => {
 		setError(null);
 
+		if (createServerNeedsEula(form.provider) && !form.auto_agree_eula) {
+			setError("Accept Mojang's Server EULA to create the server.");
+			setSlide(CREATE_SERVER_SLIDE_INDEX.review);
+			return;
+		}
+
 		if (isResolvingServersRootPath) {
-			setError('Still resolving server root path. Please wait a moment and try again.');
+			setError('Still finding your servers root path. Try again in a moment.');
 			setSlide(CREATE_SERVER_SLIDE_INDEX.directory);
 			return;
 		}
 
 		if (!serversRootPath.trim()) {
-			setError('Set your servers root path in Settings before creating a server.');
+			setError('Set a servers root path in Settings > Data & storage first.');
 			setSlide(CREATE_SERVER_SLIDE_INDEX.directory);
 			return;
 		}
@@ -507,7 +522,7 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 				auto_restart: form.auto_restart,
 				auto_backup: form.auto_backup,
 				auto_backup_interval: Math.max(1, Number(form.auto_backup_interval) || DEFAULT_AUTO_BACKUP_INTERVAL_MINUTES),
-				auto_agree_eula: form.auto_agree_eula,
+				auto_agree_eula: createServerNeedsEula(provider) && form.auto_agree_eula,
 				java_installation: form.java_installation,
 				// GUI-capable servers (vanilla/plugin) ship with --nogui by default;
 				// proxies have no GUI. Written into mserve.json as an editable default.
