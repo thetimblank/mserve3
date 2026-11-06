@@ -40,7 +40,8 @@ src/app/
 │   ├── settings.rs       update_server_settings / backup settings, Java + custom flags,
 │   │                     default servers root
 │   ├── backups.rs        create/restore/delete/lock backups, apply retention
-│   ├── items.rs          plugin/world/datapack scan, toggle, delete, export, upload, storage
+│   ├── items.rs          plugin/world/datapack scan, toggle, delete, export, upload, storage,
+│   │                     get_disk_space (drive size/free space for the backup limit)
 │   ├── config_files.rs   scan/read/write managed config files (whitelist.json, ops.json…)
 │   ├── modrinth.rs       Modrinth search/project/versions/tags, install_modrinth_file
 │   ├── modpack.rs        install_modrinth_modpack (.mrpack, + modpack-install-progress)
