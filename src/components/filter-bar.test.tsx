@@ -1,6 +1,7 @@
 import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
+import { openMenu } from '@/test/radix-menu';
 import { FilterBar, resolveFilterActiveCount, type FilterBarFilter } from './filter-bar';
 
 type Provider = 'paper' | 'purpur' | 'vanilla';
@@ -87,12 +88,6 @@ const Harness: React.FC<HarnessProps> = ({
 			}}
 		/>
 	);
-};
-
-/** Radix opens menus on pointerdown or Enter; jsdom has no PointerEvent, so use the key. */
-const openMenu = (trigger: HTMLElement) => {
-	fireEvent.keyDown(trigger, { key: 'Enter' });
-	return screen.getByRole('menu');
 };
 
 describe('FilterBar search', () => {

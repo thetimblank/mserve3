@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Check, CircleCheck, CircleHelp, Loader2, Search, X } from 'lucide-react';
+import { Check, CircleCheck, Loader2, X } from 'lucide-react';
 import {
 	filterJarRows,
 	formatStabilityLabel,
@@ -7,7 +7,6 @@ import {
 	resolveLatestJarRowIds,
 	UNSTABLE_STABILITY_IDS,
 	type JarProviderFilterId,
-	type JarStabilityFilterId,
 	type JarTab,
 	type JarVersionRow,
 } from '@/lib/jar-download-service';
@@ -17,18 +16,18 @@ import {
 	resolveJavaRequirement,
 } from '@/lib/java-compatibility';
 import type { ProviderName } from '@/lib/mserve-schema';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group';
+import { FilterBar, type FilterBarFilter } from '@/components/filter-bar';
 import { Container } from '@/components/ui/container';
 
-/** Toggles a filter id in a multi-select set, always keeping at least one selected. */
-const toggleFilterId = <T,>(current: T[], filterId: T, checked: boolean): T[] => {
-	if (checked) {
-		return current.includes(filterId) ? current : [...current, filterId];
-	}
-	return current.length === 1 ? current : current.filter((id) => id !== filterId);
-};
+type JavaCompatibilityFilter = 'compatible' | 'any';
+
+const JAVA_FILTER_OPTIONS = [
+	{ value: 'compatible', label: 'Compatible only' },
+	{ value: 'any', label: 'Any Java' },
+] as const;
+
+/** Which release channels are listed: the stable one, both, or only the unstable one. */
+type StabilityScope = 'stable' | 'all' | 'unstable';
 
 type JarVersionSelectorPaneProps = {
 	tab: JarTab;
@@ -44,6 +43,11 @@ type JarVersionSelectorPaneProps = {
 	onRequestUnstableVersions?: () => void;
 };
 
+/**
+ * Version table with a `FilterBar` on top. Stability and Java default to the safe
+ * pick (stable builds, compatible with an installed runtime) and reset back to it.
+ * Provider (only when the tab has several) starts empty, which means every provider.
+ */
 const JarVersionSelectorPane: React.FC<JarVersionSelectorPaneProps> = ({
 	tab,
 	provider,
@@ -65,28 +69,23 @@ const JarVersionSelectorPane: React.FC<JarVersionSelectorPaneProps> = ({
 	const columnCount = showProviders ? 4 : 3;
 	const latestRowIds = React.useMemo(() => resolveLatestJarRowIds(rows), [rows]);
 	const unstableStabilityId = UNSTABLE_STABILITY_IDS[tab];
-	const stableStabilityIds = React.useMemo(
-		() => stabilities.map((filter) => filter.id).filter((id) => id !== unstableStabilityId),
-		[stabilities, unstableStabilityId],
-	);
+	const stableStability = stabilities.find((filter) => filter.id !== unstableStabilityId) ?? stabilities[0];
+	const unstableLabel =
+		stabilities.find((filter) => filter.id === unstableStabilityId)?.label ?? unstableStabilityId;
 	const [searchTerm, setSearchTerm] = React.useState('');
-	const [activeProviderFilterIds, setActiveProviderFilterIds] = React.useState<JarProviderFilterId[]>(
-		providers.map((filter) => filter.id),
-	);
+	// Empty = every provider of the tab.
+	const [providerFilter, setProviderFilter] = React.useState<JarProviderFilterId[]>([]);
 	// Unstable channels (snapshots / preview builds) are hidden by default.
-	const [activeStabilityFilterIds, setActiveStabilityFilterIds] =
-		React.useState<JarStabilityFilterId[]>(stableStabilityIds);
-	const [showCompatible, setShowCompatible] = React.useState(true);
-	const [showIncompatible, setShowIncompatible] = React.useState(false);
+	const [stabilityScope, setStabilityScope] = React.useState<StabilityScope>('stable');
+	const [javaFilter, setJavaFilter] = React.useState<JavaCompatibilityFilter>('compatible');
 
 	React.useEffect(() => {
 		setSearchTerm('');
-		setActiveProviderFilterIds(providers.map((filter) => filter.id));
-		setActiveStabilityFilterIds(stableStabilityIds);
-		setShowCompatible(true);
-		setShowIncompatible(false);
+		setProviderFilter([]);
+		setStabilityScope('stable');
+		setJavaFilter('compatible');
 		onSelectRow(null);
-	}, [providers, stableStabilityIds, onSelectRow]);
+	}, [providers, onSelectRow]);
 
 	const rowCompatibilityById = React.useMemo(() => {
 		const map = new Map<
@@ -111,29 +110,38 @@ const JarVersionSelectorPane: React.FC<JarVersionSelectorPaneProps> = ({
 		return map;
 	}, [installedMajors, rows]);
 
+	// Without a detected runtime every row would be "incompatible", so the Java
+	// filter is hidden and the requirement tags are shown as-is.
+	const canFilterByJava = !isCheckingJavaCompatibility && installedMajors.length > 0;
+
 	const visibleRows = React.useMemo(() => {
-		const preFiltered = filterJarRows(rows, searchTerm, activeProviderFilterIds, activeStabilityFilterIds);
-		if (isCheckingJavaCompatibility || installedMajors.length === 0) {
+		const preFiltered = filterJarRows(
+			rows,
+			searchTerm,
+			providerFilter.length > 0 ? providerFilter : providers.map((filter) => filter.id),
+			stabilityScope === 'stable'
+				? [stableStability.id]
+				: stabilityScope === 'unstable'
+					? [unstableStabilityId]
+					: stabilities.map((filter) => filter.id),
+		);
+		if (!canFilterByJava || javaFilter === 'any') {
 			return preFiltered;
 		}
 
-		return preFiltered.filter((row) => {
-			const compatibility = rowCompatibilityById.get(row.id);
-			if (!compatibility) return false;
-			if (compatibility.compatible && showCompatible) return true;
-			if (!compatibility.compatible && showIncompatible) return true;
-			return false;
-		});
+		return preFiltered.filter((row) => rowCompatibilityById.get(row.id)?.compatible === true);
 	}, [
-		activeProviderFilterIds,
-		activeStabilityFilterIds,
-		isCheckingJavaCompatibility,
-		installedMajors.length,
+		canFilterByJava,
+		javaFilter,
+		providerFilter,
+		providers,
 		rowCompatibilityById,
 		rows,
 		searchTerm,
-		showCompatible,
-		showIncompatible,
+		stabilities,
+		stabilityScope,
+		stableStability.id,
+		unstableStabilityId,
 	]);
 
 	React.useEffect(() => {
@@ -144,124 +152,70 @@ const JarVersionSelectorPane: React.FC<JarVersionSelectorPaneProps> = ({
 		}
 	}, [onSelectRow, selectedRowId, visibleRows]);
 
-	const toggleProviderFilter = (filterId: JarProviderFilterId, checked: boolean) => {
-		setActiveProviderFilterIds((prev) => toggleFilterId(prev, filterId, checked));
-	};
-
-	const toggleStabilityFilter = (filterId: JarStabilityFilterId, checked: boolean) => {
-		if (checked && filterId === unstableStabilityId) {
-			// Enabling an unstable channel may require loading the larger unstable
+	const handleStabilityChange = (next: StabilityScope | null) => {
+		const scope = next ?? 'stable';
+		if (scope !== 'stable') {
+			// Showing an unstable channel may require loading the larger unstable
 			// version set from the backend.
 			onRequestUnstableVersions?.();
 		}
-
-		setActiveStabilityFilterIds((prev) => toggleFilterId(prev, filterId, checked));
+		setStabilityScope(scope);
 	};
 
+	const filters: FilterBarFilter[] = [];
+	if (showProviders) {
+		filters.push({
+			id: 'provider',
+			label: 'Provider',
+			type: 'multi',
+			options: providers.map((filter) => ({ value: filter.id, label: filter.label })),
+			value: providerFilter,
+			onValueChange: (next: JarProviderFilterId[]) => setProviderFilter(next),
+		});
+	}
+	filters.push({
+		id: 'stability',
+		label: 'Stability',
+		type: 'single',
+		options: [
+			{ value: 'stable', label: `${stableStability.label} only` },
+			{ value: 'all', label: `${stableStability.label} and ${unstableLabel}` },
+			{ value: 'unstable', label: `${unstableLabel} only` },
+		],
+		value: stabilityScope,
+		defaultValue: 'stable',
+		onValueChange: handleStabilityChange,
+	});
+	if (canFilterByJava) {
+		filters.push({
+			id: 'java',
+			label: 'Java',
+			type: 'single',
+			options: JAVA_FILTER_OPTIONS,
+			value: javaFilter,
+			defaultValue: 'compatible',
+			onValueChange: (next: JavaCompatibilityFilter | null) => setJavaFilter(next ?? 'compatible'),
+		});
+	}
+
 	return (
-		<div className='flex gap-4'>
-			<Container className='w-1/3 min-w-60 flex flex-col gap-1'>
-				<InputGroup>
-					<InputGroupInput
-						placeholder='Search provider, version, or channel'
-						value={searchTerm}
-						onChange={(event) => setSearchTerm(event.target.value)}
-					/>
-					<InputGroupAddon>
-						<Search />
-					</InputGroupAddon>
-				</InputGroup>
+		<div className='flex flex-col gap-3'>
+			<FilterBar
+				search={{
+					value: searchTerm,
+					onValueChange: setSearchTerm,
+					placeholder: showProviders ? 'Search provider, version, or channel' : 'Search versions',
+				}}
+				filters={filters}
+			/>
+			{!isCheckingJavaCompatibility && installedMajors.length === 0 && (
+				<p className='text-xs text-muted-foreground'>
+					No Java runtimes detected yet, so every version is marked incompatible. The Java column
+					shows which Java each one needs.
+				</p>
+			)}
 
-				<p className='mt-3'>Java compatibility</p>
-				<div className='flex gap-2 flex-wrap'>
-					<label className='flex items-center gap-2 text-sm rounded-md bg-secondary cursor-pointer px-3 py-2'>
-						<Checkbox
-							checked={showCompatible}
-							onCheckedChange={(next) => setShowCompatible(Boolean(next))}
-						/>
-						Compatible JDK
-					</label>
-					<label className='flex items-center gap-2 text-sm rounded-md bg-secondary cursor-pointer px-3 py-2'>
-						<Checkbox
-							checked={showIncompatible}
-							onCheckedChange={(next) => setShowIncompatible(Boolean(next))}
-						/>
-						Incompatible JDK
-					</label>
-				</div>
-				{!isCheckingJavaCompatibility && installedMajors.length === 0 && (
-					<p className='mt-2 text-xs text-muted-foreground'>
-						No local Java runtimes detected yet. Compatibility tags are still shown by requirement.
-					</p>
-				)}
-
-				{showProviders && (
-					<>
-						<p className='mt-3'>Provider</p>
-						<div className='flex gap-2 flex-wrap'>
-							{providers.map((filter) => {
-								const checked = activeProviderFilterIds.includes(filter.id);
-								return (
-									<label
-										key={filter.id}
-										className='flex items-center justify-between rounded-md bg-secondary cursor-pointer px-3 py-2 gap-2'>
-										<div className='flex items-center gap-2 text-sm'>
-											<Checkbox
-												checked={checked}
-												onCheckedChange={(next) => toggleProviderFilter(filter.id, Boolean(next))}
-											/>
-											<span>{filter.label}</span>
-										</div>
-										<Tooltip>
-											<TooltipTrigger asChild>
-												<button
-													type='button'
-													aria-label={`About ${filter.label}`}
-													className='text-muted-foreground hover:text-foreground'>
-													<CircleHelp className='size-4' />
-												</button>
-											</TooltipTrigger>
-											<TooltipContent sideOffset={8}>{filter.description}</TooltipContent>
-										</Tooltip>
-									</label>
-								);
-							})}
-						</div>
-					</>
-				)}
-				<p className='mt-3'>Stability</p>
-				<div className='flex gap-2 flex-wrap'>
-					{stabilities.map((filter) => {
-						const checked = activeStabilityFilterIds.includes(filter.id);
-						return (
-							<label
-								key={filter.id}
-								className='flex items-center justify-between rounded-md bg-secondary cursor-pointer px-3 py-2 gap-2'>
-								<div className='flex items-center gap-2 text-sm'>
-									<Checkbox
-										checked={checked}
-										onCheckedChange={(next) => toggleStabilityFilter(filter.id, Boolean(next))}
-									/>
-									<span>{filter.label}</span>
-								</div>
-								<Tooltip>
-									<TooltipTrigger asChild>
-										<button
-											type='button'
-											aria-label={`About ${filter.label}`}
-											className='text-muted-foreground hover:text-foreground'>
-											<CircleHelp className='size-4' />
-										</button>
-									</TooltipTrigger>
-									<TooltipContent sideOffset={8}>{filter.description}</TooltipContent>
-								</Tooltip>
-							</label>
-						);
-					})}
-				</div>
-			</Container>
-
-			<Container className='w-2/3 p-0 max-h-[55vh] overflow-y-auto app-scroll-area'>
+			<Container className='w-full p-0 max-h-[55vh] overflow-y-auto app-scroll-area'>
 				<table className='w-full text-sm'>
 					<thead className='sticky top-0 z-10 bg-secondary'>
 						<tr>
