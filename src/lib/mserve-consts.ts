@@ -6,7 +6,9 @@ export const DEFAULT_SERVER_PROVIDER: ProviderName = 'vanilla';
 
 // Config defaults mirrored from the Rust side (`mserve_config.rs`).
 export const DEFAULT_RAM_GB = 4;
-export const DEFAULT_STORAGE_LIMIT_GB = 200;
+export const DEFAULT_STORAGE_LIMIT_GB = 50;
+/** The backup limit every server got before limits were sized from the drive. */
+export const LEGACY_DEFAULT_STORAGE_LIMIT_GB = 200;
 export const DEFAULT_AUTO_BACKUP_INTERVAL_MINUTES = 120;
 /** DurationPicker chips for the backup interval. Includes the 2h default so it opens on a chip. */
 export const AUTO_BACKUP_INTERVAL_PRESETS_MINUTES: readonly number[] = [30, 60, 120, 360, 720, 1440];

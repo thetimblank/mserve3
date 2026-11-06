@@ -79,6 +79,19 @@ describe('computeStorageRecommendation', () => {
 		expect(result.sliderMaxGb).toBe(400);
 	});
 
+	it('reserves only the new default for the legacy 200 GB limit', () => {
+		const result = computeStorageRecommendation({
+			disk: disk(1000, 500, 'C:\\'),
+			otherServers: [
+				// Legacy default: 50 GB default - 10 GB used.
+				{ mountPoint: 'C:\\', storageLimitGb: 200, backupsBytes: 10 * GB },
+				// Any other limit is reserved in full: 150 - 0.
+				{ mountPoint: 'C:\\', storageLimitGb: 150, backupsBytes: 0 },
+			],
+		});
+		expect(result.reservedBytes).toBe(190 * GB);
+	});
+
 	it("counts this server's existing backups as available to it", () => {
 		const result = computeStorageRecommendation({
 			disk: disk(1000, 500),

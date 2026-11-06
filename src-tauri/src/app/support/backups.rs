@@ -1,7 +1,7 @@
 use super::super::ScannedBackup;
 use super::{
-    get_runtime_config, list_worlds, move_file_with_fallback, normalize_backup_policy,
-    normalize_backup_scope, path_size_bytes,
+    DEFAULT_STORAGE_LIMIT_GB, get_runtime_config, list_worlds, move_file_with_fallback,
+    normalize_backup_policy, normalize_backup_scope, path_size_bytes,
 };
 use chrono::Datelike;
 use std::collections::{BTreeSet, HashSet};
@@ -12,7 +12,6 @@ use std::sync::Mutex;
 use walkdir::WalkDir;
 use zip::write::SimpleFileOptions;
 
-const STORAGE_LIMIT_DEFAULT_GB: u64 = 200;
 const STORAGE_LIMIT_MIN_GB: u64 = 1;
 const BYTES_PER_GB: u64 = 1024 * 1024 * 1024;
 const STORAGE_LIMIT_ERROR_PREFIX: &str = "Backup storage limit exceeded";
@@ -144,11 +143,7 @@ struct BackupConfig {
 
 fn resolve_backup_config(directory: &Path) -> Result<BackupConfig, String> {
     let config = get_runtime_config(directory)?;
-    let limit_gb = u64::from(
-        config
-            .storage_limit
-            .unwrap_or(STORAGE_LIMIT_DEFAULT_GB as u32),
-    );
+    let limit_gb = u64::from(config.storage_limit.unwrap_or(DEFAULT_STORAGE_LIMIT_GB));
 
     Ok(BackupConfig {
         policy: normalize_backup_policy(config.backup_policy.as_deref()),

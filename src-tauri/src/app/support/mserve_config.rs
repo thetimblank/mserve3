@@ -130,6 +130,11 @@ pub(in crate::app) fn normalize_backup_scope(raw: Option<&[String]>) -> Vec<Stri
     }
 }
 
+/// Backup storage limit (GB) when none is given. The UI recommends one sized
+/// from the drive; mirrored by `DEFAULT_STORAGE_LIMIT_GB` in
+/// `src/lib/mserve-consts.ts`.
+pub(in crate::app) const DEFAULT_STORAGE_LIMIT_GB: u32 = 50;
+
 pub(in crate::app) fn default_custom_flags() -> Vec<String> {
     vec![]
 }
@@ -466,7 +471,7 @@ pub(in crate::app) fn default_synced_config(directory: &Path) -> SyncedMserveCon
         // A config mserve creates from scratch (import without mserve.json) sizes
         // itself; an existing file without the key keeps its fixed heap (below).
         ram_mode: RAM_MODE_AUTO.to_string(),
-        storage_limit: 200,
+        storage_limit: DEFAULT_STORAGE_LIMIT_GB,
         auto_backup: default_auto_backup(),
         auto_backup_interval: 120,
         backup_policy: default_backup_policy(),
@@ -616,7 +621,9 @@ pub(in crate::app) fn sanitize_mserve_value_config(
     let normalized_storage_limit = object
         .get("storage_limit")
         .and_then(serde_json::Value::as_u64)
-        .map_or(200, |value| saturating_u32(value).max(1));
+        .map_or(DEFAULT_STORAGE_LIMIT_GB, |value| {
+            saturating_u32(value).max(1)
+        });
 
     let normalized_auto_backup =
         normalize_auto_backup(object.get("auto_backup")).unwrap_or_else(default_auto_backup);
@@ -784,61 +791,91 @@ pub(in crate::app) fn synced_mserve_json_value(config: &SyncedMserveConfig) -> s
     })
 }
 
-pub(in crate::app) fn synced_mserve_json_string(
-    config: &SyncedMserveConfig,
-) -> Result<String, String> {
-    serde_json::to_string_pretty(&synced_mserve_json_value(config)).map_err(|err| err.to_string())
+/// Every top-level key this version of mserve reads and writes.
+const MSERVE_JSON_KEYS: [&str; 24] = [
+    "id",
+    "file",
+    "ram",
+    "ram_mode",
+    "storage_limit",
+    "auto_backup",
+    "auto_backup_interval",
+    "backup_policy",
+    "backup_max_count",
+    "backup_max_age_days",
+    "backup_scope",
+    "auto_restart",
+    "sleep_enabled",
+    "sleep_idle_minutes",
+    "sleep_motd",
+    "custom_flags",
+    "java_installation",
+    "provider",
+    "telemetry_host",
+    "telemetry_port",
+    "created_at",
+    "tunnel_enabled",
+    "tunnel_id",
+    "tunnel_address",
+];
+
+/// Top-level entries this version doesn't know, such as a key a newer mserve
+/// added. They are ignored on read and written back untouched, so opening a
+/// server in an older (or newer) mserve never breaks or strips its config.
+pub(in crate::app) fn unknown_mserve_json_entries(
+    object: &Map<String, Value>,
+) -> Map<String, Value> {
+    object
+        .iter()
+        .filter(|(key, _)| !MSERVE_JSON_KEYS.contains(&key.as_str()))
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect()
 }
 
+/// The file contents for `config`, keeping `unknown` entries after the known ones.
+fn mserve_json_value_with_unknown(
+    config: &SyncedMserveConfig,
+    unknown: &Map<String, Value>,
+) -> Value {
+    let mut value = synced_mserve_json_value(config);
+    if let Some(object) = value.as_object_mut() {
+        for (key, entry) in unknown {
+            object.entry(key.clone()).or_insert_with(|| entry.clone());
+        }
+    }
+    value
+}
+
+/// What `write_synced_mserve_json` would write for `config` over a file that
+/// holds `existing`.
+pub(in crate::app) fn synced_mserve_json_string(
+    config: &SyncedMserveConfig,
+    existing: &Map<String, Value>,
+) -> Result<String, String> {
+    serde_json::to_string_pretty(&mserve_json_value_with_unknown(
+        config,
+        &unknown_mserve_json_entries(existing),
+    ))
+    .map_err(|err| err.to_string())
+}
+
+/// Writes the whole config, keeping any keys this version doesn't know from
+/// the file it replaces.
 pub(in crate::app) fn write_synced_mserve_json(
     directory: &Path,
     config: &SyncedMserveConfig,
 ) -> Result<(), String> {
-    let bytes = serde_json::to_vec_pretty(&synced_mserve_json_value(config))
-        .map_err(|err| err.to_string())?;
     let _guard = MSERVE_JSON_WRITE_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let unknown = fs::read_to_string(directory.join("mserve.json"))
+        .ok()
+        .and_then(|raw| parse_mserve_top_level_object(&raw).ok())
+        .map(|object| unknown_mserve_json_entries(&object))
+        .unwrap_or_default();
+    let bytes = serde_json::to_vec_pretty(&mserve_json_value_with_unknown(config, &unknown))
+        .map_err(|err| err.to_string())?;
     write_mserve_json_atomically(directory, &bytes)
-}
-
-pub(in crate::app) fn validate_mserve_json_keys(
-    object: &serde_json::Map<String, serde_json::Value>,
-) -> Result<(), String> {
-    let allowed = [
-        "id",
-        "file",
-        "ram",
-        "ram_mode",
-        "storage_limit",
-        "auto_backup",
-        "auto_backup_interval",
-        "backup_policy",
-        "backup_max_count",
-        "backup_max_age_days",
-        "backup_scope",
-        "auto_restart",
-        "sleep_enabled",
-        "sleep_idle_minutes",
-        "sleep_motd",
-        "custom_flags",
-        "java_installation",
-        "provider",
-        "telemetry_host",
-        "telemetry_port",
-        "created_at",
-        "tunnel_enabled",
-        "tunnel_id",
-        "tunnel_address",
-    ];
-
-    for key in object.keys() {
-        if !allowed.iter().any(|allowed_key| allowed_key == key) {
-            return Err(format!("Unsupported key found: {key}"));
-        }
-    }
-
-    Ok(())
 }
 
 pub(in crate::app) fn has_required_mserve_json_fields(
@@ -1206,7 +1243,7 @@ mod tests {
             "tunnel_enabled": true, "tunnel_id": "x", "tunnel_address": "y",
         });
         let map = object.as_object().unwrap().clone();
-        assert!(validate_mserve_json_keys(&map).is_ok());
+        assert!(unknown_mserve_json_entries(&map).is_empty());
     }
 
     #[test]
@@ -1265,7 +1302,7 @@ mod tests {
         assert_eq!(config.ram_mode, "manual");
 
         let keys = json!({ "id": "srv-1", "ram_mode": "auto" });
-        assert!(validate_mserve_json_keys(keys.as_object().unwrap()).is_ok());
+        assert!(unknown_mserve_json_entries(keys.as_object().unwrap()).is_empty());
     }
 
     #[test]
@@ -1275,13 +1312,47 @@ mod tests {
     }
 
     #[test]
+    fn unknown_keys_are_ignored_and_kept_on_rewrite() {
+        let dir = tempfile::tempdir().unwrap();
+        // A file from a newer mserve, with a key this version doesn't know.
+        let raw = json!({
+            "id": "srv-1", "file": "server.jar", "ram": 4.0, "storage_limit": 50,
+            "future_setting": { "level": 3 },
+        });
+        let object = raw.as_object().unwrap().clone();
+        assert_eq!(
+            unknown_mserve_json_entries(&object)
+                .keys()
+                .collect::<Vec<_>>(),
+            ["future_setting"]
+        );
+        fs::write(dir.path().join("mserve.json"), raw.to_string()).unwrap();
+
+        let mut config = sanitize_mserve_value_config(dir.path(), &object);
+        config.ram = 6.0;
+        write_synced_mserve_json(dir.path(), &config).unwrap();
+
+        let written: Value =
+            serde_json::from_str(&fs::read_to_string(dir.path().join("mserve.json")).unwrap())
+                .unwrap();
+        assert_eq!(written["ram"], json!(6.0));
+        assert_eq!(written["future_setting"], json!({ "level": 3 }));
+        // The sync comparison sees the same bytes, so it doesn't rewrite forever.
+        let written_object = written.as_object().unwrap().clone();
+        assert_eq!(
+            synced_mserve_json_string(&config, &written_object).unwrap(),
+            serde_json::to_string_pretty(&written).unwrap()
+        );
+    }
+
+    #[test]
     fn sleep_keys_are_allowed() {
         let object = json!({
             "id": "srv-1", "file": "server.jar", "ram": 4.0, "storage_limit": 200,
             "sleep_enabled": true, "sleep_idle_minutes": 10, "sleep_motd": "z",
         });
         let map = object.as_object().unwrap().clone();
-        assert!(validate_mserve_json_keys(&map).is_ok());
+        assert!(unknown_mserve_json_entries(&map).is_empty());
     }
 
     #[test]
