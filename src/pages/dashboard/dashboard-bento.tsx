@@ -1,12 +1,16 @@
 /**
  * The dashboard bento: a fixed metrics/anchor row on top, then a rearrangeable,
- * hideable grid of insight cards below.
+ * hideable stack of clusters below (see `bento-shapes.ts`). No section headers:
+ * each cluster opens with a title card, and the space between clusters does the
+ * separating.
  *
- * - Order + hidden set persist to user prefs (`dashboard_card_order` /
- *   `dashboard_hidden_cards`); every change writes through immediately.
- * - Right-click any card → Hide (handled inside {@link BentoCard}).
- * - The Edit Layout tile toggles edit mode: cards jiggle, become @dnd-kit
- *   sortables, and a tray of hidden cards appears for re-adding.
+ * - The root is the `@container` every bento grid sizes against.
+ * - Cluster order + hidden set persist to user prefs (`dashboard_card_order` /
+ *   `dashboard_hidden_cards`, ids from `DASHBOARD_CARD_IDS`); every change
+ *   writes through immediately.
+ * - Right-click any cluster → Hide (handled inside {@link BentoCluster}).
+ * - The Edit Layout tile toggles edit mode: cards jiggle, clusters become
+ *   @dnd-kit sortables, and a tray of hidden clusters appears for re-adding.
  */
 import React from 'react';
 import {
@@ -18,8 +22,13 @@ import {
 	useSensors,
 	type DragEndEvent,
 } from '@dnd-kit/core';
-import { restrictToParentElement } from '@dnd-kit/modifiers';
-import { SortableContext, arrayMove, rectSortingStrategy, sortableKeyboardCoordinates } from '@dnd-kit/sortable';
+import { restrictToParentElement, restrictToVerticalAxis } from '@dnd-kit/modifiers';
+import {
+	SortableContext,
+	arrayMove,
+	sortableKeyboardCoordinates,
+	verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
 import { Plus } from 'lucide-react';
 
 import type { Server } from '@/data/servers';
@@ -29,13 +38,12 @@ import { Button } from '@/components/ui/button';
 
 import DashboardMetrics from './dashboard-metrics';
 import EditLayoutTile from './edit-layout-tile';
-import BentoCard from './bento-card';
-import DashboardServers from './dashboard-servers';
-import StorageInsights from './storage-insights';
-import ActivityInsights from './activity-insights';
-import NeedsAttention from './needs-attention';
-import DashboardNetworks from './dashboard-networks';
-import { BENTO_GRID_CLASSES, type BentoSize } from './bento-shapes';
+import BentoCluster from './bento-cluster';
+import ServersCluster from './servers-cluster';
+import StorageCluster from './storage-cluster';
+import ActivityCluster from './activity-cluster';
+import AttentionCluster from './attention-cluster';
+import NetworksCluster from './networks-cluster';
 import type { DashboardActivity } from './use-dashboard-activity';
 import type { DashboardStorage } from './use-dashboard-storage';
 
@@ -68,14 +76,13 @@ const DashboardBento: React.FC<Props> = ({ servers, networks, activity, storage 
 	const visibleIds = order.filter((id) => !hidden.has(id));
 	const hiddenIds = order.filter((id) => hidden.has(id));
 
-	// Content + shape for each card id. Insight surfaces are `h-full` so they fill
-	// their bento cell.
-	const cards: Record<DashboardCardId, { size: BentoSize; node: React.ReactNode }> = {
-		servers: { size: 'full', node: <DashboardServers servers={servers} /> },
-		storage: { size: 'lg', node: <StorageInsights servers={servers} storage={storage} /> },
-		activity: { size: 'lg', node: <ActivityInsights servers={servers} activity={activity} /> },
-		attention: { size: 'wide', node: <NeedsAttention servers={servers} networks={networks} storage={storage} /> },
-		networks: { size: 'wide', node: <DashboardNetworks networks={networks} servers={servers} /> },
+	// The cards of each cluster (a fragment: the cluster owns the grid).
+	const clusters: Record<DashboardCardId, React.ReactNode> = {
+		servers: <ServersCluster servers={servers} />,
+		storage: <StorageCluster servers={servers} storage={storage} />,
+		activity: <ActivityCluster servers={servers} activity={activity} />,
+		attention: <AttentionCluster servers={servers} networks={networks} storage={storage} />,
+		networks: <NetworksCluster networks={networks} servers={servers} />,
 	};
 
 	const sensors = useSensors(
@@ -105,7 +112,7 @@ const DashboardBento: React.FC<Props> = ({ servers, networks, activity, storage 
 	};
 
 	return (
-		<div className='flex flex-col gap-6'>
+		<div className='@container flex flex-col gap-10'>
 			<DashboardMetrics
 				servers={servers}
 				activity={activity}
@@ -117,29 +124,28 @@ const DashboardBento: React.FC<Props> = ({ servers, networks, activity, storage 
 
 			{editMode && (
 				<div className='rounded-lg border-2 border-dashed border-primary/40 bg-primary/5 px-4 py-2 text-sm text-muted-foreground'>
-					Drag cards to rearrange. Right-click or tap <span className='font-medium'>−</span> to hide.
-					Changes save automatically.
+					Drag a group of cards to move it. Right-click or tap <span className='font-medium'>−</span> to hide
+					a group. Changes save automatically.
 				</div>
 			)}
 
 			<DndContext
 				sensors={sensors}
 				collisionDetection={closestCenter}
-				modifiers={[restrictToParentElement]}
+				modifiers={[restrictToVerticalAxis, restrictToParentElement]}
 				onDragEnd={handleDragEnd}>
-				<SortableContext items={visibleIds} strategy={rectSortingStrategy}>
-					<div className={BENTO_GRID_CLASSES}>
-						{visibleIds.map((id, index) => (
-							<BentoCard
+				<SortableContext items={visibleIds} strategy={verticalListSortingStrategy}>
+					<div className='flex flex-col gap-10'>
+						{visibleIds.map((id) => (
+							<BentoCluster
 								key={id}
 								id={id}
-								size={cards[id].size}
+								label={CARD_LABELS[id]}
 								editMode={editMode}
 								reducedMotion={reducedMotion}
-								jigglePhase={(index % 2) as 0 | 1}
 								onHide={hide}>
-								{cards[id].node}
-							</BentoCard>
+								{clusters[id]}
+							</BentoCluster>
 						))}
 					</div>
 				</SortableContext>
@@ -147,7 +153,7 @@ const DashboardBento: React.FC<Props> = ({ servers, networks, activity, storage 
 
 			{editMode && hiddenIds.length > 0 && (
 				<div className='rounded-xl border-2 border-dashed border-border/60 p-4'>
-					<p className='mb-3 text-sm font-medium text-muted-foreground'>Hidden cards</p>
+					<p className='mb-3 text-sm font-medium text-muted-foreground'>Hidden groups</p>
 					<div className='flex flex-wrap gap-2'>
 						{hiddenIds.map((id) => (
 							<Button key={id} size='sm' variant='secondary' onClick={() => unhide(id)}>

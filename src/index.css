@@ -240,9 +240,10 @@ body {
 	}
 }
 
-/* Apple-springboard "edit layout" jiggle for the dashboard bento. Applied to an
-   inner wrapper (not the @dnd-kit-transformed sortable node) so the two transforms
-   don't fight. Two slightly different phases keep neighbouring cards out of sync. */
+/* Apple-springboard "edit layout" jiggle for the dashboard bento. Applied to each
+   card of a cluster (not the @dnd-kit-transformed cluster node) so the two
+   transforms don't fight. Two slightly different phases keep neighbouring cards
+   out of sync. */
 @keyframes bento-jiggle {
 	0% {
 		transform: rotate(-0.6deg);
@@ -267,19 +268,17 @@ body {
 	}
 }
 
-.bento-jiggle {
+.bento-jiggle-cards > * {
 	animation: bento-jiggle 0.32s ease-in-out infinite;
 	transform-origin: center;
 }
 
-.bento-jiggle-alt {
+.bento-jiggle-cards > :nth-child(even) {
 	animation: bento-jiggle-alt 0.34s ease-in-out infinite;
-	transform-origin: center;
 }
 
 @media (prefers-reduced-motion: reduce) {
-	.bento-jiggle,
-	.bento-jiggle-alt {
+	.bento-jiggle-cards > * {
 		animation: none;
 	}
 }

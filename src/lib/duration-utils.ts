@@ -1,4 +1,5 @@
 /** Durations are stored as whole minutes everywhere in the UI. */
+import { pluralize as plural } from '@/lib/utils';
 
 export const DEFAULT_DURATION_PRESETS: readonly number[] = [15, 30, 60, 180, 360, 720, 1440];
 
@@ -17,8 +18,6 @@ export const formatDurationShort = (minutes: number) => {
 	if (rest === 0) return `${hours}h`;
 	return `${hours}h ${rest}m`;
 };
-
-const plural = (count: number, unit: string) => `${count} ${unit}${count === 1 ? '' : 's'}`;
 
 /** Spelled-out label for screen readers and summaries: `1 hour 30 minutes`. */
 export const formatDurationLong = (minutes: number) => {

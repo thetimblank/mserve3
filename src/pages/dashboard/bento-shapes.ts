@@ -1,38 +1,34 @@
 /**
- * The bento layout's shape vocabulary. Cards declare a fixed {@link BentoSize};
- * the grid places them left→right, top→bottom on a 2-col (narrow) / 4-col (wide)
- * track so the sizes below tile without gaps:
+ * The bento layout's shape vocabulary.
  *
- *   [ full ───────────────────────── ]
- *   [ lg      ][ lg      ]
- *   [ wide    ][ wide    ]
+ * Every grid here sizes on the dashboard's own content width through container
+ * queries (the bento root is the `@container`), not the viewport: the app
+ * sidebar takes 16rem, so viewport breakpoints like `xl:` fired far later than
+ * the content actually had room, and the wide layout only showed when maximized.
  *
- * Sizes deliberately avoid odd column spans so we never need `grid-auto-flow:
- * dense` (which would desync visual order from DOM order and break the sortable).
+ * The bento is a vertical stack of **clusters** (Servers, Storage, Activity,
+ * Attention, Networks). A cluster has no surface of its own: it is a grid of
+ * cards, led by a title card. Clusters are the sortable/hideable unit.
+ *
+ * Storage and Activity share one shape, so they tile without gaps:
+ *
+ *   4 columns:  [ title ][ wide ──────── ][ stack ]
+ *   2 columns:  [ title ][ stack ]
+ *               [ wide ────────── ]
+ *
+ * The wide card moves after the stack on the 2-column grid through `order`, so
+ * no `grid-auto-flow: dense` is needed.
  */
 
-export type BentoSize = 'sm' | 'wide' | 'tall' | 'lg' | 'full';
+/** Grid for one cluster's cards: 2 columns, 4 once the content is 48rem wide. */
+export const BENTO_CLUSTER_GRID_CLASSES =
+	'grid grid-cols-2 gap-4 auto-rows-[minmax(9.5rem,auto)] @3xl:grid-cols-4';
 
-/** Container grid classes for the draggable bento zone. */
-export const BENTO_GRID_CLASSES =
-	'grid grid-cols-2 xl:grid-cols-4 gap-4 auto-rows-[minmax(11rem,auto)]';
+/** The fixed top metrics/anchor row: 2, then 3, then all 6 tiles in one row. */
+export const BENTO_METRICS_GRID_CLASSES = 'grid grid-cols-2 gap-4 @2xl:grid-cols-3 @7xl:grid-cols-6';
 
-/** Container grid classes for the fixed top metrics/anchor zone. */
-export const BENTO_METRICS_GRID_CLASSES = 'grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4';
+/** The wide visual of a title / wide / stack cluster (see the diagram above). */
+export const BENTO_WIDE_ITEM_CLASSES = 'col-span-2 order-last @3xl:order-none';
 
-/** Span classes for each shape. `full` and `wide` collapse to full width on the
- *  narrow 2-col grid so a card never leaves a dangling empty cell beside it. */
-export const bentoSizeClasses = (size: BentoSize): string => {
-	switch (size) {
-		case 'sm':
-			return 'col-span-1 row-span-1';
-		case 'wide':
-			return 'col-span-2 row-span-1';
-		case 'tall':
-			return 'col-span-1 row-span-2';
-		case 'lg':
-			return 'col-span-2 row-span-2';
-		case 'full':
-			return 'col-span-2 xl:col-span-4';
-	}
-};
+/** One grid cell holding two compact cards stacked on top of each other. */
+export const BENTO_STACK_CLASSES = 'grid grid-rows-2 gap-4';

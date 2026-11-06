@@ -16,11 +16,12 @@ const EditLayoutTile: React.FC<Props> = ({ active, onToggle, delay = 0 }) => (
 	<m.div
 		initial={{ scale: 0.95, y: 8, opacity: 0 }}
 		animate={{ scale: 1, y: 0, opacity: 1 }}
-		transition={{ type: 'spring', duration: 0.4, bounce: 0, delay }}>
-		<button type='button' onClick={onToggle} className='block w-full text-left'>
+		transition={{ type: 'spring', duration: 0.4, bounce: 0, delay }}
+		className='h-full'>
+		<button type='button' onClick={onToggle} className='block h-full w-full text-left'>
 			<Card
 				className={cn(
-					'relative h-full gap-0 overflow-hidden p-5 transition-colors',
+					'relative h-full justify-center gap-0 overflow-hidden p-5 transition-colors',
 					active
 						? 'border-primary bg-primary/10 dark:bg-primary/15'
 						: 'hover:border-primary/50 hover:bg-accent/20',
