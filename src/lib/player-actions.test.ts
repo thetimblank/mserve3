@@ -18,6 +18,7 @@ describe('buildPlayerActionCommand', () => {
 		expect(buildPlayerActionCommand({ kind: 'deop' }, 'Steve')).toBe('deop Steve');
 		expect(buildPlayerActionCommand({ kind: 'kick' }, 'Steve')).toBe('kick Steve');
 		expect(buildPlayerActionCommand({ kind: 'ban' }, 'Steve')).toBe('ban Steve');
+		expect(buildPlayerActionCommand({ kind: 'pardon' }, 'Steve')).toBe('pardon Steve');
 		expect(buildPlayerActionCommand({ kind: 'whitelist-add' }, 'Steve')).toBe('whitelist add Steve');
 		expect(buildPlayerActionCommand({ kind: 'lightning' }, 'Steve')).toBe(
 			'execute at Steve run summon lightning_bolt',

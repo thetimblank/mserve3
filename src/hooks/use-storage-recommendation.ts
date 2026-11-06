@@ -11,6 +11,9 @@ import {
 /** Size and free space of the drive holding `path` (or its nearest existing parent). */
 export const getDiskSpace = (path: string) => invoke<DiskSpace>('get_disk_space', { path });
 
+/** Quiet time after the last change to `path` before its drive is read. */
+const DISK_LOOKUP_DELAY_MS = 300;
+
 // A server folder's drive doesn't change while mserve runs, so each folder's
 // mount point is looked up once per session.
 const mountPointCache = new Map<string, Promise<string | null>>();
@@ -63,15 +66,20 @@ export function useStorageRecommendation(path: string): StorageRecommendationSta
 		setIsUnavailable(!target);
 		if (!target) return;
 		let active = true;
-		getDiskSpace(target)
-			.then((next) => {
-				if (active) setDisk(next);
-			})
-			.catch(() => {
-				if (active) setIsUnavailable(true);
-			});
+		// `path` can be a folder field being typed in (the repair dialog), so
+		// the drive is only read once it settles.
+		const timer = window.setTimeout(() => {
+			getDiskSpace(target)
+				.then((next) => {
+					if (active) setDisk(next);
+				})
+				.catch(() => {
+					if (active) setIsUnavailable(true);
+				});
+		}, DISK_LOOKUP_DELAY_MS);
 		return () => {
 			active = false;
+			window.clearTimeout(timer);
 		};
 	}, [target]);
 

@@ -56,3 +56,29 @@ export const resolveManualRamGb = (server: { ram: number; ram_mode?: string }): 
 /** Short label for a server's memory setting: `Auto`, or the fixed amount like `4GB`. */
 export const formatRamSetting = (server: { ram: number; ram_mode?: string }): string =>
 	server.ram_mode === 'auto' ? 'Auto' : `${server.ram}GB`;
+
+/**
+ * The heap a server can use right now: the live `-Xmx` while it runs (auto
+ * servers pick theirs at each start), otherwise its fixed manual heap. `null`
+ * for a stopped auto server, whose cap isn't decided yet.
+ */
+export const resolveHeapGb = (server: {
+	ram: number;
+	ram_mode?: string;
+	stats?: { heap_max_gb?: number | null };
+}): number | null => server.stats?.heap_max_gb ?? resolveManualRamGb(server);
+
+/** Memory Windows keeps for itself when a manual heap is picked. */
+const WINDOWS_RESERVED_GB = 2;
+
+/**
+ * Top of the manual RAM slider. On Windows it stops {@link WINDOWS_RESERVED_GB}
+ * short of the system's memory (32 GB → 30, 8 GB → 6); elsewhere it reaches the
+ * system total, but never below 10 so the scale reads well. 16 until the real
+ * amount is known (the slider doesn't clamp against that placeholder).
+ */
+export const resolveRamSliderMaxGb = (systemMemoryGb: number | null, windows: boolean): number => {
+	if (systemMemoryGb === null) return 16;
+	if (windows) return Math.max(1, systemMemoryGb - WINDOWS_RESERVED_GB);
+	return Math.max(10, systemMemoryGb);
+};

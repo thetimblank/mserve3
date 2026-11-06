@@ -50,6 +50,7 @@ export const offlineServerStats = (): Partial<Server['stats']> => ({
 	server_version: null,
 	tps: null,
 	ram_used: null,
+	heap_max_gb: null,
 	cpu_used: null,
 	uptime: null,
 });
@@ -72,6 +73,7 @@ export const mapSampleToStats = (
 	provider_version: sample.providerVersion,
 	tps: sample.tps,
 	ram_used: sample.ramUsed,
+	heap_max_gb: sample.heapMaxGb ?? null,
 	cpu_used: sample.cpuUsed,
 	uptime: toUptimeDate(sample.uptime) ?? options?.fallbackUptime ?? null,
 });

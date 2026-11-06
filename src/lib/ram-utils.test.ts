@@ -7,7 +7,9 @@ import {
 	sliderFractionToRam,
 	formatHeapSize,
 	formatRamSetting,
+	resolveHeapGb,
 	resolveManualRamGb,
+	resolveRamSliderMaxGb,
 } from './ram-utils';
 
 describe('clampRamGb', () => {
@@ -84,5 +86,34 @@ describe('auto RAM labels', () => {
 	it('has no fixed allocation for auto servers', () => {
 		expect(resolveManualRamGb({ ram: 6, ram_mode: 'auto' })).toBeNull();
 		expect(resolveManualRamGb({ ram: 6, ram_mode: 'manual' })).toBe(6);
+	});
+});
+
+describe('resolveHeapGb', () => {
+	it('prefers the live heap cap of a running server', () => {
+		expect(resolveHeapGb({ ram: 6, ram_mode: 'auto', stats: { heap_max_gb: 3 } })).toBe(3);
+		expect(resolveHeapGb({ ram: 6, ram_mode: 'manual', stats: { heap_max_gb: 6 } })).toBe(6);
+	});
+
+	it('falls back to the manual heap, and has none for a stopped auto server', () => {
+		expect(resolveHeapGb({ ram: 6, ram_mode: 'manual', stats: { heap_max_gb: null } })).toBe(6);
+		expect(resolveHeapGb({ ram: 6, ram_mode: 'auto', stats: { heap_max_gb: null } })).toBeNull();
+	});
+});
+
+describe('resolveRamSliderMaxGb', () => {
+	it('leaves 2 GB for Windows', () => {
+		expect(resolveRamSliderMaxGb(32, true)).toBe(30);
+		expect(resolveRamSliderMaxGb(8, true)).toBe(6);
+		expect(resolveRamSliderMaxGb(2, true)).toBe(1);
+	});
+
+	it('keeps the system total elsewhere, at least 10', () => {
+		expect(resolveRamSliderMaxGb(32, false)).toBe(32);
+		expect(resolveRamSliderMaxGb(8, false)).toBe(10);
+	});
+
+	it('uses a placeholder until the system memory is known', () => {
+		expect(resolveRamSliderMaxGb(null, true)).toBe(16);
 	});
 });

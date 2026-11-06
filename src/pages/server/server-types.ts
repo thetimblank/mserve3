@@ -66,8 +66,11 @@ export type TelemetrySample = {
 	serverVersion: string | null;
 	providerVersion: string | null;
 	tps: number | null;
+	/** Process memory as a percent of `heapMaxGb`. */
 	ramUsed: number | null;
 	ramBytes: number | null;
+	/** The max heap this run started with (auto RAM's live cap, or the manual heap). */
+	heapMaxGb?: number | null;
 	cpuUsed: number | null;
 	uptime: string | null;
 };

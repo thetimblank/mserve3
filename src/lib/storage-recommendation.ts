@@ -3,6 +3,7 @@
  * server folder (backups live in `<server>/.backups`). Pure helpers: the
  * disk numbers come from the `get_disk_space` command.
  */
+import { DEFAULT_STORAGE_LIMIT_GB, LEGACY_DEFAULT_STORAGE_LIMIT_GB } from './mserve-consts';
 
 export const BYTES_PER_GB = 1024 ** 3;
 /** Lowest recommendation, also the fallback when the drive is nearly full. */
@@ -28,6 +29,19 @@ export type OtherServerBackups = {
 	storageLimitGb: number;
 	backupsBytes: number;
 };
+
+/**
+ * The limit another server's backups are expected to grow to. Before limits
+ * were sized from the drive every server got {@link LEGACY_DEFAULT_STORAGE_LIMIT_GB},
+ * which almost nobody changed; reserving all of it would shrink every new
+ * server's recommendation, so that exact value reserves today's default
+ * instead. What those backups already use still counts (it's gone from the
+ * drive's free space), and the server's own limit isn't changed. A limit picked
+ * as exactly 200 GB on purpose is under-reserved, which only affects other
+ * servers' suggestions; the safety margin still protects the drive.
+ */
+export const reservableLimitGb = (server: Pick<OtherServerBackups, 'storageLimitGb'>): number =>
+	server.storageLimitGb === LEGACY_DEFAULT_STORAGE_LIMIT_GB ? DEFAULT_STORAGE_LIMIT_GB : server.storageLimitGb;
 
 export type StorageRecommendation = {
 	/** The suggested storage limit, in whole GB. */
@@ -72,7 +86,8 @@ export const bytesToWholeGb = (bytes: number) => Math.max(0, Math.floor(bytes / 
 
 /**
  * The recommended storage limit for a server's backups:
- * - `reserved` = sum over other servers on the drive of max(0, limit − current backups)
+ * - `reserved` = sum over other servers on the drive of max(0, limit − current backups),
+ *   with an untouched legacy limit counted as today's default ({@link reservableLimitGb})
  * - `safety` = max(10% of the drive, 20 GB)
  * - `budget` = available − reserved − safety
  * - recommendation = clamp(roundTo5(budget × 0.3), 5, 200) GB, or 5 with a
@@ -95,7 +110,7 @@ export const computeStorageRecommendation = ({
 		.filter((server) => isSameMountPoint(server.mountPoint, disk.mountPoint))
 		.reduce(
 			(total, server) =>
-				total + Math.max(0, server.storageLimitGb * BYTES_PER_GB - Math.max(0, server.backupsBytes)),
+				total + Math.max(0, reservableLimitGb(server) * BYTES_PER_GB - Math.max(0, server.backupsBytes)),
 			0,
 		);
 	const safetyBytes = Math.max(Math.max(0, disk.totalBytes) * SAFETY_SHARE, SAFETY_MIN_BYTES);

@@ -42,6 +42,27 @@ describe('buildServerRunCommandPreview', () => {
 			}),
 		).toBe('java -Xmx3G -Xms768M -jar paper.jar --nogui');
 	});
+
+	it('puts JVM options before the jar and server arguments after it', () => {
+		expect(
+			buildServerRunCommandPreview({
+				ram: 2,
+				file: 'paper.jar',
+				custom_flags: [
+					'--nogui',
+					'-XX:+UseZGC',
+					'-Xmx12G',
+					'--add-opens',
+					'java.base/java.lang=ALL-UNNAMED',
+					'-o',
+					'false',
+				],
+				java_executable: 'java',
+			}),
+		).toBe(
+			'java -Xmx2G -Xms2G -XX:+UseZGC --add-opens java.base/java.lang=ALL-UNNAMED -jar paper.jar --nogui -o false',
+		);
+	});
 });
 
 describe('formatRamUsage', () => {

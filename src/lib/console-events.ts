@@ -195,6 +195,39 @@ const PATTERNS: Pattern[] = [
 		}),
 	},
 	{
+		// Velocity: `Unable to load plugin plugins/Foo-1.0.jar` (a path, sometimes absolute).
+		match: new RegExp(String.raw`^${LOGGER_TAG}Unable to load plugin (?:.*[\\/])?([^\\/]+?)(?:\.jar)?\s*$`),
+		build: ([, plugin]) => ({
+			kind: 'plugin-failed',
+			tone: 'error',
+			title: `Plugin ${plugin} failed to load`,
+			detail: 'It may not support this Velocity version. Check the plugin for an update.',
+		}),
+	},
+	{
+		// Velocity: `Can't load plugin foo due to missing dependency bar`.
+		match: new RegExp(String.raw`^${LOGGER_TAG}Can't load plugin (\S+) due to missing dependency (\S+)`),
+		build: ([, plugin, dependency]) => ({
+			kind: 'plugin-failed',
+			tone: 'error',
+			title: `Plugin ${plugin} failed to load`,
+			detail: `It needs the ${dependency} plugin. Install it, or remove ${plugin}.`,
+		}),
+	},
+	{
+		// Velocity: `Can't create plugin foo`, `Can't create module for plugin foo`,
+		// `Couldn't pass ProxyInitializeEvent to foo` (its startup code threw).
+		match: new RegExp(
+			String.raw`^${LOGGER_TAG}(?:Can't create (?:module for )?plugin|Couldn't pass ProxyInitializeEvent to) (\S+)`,
+		),
+		build: ([, plugin]) => ({
+			kind: 'plugin-failed',
+			tone: 'error',
+			title: `Plugin ${plugin} failed to start`,
+			detail: 'It may not support this Velocity version. Check the plugin for an update.',
+		}),
+	},
+	{
 		// `Disconnecting Steve (/1.2.3.4:5678): You are not whitelisted on this server!`
 		// `Steve (/1.2.3.4:5678) lost connection: You are not white-listed on this server!`
 		// `com.mojang.authlib.GameProfile@1[id=…,name=Steve,…] (/1.2.3.4:5678) lost connection: …`

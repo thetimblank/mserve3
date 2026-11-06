@@ -1,7 +1,8 @@
 //! Online player list for the beginner players panel, read over RCON: `list`
 //! for who is online, plus the `keepInventory` game rule so the panel's toggle
 //! shows the real value. `ops.json` / `whitelist.json` mark who is already an
-//! operator or whitelisted, so the panel only offers the actions that apply.
+//! operator or whitelisted, so the panel only offers the actions that apply,
+//! and `banned-players.json` lists who can be unbanned.
 
 use super::super::RconConfig;
 use super::rcon::RconClient;
@@ -40,6 +41,8 @@ pub(in crate::app) struct OnlinePlayers {
     /// The rule name the server understood (`keepInventory` or
     /// `keep_inventory`), to build the matching `gamerule` command.
     pub keep_inventory_rule: Option<String>,
+    /// Banned player names, as `banned-players.json` spells them.
+    pub banned: Vec<String>,
 }
 
 /// The parsed reply of a `list` command.
@@ -135,20 +138,28 @@ pub(in crate::app) fn parse_gamerule_bool(response: &str) -> Option<bool> {
     }
 }
 
-/// Lower-cased names from a server list file like `ops.json` or
-/// `whitelist.json` (an array of `{ "name": … }`). Missing or unreadable files
-/// read as empty.
-fn read_listed_names(path: &Path) -> HashSet<String> {
+/// Names from a server list file like `ops.json`, `whitelist.json` or
+/// `banned-players.json` (an array of `{ "name": … }`), in file order. Missing
+/// or unreadable files read as empty.
+fn read_listed_names_in_order(path: &Path) -> Vec<String> {
     let Ok(raw) = std::fs::read_to_string(path) else {
-        return HashSet::new();
+        return Vec::new();
     };
     let Ok(serde_json::Value::Array(entries)) = serde_json::from_str(&raw) else {
-        return HashSet::new();
+        return Vec::new();
     };
     entries
         .iter()
         .filter_map(|entry| entry.get("name")?.as_str())
-        .map(str::to_ascii_lowercase)
+        .map(str::to_string)
+        .collect()
+}
+
+/// Lower-cased names from a server list file, for membership checks.
+fn read_listed_names(path: &Path) -> HashSet<String> {
+    read_listed_names_in_order(path)
+        .iter()
+        .map(|name| name.to_ascii_lowercase())
         .collect()
 }
 
@@ -205,6 +216,7 @@ pub(in crate::app) fn query_online_players(
         players,
         keep_inventory: keep_inventory.as_ref().map(|(value, _)| *value),
         keep_inventory_rule: keep_inventory.map(|(_, rule)| rule),
+        banned: read_listed_names_in_order(&directory.join("banned-players.json")),
     })
 }
 
@@ -327,6 +339,11 @@ mod tests {
             r#"[{"uuid":"uuid-2","name":"Alex"}]"#,
         )
         .unwrap();
+        std::fs::write(
+            directory.path().join("banned-players.json"),
+            r#"[{"uuid":"uuid-3","name":"Griefer_1","reason":"Banned by an operator."}]"#,
+        )
+        .unwrap();
 
         let rcon = RconConfig {
             port: server.rcon_port.unwrap(),
@@ -355,6 +372,7 @@ mod tests {
             result.keep_inventory_rule.as_deref(),
             Some("keep_inventory")
         );
+        assert_eq!(result.banned, vec!["Griefer_1".to_string()]);
     }
 
     #[test]

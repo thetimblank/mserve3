@@ -3,6 +3,7 @@ import type { AutoBackupMode, Server } from '@/data/servers';
 import type { Provider, ProviderName } from '@/lib/mserve-schema';
 import { clampRamGb, formatHeapSize } from '@/lib/ram-utils';
 import { createProvider, isProxyProvider } from '@/lib/server-provider';
+import { splitCustomFlags } from '@/lib/server-flags-service';
 import { getDurationParts } from '@/lib/utils';
 import {
 	DEFAULT_SLEEP_IDLE_MINUTES,
@@ -104,7 +105,8 @@ export const buildServerRunCommandPreview = (config: {
 	const heapArgs = config.auto_heap
 		? [`-Xmx${formatHeapSize(config.auto_heap.capGb)}`, `-Xms${formatHeapSize(config.auto_heap.initialGb)}`]
 		: [`-Xmx${formatHeapSize(config.ram ?? 4)}`, `-Xms${formatHeapSize(config.ram ?? 4)}`];
-	const args = [...heapArgs, '-jar', resolvedFile, ...resolvedCustomFlags];
+	const { jvm, server } = splitCustomFlags(resolvedCustomFlags);
+	const args = [...heapArgs, ...jvm, '-jar', resolvedFile, ...server];
 
 	return `${resolvedJavaInstallation} ${args.join(' ')}`;
 };

@@ -5,7 +5,7 @@ use super::super::support::{
     find_first_jar_file_name, generate_server_id, has_required_mserve_json_fields,
     normalize_auto_backup_modes, normalize_custom_flags, normalize_provider, normalize_ram_mode,
     parse_mserve_top_level_object, resolve_repair_file, sanitize_mserve_value_config,
-    synced_mserve_json_string, validate_mserve_json_keys, write_eula, write_synced_mserve_json,
+    synced_mserve_json_string, write_eula, write_synced_mserve_json,
 };
 use super::super::{
     InitServerPayload, InitServerResult, RepairMserveJsonPayload, SyncMserveJsonResult,
@@ -285,25 +285,20 @@ pub(in crate::app) fn sync_server_mserve_json(
     };
 
     // The file parsed, so the rebuild should start from what it holds rather
-    // than from defaults (one stray key must not reset every setting).
-    let invalid_message = if validate_mserve_json_keys(&object).is_err() {
-        Some("The data found was invalid. Please rebuild mserve.json.")
-    } else if !has_required_mserve_json_fields(&object) {
-        Some("Required mserve.json fields are missing. Please rebuild mserve.json.")
-    } else {
-        None
-    };
-    if let Some(message) = invalid_message {
+    // than from defaults. Keys this version doesn't know (a newer mserve's)
+    // are ignored here and kept when the file is written back.
+    if !has_required_mserve_json_fields(&object) {
         return Ok(SyncMserveJsonResult {
             status: "needs_setup".to_string(),
-            message: message.to_string(),
+            message: "Required mserve.json fields are missing. Please rebuild mserve.json."
+                .to_string(),
             config: Some(sanitize_mserve_value_config(&directory_path, &object)),
             updated: false,
         });
     }
 
     let normalized = sanitize_mserve_value_config(&directory_path, &object);
-    let normalized_json = synced_mserve_json_string(&normalized)?;
+    let normalized_json = synced_mserve_json_string(&normalized, &object)?;
 
     let existing_trimmed = raw.trim();
     let normalized_trimmed = normalized_json.trim();

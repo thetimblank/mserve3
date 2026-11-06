@@ -51,7 +51,11 @@ import ServerContentTabs, {
 	getServerContentTabUrl,
 	isServerContentTab,
 } from './server/server-content-tabs';
-import { getErrorMessage } from '@/lib/utils';
+import { cn, getErrorMessage } from '@/lib/utils';
+import { readStoredJson, writeStoredString } from '@/lib/local-storage';
+
+/** Remembers the activity feed's "Show raw console" choice across visits. */
+const RAW_CONSOLE_STORAGE_KEY = 'mserve.server.show-raw-console';
 
 const Server: React.FC = () => {
 	const navigate = useNavigate();
@@ -106,7 +110,13 @@ const Server: React.FC = () => {
 		useServerTerminal(terminalStoreKey);
 
 	// Beginners get a readable activity feed in place of the raw console.
-	const [showRawConsole, setShowRawConsole] = React.useState(false);
+	const [showRawConsole, setShowRawConsole] = React.useState(
+		() => readStoredJson(RAW_CONSOLE_STORAGE_KEY) === true,
+	);
+	const handleShowRawConsoleChange = React.useCallback((value: boolean) => {
+		setShowRawConsole(value);
+		writeStoredString(RAW_CONSOLE_STORAGE_KEY, JSON.stringify(value));
+	}, []);
 	const showActivityFeed = isBeginner && activeTab === 'overview';
 	const activityEvents = useServerActivity({
 		server,
@@ -275,6 +285,11 @@ const Server: React.FC = () => {
 		/>
 	);
 
+	// Online game servers get the players panel beside the console (proxies
+	// have no player list).
+	const showPlayersPanel =
+		activeTab === 'overview' && server.status === 'online' && providerCapabilities.kind !== 'proxy';
+
 	// Content files are read by a live (or starting, or adopted) JVM, so they
 	// only change while the process is fully stopped.
 	const isContentLocked = isBusy || !isStoppedStatus(server.status);
@@ -398,31 +413,33 @@ const Server: React.FC = () => {
 							onRestart={handleRestart}
 							onForceKill={handleForceKill}
 						/>
-						{showActivityFeed ? (
-							<div className='flex flex-col gap-4 lg:flex-row'>
+						{/* One stable tree whether or not the players panel shows, so
+						    the terminal never remounts when the server comes online. */}
+						<div className={cn('flex flex-col gap-4 lg:flex-row', !showActivityFeed && 'flex-1')}>
+							{showActivityFeed ? (
 								<ServerActivityFeed
 									directory={server.directory}
 									events={activityEvents}
 									canSendCommands={server.status === 'online' && !isBusy}
 									showRawConsole={showRawConsole}
-									onShowRawConsoleChange={setShowRawConsole}>
+									onShowRawConsoleChange={handleShowRawConsoleChange}>
 									{terminalPanel}
 								</ServerActivityFeed>
-								{server.status === 'online' && providerCapabilities.kind !== 'proxy' && (
-									<ServerPlayersPanel
-										directory={server.directory}
-										minecraftVersion={
-											server.stats.server_version ?? server.provider.minecraft_version ?? null
-										}
-										playersOnline={server.stats.players_online ?? null}
-										isBusy={isBusy}
-										className='lg:w-80 lg:shrink-0 lg:rounded-t-none lg:border-t-0 xl:w-96'
-									/>
-								)}
-							</div>
-						) : (
-							terminalPanel
-						)}
+							) : (
+								<div className='flex min-w-0 flex-1 flex-col'>{terminalPanel}</div>
+							)}
+							{showPlayersPanel && (
+								<ServerPlayersPanel
+									directory={server.directory}
+									minecraftVersion={
+										server.stats.server_version ?? server.provider.minecraft_version ?? null
+									}
+									playersOnline={server.stats.players_online ?? null}
+									isBusy={isBusy}
+									className='lg:w-80 lg:shrink-0 lg:rounded-t-none lg:border-t-0 xl:w-96'
+								/>
+							)}
+						</div>
 					</div>
 				)}
 

@@ -113,6 +113,8 @@ export type MserveStats = {
 	provider_version: string | null;
 	tps: number | null;
 	ram_used: number | null;
+	/** The running server's max heap in GB (auto RAM's live cap); `null` while stopped. */
+	heap_max_gb?: number | null;
 	cpu_used: number | null;
 	uptime: Date | null;
 	worlds_size_bytes: number;

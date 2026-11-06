@@ -1,6 +1,17 @@
+import { invoke } from '@tauri-apps/api/core';
 import { readManagedConfigFile } from '@/components/server-config-file-editor/file-operations';
 import { parsePropertiesMap } from '@/components/server-config-file-editor/properties-config';
 import { auditServerProperties, type SecurityFinding } from '@/lib/server-security-audit';
+import { resolveHeapGb } from '@/lib/ram-utils';
+import type { AutoRamPlan } from '@/hooks/use-auto-ram-plan';
+
+/** What the scan needs from a server. */
+export type SecurityScanTarget = {
+	directory: string;
+	ram: number;
+	ram_mode?: string;
+	stats?: { heap_max_gb?: number | null };
+};
 
 const readManagedFile = async (directory: string, fileName: string): Promise<string | null> => {
 	try {
@@ -22,18 +33,38 @@ const countWhitelist = (content: string | null): number | null => {
 	}
 };
 
+/**
+ * The heap the max-players rule weighs: the live cap while the server runs, the
+ * fixed manual heap, or for a stopped auto server what auto RAM would pick now.
+ */
+const resolveAuditHeapGb = async (server: SecurityScanTarget): Promise<number> => {
+	const known = resolveHeapGb(server);
+	if (known != null) return known;
+	try {
+		const plan = await invoke<AutoRamPlan>('get_auto_ram_plan', {
+			directory: server.directory,
+			provider: null,
+			modpack: false,
+		});
+		return plan.capGb;
+	} catch {
+		return server.ram;
+	}
+};
+
 /** Reads a server's server.properties and whitelist.json and runs the security audit. */
 export const scanServerSecurity = async (
-	server: { directory: string; ram: number },
+	server: SecurityScanTarget,
 	behindProxy: boolean,
 ): Promise<SecurityFinding[]> => {
-	const [properties, whitelist] = await Promise.all([
+	const [properties, whitelist, heapGb] = await Promise.all([
 		readManagedFile(server.directory, 'server.properties'),
 		readManagedFile(server.directory, 'whitelist.json'),
+		resolveAuditHeapGb(server),
 	]);
 	const props = properties ? parsePropertiesMap(properties) : new Map<string, string>();
 	return auditServerProperties(props, {
-		maxRamGb: Math.max(1, Number(server.ram) || 1),
+		maxRamGb: Math.max(1, Number(heapGb) || 1),
 		whitelistCount: countWhitelist(whitelist),
 		behindProxy,
 	});
@@ -47,7 +78,7 @@ export const getCachedCriticalCounts = () =>
 
 /** Counts a server's critical findings, reusing the cached count while its network role holds. */
 export const countCriticalFindings = async (
-	server: { directory: string; ram: number },
+	server: SecurityScanTarget,
 	behindProxy: boolean,
 ): Promise<void> => {
 	if (criticalCounts.get(server.directory)?.behindProxy === behindProxy) return;

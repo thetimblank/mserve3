@@ -21,20 +21,28 @@ export const useSecurityAudit = (server: Server) => {
 
 	const directory = server.directory;
 	const ram = server.ram;
+	const ramMode = server.ram_mode;
+	// The live heap cap while running (auto RAM picks it at each start).
+	const heapMaxGb = server.stats.heap_max_gb ?? null;
 	const { networks } = useNetworks();
 	const behindProxy = isNetworkBackend(server.id, networks);
 
 	const refresh = React.useCallback(async () => {
 		setIsLoading(true);
 		try {
-			setFindings(await scanServerSecurity({ directory, ram }, behindProxy));
+			setFindings(
+				await scanServerSecurity(
+					{ directory, ram, ram_mode: ramMode, stats: { heap_max_gb: heapMaxGb } },
+					behindProxy,
+				),
+			);
 		} catch (err) {
 			toast.error(getErrorMessage(err, 'Could not run the security audit.'));
 			setFindings([]);
 		} finally {
 			setIsLoading(false);
 		}
-	}, [directory, ram, behindProxy]);
+	}, [directory, ram, ramMode, heapMaxGb, behindProxy]);
 
 	React.useEffect(() => {
 		void refresh();
