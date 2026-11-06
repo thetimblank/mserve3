@@ -2,9 +2,8 @@ import { RotateCcw, Trash } from 'lucide-react';
 import * as React from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { SettingsRow, SettingsRows } from '@/components/settings/settings-row';
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '@/components/ui/input-group';
-import { Label } from '@/components/ui/label';
 import { useUser } from '@/data/user';
 import { getDefaultServersRootPath } from '@/lib/server-root-path';
 import { examplePaths } from '@/lib/platform';
@@ -20,13 +19,13 @@ import {
 	AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 
-type SettingsDataCardProps = {
+type SettingsDataSectionProps = {
 	onClearAllData: () => void;
 	/** False while any server runs: it would keep running with nothing left to stop it. */
 	canClearAllData: boolean;
 };
 
-const SettingsDataCard: React.FC<SettingsDataCardProps> = ({ onClearAllData, canClearAllData }) => {
+const SettingsDataSection: React.FC<SettingsDataSectionProps> = ({ onClearAllData, canClearAllData }) => {
 	const { user, updateUserField } = useUser();
 	const [serversRootPath, setServersRootPath] = React.useState(user.servers_root_path);
 	const [defaultServersRootPath, setDefaultServersRootPath] = React.useState('');
@@ -82,42 +81,42 @@ const SettingsDataCard: React.FC<SettingsDataCardProps> = ({ onClearAllData, can
 		Boolean(defaultServersRootPath) && serversRootPath.trim() === defaultServersRootPath.trim();
 
 	return (
-		<Card>
-			<CardHeader>
-				<CardTitle>Data & Privacy</CardTitle>
-				<CardDescription>Manage where your servers live and your stored data.</CardDescription>
-			</CardHeader>
-			<CardContent className='space-y-6'>
-				<div className='space-y-2 max-w-lg'>
-					<Label htmlFor='settings-servers-root-path'>Servers root path</Label>
-					<InputGroup>
-						<InputGroupInput
-							id='settings-servers-root-path'
-							className='font-mono'
-							placeholder={examplePaths.serversRoot}
-							value={serversRootPath}
-							onChange={(event) => setServersRootPath(event.target.value)}
-							onBlur={commitServersRootPath}
-						/>
-						<InputGroupAddon align='inline-end'>
-							<InputGroupButton
-								type='button'
-								variant='ghost'
-								size='icon-xs'
-								aria-label='Reset to default'
-								onClick={handleResetServersRootPath}
-								disabled={isRootPathDefault}>
-								<RotateCcw />
-							</InputGroupButton>
-						</InputGroupAddon>
-					</InputGroup>
-					<p className='text-sm text-muted-foreground'>
-						Saved automatically. New servers are created as child folders in this directory.
-					</p>
-				</div>
+		<SettingsRows>
+			<SettingsRow
+				title='Servers root path'
+				htmlFor='settings-servers-root-path'
+				description='Saved automatically. New servers are created as child folders in this directory.'>
+				<InputGroup>
+					<InputGroupInput
+						id='settings-servers-root-path'
+						className='font-mono'
+						placeholder={examplePaths.serversRoot}
+						value={serversRootPath}
+						onChange={(event) => setServersRootPath(event.target.value)}
+						onBlur={commitServersRootPath}
+					/>
+					<InputGroupAddon align='inline-end'>
+						<InputGroupButton
+							type='button'
+							variant='ghost'
+							size='icon-xs'
+							aria-label='Reset to default'
+							onClick={handleResetServersRootPath}
+							disabled={isRootPathDefault}>
+							<RotateCcw />
+						</InputGroupButton>
+					</InputGroupAddon>
+				</InputGroup>
+			</SettingsRow>
 
-				<div className='space-y-2'>
-					<p className='font-medium'>Data management</p>
+			<SettingsRow
+				title='Clear all data'
+				description={
+					canClearAllData
+						? 'Remove every server and network from mserve and restore all settings to their defaults. Server files on disk are not deleted.'
+						: 'Stop every server before clearing all data.'
+				}
+				control={
 					<AlertDialog>
 						<AlertDialogTrigger asChild>
 							<Button variant='destructive-secondary' disabled={!canClearAllData}>
@@ -135,22 +134,16 @@ const SettingsDataCard: React.FC<SettingsDataCardProps> = ({ onClearAllData, can
 							</AlertDialogHeader>
 							<AlertDialogFooter>
 								<AlertDialogCancel>Cancel</AlertDialogCancel>
-								<AlertDialogAction
-									variant='destructive'
-									className='capitalize'
-									onClick={onClearAllData}>
+								<AlertDialogAction variant='destructive' className='capitalize' onClick={onClearAllData}>
 									Clear All Data
 								</AlertDialogAction>
 							</AlertDialogFooter>
 						</AlertDialogContent>
 					</AlertDialog>
-					{!canClearAllData && (
-						<p className='text-sm text-muted-foreground'>Stop every server before clearing all data.</p>
-					)}
-				</div>
-			</CardContent>
-		</Card>
+				}
+			/>
+		</SettingsRows>
 	);
 };
 
-export default SettingsDataCard;
+export default SettingsDataSection;

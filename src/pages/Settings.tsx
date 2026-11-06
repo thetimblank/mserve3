@@ -1,18 +1,26 @@
 import React from 'react';
-import { m } from 'motion/react';
 import { isStoppedStatus, useServers } from '../data/servers';
 import { useNetworks } from '../data/networks';
 import { useUser } from '../data/user';
 import { useTheme } from '@/components/theme-provider';
+import { HelpButton } from '@/components/help/help-button';
+import { type SettingsGroup, type SettingsSection, SettingsLayout } from '@/components/settings/settings-layout';
 import { clearAppStorage } from '@/lib/local-storage';
 import { toast } from 'sonner';
-import SettingsAppearanceCard from './settings/settings-appearance-card';
-import SettingsBehaviorCard from './settings/settings-behavior-card';
-import SettingsTunnelCard from './settings/settings-tunnel-card';
-import SettingsJavaCard from './settings/settings-java-card';
-import SettingsDataCard from './settings/settings-data-card';
-import SettingsUpdateCard from './settings/settings-update-card';
+import SettingsAppearanceSection from './settings/settings-appearance-section';
+import SettingsBehaviorSection from './settings/settings-behavior-section';
+import SettingsTunnelSection from './settings/settings-tunnel-section';
+import SettingsJavaSection from './settings/settings-java-section';
+import SettingsDataSection from './settings/settings-data-section';
+import SettingsUpdateSection from './settings/settings-update-section';
 import { useAppUpdate } from './settings/hooks/use-app-update';
+
+// Unit O adds a "Server page display" section to the Servers group.
+const SETTINGS_GROUPS: SettingsGroup[] = [
+	{ id: 'app', title: 'App' },
+	{ id: 'servers', title: 'Servers' },
+	{ id: 'data', title: 'Data' },
+];
 
 const Settings: React.FC = () => {
 	const { servers, resetServers } = useServers();
@@ -52,72 +60,93 @@ const Settings: React.FC = () => {
 		toast.success('All data has been cleared!');
 	};
 
+	const sections: SettingsSection[] = [
+		{
+			id: 'appearance',
+			group: 'app',
+			title: 'Appearance',
+			description: 'Customize how the app looks.',
+			keywords: ['theme', 'dark', 'light', 'mode', 'color', 'dashboard', 'background', 'veil'],
+			render: () => <SettingsAppearanceSection />,
+		},
+		{
+			id: 'behavior',
+			group: 'app',
+			title: 'Behavior & experience',
+			description: 'Your experience level and how the app behaves in certain situations.',
+			keywords: [
+				'experience',
+				'level',
+				'beginner',
+				'standard',
+				'advanced',
+				'close',
+				'quit',
+				'warning',
+				'update checks',
+				'startup',
+				'welcome',
+				'tour',
+				'onboarding',
+			],
+			render: () => <SettingsBehaviorSection />,
+		},
+		{
+			id: 'updates',
+			group: 'app',
+			title: 'Updates',
+			description: 'Check for and install over-the-air updates of mserve.',
+			keywords: ['update', 'version', 'upgrade', 'install', 'release'],
+			render: () => (
+				<SettingsUpdateSection
+					currentVersion={currentVersion}
+					isVersionReady={isVersionReady}
+					updateMessage={updateMessage}
+					errorMessage={errorMessage}
+					isCheckingUpdate={isCheckingUpdate}
+					isInstallingUpdate={isInstallingUpdate}
+					availableUpdateVersion={availableUpdate?.version ?? null}
+					onCheckForUpdates={checkForUpdates}
+					onInstallUpdate={installUpdate}
+					liveServerNames={liveServerNames}
+				/>
+			),
+		},
+		{
+			id: 'java',
+			group: 'servers',
+			title: 'Java defaults',
+			titleAddon: <HelpButton topic='java' />,
+			description:
+				'Choose the Java used when a server is set to Automatic. Leave on Automatic to let each server pick the version that matches its Minecraft version.',
+			keywords: ['java', 'jdk', 'runtime', 'default', 'installation', 'path', 'rescan'],
+			render: () => <SettingsJavaSection />,
+		},
+		{
+			id: 'tunnel',
+			group: 'servers',
+			title: 'Tunnel',
+			titleAddon: <HelpButton topic='tunneling' />,
+			description:
+				'Connect a free playit.gg account to make your servers reachable over the internet without port forwarding.',
+			keywords: ['tunnel', 'playit', 'account', 'connect', 'disconnect', 'public', 'internet', 'port forward'],
+			render: () => <SettingsTunnelSection />,
+		},
+		{
+			id: 'data',
+			group: 'data',
+			title: 'Data & storage',
+			description: 'Where your servers live and the data mserve stores.',
+			keywords: ['data', 'storage', 'privacy', 'root', 'path', 'folder', 'directory', 'clear', 'reset'],
+			render: () => (
+				<SettingsDataSection onClearAllData={handleClearAllData} canClearAllData={!hasRunningServers} />
+			),
+		},
+	];
+
 	return (
-		<main className='h-full px-12 py-18 w-full overflow-y-auto app-scroll-area'>
-			<div className='flex flex-col'>
-				<m.h1
-					initial={{ y: 50, opacity: 0 }}
-					whileInView={{ y: 0, opacity: 1 }}
-					transition={{ type: 'spring', duration: 0.5, bounce: 0 }}
-					className='text-3xl flex gap-5 items-center font-black mb-4 w-fit'>
-					Settings
-				</m.h1>
-
-				<div className='space-y-6'>
-					<m.div
-						initial={{ scale: 0.75, y: 10, opacity: 0 }}
-						whileInView={{ scale: 1, y: 0, opacity: 1 }}
-						transition={{ type: 'spring', duration: 0.5, bounce: 0 }}>
-						<SettingsAppearanceCard />
-					</m.div>
-
-					<m.div
-						initial={{ scale: 0.75, y: 10, opacity: 0 }}
-						whileInView={{ scale: 1, y: 0, opacity: 1 }}
-						transition={{ type: 'spring', duration: 0.5, delay: 0.05, bounce: 0 }}>
-						<SettingsBehaviorCard />
-					</m.div>
-
-					<m.div
-						initial={{ scale: 0.75, y: 10, opacity: 0 }}
-						whileInView={{ scale: 1, y: 0, opacity: 1 }}
-						transition={{ type: 'spring', duration: 0.5, delay: 0.1, bounce: 0 }}>
-						<SettingsJavaCard />
-					</m.div>
-
-					<m.div
-						initial={{ scale: 0.75, y: 10, opacity: 0 }}
-						whileInView={{ scale: 1, y: 0, opacity: 1 }}
-						transition={{ type: 'spring', duration: 0.5, delay: 0.125, bounce: 0 }}>
-						<SettingsTunnelCard />
-					</m.div>
-
-					<m.div
-						initial={{ scale: 0.75, y: 10, opacity: 0 }}
-						whileInView={{ scale: 1, y: 0, opacity: 1 }}
-						transition={{ type: 'spring', duration: 0.5, delay: 0.15, bounce: 0 }}>
-						<SettingsDataCard onClearAllData={handleClearAllData} canClearAllData={!hasRunningServers} />
-					</m.div>
-
-					<m.div
-						initial={{ scale: 0.75, y: 10, opacity: 0 }}
-						whileInView={{ scale: 1, y: 0, opacity: 1 }}
-						transition={{ type: 'spring', duration: 0.5, bounce: 0 }}>
-						<SettingsUpdateCard
-							currentVersion={currentVersion}
-							isVersionReady={isVersionReady}
-							updateMessage={updateMessage}
-							errorMessage={errorMessage}
-							isCheckingUpdate={isCheckingUpdate}
-							isInstallingUpdate={isInstallingUpdate}
-							availableUpdateVersion={availableUpdate?.version ?? null}
-							onCheckForUpdates={checkForUpdates}
-							onInstallUpdate={installUpdate}
-							liveServerNames={liveServerNames}
-						/>
-					</m.div>
-				</div>
-			</div>
+		<main className='h-full w-full px-12 pt-18'>
+			<SettingsLayout groups={SETTINGS_GROUPS} sections={sections} />
 		</main>
 	);
 };

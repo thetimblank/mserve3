@@ -5,38 +5,31 @@ import { Button } from '@/components/ui/button';
 import { useExperience } from '@/data/user';
 import type { ManagedServerConfigFileDefinition } from '@/lib/server-config-files';
 
+/** File actions above an editor. The file name is already the page title. */
 export const EditorHeader = ({
-	definition,
 	isDirty,
 	onReload,
 	disabled,
 }: {
-	definition: ManagedServerConfigFileDefinition;
 	isDirty: boolean;
 	onReload: () => Promise<void> | void;
 	disabled: boolean;
 }) => (
-	<div className='flex flex-wrap items-start justify-between gap-4'>
-		<div className='space-y-1'>
-			<p className='text-xl font-semibold'>{definition.title}</p>
-			<p className='text-sm text-muted-foreground'>{definition.description}</p>
-		</div>
-		<div className='flex flex-wrap items-center gap-2'>
-			{isDirty && (
-				<span className='rounded-md border-2 font-semibold border-destructive px-3 text-sm py-1 text-destructive'>
-					Unsaved
-				</span>
-			)}
-			<Button type='button' variant='secondary' onClick={onReload} disabled={disabled}>
-				<RefreshCcw />
-				Reload
-			</Button>
-		</div>
+	<div className='flex flex-wrap items-center justify-end gap-2'>
+		{isDirty && (
+			<span className='rounded-md border-2 font-semibold border-destructive px-3 text-sm py-1 text-destructive'>
+				Unsaved
+			</span>
+		)}
+		<Button type='button' variant='secondary' onClick={onReload} disabled={disabled}>
+			<RefreshCcw />
+			Reload
+		</Button>
 	</div>
 );
 
 const ExperienceSettingsLink = () => (
-	<Link to='/settings' className='font-medium text-foreground underline underline-offset-4'>
+	<Link to='/settings#behavior' className='font-medium text-foreground underline underline-offset-4'>
 		Advanced experience level
 	</Link>
 );

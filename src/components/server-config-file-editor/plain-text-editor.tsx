@@ -29,7 +29,7 @@ const PlainTextConfigFileEditor: React.FC<ServerConfigFileEditorProps> = (props)
 
 	return (
 		<div className='space-y-6'>
-			<EditorHeader definition={definition} isDirty={isDirty} onReload={reload} disabled={isLocked} />
+			<EditorHeader isDirty={isDirty} onReload={reload} disabled={isLocked} />
 			<NetworkingDisclaimer definition={definition} />
 			{isLoading ? (
 				<LoadingFileContents />

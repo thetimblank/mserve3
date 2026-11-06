@@ -12,9 +12,9 @@ import {
 	AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { SettingsRow, SettingsRows } from '@/components/settings/settings-row';
 
-type SettingsUpdateCardProps = {
+type SettingsUpdateSectionProps = {
 	currentVersion: string;
 	isVersionReady: boolean;
 	updateMessage: string;
@@ -28,7 +28,7 @@ type SettingsUpdateCardProps = {
 	liveServerNames: string[];
 };
 
-const SettingsUpdateCard: React.FC<SettingsUpdateCardProps> = ({
+const SettingsUpdateSection: React.FC<SettingsUpdateSectionProps> = ({
 	currentVersion,
 	isVersionReady,
 	updateMessage,
@@ -49,25 +49,13 @@ const SettingsUpdateCard: React.FC<SettingsUpdateCardProps> = ({
 	const installIcon = <Download className={isInstallingUpdate ? 'animate-bounce size-4' : 'size-4'} />;
 
 	return (
-		<Card>
-			<CardHeader>
-				<CardTitle>Updates</CardTitle>
-				<CardDescription>Check and install over-the-air updates.</CardDescription>
-			</CardHeader>
-			<CardContent className='space-y-4'>
-				<div>
-					{isVersionReady ? (
-						<p className='font-medium'>Current version: {currentVersion}</p>
-					) : (
-						<div className='space-y-2'>
-							<Skeleton className='h-5 w-56' />
-						</div>
-					)}
-					<p className={`text-sm ${errorMessage ? 'text-destructive' : 'text-muted-foreground'}`}>
-						{updateMessage}
-					</p>
-				</div>
-				<div className='flex items-center gap-3'>
+		<SettingsRows>
+			<SettingsRow
+				title={isVersionReady ? `Current version: ${currentVersion}` : <Skeleton className='h-5 w-56' />}
+				description={
+					<span className={errorMessage ? 'text-destructive' : undefined}>{updateMessage}</span>
+				}>
+				<div className='flex flex-wrap items-center gap-3'>
 					<Button
 						variant='secondary'
 						onClick={onCheckForUpdates}
@@ -107,9 +95,9 @@ const SettingsUpdateCard: React.FC<SettingsUpdateCardProps> = ({
 						</Button>
 					)}
 				</div>
-			</CardContent>
-		</Card>
+			</SettingsRow>
+		</SettingsRows>
 	);
 };
 
-export default SettingsUpdateCard;
+export default SettingsUpdateSection;

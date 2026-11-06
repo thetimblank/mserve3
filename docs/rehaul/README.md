@@ -46,6 +46,9 @@ root [README.md](../../README.md#potential-future-features).
 - **Search + filter rows** use `FilterBar` (W0-2b): one row on top, never a left
   filter panel.
 - **Durations** (minutes/hours inputs) use `DurationPicker` (W0-2b).
+- **Settings pages** use `SettingsLayout` (B, `components/settings/settings-layout.tsx`)
+  and build each section body from `SettingsRows` / `SettingsRow` (label + description
+  left, control right; wide inputs as children). No Card or border around a section.
 - **Experience gating** goes through the experience helper from W0-3
   (`useExperience()`), never `user.advanced_mode` (it no longer exists after W0-3).
 - **Icons:** generic `lucide-react` icons only (no brand logos), so they match each
