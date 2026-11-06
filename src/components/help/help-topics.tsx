@@ -13,6 +13,7 @@ import {
 	CalendarClock,
 	Coffee,
 	Cpu,
+	Gauge,
 	Globe,
 	KeyRound,
 	Layers,
@@ -159,12 +160,23 @@ export const HELP_TOPICS: Record<HelpTopicId, HelpTopic> = {
 		slides: [
 			{
 				icon: MemoryStick,
-				title: 'What the slider sets',
-				body: "This sets the Java heap (-Xms/-Xmx): the memory reserved for the Minecraft server itself. It's the biggest single factor in how many players and mods a server can handle smoothly.",
+				title: 'What memory means here',
+				body: "The Java heap: the memory the Minecraft server itself can use. It's the biggest single factor in how many players and mods it handles smoothly.",
+			},
+			{
+				icon: Gauge,
+				title: 'Auto (recommended)',
+				body: 'mserve picks the limit each time the server starts:',
+				bullets: [
+					'Sized from the server type, plugins or mods, and player slots',
+					'Starts small and grows up to the limit only when needed',
+					'Idle memory goes back to your PC (Java 12+)',
+					'Leaves room for your system and other running servers',
+				],
 			},
 			{
 				icon: Settings2,
-				title: 'How much is enough?',
+				title: 'Picking it yourself',
 				bullets: [
 					'Small vanilla or Paper server: 2–4 GB',
 					'Add roughly 1 GB per 10 extra players',
@@ -175,7 +187,7 @@ export const HELP_TOPICS: Record<HelpTopicId, HelpTopic> = {
 			{
 				icon: Cpu,
 				title: "Don't give it everything",
-				body: 'Leave a few GB for Windows/Linux and mserve itself. If your machine has 16 GB, keeping server heaps at or below ~10–12 GB total avoids swapping, which hurts far more than a smaller heap.',
+				body: 'A fixed amount is reserved in full the moment the server starts. Leave a few GB for Windows/Linux and mserve: on a 16 GB machine, keeping all server heaps at or below ~10–12 GB total avoids swapping, which hurts far more than a smaller heap.',
 			},
 		],
 	},

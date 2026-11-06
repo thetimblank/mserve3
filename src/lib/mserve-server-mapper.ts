@@ -8,6 +8,7 @@ import {
 	DEFAULT_TELEMETRY_HOST,
 	DEFAULT_TELEMETRY_PORT,
 } from '@/lib/mserve-consts';
+import { normalizeRamMode } from '@/lib/mserve-schema';
 import { createProvider, isProxyProvider } from '@/lib/server-provider';
 
 export const getServerNameFromDirectory = (directory: string) => {
@@ -22,6 +23,7 @@ const buildServerShell = (
 	| 'id'
 	| 'file'
 	| 'ram'
+	| 'ram_mode'
 	| 'storage_limit'
 	| 'auto_backup'
 	| 'auto_backup_interval'
@@ -78,6 +80,7 @@ export const buildCreatedServer = (form: ServerSetupFormData, result: InitServer
 	id: result.id,
 	file: result.file,
 	ram: Math.max(1, Number(form.ram) || 1),
+	ram_mode: form.ram_mode,
 	storage_limit: Math.max(1, Number(form.storage_limit) || DEFAULT_STORAGE_LIMIT_GB),
 	auto_backup: form.auto_backup,
 	auto_backup_interval: Math.max(1, Number(form.auto_backup_interval) || DEFAULT_AUTO_BACKUP_INTERVAL_MINUTES),
@@ -104,6 +107,7 @@ export const mapSyncedConfigToServer = (config: SyncedMserveConfig) => ({
 	id: config.id,
 	file: config.file,
 	ram: config.ram,
+	ram_mode: normalizeRamMode(config.ram_mode),
 	storage_limit: config.storage_limit,
 	auto_backup: config.auto_backup,
 	auto_backup_interval: config.auto_backup_interval,

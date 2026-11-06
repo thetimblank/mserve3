@@ -39,6 +39,7 @@ import {
 } from '@/pages/server/server-utils';
 import type { ServerSettingsForm, UpdateServerSettingsResult } from '@/pages/server/server-types';
 import RamSelector from './ram-selector';
+import { useAutoRamPlan } from '@/hooks/use-auto-ram-plan';
 import JavaRuntimeSelect from './java-runtime-select';
 import JarDownloadModal, {
 	type DownloadedJarSelection,
@@ -286,6 +287,7 @@ export const EditServerSettingsProvider: React.FC<EditServerSettingsProviderProp
 				name: getServerNameFromDirectory(result.directory),
 				file: result.file,
 				ram: payload.ram,
+				ram_mode: payload.ram_mode,
 				storage_limit: payload.storage_limit,
 				auto_backup: payload.auto_backup,
 				auto_backup_interval: payload.auto_backup_interval,
@@ -360,15 +362,21 @@ export const EditServerSettingsProvider: React.FC<EditServerSettingsProviderProp
 		[javaRuntimes, settingsForm.java_installation, settingsForm.provider, user.java_installation_default],
 	);
 	const effectiveJavaRuntimeLabel = javaResolutionLabel(javaResolution);
+	const autoRamPlan = useAutoRamPlan({
+		directory: server.directory,
+		provider: settingsForm.provider.name,
+		enabled: settingsForm.ram_mode === 'auto',
+	});
 	const runCommandPreview = React.useMemo(
 		() =>
 			buildServerRunCommandPreview({
 				ram: settingsForm.ram,
+				auto_heap: settingsForm.ram_mode === 'auto' ? autoRamPlan : null,
 				file: server.file,
 				custom_flags: settingsForm.custom_flags,
 				java_executable: javaResolution.status === 'resolved' ? javaResolution.executablePath : undefined,
 			}),
-		[javaResolution, server.file, settingsForm.custom_flags, settingsForm.ram],
+		[autoRamPlan, javaResolution, server.file, settingsForm.custom_flags, settingsForm.ram, settingsForm.ram_mode],
 	);
 
 	const value: EditServerSettingsContextValue = {
@@ -465,7 +473,13 @@ export const GeneralSettingsSection: React.FC = () => {
 					title='Memory (RAM)'
 					titleAddon={<HelpButton topic='ram' />}
 					description='How much memory the server is allowed to use.'>
-					<RamSelector provider={settingsForm.provider} ram={settingsForm.ram} updateField={updateSettingsField} />
+					<RamSelector
+						provider={settingsForm.provider}
+						ram={settingsForm.ram}
+						ramMode={settingsForm.ram_mode}
+						directory={server.directory}
+						updateField={updateSettingsField}
+					/>
 				</SettingsRow>
 
 				<SettingsRow

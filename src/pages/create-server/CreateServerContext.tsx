@@ -101,6 +101,7 @@ const isFormDirty = (form: ServerSetupFormData, serverName: string) => {
 	if (serverName.trim().length > 0) return true;
 	if (form.file !== DEFAULT_FORM.file) return true;
 	if (form.ram !== DEFAULT_FORM.ram) return true;
+	if (form.ram_mode !== DEFAULT_FORM.ram_mode) return true;
 	if (form.storage_limit !== DEFAULT_FORM.storage_limit) return true;
 	if (form.auto_restart !== DEFAULT_FORM.auto_restart) return true;
 	if (!sameArray(form.auto_backup, DEFAULT_FORM.auto_backup)) return true;
@@ -432,6 +433,7 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 					adopt_existing_directory: true,
 					file: installed.file,
 					ram: clampRamGb(form.ram),
+					ram_mode: form.ram_mode,
 					storage_limit: Math.max(1, Number(form.storage_limit) || DEFAULT_STORAGE_LIMIT_GB),
 					auto_restart: form.auto_restart,
 					auto_backup: form.auto_backup,
@@ -518,6 +520,7 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 				create_directory_if_missing: true,
 				file,
 				ram: clampRamGb(form.ram),
+				ram_mode: form.ram_mode,
 				storage_limit: Math.max(1, Number(form.storage_limit) || DEFAULT_STORAGE_LIMIT_GB),
 				auto_restart: form.auto_restart,
 				auto_backup: form.auto_backup,

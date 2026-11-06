@@ -1,6 +1,6 @@
 use super::super::support::{
     home_dir, move_directory_with_fallback, normalize_auto_backup_modes, normalize_backup_policy,
-    normalize_backup_scope, normalize_custom_flags, normalize_provider,
+    normalize_backup_scope, normalize_custom_flags, normalize_provider, normalize_ram_mode,
     parse_mserve_top_level_object, patch_mserve_json, sanitize_mserve_value_config, server_key,
     swap_files, write_synced_mserve_json,
 };
@@ -245,6 +245,9 @@ fn update_server_settings_blocking(
     let custom_flags = normalize_custom_flags(payload.custom_flags);
 
     config.ram = payload.ram.max(0.25);
+    if let Some(mode) = payload.ram_mode.as_deref() {
+        config.ram_mode = normalize_ram_mode(Some(mode), &config.ram_mode);
+    }
     config.storage_limit = payload.storage_limit.max(1);
     config.auto_backup_interval = payload.auto_backup_interval.max(1);
     config.auto_restart = payload.auto_restart;

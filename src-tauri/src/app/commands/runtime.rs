@@ -1,19 +1,21 @@
 use super::super::support::playit;
 use super::super::support::wait_for_auto_backup;
 use super::super::support::{
-    RconClient, emit_output_reader, emit_system_line, ensure_rcon_enabled, get_runtime_config,
-    infer_provider_version, is_restoring, isolate_in_own_process_group, kill_child_process_group,
-    kill_process_tree, next_generation, no_window_command, offline_state_event, patch_mserve_json,
-    pid_listening_on_port, probe_port, read_rcon_config, release_child_from_app_lifetime,
-    remove_if_current, resolve_telemetry_target, server_key, set_server_port, spawn_supervisor,
-    state_event, stop_request, terminate_runtime, tie_child_to_app_lifetime, wait_for_port_release,
-    write_stdin_line,
+    AutoRamPlan, HeapSettings, RconClient, ServerFootprint, emit_output_reader, emit_system_line,
+    ensure_rcon_enabled, format_ram_label, get_runtime_config, infer_provider_version,
+    is_auto_ram_mode, is_restoring, isolate_in_own_process_group, kill_child_process_group,
+    kill_process_tree, next_generation, no_window_command, offline_state_event,
+    other_servers_heap_gb, patch_mserve_json, pid_listening_on_port, plan_auto_ram, probe_port,
+    read_footprint, read_rcon_config, release_child_from_app_lifetime, remove_if_current,
+    resolve_telemetry_target, server_key, set_server_port, spawn_supervisor, state_event,
+    stop_request, terminate_runtime, tie_child_to_app_lifetime, total_memory_gb,
+    wait_for_port_release, write_stdin_line,
 };
 use super::super::{
     LifecycleState, RuntimeServerConfig, RuntimeState, ServerRuntime, ServerRuntimeSnapshot,
     ServerRuntimeStateEvent, ServerTunnelInfo, TpsCommandState,
 };
-use super::run_blocking;
+use super::{inspect_java_executable, run_blocking};
 use std::collections::{HashMap, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -21,18 +23,6 @@ use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{Emitter, State};
-
-/// Formats a heap size (in gigabytes, fractional allowed) into a JVM size token.
-/// Whole gigabytes use the `G` suffix; sub-gigabyte values fall back to `M` so
-/// values like 0.5 GB are emitted as `512M` (the JVM rejects fractional `G`).
-fn format_heap_size(ram_gb: f64) -> String {
-    let megabytes = (ram_gb.max(0.25) * 1024.0).round() as u64;
-    if megabytes.is_multiple_of(1024) {
-        format!("{}G", megabytes / 1024)
-    } else {
-        format!("{megabytes}M")
-    }
-}
 
 /// Modern Forge/NeoForge servers are not launched with `-jar`; their installer
 /// generates a JVM `@argfile` under `libraries/` that wires up the module path.
@@ -83,9 +73,12 @@ fn resolve_launch_argfile(directory: &Path, config: &RuntimeServerConfig) -> Opt
     None
 }
 
-fn resolve_server_start_args(directory: &Path, config: &RuntimeServerConfig) -> Vec<String> {
-    let heap = format_heap_size(config.ram.unwrap_or(4.0));
-    let mut args = vec![format!("-Xmx{heap}"), format!("-Xms{heap}")];
+fn resolve_server_start_args(
+    directory: &Path,
+    config: &RuntimeServerConfig,
+    heap: &HeapSettings,
+) -> Vec<String> {
+    let mut args = heap.jvm_args();
 
     // Forge/NeoForge installations launch through their generated argfile;
     // everything else is a plain executable jar.
@@ -140,9 +133,81 @@ fn build_server_start_command(
     directory: &Path,
     config: &RuntimeServerConfig,
     java_executable: &str,
+    heap: &HeapSettings,
 ) -> String {
-    let args = resolve_server_start_args(directory, config);
+    let args = resolve_server_start_args(directory, config, heap);
     format!("{} {}", java_executable, args.join(" "))
+}
+
+/// The disk/OS reads auto RAM needs, done before taking the `processes` lock.
+struct AutoRamInputs {
+    footprint: ServerFootprint,
+    total_gb: f64,
+    java_major: Option<u32>,
+}
+
+/// `None` for manual servers (and when total memory can't be read: then the
+/// stored manual heap is used rather than a guess).
+fn read_auto_ram_inputs(
+    directory: &Path,
+    config: &RuntimeServerConfig,
+    java_executable: &str,
+) -> Option<AutoRamInputs> {
+    if !is_auto_ram_mode(config.ram_mode.as_deref()) {
+        return None;
+    }
+    let provider_name = config
+        .provider
+        .as_ref()
+        .map(|provider| provider.name.as_str())
+        .unwrap_or_default();
+    let total_gb = total_memory_gb()?;
+    Some(AutoRamInputs {
+        footprint: read_footprint(Some(directory), provider_name, false),
+        total_gb,
+        java_major: inspect_java_executable(Path::new(java_executable), "server")
+            .ok()
+            .map(|info| info.major_version),
+    })
+}
+
+/// Heap flags for one start. Auto mode plans against the heaps of the other
+/// servers in `processes` (the start path passes the same lock that publishes
+/// this server's reservation, so two auto servers starting together see each
+/// other).
+fn resolve_heap(
+    config: &RuntimeServerConfig,
+    auto: Option<&AutoRamInputs>,
+    processes: &HashMap<String, ServerRuntime>,
+    key: &str,
+) -> (HeapSettings, Option<AutoRamPlan>) {
+    match auto {
+        Some(inputs) => {
+            let others = other_servers_heap_gb(processes, key);
+            let plan = plan_auto_ram(&inputs.footprint, inputs.total_gb, others);
+            (HeapSettings::auto(&plan, inputs.java_major), Some(plan))
+        }
+        None => (
+            HeapSettings::fixed(config.ram.unwrap_or(4.0).max(0.25)),
+            None,
+        ),
+    }
+}
+
+/// The `system` console line explaining an auto-RAM start.
+fn describe_auto_heap(plan: &AutoRamPlan, heap: &HeapSettings) -> String {
+    let mut line = format!(
+        "Auto memory: starting at {} and growing up to {} as needed.",
+        format_ram_label(heap.initial_gb),
+        format_ram_label(heap.max_gb),
+    );
+    if plan.exceeds_system_cap {
+        line.push_str(&format!(
+            " This server would like {}, but this PC can't spare more right now (the system and your other running servers need the rest).",
+            format_ram_label(plan.estimate_gb),
+        ));
+    }
+    line
 }
 
 /// Confirms the resolved executable actually exists before we try to spawn it,
@@ -449,6 +514,7 @@ pub(in crate::app) fn start_server_internal(
     ensure_java_executable_exists(&java_executable)?;
     let (host, configured_port) = resolve_telemetry_target(&config, &directory_path);
     let is_proxy = provider_is_proxy(&config);
+    let auto_ram = read_auto_ram_inputs(&directory_path, &config, &java_executable);
     let generation = next_generation();
 
     // Claim the key in the same critical section as the "already running" check,
@@ -456,7 +522,7 @@ pub(in crate::app) fn start_server_internal(
     // wake) can never both spawn a JVM for one server. A sleeping entry means the
     // wake listener owns the port — signal it to stop; the port-free wait below
     // is the "wake" path.
-    let (sleeping_port, server_port) = {
+    let (sleeping_port, server_port, heap, auto_plan) = {
         let mut guard = processes.lock().map_err(|_| "Runtime lock failed.")?;
         if is_restoring(&key) {
             return Err(
@@ -506,6 +572,10 @@ pub(in crate::app) fn start_server_internal(
             generation,
             LifecycleState::Starting,
         );
+        let (heap, auto_plan) = resolve_heap(&config, auto_ram.as_ref(), &guard, &key);
+        // The heap this run may grow to: other auto servers plan around it, and
+        // telemetry reports RAM as a percent of it.
+        reservation.configured_ram = Some(heap.max_gb);
         reservation.java_executable = Some(java_executable.clone());
         reservation.auto_restart = config.auto_restart;
         reservation.sleep_enabled = config.sleep_enabled && !is_proxy;
@@ -516,7 +586,7 @@ pub(in crate::app) fn start_server_internal(
             .filter(|motd| !motd.trim().is_empty())
             .unwrap_or_else(default_sleep_motd);
         guard.insert(key.clone(), reservation);
-        (sleeping_port, server_port)
+        (sleeping_port, server_port, heap, auto_plan)
     };
 
     let spawn = || -> Result<u16, String> {
@@ -524,9 +594,13 @@ pub(in crate::app) fn start_server_internal(
             wait_for_port_release(&directory_path, port);
         }
 
-        let args = resolve_server_start_args(&directory_path, &config);
-        let command_str = build_server_start_command(&directory_path, &config, &java_executable);
+        let args = resolve_server_start_args(&directory_path, &config, &heap);
+        let command_str =
+            build_server_start_command(&directory_path, &config, &java_executable, &heap);
         eprintln!("[Server] Executing: {command_str}");
+        if let Some(plan) = &auto_plan {
+            emit_system_line(&app, &directory, describe_auto_heap(plan, &heap));
+        }
 
         // Persist a reassigned port so future starts and the frontend stay in sync.
         if server_port != configured_port {
@@ -663,22 +737,83 @@ pub(in crate::app) async fn start_server(
 }
 
 #[tauri::command]
-pub(in crate::app) fn get_server_start_command(
+pub(in crate::app) async fn get_server_start_command(
     directory: String,
     java_executable: Option<String>,
+    state: State<'_, RuntimeState>,
 ) -> Result<String, String> {
-    let directory_path = PathBuf::from(directory.trim());
-    if !directory_path.exists() || !directory_path.is_dir() {
-        return Err("Server directory does not exist.".to_string());
-    }
+    let processes = state.processes.clone();
+    run_blocking(move || {
+        let directory_path = PathBuf::from(directory.trim());
+        if !directory_path.exists() || !directory_path.is_dir() {
+            return Err("Server directory does not exist.".to_string());
+        }
 
-    let config = get_runtime_config(&directory_path)?;
-    let java_executable = resolve_java_executable(&config, java_executable.as_deref())?;
-    Ok(build_server_start_command(
-        &directory_path,
-        &config,
-        &java_executable,
-    ))
+        let config = get_runtime_config(&directory_path)?;
+        let java_executable = resolve_java_executable(&config, java_executable.as_deref())?;
+        let auto_ram = read_auto_ram_inputs(&directory_path, &config, &java_executable);
+        let (heap, _) = {
+            let guard = processes.lock().map_err(|_| "Runtime lock failed.")?;
+            resolve_heap(&config, auto_ram.as_ref(), &guard, &server_key(&directory))
+        };
+        Ok(build_server_start_command(
+            &directory_path,
+            &config,
+            &java_executable,
+            &heap,
+        ))
+    })
+    .await
+}
+
+/// What auto RAM would give a server right now: the estimate, the machine's
+/// cap, and the resulting `-Xmx`. `directory` is optional because the create
+/// wizard asks before the server exists; `provider` (a provider name) overrides
+/// the one in mserve.json, and `modpack` sizes it as a modpack.
+#[tauri::command]
+pub(in crate::app) async fn get_auto_ram_plan(
+    directory: Option<String>,
+    provider: Option<String>,
+    modpack: Option<bool>,
+    state: State<'_, RuntimeState>,
+) -> Result<AutoRamPlan, String> {
+    let processes = state.processes.clone();
+    run_blocking(move || {
+        let directory = directory
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        let directory_path = directory
+            .as_deref()
+            .map(PathBuf::from)
+            .filter(|path| path.is_dir());
+        let provider_name = provider
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .or_else(|| {
+                directory_path
+                    .as_deref()
+                    .and_then(|path| get_runtime_config(path).ok())
+                    .and_then(|config| config.provider)
+                    .map(|provider| provider.name)
+            })
+            .unwrap_or_default();
+        let footprint = read_footprint(
+            directory_path.as_deref(),
+            &provider_name,
+            modpack.unwrap_or(false),
+        );
+        let total_gb =
+            total_memory_gb().ok_or_else(|| "Failed to query system memory.".to_string())?;
+        let others = {
+            let guard = processes.lock().map_err(|_| "Runtime lock failed.")?;
+            other_servers_heap_gb(
+                &guard,
+                &server_key(directory.as_deref().unwrap_or_default()),
+            )
+        };
+        Ok(plan_auto_ram(&footprint, total_gb, others))
+    })
+    .await
 }
 
 /// True when a console command is a graceful shutdown for this server (see
@@ -1398,7 +1533,8 @@ pub(in crate::app) async fn delete_server(
 
 #[cfg(test)]
 mod tests {
-    use super::is_stop_command;
+    use super::*;
+    use crate::app::support::ServerKind;
 
     const GAME: &[&str] = &["stop"];
     const BUNGEE: &[&str] = &["end"];
@@ -1427,5 +1563,71 @@ mod tests {
         assert!(is_stop_command("end", VELOCITY, true));
         assert!(is_stop_command("stop", VELOCITY, true));
         assert!(!is_stop_command("glist", VELOCITY, true));
+    }
+
+    fn config(ram_mode: Option<&str>) -> RuntimeServerConfig {
+        RuntimeServerConfig {
+            file: "paper.jar".to_string(),
+            ram: Some(4.0),
+            ram_mode: ram_mode.map(str::to_string),
+            custom_flags: Some(vec!["--nogui".to_string()]),
+            ..Default::default()
+        }
+    }
+
+    fn plugin_inputs(total_gb: f64) -> AutoRamInputs {
+        AutoRamInputs {
+            footprint: ServerFootprint {
+                kind: ServerKind::Plugin,
+                plugin_count: 0,
+                mod_count: 0,
+                max_players: Some(20),
+            },
+            total_gb,
+            java_major: Some(21),
+        }
+    }
+
+    #[test]
+    fn manual_servers_keep_a_fixed_heap() {
+        let (heap, plan) = resolve_heap(&config(Some("manual")), None, &HashMap::new(), "a");
+        assert!(plan.is_none());
+        let args = resolve_server_start_args(Path::new("."), &config(Some("manual")), &heap);
+        assert_eq!(
+            args,
+            vec!["-Xmx4G", "-Xms4G", "-jar", "paper.jar", "--nogui"]
+        );
+    }
+
+    #[test]
+    fn auto_servers_get_an_elastic_heap_with_uncommit() {
+        let config = config(Some("auto"));
+        let (heap, plan) = resolve_heap(&config, Some(&plugin_inputs(32.0)), &HashMap::new(), "a");
+        assert_eq!(plan.unwrap().cap_gb, 3.0);
+        let args = resolve_server_start_args(Path::new("."), &config, &heap);
+        assert_eq!(
+            args,
+            vec![
+                "-Xmx3G",
+                "-Xms768M",
+                "-XX:+UseG1GC",
+                "-XX:G1PeriodicGCInterval=60000",
+                "-jar",
+                "paper.jar",
+                "--nogui"
+            ]
+        );
+    }
+
+    #[test]
+    fn auto_heap_line_explains_a_capped_start() {
+        let config = config(Some("auto"));
+        let mut inputs = plugin_inputs(6.0);
+        inputs.footprint.plugin_count = 30;
+        let (heap, plan) = resolve_heap(&config, Some(&inputs), &HashMap::new(), "a");
+        let line = describe_auto_heap(&plan.unwrap(), &heap);
+        assert!(line.starts_with("Auto memory: starting at"), "{line}");
+        assert!(line.contains("would like 4 GB"), "{line}");
+        assert!(!line.contains('\u{2014}'));
     }
 }

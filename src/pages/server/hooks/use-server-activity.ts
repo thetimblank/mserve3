@@ -8,6 +8,7 @@ import {
 	noteTelemetrySample,
 } from '@/lib/telemetry-alerts';
 import type { ServerTelemetryEvent } from '../server-types';
+import { resolveManualRamGb } from '@/lib/ram-utils';
 
 // Rows the feed keeps; console history is already capped by the terminal hook.
 const ACTIVITY_LIMIT = 100;
@@ -27,8 +28,8 @@ type Args = {
 export const useServerActivity = ({ server, terminalLines, enabled }: Args): ActivityEvent[] => {
 	const directory = server?.directory;
 	const isOnline = server?.status === 'online';
-	const ramRef = React.useRef(server?.ram ?? null);
-	ramRef.current = server?.ram ?? null;
+	const ramRef = React.useRef(server ? resolveManualRamGb(server) : null);
+	ramRef.current = server ? resolveManualRamGb(server) : null;
 	const [alerts, setAlerts] = React.useState<ActivityEvent[]>([]);
 
 	React.useEffect(() => {

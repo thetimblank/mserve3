@@ -13,6 +13,7 @@ import { getServerProviderCapabilities } from '@/lib/server-provider-capabilitie
 
 import TelemetryAreaChart from './stats/telemetry-area-chart';
 import { useServerTelemetryHistory } from './stats/use-server-telemetry-history';
+import { resolveManualRamGb } from '@/lib/ram-utils';
 import {
 	DEFAULT_TIME_RANGE,
 	METRIC_COLORS,
@@ -83,12 +84,12 @@ const ServerStatisticsTab: React.FC<Props> = ({ server }) => {
 			const pct = latestBadge(data, 'ramUsed', pctTick);
 			if (!pct) return undefined;
 			const ramBytes = latestReading(data, 'ramBytes');
-			return ramBytes == null ? pct : `${pct} ${formatRamUsage(ramBytes, server.ram)}`;
+			return ramBytes == null ? pct : `${pct} ${formatRamUsage(ramBytes, resolveManualRamGb(server))}`;
 		}
 		return ramUnit === 'pct'
 			? latestBadge(data, 'ramUsed', pctTick)
 			: latestBadge(data, 'ramBytes', formatBytes);
-	}, [showRamBytes, data, ramUnit, server.ram]);
+	}, [showRamBytes, data, ramUnit, server]);
 
 	return (
 		<div className='h-[calc(100vh-200px)] overflow-y-auto app-scroll-area app-scroll-stable pb-4'>

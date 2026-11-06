@@ -48,3 +48,11 @@ export const formatHeapSize = (gb: number): string => {
 	const megabytes = Math.round(clampRamGb(gb) * 1024);
 	return megabytes % 1024 === 0 ? `${megabytes / 1024}G` : `${megabytes}M`;
 };
+
+/** The fixed heap of a manual-RAM server, or `null` for auto (its cap is decided at each start). */
+export const resolveManualRamGb = (server: { ram: number; ram_mode?: string }): number | null =>
+	server.ram_mode === 'auto' ? null : server.ram;
+
+/** Short label for a server's memory setting: `Auto`, or the fixed amount like `4GB`. */
+export const formatRamSetting = (server: { ram: number; ram_mode?: string }): string =>
+	server.ram_mode === 'auto' ? 'Auto' : `${server.ram}GB`;
