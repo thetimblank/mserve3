@@ -30,7 +30,7 @@ Wave 2 (after their deps):         D1 · D2 · O · A · C3 · F2 · J1 · J2 ·
 | D1 | `feat/server-settings-tidy` | S/M | B | [x] #43 |
 | D2 | `feat/motd-server-list` | M | B, D1 | [x] #45 |
 | O | `feat/beginner-overview` | S | B | [x] #47 |
-| A | `feat/onboarding-rework` | M | C1 | [ ] |
+| A | `feat/onboarding-rework` | M | C1 | [x] #49 |
 | C3 | `feat/wizard-slide-cleanup` | M | C1, W0-2b | [ ] |
 | F2 | `feat/hosting-guide-router-test` | M | F1 | [ ] |
 | J1 | `feat/beginner-activity-feed` | M | O | [ ] |
