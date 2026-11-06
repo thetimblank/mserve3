@@ -3,7 +3,6 @@ import {
 	Archive,
 	ArchiveRestore,
 	Clock3,
-	EllipsisVertical,
 	HardDrive,
 	Lock,
 	LockOpen,
@@ -28,13 +27,6 @@ import {
 	AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import {
-	DropdownMenu,
-	DropdownMenuContent,
-	DropdownMenuItem,
-	DropdownMenuSeparator,
-	DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
 	Drawer,
 	DrawerContent,
 	DrawerDescription,
@@ -47,6 +39,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group';
+import { DurationPicker } from '@/components/duration-picker';
 import { type Server } from '@/data/servers';
 import type { AutoBackupMode, BackupPolicy, BackupScopeItem } from '@/lib/mserve-schema';
 import { getServerProviderCapabilities } from '@/lib/server-provider-capabilities';
@@ -54,7 +47,11 @@ import { HelpButton } from '@/components/help/help-button';
 import type { BackupSettingsUpdate } from './hooks/use-server-backup-actions';
 import { formatBytes } from '@/lib/utils';
 import { getBackupNameFromPath, toggleBackupMode } from './server-utils';
-import { DEFAULT_AUTO_BACKUP_INTERVAL_MINUTES, DEFAULT_STORAGE_LIMIT_GB } from '@/lib/mserve-consts';
+import {
+	AUTO_BACKUP_INTERVAL_PRESETS_MINUTES,
+	DEFAULT_AUTO_BACKUP_INTERVAL_MINUTES,
+	DEFAULT_STORAGE_LIMIT_GB,
+} from '@/lib/mserve-consts';
 
 type Backup = Server['backups'][number];
 
@@ -243,19 +240,14 @@ const BackupSettingsDrawer: React.FC<{
 						</div>
 						{autoBackup.includes('interval') && (
 							<div className='mt-2 space-y-1.5'>
-								<Label htmlFor='backup-interval-minutes'>Backup every</Label>
-								<InputGroup>
-									<InputGroupInput
-										id='backup-interval-minutes'
-										type='number'
-										min={1}
-										value={interval}
-										onChange={(event) => setInterval(Math.max(1, Number(event.target.value) || 1))}
-									/>
-									<InputGroupAddon className='font-mono text-xs font-bold uppercase' align='inline-end'>
-										Minutes
-									</InputGroupAddon>
-								</InputGroup>
+								<Label id='backup-interval-label'>Backup every</Label>
+								<DurationPicker
+									aria-labelledby='backup-interval-label'
+									value={interval}
+									presets={AUTO_BACKUP_INTERVAL_PRESETS_MINUTES}
+									min={1}
+									onValueChange={setInterval}
+								/>
 							</div>
 						)}
 					</section>
@@ -391,6 +383,7 @@ const ServerBackupsTab: React.FC<ServerBackupsTabProps> = ({
 	const limitBytes = Math.max(1, server.storage_limit) * 1024 * 1024 * 1024;
 	const usagePercent = Math.min(100, Math.round((totalSizeBytes / limitBytes) * 100));
 	const lockedCount = React.useMemo(() => backups.filter((backup) => backup.locked).length, [backups]);
+	const hasAutoBackups = server.auto_backup.length > 0;
 
 	const handleCreateNamed = () => {
 		const trimmed = backupName.trim();
@@ -401,39 +394,30 @@ const ServerBackupsTab: React.FC<ServerBackupsTabProps> = ({
 
 	return (
 		<div className='flex flex-col gap-4'>
-			<div className='flex justify-between items-center min-h-10'>
+			<div className='flex flex-wrap justify-between items-center gap-2 min-h-10'>
 				<p className='text-2xl font-bold flex items-center gap-2'>
 					<Archive />
 					Backups
 					<HelpButton topic='backups' />
 				</p>
-				<div className='flex gap-2'>
+				<div className='flex flex-wrap justify-end gap-2'>
 					<Button variant='secondary' onClick={() => setIsSettingsOpen(true)}>
 						<Settings2 /> Settings
 					</Button>
-					<DropdownMenu>
-						<DropdownMenuTrigger asChild>
-							<Button variant='secondary' size='icon'>
-								<EllipsisVertical />
-								<span className='sr-only'>More backup actions</span>
-							</Button>
-						</DropdownMenuTrigger>
-						<DropdownMenuContent align='end'>
-							<DropdownMenuItem
-								disabled={isBusy || isOnline}
-								onSelect={() => setIsNameDialogOpen(true)}>
-								<Pencil /> Create named backup…
-							</DropdownMenuItem>
-							<DropdownMenuSeparator />
-							<DropdownMenuItem
-								onSelect={() => setIsClearAllDialogOpen(true)}
-								className='group text-destructive font-bold'>
-								<Trash className='text-destructive group-hover:text-foreground' /> Clear all Backups
-							</DropdownMenuItem>
-						</DropdownMenuContent>
-					</DropdownMenu>
+					<Button
+						variant='destructive-secondary'
+						onClick={() => setIsClearAllDialogOpen(true)}
+						disabled={isBusy || isOnline || backups.length === 0}>
+						<Trash /> Clear all
+					</Button>
+					<Button
+						variant='secondary'
+						onClick={() => setIsNameDialogOpen(true)}
+						disabled={isBusy || isOnline}>
+						<Pencil /> Create named backup
+					</Button>
 					<Button onClick={() => void onCreateBackup()} disabled={isBusy || isOnline}>
-						Create Backup
+						<Archive /> Create backup
 					</Button>
 				</div>
 			</div>
@@ -470,15 +454,20 @@ const ServerBackupsTab: React.FC<ServerBackupsTabProps> = ({
 				<EmptyState
 					icon={<Archive />}
 					title='No backups yet'
-					description='Create one now, or schedule automatic backups on start, on stop, or on a timer.'
+					description={
+						hasAutoBackups
+							? 'Automatic backups are on. Back up now if you want a copy right away.'
+							: 'Back up now, or turn on automatic backups on start, on stop, or on a timer.'
+					}
 					action={{
-						label: 'Create Backup',
+						label: 'Back up now',
+						icon: Archive,
 						onClick: () => void onCreateBackup(),
 						disabled: isBusy || isOnline,
 					}}
 					secondaryAction={{
-						label: 'Backup settings',
-						icon: Settings2,
+						label: hasAutoBackups ? 'Backup settings' : 'Turn on automatic backups',
+						icon: hasAutoBackups ? Settings2 : Clock3,
 						onClick: () => setIsSettingsOpen(true),
 					}}
 				/>

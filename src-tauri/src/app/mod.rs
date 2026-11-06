@@ -563,6 +563,11 @@ struct ScannedPlugin {
     url: Option<String>,
     size: Option<u64>,
     activated: bool,
+    /// Catalog the item was installed from (`"modrinth"`), from the provenance
+    /// sidecar. `None` = added by hand.
+    source: Option<String>,
+    /// When the item landed in the server folder, in ms since the Unix epoch.
+    added_at: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -572,6 +577,7 @@ struct ScannedWorld {
     file: String,
     size: Option<u64>,
     activated: bool,
+    added_at: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -580,7 +586,10 @@ struct ScannedDatapack {
     name: Option<String>,
     file: String,
     url: Option<String>,
+    size: Option<u64>,
     activated: bool,
+    source: Option<String>,
+    added_at: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]

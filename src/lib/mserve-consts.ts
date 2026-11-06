@@ -8,6 +8,8 @@ export const DEFAULT_SERVER_PROVIDER: ProviderName = 'vanilla';
 export const DEFAULT_RAM_GB = 4;
 export const DEFAULT_STORAGE_LIMIT_GB = 200;
 export const DEFAULT_AUTO_BACKUP_INTERVAL_MINUTES = 120;
+/** DurationPicker chips for the backup interval. Includes the 2h default so it opens on a chip. */
+export const AUTO_BACKUP_INTERVAL_PRESETS_MINUTES: readonly number[] = [30, 60, 120, 360, 720, 1440];
 export const DEFAULT_SLEEP_MOTD = '§eSleeping. §7Join to wake this server';
 export const DEFAULT_SLEEP_IDLE_MINUTES = 15;
 export const DEFAULT_TELEMETRY_HOST = '127.0.0.1';

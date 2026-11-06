@@ -1,23 +1,23 @@
 import React from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
-import {
-	Archive,
-	ArrowUpRightFromSquare,
-	HardDrive,
-	Link,
-	Link2,
-	Link2Off,
-	Trash,
-	Upload,
-} from 'lucide-react';
-import { openUrl } from '@tauri-apps/plugin-opener';
+import type { PhysicalPosition } from '@tauri-apps/api/dpi';
+import { FileUp, HardDrive, Link, Link2, Link2Off, PackageSearch, Trash, Upload } from 'lucide-react';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import OpenFolderButton from '@/components/open-folder-button';
 import EmptyState from '@/components/empty-state';
+import { FilterBar, type FilterBarFilter } from '@/components/filter-bar';
+import type { ServerContentItem } from '@/data/servers';
+import {
+	DEFAULT_SERVER_ITEM_QUERY,
+	filterServerItems,
+	type ServerItemQuery,
+	type ServerItemSort,
+	type ServerItemSourceFilter,
+	type ServerItemStatusFilter,
+} from '@/lib/server-item-filters';
 import clsx from 'clsx';
 import {
 	AlertDialog,
@@ -37,13 +37,7 @@ import { formatBytes, getErrorMessage } from '@/lib/utils';
 
 type ItemType = 'plugin' | 'mod' | 'world' | 'datapack';
 
-type Item = {
-	name?: string;
-	file: string;
-	activated: boolean;
-	size?: number;
-	url?: string;
-};
+type Item = ServerContentItem;
 
 type ServerItemListProps = {
 	type: ItemType;
@@ -56,14 +50,32 @@ type ServerItemListProps = {
 	items: Item[];
 	onChanged?: () => Promise<void> | void;
 	disabled?: boolean;
-	ctaLabel?: string;
-	ctaUrl?: string;
-	/** When set, the CTA button runs this instead of opening `ctaUrl` externally. */
-	onCta?: () => void;
+	/** Opens the Modrinth browser. When set, a "Find on Modrinth" card sits next to the upload card. */
+	onFindOnModrinth?: () => void;
 	onDeleteItem?: (item: Item, type: ItemType) => Promise<void> | void;
 	onUninstallItem?: (item: Item, type: ItemType) => Promise<void> | void;
 	onExportItem?: (item: Item, type: ItemType) => Promise<void> | void;
 };
+
+const STATUS_OPTIONS = [
+	{ value: 'active', label: 'Active' },
+	{ value: 'inactive', label: 'Inactive' },
+] as const satisfies readonly { value: ServerItemStatusFilter; label: string }[];
+
+const SOURCE_OPTIONS = [
+	{ value: 'modrinth', label: 'Modrinth' },
+	{ value: 'manual', label: 'Added manually' },
+] as const satisfies readonly { value: ServerItemSourceFilter; label: string }[];
+
+const SORT_OPTIONS = [
+	{ value: 'name', label: 'Name' },
+	{ value: 'size', label: 'Size' },
+	{ value: 'recent', label: 'Recently added' },
+] as const satisfies readonly { value: ServerItemSort; label: string }[];
+
+/** Shared look of the upload and "Find on Modrinth" cards, so the pair matches. */
+const ACTION_CARD_CLASS =
+	'flex min-h-32 cursor-pointer select-none flex-col items-center justify-center gap-1 rounded-md border-2 p-4 text-center text-sm font-bold transition-colors hover:border-accent/30 hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 [&_svg]:mb-1 [&_svg]:size-6 [&_svg]:text-muted-foreground';
 
 const getItemPath = (serverDirectory: string, itemType: ItemType, item: Item) => {
 	const base = serverDirectory.replace(/[/\\]+$/, '');
@@ -93,17 +105,15 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 	items,
 	onChanged,
 	disabled,
-	ctaLabel,
-	ctaUrl,
-	onCta,
+	onFindOnModrinth,
 	onDeleteItem,
 	onUninstallItem,
 	onExportItem,
 }) => {
-	const [search, setSearch] = React.useState('');
+	const [query, setQuery] = React.useState<ServerItemQuery>(DEFAULT_SERVER_ITEM_QUERY);
 	const [busyFile, setBusyFile] = React.useState<string | null>(null);
 	const [isDragging, setIsDragging] = React.useState(false);
-	const dropZoneRef = React.useRef<HTMLDivElement | null>(null);
+	const dropZoneRef = React.useRef<HTMLButtonElement | null>(null);
 	const disabledRef = React.useRef(disabled);
 	const busyFileRef = React.useRef<string | null>(busyFile);
 
@@ -115,15 +125,32 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 		busyFileRef.current = busyFile;
 	}, [busyFile]);
 
-	const filtered = React.useMemo(() => {
-		const term = search.trim().toLowerCase();
-		if (!term) return items;
-		return items.filter((item) => {
-			const name = (item.name ?? '').toLowerCase();
-			const file = item.file.toLowerCase();
-			return name.includes(term) || file.includes(term);
+	const filtered = React.useMemo(() => filterServerItems(items, query), [items, query]);
+	const updateQuery = (patch: Partial<ServerItemQuery>) => setQuery((current) => ({ ...current, ...patch }));
+	const pluralLabel = title.toLowerCase();
+	const isSearchOnly = query.status === null && query.source === null;
+
+	const filters: FilterBarFilter[] = [
+		{
+			id: 'status',
+			label: 'Status',
+			type: 'single',
+			options: STATUS_OPTIONS,
+			value: query.status,
+			onValueChange: (status: ServerItemStatusFilter | null) => updateQuery({ status }),
+		},
+	];
+	// Worlds aren't installed from a catalog, so they have no source to filter by.
+	if (type !== 'world') {
+		filters.push({
+			id: 'source',
+			label: 'Source',
+			type: 'single',
+			options: SOURCE_OPTIONS,
+			value: query.source,
+			onValueChange: (source: ServerItemSourceFilter | null) => updateQuery({ source }),
 		});
-	}, [items, search]);
+	}
 
 	const handleToggleActive = async (item: Item) => {
 		if (disabled || busyFile) return;
@@ -243,9 +270,11 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 		[serverDirectory, type],
 	);
 
-	const isInDropZone = React.useCallback((x: number, y: number) => {
+	// Tauri reports the drag position in physical pixels; the rect is in CSS pixels.
+	const isInDropZone = React.useCallback((position: PhysicalPosition) => {
 		const element = dropZoneRef.current;
 		if (!element) return false;
+		const { x, y } = position.toLogical(window.devicePixelRatio || 1);
 		const rect = element.getBoundingClientRect();
 		return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
 	}, []);
@@ -259,7 +288,7 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 			);
 
 			if (droppedPaths.length === 0) {
-				toast.error('Could not read dropped file paths. Use Add to browse instead.');
+				toast.error('Could not read dropped file paths. Click the upload box to browse instead.');
 				return;
 			}
 
@@ -290,13 +319,13 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 				const payload = event.payload;
 
 				if (payload.type === 'over') {
-					setIsDragging(isInDropZone(payload.position.x, payload.position.y));
+					setIsDragging(isInDropZone(payload.position));
 					return;
 				}
 
 				if (payload.type === 'drop') {
 					setIsDragging(false);
-					if (!isInDropZone(payload.position.x, payload.position.y)) {
+					if (!isInDropZone(payload.position)) {
 						return;
 					}
 					void handleDroppedPaths(payload.paths);
@@ -358,37 +387,69 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 		}
 	};
 
-	const handleCta = () => {
-		if (onCta) onCta();
-		else if (ctaUrl) void openUrl(ctaUrl);
-	};
-
 	return (
-		<div className='flex flex-col gap-1 min-h-100'>
-			<div className='flex items-center justify-between gap-5 min-h-10'>
-				<div className='flex-col gap-1'>
-					<div className='flex items-center gap-2'>
-						{icon}
-						<p className='text-2xl font-bold'>{title}</p>
-					</div>
-					{description && <p className='text-muted-foreground'>{description}</p>}
+		<div className='flex flex-col gap-3 min-h-100'>
+			<div className='flex flex-col gap-1 min-h-10'>
+				<div className='flex items-center gap-2'>
+					{icon}
+					<p className='text-2xl font-bold'>{title}</p>
 				</div>
-				{ctaLabel && (onCta || ctaUrl) && (
-					<Button
-						onClick={handleCta}
-						variant='link'>
-						{ctaLabel}
-						{type === 'world' ? <Archive /> : <ArrowUpRightFromSquare />}
-					</Button>
+				{description && <p className='text-muted-foreground'>{description}</p>}
+			</div>
+
+			<div className={clsx('grid gap-3', onFindOnModrinth && 'sm:grid-cols-2')}>
+				<button
+					type='button'
+					ref={dropZoneRef}
+					onClick={handleAddItem}
+					disabled={disabled || busyFile === '__upload__'}
+					className={clsx(
+						ACTION_CARD_CLASS,
+						isDragging ? 'border-accent border-solid bg-accent/30' : 'border-border border-dashed',
+					)}>
+					<FileUp />
+					{isDragging ? (
+						<span className='block'>Drop to upload {pluralLabel}!</span>
+					) : (
+						<>
+							<span className='block'>
+								Drop files <span className='mx-2 text-muted-foreground'>OR</span> Click Here
+							</span>
+							<span className='block text-muted-foreground'>to upload {pluralLabel}.</span>
+						</>
+					)}
+				</button>
+				{onFindOnModrinth && (
+					<button
+						type='button'
+						onClick={onFindOnModrinth}
+						disabled={disabled}
+						className={clsx(ACTION_CARD_CLASS, 'border-border')}>
+						<PackageSearch />
+						<span className='block'>Find on Modrinth</span>
+						<span className='block text-muted-foreground'>Search for {pluralLabel} and install them here.</span>
+					</button>
 				)}
 			</div>
-			<Input
-				type='search'
-				placeholder={searchPlaceholder}
-				value={search}
-				onChange={(e) => setSearch(e.target.value)}
-			/>
-			<div className='flex flex-col gap-3 mt-2'>
+
+			{items.length > 0 && (
+				<FilterBar
+					className='mt-2'
+					search={{
+						value: query.search,
+						onValueChange: (search) => updateQuery({ search }),
+						placeholder: searchPlaceholder,
+					}}
+					filters={filters}
+					sort={{
+						options: SORT_OPTIONS,
+						value: query.sort,
+						onValueChange: (sort: ServerItemSort) => updateQuery({ sort }),
+					}}
+				/>
+			)}
+
+			<div className='flex flex-col gap-3'>
 				{filtered.length > 0 &&
 					filtered.map((item, i) => (
 						<m.div
@@ -421,7 +482,7 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 													</div>
 												</TooltipTrigger>
 												<TooltipContent>
-													<p className='font-bold'>World Folder Size</p>
+													<p className='font-bold'>Size on disk</p>
 												</TooltipContent>
 											</Tooltip>
 										)}
@@ -552,34 +613,21 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 						</m.div>
 					))}
 			</div>
-			<div
-				ref={dropZoneRef}
-				onClick={handleAddItem}
-				className={clsx(
-					'flex flex-col gap-2 mt-3 items-center justify-center rounded-md border-2 hover:border-accent/30 hover:bg-accent/30 transition-colors min-h-32 p-4 cursor-pointer select-none font-bold text-sm',
-					isDragging ? 'border-accent bg-accent/30 border-solid' : 'border-border border-dashed',
-					(disabled || busyFile === '__upload__') && 'opacity-50 pointer-events-none',
-				)}>
-				{isDragging ? (
-					<p>Drop to upload {title.slice(0, title.length - 1).toLowerCase()}! </p>
-				) : (
-					<>
-						<p>
-							Drop files <span className='mx-2 text-muted-foreground'>OR</span> Click Here
-						</p>
-						<p className='text-muted-foreground'>to upload {title.toLowerCase()}.</p>
-					</>
-				)}
-			</div>
 
 			{items.length === 0 ? (
 				<EmptyState
 					icon={icon}
 					title={emptyLabel}
-					description={disabled ? undefined : 'Drop files into the box above, or click it to pick them.'}
+					description={
+						disabled
+							? undefined
+							: onFindOnModrinth
+								? `Find ${pluralLabel} on Modrinth, or drop files into the upload box above.`
+								: 'Drop files into the upload box above, or click it to pick them.'
+					}
 					action={
-						ctaLabel && (onCta || ctaUrl)
-							? { label: ctaLabel, onClick: handleCta, disabled }
+						onFindOnModrinth
+							? { label: 'Find on Modrinth', icon: PackageSearch, onClick: onFindOnModrinth, disabled }
 							: undefined
 					}
 				/>
@@ -588,8 +636,13 @@ const ServerItemList: React.FC<ServerItemListProps> = ({
 					<EmptyState
 						variant='no-results'
 						title='No matches'
-						description={`Nothing here matches "${search.trim()}".`}
-						onClearSearch={() => setSearch('')}
+						description={
+							isSearchOnly
+								? `Nothing here matches "${query.search.trim()}".`
+								: `No ${pluralLabel} match these filters.`
+						}
+						clearSearchLabel={isSearchOnly ? 'Clear search' : 'Clear filters'}
+						onClearSearch={() => setQuery((current) => ({ ...DEFAULT_SERVER_ITEM_QUERY, sort: current.sort }))}
 					/>
 				)
 			)}

@@ -82,6 +82,20 @@ export const SERVER_STATUS_META: Record<ServerStatus, { dot: string; label: stri
 	sleeping: { dot: 'bg-indigo-400', label: 'Sleeping' },
 };
 
+/** A plugin, mod, datapack or world found in the server folder by the content scan. */
+export type ServerContentItem = {
+	name?: string;
+	file: string;
+	/** Catalog project page, for items installed from Modrinth. */
+	url?: string;
+	size?: number;
+	activated: boolean;
+	/** Catalog the item came from (`modrinth`), from the provenance sidecar. Unset = added by hand. */
+	source?: string;
+	/** When the item landed in the server folder (ms since the epoch). */
+	addedAt?: number;
+};
+
 export interface Server extends MserveJsonProps {
 	id: string;
 	name: string;
@@ -100,32 +114,10 @@ export interface Server extends MserveJsonProps {
 		/** Scope items captured in this backup ("worlds", "plugins", …). */
 		contents?: string[];
 	}[];
-	datapacks: {
-		name?: string;
-		file: string;
-		url?: string;
-		activated: boolean;
-	}[];
-	worlds: {
-		name?: string;
-		file: string;
-		size?: number;
-		activated: boolean;
-	}[];
-	plugins: {
-		name?: string;
-		file: string;
-		url?: string;
-		size?: number;
-		activated: boolean;
-	}[];
-	mods: {
-		name?: string;
-		file: string;
-		url?: string;
-		size?: number;
-		activated: boolean;
-	}[];
+	datapacks: ServerContentItem[];
+	worlds: Omit<ServerContentItem, 'url' | 'source'>[];
+	plugins: ServerContentItem[];
+	mods: ServerContentItem[];
 	stats: MserveStats;
 }
 

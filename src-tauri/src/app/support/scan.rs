@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::net::{IpAddr, UdpSocket};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, UNIX_EPOCH};
 
 pub(in crate::app) fn to_alpha_prefix(value: &str) -> Option<String> {
     let mut output = String::new();
@@ -121,6 +121,16 @@ pub(in crate::app) fn path_size_bytes(path: &Path) -> u64 {
     total
 }
 
+/// When `path` landed in the server folder, in ms since the Unix epoch. Prefers
+/// the creation time: a copy keeps the source's modified time on Windows, while
+/// a move between the active and inactive folders keeps both. Falls back to the
+/// modified time where the filesystem has no creation time.
+fn added_at_millis(metadata: &fs::Metadata) -> Option<u64> {
+    let time = metadata.created().or_else(|_| metadata.modified()).ok()?;
+    let millis = time.duration_since(UNIX_EPOCH).ok()?.as_millis();
+    u64::try_from(millis).ok()
+}
+
 /// Walks `dir`, handing each entry's path + file name to `make`. `make` returns
 /// `Some(item)` to keep the entry (applying its own type-specific filter) or
 /// `None` to skip it. Missing/non-directory paths are silently ignored.
@@ -190,6 +200,7 @@ fn list_jar_items(
                 return None;
             }
             let meta = item_meta.and_then(|entries| entries.get(file_name));
+            let metadata = fs::metadata(path).ok();
             Some(ScannedPlugin {
                 name: meta
                     .map(|item| item.name.clone())
@@ -199,8 +210,12 @@ fn list_jar_items(
                 url: meta
                     .map(|item| item.page_url.clone())
                     .filter(|url| !url.is_empty()),
-                size: fs::metadata(path).ok().map(|metadata| metadata.len()),
+                size: metadata.as_ref().map(fs::Metadata::len),
                 activated,
+                source: meta
+                    .map(|item| item.source.clone())
+                    .filter(|source| !source.is_empty()),
+                added_at: metadata.as_ref().and_then(added_at_millis),
             })
         });
     };
@@ -244,6 +259,7 @@ pub(in crate::app) fn list_worlds(directory: &Path) -> Vec<ScannedWorld> {
                     file: name.to_string(),
                     size: Some(path_size_bytes(path)),
                     activated,
+                    added_at: fs::metadata(path).ok().as_ref().and_then(added_at_millis),
                 })
             });
         };
@@ -280,7 +296,12 @@ pub(in crate::app) fn list_datapacks(directory: &Path, explicit: bool) -> Vec<Sc
                 url: meta
                     .map(|item| item.page_url.clone())
                     .filter(|url| !url.is_empty()),
+                size: Some(path_size_bytes(path)),
                 activated,
+                source: meta
+                    .map(|item| item.source.clone())
+                    .filter(|source| !source.is_empty()),
+                added_at: fs::metadata(path).ok().as_ref().and_then(added_at_millis),
             })
         });
     };
@@ -301,4 +322,74 @@ pub(in crate::app) fn list_datapacks(directory: &Path, explicit: bool) -> Vec<Sc
         |datapack| &datapack.file,
         |datapack| datapack.activated,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::content_meta::{ContentItemMeta, record_content_meta};
+    use super::*;
+
+    fn modrinth_meta(name: &str) -> ContentItemMeta {
+        ContentItemMeta {
+            name: name.to_string(),
+            project_id: "proj".to_string(),
+            version_id: "ver".to_string(),
+            page_url: format!("https://modrinth.com/plugin/{}", name.to_lowercase()),
+            source: "modrinth".to_string(),
+        }
+    }
+
+    #[test]
+    fn jar_items_report_their_source_and_added_time() {
+        let dir = tempfile::tempdir().unwrap();
+        let plugins = dir.path().join("plugins");
+        fs::create_dir_all(&plugins).unwrap();
+        fs::write(plugins.join("worldedit.jar"), b"jar").unwrap();
+        fs::write(plugins.join("handmade.jar"), b"jar!").unwrap();
+        record_content_meta(
+            dir.path(),
+            "plugin",
+            "worldedit.jar",
+            modrinth_meta("WorldEdit"),
+        )
+        .unwrap();
+
+        let items = list_plugins(dir.path(), false);
+        let by_file = |file: &str| items.iter().find(|item| item.file == file).unwrap();
+
+        let catalog = by_file("worldedit.jar");
+        assert_eq!(catalog.source.as_deref(), Some("modrinth"));
+        assert_eq!(catalog.name.as_deref(), Some("WorldEdit"));
+        assert!(catalog.added_at.is_some_and(|millis| millis > 0));
+
+        let manual = by_file("handmade.jar");
+        assert_eq!(manual.source, None);
+        assert_eq!(manual.size, Some(4));
+        assert!(manual.added_at.is_some());
+    }
+
+    #[test]
+    fn datapacks_report_size_and_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let datapacks = dir.path().join("world").join("datapacks");
+        let folder_pack = datapacks.join("terrain");
+        fs::create_dir_all(&folder_pack).unwrap();
+        fs::write(folder_pack.join("pack.mcmeta"), b"{}").unwrap();
+        fs::write(datapacks.join("tweaks.zip"), b"zipdata").unwrap();
+        record_content_meta(
+            dir.path(),
+            "datapack",
+            "tweaks.zip",
+            modrinth_meta("Tweaks"),
+        )
+        .unwrap();
+
+        let items = list_datapacks(dir.path(), false);
+        let by_file = |file: &str| items.iter().find(|item| item.file == file).unwrap();
+
+        assert_eq!(by_file("tweaks.zip").source.as_deref(), Some("modrinth"));
+        assert_eq!(by_file("tweaks.zip").size, Some(7));
+        assert_eq!(by_file("terrain").source, None);
+        assert_eq!(by_file("terrain").size, Some(2));
+    }
 }
