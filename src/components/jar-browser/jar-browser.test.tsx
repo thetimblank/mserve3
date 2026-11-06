@@ -8,7 +8,9 @@ describe('JarBrowser', () => {
 	it('keeps unstable builds selected after the reload the first click triggers', async () => {
 		mockInvoke('list_provider_versions', () => []);
 		render(<JarBrowser selectedRowId={null} onSelectRow={vi.fn()} onLoadError={vi.fn()} />);
+		expect(screen.getByLabelText('Proxies')).toBeInTheDocument();
 		await waitFor(() => expect(screen.queryByText('Loading versions...')).toBeNull());
+		expect(screen.getByLabelText('Proxies')).toBeInTheDocument();
 
 		const unstableLabel = getJarFiltersForTab('plugin').stabilities[1].label;
 		const toggle = () => within(screen.getByText(unstableLabel).closest('label')!).getByRole('checkbox');

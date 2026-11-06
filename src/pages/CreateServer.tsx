@@ -1,27 +1,68 @@
+import * as React from 'react';
 import { ArrowLeft } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { useCreateServer } from './create-server/CreateServerContext';
+import { CREATE_SERVER_SLIDE_INDEX, parseCreateServerPreset } from './create-server/create-server-flow';
 import SlideAutoRestart from './create-server/slides/SlideAutoRestart';
 import SlideBackups from './create-server/slides/SlideBackups';
 import SlideDirectory from './create-server/slides/SlideDirectory';
 import SlideDone from './create-server/slides/SlideDone';
 import SlideEula from './create-server/slides/SlideEula';
 import SlideIntro from './create-server/slides/SlideIntro';
-import SlideJarFile from './create-server/slides/SlideJarFile';
+import SlideProvider from './create-server/slides/SlideProvider';
 import SlideRam from './create-server/slides/SlideRam';
 import SlideReview from './create-server/slides/SlideReview';
+import SlideVersion from './create-server/slides/SlideVersion';
 import { AnimatePresence } from 'motion/react';
 import { m } from 'motion/react';
 
 const CreateServerContent: React.FC = () => {
-	const { activeSlide, prevSlide, showBackButton, showStepIndicator, currentStep, totalSteps, error } =
-		useCreateServer();
-	const shouldTopAlignContent = activeSlide === 2 || activeSlide === 3;
+	const {
+		activeSlide,
+		prevSlide,
+		showBackButton,
+		showStepIndicator,
+		currentStep,
+		totalSteps,
+		error,
+		chooseProvider,
+		form,
+		modpack,
+	} = useCreateServer();
+	const location = useLocation();
+	const navigate = useNavigate();
+	const shouldTopAlignContent =
+		activeSlide === CREATE_SERVER_SLIDE_INDEX.version || activeSlide === CREATE_SERVER_SLIDE_INDEX.ram;
+
+	// Other pages can preselect the provider slide through router state
+	// (`{ provider?, source? }`). It's applied once, then cleared so a reload or
+	// a later visit doesn't re-apply it. A draft that already has a jar or
+	// modpack keeps it: the preset never throws away a download.
+	const hasCommittedSource = form.file.trim() !== '' || modpack !== null;
+	React.useEffect(() => {
+		if (location.state == null) return;
+		const preset = parseCreateServerPreset(location.state);
+		if (preset && !hasCommittedSource) chooseProvider(preset);
+		navigate(
+			{ pathname: location.pathname, search: location.search, hash: location.hash },
+			{ replace: true, state: null },
+		);
+	}, [
+		chooseProvider,
+		hasCommittedSource,
+		location.hash,
+		location.pathname,
+		location.search,
+		location.state,
+		navigate,
+	]);
 
 	const slides = [
 		<SlideIntro key='intro' />,
 		<SlideDirectory key='directory' />,
-		<SlideJarFile key='jar-file' />,
+		<SlideProvider key='provider' />,
+		<SlideVersion key='version' />,
 		<SlideRam key='ram' />,
 		<SlideAutoRestart key='auto-restart' />,
 		<SlideBackups key='backups' />,

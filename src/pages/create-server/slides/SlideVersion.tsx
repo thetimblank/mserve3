@@ -2,17 +2,17 @@ import * as React from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
-import { ArrowRight, Download, FolderOpen } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Download, FolderOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { SegmentedControl, type SegmentedControlOption } from '@/components/ui/segmented-control';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
 import { useExperience } from '@/data/user';
 import { useJavaRuntimes } from '@/data/java-runtimes';
+import EmptyState from '@/components/empty-state';
 import {
 	downloadAndResolveJarRow,
 	type DownloadServerJarProgressEvent,
@@ -28,24 +28,27 @@ import {
 } from '@/lib/server-provider';
 import ModrinthBrowser from '@/components/modrinth/modrinth-browser';
 import { useCreateServer, type PathValidationResult } from '../CreateServerContext';
+import { MODPACK_ICON } from '../provider-options';
+import WizardJavaSection from '../wizard-java-section';
 import JarBrowser from '@/components/jar-browser/jar-browser';
 import { examplePaths } from '@/lib/platform';
 import SlideShell from './SlideShell';
 import { getErrorMessage } from '@/lib/utils';
 
-type SourceMode = 'software' | 'modpack';
-
-const SOURCE_MODE_OPTIONS: SegmentedControlOption<SourceMode>[] = [
-	{ value: 'software', label: 'Server Software' },
-	{ value: 'modpack', label: 'Modpacks' },
-];
-
-const SlideJarFile: React.FC = () => {
-	const { form, updateField, nextSlide, setError, clearError, modpack, setModpack } =
-		useCreateServer();
-	const [sourceMode, setSourceMode] = React.useState<SourceMode>(
-		modpack ? 'modpack' : 'software',
-	);
+const SlideVersion: React.FC = () => {
+	const {
+		form,
+		updateField,
+		nextSlide,
+		prevSlide,
+		setError,
+		clearError,
+		modpack,
+		setModpack,
+		providerChoice,
+	} = useCreateServer();
+	const sourceMode = providerChoice?.source ?? null;
+	const chosenProvider = providerChoice?.source === 'software' ? providerChoice.provider : null;
 	const [isLoadingRows, setIsLoadingRows] = React.useState(false);
 	const [selectedRow, setSelectedRow] = React.useState<JarVersionRow | null>(null);
 	const [isDownloading, setIsDownloading] = React.useState(false);
@@ -111,8 +114,22 @@ const SlideJarFile: React.FC = () => {
 		}
 	};
 
+	// The provider + Minecraft version the Java section checks against.
+	const javaTarget = React.useMemo(() => {
+		if (sourceMode === 'modpack') {
+			const minecraftVersion = modpack?.version.gameVersions[0];
+			return modpack && minecraftVersion
+				? { name: modpack.version.loaders[0] ?? 'fabric', minecraft_version: minecraftVersion }
+				: null;
+		}
+		if (selectedRow) {
+			return { name: selectedRow.providerId, minecraft_version: selectedRow.minecraftVersion };
+		}
+		return form.provider?.minecraft_version.trim() ? form.provider : null;
+	}, [form.provider, modpack, selectedRow, sourceMode]);
+
 	const onContinue = async () => {
-		if (isDownloading) return;
+		if (isDownloading || !sourceMode) return;
 
 		if (sourceMode === 'modpack') {
 			if (!modpack) {
@@ -218,16 +235,26 @@ const SlideJarFile: React.FC = () => {
 	return (
 		<SlideShell
 			fullWidth
-			title='Choose the server software'
+			title={
+				sourceMode === 'modpack'
+					? 'Choose a modpack'
+					: chosenProvider
+						? `Choose a ${getProviderDisplayName(chosenProvider)} version`
+						: 'Choose a version'
+			}
 			helpTopic='providers'
-			description='Browse and download a supported server jar, or build the server from a Modrinth modpack. The Advanced experience level adds manual file and provider selection.'
+			description={
+				sourceMode === 'modpack'
+					? 'Pick a Modrinth modpack and the version to install.'
+					: 'The newest stable version is tagged Latest. mserve downloads the one you pick.'
+			}
 			actions={
 				<Button
 					type='button'
 					onClick={onContinue}
-					disabled={isDownloading || (sourceMode === 'software' && isLoadingRows)}
+					disabled={!sourceMode || isDownloading || (sourceMode === 'software' && isLoadingRows)}
 					className='relative overflow-hidden'>
-					{sourceMode === 'modpack' || form.file.length > 0 ? (
+					{sourceMode === 'modpack' || (!selectedRow && form.file.length > 0) ? (
 						<>
 							Continue <ArrowRight />
 						</>
@@ -251,18 +278,19 @@ const SlideJarFile: React.FC = () => {
 				</Button>
 			}>
 			<div className='flex flex-col gap-4'>
-				<SegmentedControl
-					aria-label='Server source'
-					value={sourceMode}
-					onValueChange={setSourceMode}
-					options={SOURCE_MODE_OPTIONS}
-					disabled={isDownloading}
-				/>
+				{!sourceMode && (
+					<EmptyState
+						title='No server type picked yet'
+						description='Go back one step and pick what you want to run.'
+						action={{ label: 'Back', icon: ArrowLeft, onClick: prevSlide }}
+					/>
+				)}
 
-				{sourceMode === 'modpack' && (
-					<>
-						{modpack && (
-							<div className='rounded-md border-2 border-accent/50 bg-accent/10 px-4 py-3 text-sm flex items-center justify-between gap-4'>
+				{sourceMode === 'modpack' &&
+					(modpack ? (
+						<div className='rounded-md border-2 border-accent/50 bg-accent/10 px-4 py-3 text-sm flex items-center justify-between gap-4'>
+							<span className='flex items-center gap-3'>
+								<MODPACK_ICON className='size-5 shrink-0 text-accent' />
 								<span>
 									Selected modpack: <span className='font-bold'>{modpack.title}</span>{' '}
 									<span className='text-muted-foreground'>
@@ -270,47 +298,49 @@ const SlideJarFile: React.FC = () => {
 										{modpack.version.gameVersions[0] ?? 'unknown'})
 									</span>
 								</span>
-								<Button type='button' variant='secondary' onClick={() => setModpack(null)}>
-									Clear
-								</Button>
-							</div>
-						)}
-						<div className='h-[60vh] min-h-96'>
-							<ModrinthBrowser
-								projectType='modpack'
-								installLabel='Use'
-								onInstallVersion={async (version, project) => {
-									setModpack({
-										projectId: project.projectId,
-										slug: project.slug,
-										title: project.title,
-										pageUrl: project.pageUrl,
-										version,
-									});
-									clearError();
-									nextSlide();
-								}}
-							/>
+							</span>
+							<Button type='button' variant='secondary' onClick={() => setModpack(null)}>
+								Change
+							</Button>
 						</div>
-						<p className='text-xs text-muted-foreground'>
-							The pack&apos;s files, configs, and mod loader (Fabric, Forge, or NeoForge) are
-							installed automatically when the server is created.
-						</p>
-					</>
-				)}
+					) : (
+						<>
+							<div className='h-[60vh] min-h-96'>
+								<ModrinthBrowser
+									projectType='modpack'
+									installLabel='Use'
+									onInstallVersion={async (version, project) => {
+										setModpack({
+											projectId: project.projectId,
+											slug: project.slug,
+											title: project.title,
+											pageUrl: project.pageUrl,
+											version,
+										});
+										clearError();
+									}}
+								/>
+							</div>
+							<p className='text-xs text-muted-foreground'>
+								The pack&apos;s files, configs, and mod loader (Fabric, Forge, or NeoForge) are
+								installed automatically when the server is created.
+							</p>
+						</>
+					))}
 
-				{sourceMode === 'software' && (
-				<Field>
-					<JarBrowser
-						selectedRowId={selectedRow?.id ?? null}
-						onSelectRow={setSelectedRow}
-						onLoadingChange={setIsLoadingRows}
-						onLoadError={setError}
-						disabled={isDownloading}
-						installedMajors={installedMajors}
-						isCheckingJavaCompatibility={isCheckingJavaCompatibility}
-					/>
-				</Field>
+				{sourceMode === 'software' && chosenProvider && (
+					<Field>
+						<JarBrowser
+							provider={chosenProvider}
+							selectedRowId={selectedRow?.id ?? null}
+							onSelectRow={setSelectedRow}
+							onLoadingChange={setIsLoadingRows}
+							onLoadError={setError}
+							disabled={isDownloading}
+							installedMajors={installedMajors}
+							isCheckingJavaCompatibility={isCheckingJavaCompatibility}
+						/>
+					</Field>
 				)}
 
 				{sourceMode === 'software' && isAdvanced && (
@@ -445,9 +475,18 @@ const SlideJarFile: React.FC = () => {
 						</p>
 					</>
 				)}
+
+				{sourceMode && (sourceMode === 'software' || modpack) && (
+					<WizardJavaSection
+						target={javaTarget}
+						value={form.java_installation}
+						onChange={(next) => updateField('java_installation', next)}
+						disabled={isDownloading}
+					/>
+				)}
 			</div>
 		</SlideShell>
 	);
 };
 
-export default SlideJarFile;
+export default SlideVersion;

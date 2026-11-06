@@ -1,3 +1,16 @@
+import {
+	Anvil,
+	Box,
+	Cable,
+	Droplet,
+	Flower2,
+	Hammer,
+	Leaf,
+	ScrollText,
+	Spool,
+	Zap,
+	type LucideIcon,
+} from 'lucide-react';
 import { DEFAULT_SERVER_PROVIDER } from './mserve-consts';
 import {
 	createDefaultProviderChecks,
@@ -22,6 +35,8 @@ export type ProviderDescriptor = {
 	name: ProviderName;
 	aliases: string[];
 	description: string;
+	/** Generic lucide icon (no brand logos) shown in pickers. */
+	icon: LucideIcon;
 	kind: Exclude<ProviderKind, 'unknown'>;
 	tab: ProviderTab;
 	stable_name: string;
@@ -47,6 +62,7 @@ const PROVIDER_DESCRIPTORS: ProviderDescriptor[] = [
 		name: 'paper',
 		aliases: ['paper'],
 		description: 'High-performance Paper server with broad plugin compatibility',
+		icon: ScrollText,
 		kind: 'plugin',
 		tab: 'plugin',
 		stable_name: 'Stable',
@@ -61,6 +77,7 @@ const PROVIDER_DESCRIPTORS: ProviderDescriptor[] = [
 		name: 'folia',
 		aliases: ['folia'],
 		description: 'Regionized-threading server software from the Paper ecosystem',
+		icon: Leaf,
 		kind: 'plugin',
 		tab: 'plugin',
 		stable_name: 'Stable',
@@ -75,6 +92,7 @@ const PROVIDER_DESCRIPTORS: ProviderDescriptor[] = [
 		name: 'purpur',
 		aliases: ['purpur'],
 		description: 'Feature-rich Paper fork with extensive gameplay & performance configuration',
+		icon: Flower2,
 		kind: 'plugin',
 		tab: 'plugin',
 		stable_name: 'Stable',
@@ -89,6 +107,7 @@ const PROVIDER_DESCRIPTORS: ProviderDescriptor[] = [
 		name: 'vanilla',
 		aliases: ['vanilla', 'minecraft', 'mojang', 'minecraft_server', 'server'],
 		description: 'Official Mojang server software for pure vanilla gameplay',
+		icon: Box,
 		kind: 'vanilla',
 		tab: 'vanilla',
 		stable_name: 'Release',
@@ -103,6 +122,7 @@ const PROVIDER_DESCRIPTORS: ProviderDescriptor[] = [
 		name: 'velocity',
 		aliases: ['velocity'],
 		description: 'Fast modern proxy for multi-server networks',
+		icon: Zap,
 		kind: 'proxy',
 		tab: 'proxies',
 		stable_name: 'Stable',
@@ -117,6 +137,7 @@ const PROVIDER_DESCRIPTORS: ProviderDescriptor[] = [
 		name: 'fabric',
 		aliases: ['fabric'],
 		description: 'Lightweight modded server using the Fabric loader',
+		icon: Spool,
 		kind: 'modded',
 		tab: 'modded',
 		stable_name: 'Stable',
@@ -133,6 +154,7 @@ const PROVIDER_DESCRIPTORS: ProviderDescriptor[] = [
 		name: 'neoforge',
 		aliases: ['neoforge'],
 		description: 'Modded server using the NeoForge loader',
+		icon: Anvil,
 		kind: 'modded',
 		tab: 'modded',
 		stable_name: 'Stable',
@@ -147,6 +169,7 @@ const PROVIDER_DESCRIPTORS: ProviderDescriptor[] = [
 		name: 'forge',
 		aliases: ['forge', 'minecraftforge'],
 		description: 'Modded server using the Forge loader',
+		icon: Hammer,
 		kind: 'modded',
 		tab: 'modded',
 		stable_name: 'Stable',
@@ -161,6 +184,7 @@ const PROVIDER_DESCRIPTORS: ProviderDescriptor[] = [
 		name: 'spigot',
 		aliases: ['spigot', 'bukkit', 'craftbukkit'],
 		description: 'Spigot/Bukkit plugin server (detected from existing jars)',
+		icon: Droplet,
 		kind: 'plugin',
 		tab: 'plugin',
 		stable_name: 'Stable',
@@ -177,6 +201,7 @@ const PROVIDER_DESCRIPTORS: ProviderDescriptor[] = [
 		name: 'bungeecord',
 		aliases: ['bungeecord', 'bungee', 'waterfall'],
 		description: 'Classic BungeeCord proxy for connecting multiple backend servers',
+		icon: Cable,
 		kind: 'proxy',
 		tab: 'proxies',
 		stable_name: 'Stable',

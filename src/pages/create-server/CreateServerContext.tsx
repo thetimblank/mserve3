@@ -29,6 +29,8 @@ import {
 	getCreateServerPreviousSlide,
 	getCreateServerStepSlides,
 	getCreateServerVisibleSlide,
+	isSameProviderChoice,
+	type ProviderChoice,
 } from './create-server-flow';
 import { getErrorMessage } from '@/lib/utils';
 import { DEFAULT_AUTO_BACKUP_INTERVAL_MINUTES, DEFAULT_STORAGE_LIMIT_GB } from '@/lib/mserve-consts';
@@ -39,7 +41,7 @@ export type PathValidationResult = {
 	isFile: boolean;
 };
 
-/** A Modrinth modpack version the user picked in the jar slide. */
+/** A Modrinth modpack version the user picked on the version slide. */
 type ModpackSelection = {
 	projectId: string;
 	slug: string;
@@ -121,6 +123,13 @@ type CreateServerContextValue = {
 	modpack: ModpackSelection | null;
 	modpackInstallProgress: ModpackInstallProgressEvent | null;
 	setModpack: (selection: ModpackSelection | null) => void;
+	/** The provider slide's pick; the version slide lists versions for it. */
+	providerChoice: ProviderChoice | null;
+	/**
+	 * Picks a provider (or modpacks). Switching to a different one drops the jar
+	 * and modpack picked for the previous choice; re-picking the same one keeps them.
+	 */
+	chooseProvider: (choice: ProviderChoice) => void;
 	updateField: <K extends keyof ServerSetupFormData>(key: K, value: ServerSetupFormData[K]) => void;
 	setServerName: (value: string) => void;
 	setSlide: (slide: number) => void;
@@ -157,6 +166,9 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 	const [modpack, setModpackState] = React.useState<ModpackSelection | null>(null);
 	const [modpackInstallProgress, setModpackInstallProgress] =
 		React.useState<ModpackInstallProgressEvent | null>(null);
+	const [providerChoice, setProviderChoice] = React.useState<ProviderChoice | null>(null);
+	// Read synchronously by chooseProvider to tell a re-pick from a switch.
+	const providerChoiceRef = React.useRef<ProviderChoice | null>(null);
 	const { runtimes: javaRuntimes } = useJavaRuntimes();
 
 	React.useEffect(() => {
@@ -234,6 +246,29 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 		}
 	}, []);
 
+	const chooseProvider = React.useCallback((choice: ProviderChoice) => {
+		setHasStarted(true);
+		const changed = !isSameProviderChoice(providerChoiceRef.current, choice);
+		providerChoiceRef.current = choice;
+		setProviderChoice(choice);
+		// Re-picking the same choice keeps the jar, modpack, and Java picked for it.
+		if (!changed) return;
+
+		if (choice.source === 'modpack') {
+			// The modpack install determines the launch file and provider.
+			providerRef.current = null;
+			setForm((prev) => ({ ...prev, file: '', provider: null, java_installation: '' }));
+			return;
+		}
+
+		// A provider template up front lets the step count (proxies skip backups
+		// and EULA) and the manual jar fields follow the pick before a download.
+		const provider = createProvider(choice.provider);
+		providerRef.current = provider;
+		setModpackState(null);
+		setForm((prev) => ({ ...prev, file: '', provider, java_installation: '' }));
+	}, []);
+
 	const nextSlide = React.useCallback(() => {
 		setHasStarted(true);
 		setSlide((prev) => getCreateServerNextSlide(prev, providerRef.current));
@@ -268,6 +303,8 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 		setIsSubmitting(false);
 		setModpackState(null);
 		setModpackInstallProgress(null);
+		setProviderChoice(null);
+		providerChoiceRef.current = null;
 	}, []);
 
 	const goToCreatedServer = React.useCallback(() => {
@@ -343,11 +380,13 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 					setModpackInstallProgress(event.payload);
 				});
 
-				// Forge/NeoForge installers need a Java runtime; hand over the newest
-				// one detected (the backend errors clearly when it's required but missing).
+				// Forge/NeoForge installers need a Java runtime; hand over the one picked
+				// on the version slide, else the newest detected (the backend errors
+				// clearly when it's required but missing).
 				const javaExecutable =
-					[...javaRuntimes].sort((a, b) => b.majorVersion - a.majorVersion)[0]?.executablePath ??
-					null;
+					form.java_installation.trim() ||
+					([...javaRuntimes].sort((a, b) => b.majorVersion - a.majorVersion)[0]?.executablePath ??
+						null);
 
 				const installPromise = installModrinthModpack({
 					directory,
@@ -421,13 +460,13 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 		const file = form.file.trim();
 		if (!file) {
 			setError('Please choose a server jar file.');
-			setSlide(CREATE_SERVER_SLIDE_INDEX.jarFile);
+			setSlide(CREATE_SERVER_SLIDE_INDEX.version);
 			return;
 		}
 
 		if (!file.toLowerCase().endsWith('.jar')) {
 			setError('Server file must be a .jar file.');
-			setSlide(CREATE_SERVER_SLIDE_INDEX.jarFile);
+			setSlide(CREATE_SERVER_SLIDE_INDEX.version);
 			return;
 		}
 
@@ -436,13 +475,13 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 		);
 		if (!fileValidation?.exists || !fileValidation.isFile) {
 			setError('Please choose a valid server jar file.');
-			setSlide(CREATE_SERVER_SLIDE_INDEX.jarFile);
+			setSlide(CREATE_SERVER_SLIDE_INDEX.version);
 			return;
 		}
 
 		if (!form.provider) {
 			setError('Provider details are required. Select provider metadata before continuing.');
-			setSlide(CREATE_SERVER_SLIDE_INDEX.jarFile);
+			setSlide(CREATE_SERVER_SLIDE_INDEX.version);
 			return;
 		}
 
@@ -453,7 +492,7 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
 		if (!provider.minecraft_version.trim() || !provider.provider_version.trim()) {
 			setError('Provider metadata must include minecraft and provider version details.');
-			setSlide(CREATE_SERVER_SLIDE_INDEX.jarFile);
+			setSlide(CREATE_SERVER_SLIDE_INDEX.version);
 			return;
 		}
 
@@ -553,13 +592,15 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 			showBackButton,
 			showStepIndicator,
 			hasStarted,
-			isDirty: isFormDirty(form, serverName) || modpack !== null,
+			isDirty: isFormDirty(form, serverName) || modpack !== null || providerChoice !== null,
 			createdServerId,
 			error,
 			isSubmitting,
 			modpack,
 			modpackInstallProgress,
 			setModpack,
+			providerChoice,
+			chooseProvider,
 			updateField,
 			setServerName,
 			setSlide,
@@ -590,6 +631,8 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 			modpack,
 			modpackInstallProgress,
 			setModpack,
+			providerChoice,
+			chooseProvider,
 			nextSlide,
 			prevSlide,
 			resetDraft,

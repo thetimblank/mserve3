@@ -4,6 +4,7 @@ import {
 	filterJarRows,
 	formatStabilityLabel,
 	getJarFiltersForTab,
+	resolveLatestJarRowIds,
 	UNSTABLE_STABILITY_IDS,
 	type JarProviderFilterId,
 	type JarStabilityFilterId,
@@ -15,6 +16,7 @@ import {
 	evaluateJavaCompatibilityStatus,
 	resolveJavaRequirement,
 } from '@/lib/java-compatibility';
+import type { ProviderName } from '@/lib/mserve-schema';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group';
@@ -30,6 +32,8 @@ const toggleFilterId = <T,>(current: T[], filterId: T, checked: boolean): T[] =>
 
 type JarVersionSelectorPaneProps = {
 	tab: JarTab;
+	/** Only this provider's versions are listed (no Provider filter or column). */
+	provider?: ProviderName;
 	rows: JarVersionRow[];
 	installedMajors?: number[];
 	isCheckingJavaCompatibility?: boolean;
@@ -42,6 +46,7 @@ type JarVersionSelectorPaneProps = {
 
 const JarVersionSelectorPane: React.FC<JarVersionSelectorPaneProps> = ({
 	tab,
+	provider,
 	rows,
 	installedMajors = [],
 	isCheckingJavaCompatibility = false,
@@ -50,7 +55,15 @@ const JarVersionSelectorPane: React.FC<JarVersionSelectorPaneProps> = ({
 	onSelectRow,
 	onRequestUnstableVersions,
 }) => {
-	const { providers, stabilities } = React.useMemo(() => getJarFiltersForTab(tab), [tab]);
+	const { providers, stabilities } = React.useMemo(() => {
+		const filters = getJarFiltersForTab(tab);
+		return provider
+			? { ...filters, providers: filters.providers.filter((filter) => filter.id === provider) }
+			: filters;
+	}, [provider, tab]);
+	const showProviders = providers.length > 1;
+	const columnCount = showProviders ? 4 : 3;
+	const latestRowIds = React.useMemo(() => resolveLatestJarRowIds(rows), [rows]);
 	const unstableStabilityId = UNSTABLE_STABILITY_IDS[tab];
 	const stableStabilityIds = React.useMemo(
 		() => stabilities.map((filter) => filter.id).filter((id) => id !== unstableStabilityId),
@@ -182,36 +195,40 @@ const JarVersionSelectorPane: React.FC<JarVersionSelectorPaneProps> = ({
 					</p>
 				)}
 
-				<p className='mt-3'>Provider</p>
-				<div className='flex gap-2 flex-wrap'>
-					{providers.map((filter) => {
-						const checked = activeProviderFilterIds.includes(filter.id);
-						return (
-							<label
-								key={filter.id}
-								className='flex items-center justify-between rounded-md bg-secondary cursor-pointer px-3 py-2 gap-2'>
-								<div className='flex items-center gap-2 text-sm'>
-									<Checkbox
-										checked={checked}
-										onCheckedChange={(next) => toggleProviderFilter(filter.id, Boolean(next))}
-									/>
-									<span>{filter.label}</span>
-								</div>
-								<Tooltip>
-									<TooltipTrigger asChild>
-										<button
-											type='button'
-											aria-label={`About ${filter.label}`}
-											className='text-muted-foreground hover:text-foreground'>
-											<CircleHelp className='size-4' />
-										</button>
-									</TooltipTrigger>
-									<TooltipContent sideOffset={8}>{filter.description}</TooltipContent>
-								</Tooltip>
-							</label>
-						);
-					})}
-				</div>
+				{showProviders && (
+					<>
+						<p className='mt-3'>Provider</p>
+						<div className='flex gap-2 flex-wrap'>
+							{providers.map((filter) => {
+								const checked = activeProviderFilterIds.includes(filter.id);
+								return (
+									<label
+										key={filter.id}
+										className='flex items-center justify-between rounded-md bg-secondary cursor-pointer px-3 py-2 gap-2'>
+										<div className='flex items-center gap-2 text-sm'>
+											<Checkbox
+												checked={checked}
+												onCheckedChange={(next) => toggleProviderFilter(filter.id, Boolean(next))}
+											/>
+											<span>{filter.label}</span>
+										</div>
+										<Tooltip>
+											<TooltipTrigger asChild>
+												<button
+													type='button'
+													aria-label={`About ${filter.label}`}
+													className='text-muted-foreground hover:text-foreground'>
+													<CircleHelp className='size-4' />
+												</button>
+											</TooltipTrigger>
+											<TooltipContent sideOffset={8}>{filter.description}</TooltipContent>
+										</Tooltip>
+									</label>
+								);
+							})}
+						</div>
+					</>
+				)}
 				<p className='mt-3'>Stability</p>
 				<div className='flex gap-2 flex-wrap'>
 					{stabilities.map((filter) => {
@@ -244,20 +261,20 @@ const JarVersionSelectorPane: React.FC<JarVersionSelectorPaneProps> = ({
 				</div>
 			</Container>
 
-			<Container className='w-2/3 p-0 overflow-hidden'>
+			<Container className='w-2/3 p-0 max-h-[55vh] overflow-y-auto app-scroll-area'>
 				<table className='w-full text-sm'>
-					<thead className='bg-secondary/50'>
+					<thead className='sticky top-0 z-10 bg-secondary'>
 						<tr>
-							<th className='text-left px-3 py-2'>Provider</th>
+							{showProviders && <th className='text-left px-3 py-2'>Provider</th>}
 							<th className='text-left px-3 py-2'>Version</th>
 							<th className='text-left px-3 py-2'>Stability</th>
-							<th className='text-left px-3 py-2'>Compatibility</th>
+							<th className='text-left px-3 py-2'>Java</th>
 						</tr>
 					</thead>
 					<tbody>
 						{isLoading && (
 							<tr>
-								<td className='px-3 py-5 text-muted-foreground' colSpan={4}>
+								<td className='px-3 py-5 text-muted-foreground' colSpan={columnCount}>
 									<span className='flex items-center justify-center gap-2'>
 										<Loader2 className='size-4 animate-spin' />
 										Loading versions...
@@ -285,13 +302,31 @@ const JarVersionSelectorPane: React.FC<JarVersionSelectorPaneProps> = ({
 									]
 										.filter(Boolean)
 										.join(' ')}>
+									{showProviders && (
+										<td className='px-3 py-2'>
+											<div className='flex items-center gap-2'>
+												{selected && <CircleCheck className='size-4' />}
+												<span>{row.provider}</span>
+											</div>
+										</td>
+									)}
 									<td className='px-3 py-2'>
 										<div className='flex items-center gap-2'>
-											{selected && <CircleCheck className='size-4' />}
-											<span>{row.provider}</span>
+											{selected && !showProviders && <CircleCheck className='size-4' />}
+											<span>{row.version}</span>
+											{latestRowIds.has(row.id) && (
+												<span
+													className={[
+														'rounded-md px-2 py-0.5 text-xs font-semibold',
+														selected
+															? 'bg-accent-foreground/15'
+															: 'bg-accent/15 text-accent',
+													].join(' ')}>
+													Latest
+												</span>
+											)}
 										</div>
 									</td>
-									<td className='px-3 py-2'>{row.version}</td>
 									<td className='px-3 py-2'>{formatStabilityLabel(row.stability)}</td>
 									<td className='px-3 py-2'>
 										{isCheckingJavaCompatibility ? (
@@ -323,7 +358,7 @@ const JarVersionSelectorPane: React.FC<JarVersionSelectorPaneProps> = ({
 						})}
 						{!isLoading && visibleRows.length === 0 && (
 							<tr>
-								<td className='px-3 py-5 text-muted-foreground text-center' colSpan={4}>
+								<td className='px-3 py-5 text-muted-foreground text-center' colSpan={columnCount}>
 									No versions found for the current search and filter selection.
 								</td>
 							</tr>
