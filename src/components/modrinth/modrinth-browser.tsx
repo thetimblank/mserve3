@@ -1,17 +1,9 @@
 import React from 'react';
-import { ChevronLeft, ChevronRight, Download, Heart, Search } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, Heart } from 'lucide-react';
 import EmptyState from '@/components/empty-state';
+import { FilterBar, type FilterBarFilter } from '@/components/filter-bar';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Container } from '@/components/ui/container';
-import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group';
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
 import {
 	MODRINTH_PAGE_SIZE,
@@ -32,7 +24,11 @@ import ModrinthProjectDetail, { type ModrinthInstallTarget } from './modrinth-pr
 import ModrinthProjectIcon from './modrinth-project-icon';
 import { getErrorMessage } from '@/lib/utils';
 
-const ANY_VERSION = '__any__';
+/**
+ * Which server pins narrow the search: both (the default, so results install on
+ * the target server), only its loader, only its Minecraft version, or none.
+ */
+type CompatibilityScope = 'server' | 'loader' | 'version' | 'none';
 
 export type ModrinthBrowserProps = {
 	projectType: ModrinthProjectType;
@@ -63,9 +59,9 @@ const ModrinthBrowser: React.FC<ModrinthBrowserProps> = ({
 	const [sortIndex, setSortIndex] = React.useState<ModrinthSortIndex>('relevance');
 	const [offset, setOffset] = React.useState(0);
 	const [activeCategories, setActiveCategories] = React.useState<string[]>([]);
-	const [usePinnedLoaders, setUsePinnedLoaders] = React.useState(true);
-	const [usePinnedVersion, setUsePinnedVersion] = React.useState(true);
-	const [manualGameVersion, setManualGameVersion] = React.useState<string>(ANY_VERSION);
+	const [compatibility, setCompatibility] = React.useState<CompatibilityScope>('server');
+	// null = any version (only used while the version pin is off).
+	const [manualGameVersion, setManualGameVersion] = React.useState<string | null>(null);
 
 	const [tags, setTags] = React.useState<ModrinthTags | null>(null);
 	const [result, setResult] = React.useState<ModrinthSearchResult | null>(null);
@@ -73,19 +69,25 @@ const ModrinthBrowser: React.FC<ModrinthBrowserProps> = ({
 	const [error, setError] = React.useState<string | null>(null);
 	const [selectedHit, setSelectedHit] = React.useState<ModrinthSearchHit | null>(null);
 
+	const hasLoaderPin = pinnedLoaders.length > 0;
+	const hasVersionPin = Boolean(pinnedGameVersion);
+	const usePinnedLoaders = compatibility === 'server' || compatibility === 'loader';
+	const usePinnedVersion = compatibility === 'server' || compatibility === 'version';
+	// The manual game version only applies (and its chip only shows) without a version pin.
+	const isVersionPinned = hasVersionPin && usePinnedVersion;
+
 	// Pins (server loader / version) are not cleared here: they keep results
 	// installable on this server, so only user-picked filters count.
 	const hasClearableSearch =
-		searchTerm.trim() !== '' || activeCategories.length > 0 || manualGameVersion !== ANY_VERSION;
+		searchTerm.trim() !== '' ||
+		activeCategories.length > 0 ||
+		(!isVersionPinned && manualGameVersion !== null);
 	const handleClearSearch = () => {
 		setSearchTerm('');
 		setActiveCategories([]);
-		setManualGameVersion(ANY_VERSION);
+		setManualGameVersion(null);
 		setOffset(0);
 	};
-
-	const hasLoaderPin = pinnedLoaders.length > 0;
-	const hasVersionPin = Boolean(pinnedGameVersion);
 
 	// Key on the loader *values*, not array identity — parents rebuild the array
 	// every render, which must not re-fire the search effect.
@@ -96,10 +98,10 @@ const ModrinthBrowser: React.FC<ModrinthBrowserProps> = ({
 		[hasLoaderPin, usePinnedLoaders, pinnedLoadersKey],
 	);
 	const effectiveGameVersions = React.useMemo(() => {
-		if (hasVersionPin && usePinnedVersion && pinnedGameVersion) return [pinnedGameVersion];
-		if (manualGameVersion !== ANY_VERSION) return [manualGameVersion];
+		if (isVersionPinned && pinnedGameVersion) return [pinnedGameVersion];
+		if (manualGameVersion !== null) return [manualGameVersion];
 		return [];
-	}, [hasVersionPin, usePinnedVersion, pinnedGameVersion, manualGameVersion]);
+	}, [isVersionPinned, pinnedGameVersion, manualGameVersion]);
 
 	React.useEffect(() => {
 		const handle = window.setTimeout(() => {
@@ -167,132 +169,88 @@ const ModrinthBrowser: React.FC<ModrinthBrowserProps> = ({
 		[tags],
 	);
 
-	const toggleCategory = (name: string, checked: boolean) => {
-		setOffset(0);
-		setActiveCategories((prev) =>
-			checked ? [...prev, name] : prev.filter((category) => category !== name),
-		);
-	};
+	const filters: FilterBarFilter[] = [];
+	if (hasLoaderPin || hasVersionPin) {
+		const loaderLabel = hasLoaderPin ? formatModrinthCategoryLabel(pinnedLoaders[0]) : '';
+		const versionLabel = `Minecraft ${pinnedGameVersion}`;
+		const options: { value: CompatibilityScope; label: string }[] =
+			hasLoaderPin && hasVersionPin
+				? [
+						{ value: 'server', label: `This server (${loaderLabel}, ${versionLabel})` },
+						{ value: 'loader', label: `${loaderLabel}, any version` },
+						{ value: 'version', label: `${versionLabel}, any loader` },
+					]
+				: [{ value: 'server', label: `This server (${hasLoaderPin ? loaderLabel : versionLabel})` }];
+		options.push({ value: 'none', label: 'Show everything' });
+		filters.push({
+			id: 'compatibility',
+			label: 'Compatibility',
+			type: 'single',
+			options,
+			value: compatibility,
+			defaultValue: 'server',
+			onValueChange: (next: CompatibilityScope | null) => {
+				setCompatibility(next ?? 'server');
+				setOffset(0);
+			},
+		});
+	}
+	if (!isVersionPinned) {
+		filters.push({
+			id: 'game-version',
+			label: 'Game version',
+			type: 'single',
+			options: releaseGameVersions.map((tag) => ({ value: tag.version, label: tag.version })),
+			value: manualGameVersion,
+			// Options come from Modrinth's tags; nothing to pick until they load.
+			disabled: releaseGameVersions.length === 0,
+			onValueChange: (next) => {
+				setManualGameVersion(next);
+				setOffset(0);
+			},
+		});
+	}
+	if (tags && tags.categories.length > 0) {
+		filters.push({
+			id: 'categories',
+			label: 'Categories',
+			type: 'multi',
+			options: tags.categories.map((category) => ({
+				value: category.name,
+				label: formatModrinthCategoryLabel(category.name),
+			})),
+			value: activeCategories,
+			onValueChange: (next) => {
+				setActiveCategories(next);
+				setOffset(0);
+			},
+		});
+	}
 
 	const totalHits = result?.totalHits ?? 0;
 	const pageStart = totalHits === 0 ? 0 : offset + 1;
 	const pageEnd = Math.min(offset + MODRINTH_PAGE_SIZE, totalHits);
 
 	return (
-		<div className='flex gap-4 h-full min-h-0'>
-			<Container className='w-1/3 min-w-60 flex flex-col gap-1 overflow-y-auto'>
-				<InputGroup>
-					<InputGroupInput
-						placeholder={`Search ${projectType}s on Modrinth`}
-						value={searchTerm}
-						onChange={(event) => setSearchTerm(event.target.value)}
-					/>
-					<InputGroupAddon>
-						<Search />
-					</InputGroupAddon>
-				</InputGroup>
-
-				<p className='mt-3'>Sort by</p>
-				<Select
-					value={sortIndex}
-					onValueChange={(value) => {
-						setSortIndex(value as ModrinthSortIndex);
+		<div className='flex flex-col gap-3 h-full min-h-0'>
+			<FilterBar
+				search={{
+					value: searchTerm,
+					onValueChange: setSearchTerm,
+					placeholder: `Search ${projectType}s on Modrinth`,
+				}}
+				filters={filters}
+				sort={{
+					options: MODRINTH_SORT_OPTIONS.map((option) => ({ value: option.id, label: option.label })),
+					value: sortIndex,
+					onValueChange: (next: ModrinthSortIndex) => {
+						setSortIndex(next);
 						setOffset(0);
-					}}>
-					<SelectTrigger className='w-full'>
-						<SelectValue />
-					</SelectTrigger>
-					<SelectContent>
-						{MODRINTH_SORT_OPTIONS.map((option) => (
-							<SelectItem key={option.id} value={option.id}>
-								{option.label}
-							</SelectItem>
-						))}
-					</SelectContent>
-				</Select>
+					},
+				}}
+			/>
 
-				{(hasLoaderPin || hasVersionPin) && (
-					<>
-						<p className='mt-3'>Compatibility</p>
-						<div className='flex flex-col gap-2'>
-							{hasLoaderPin && (
-								<label className='flex items-center gap-2 text-sm rounded-md bg-secondary cursor-pointer px-3 py-2'>
-									<Checkbox
-										checked={usePinnedLoaders}
-										onCheckedChange={(next) => {
-											setUsePinnedLoaders(Boolean(next));
-											setOffset(0);
-										}}
-									/>
-									Compatible with this server ({pinnedLoaders[0]})
-								</label>
-							)}
-							{hasVersionPin && (
-								<label className='flex items-center gap-2 text-sm rounded-md bg-secondary cursor-pointer px-3 py-2'>
-									<Checkbox
-										checked={usePinnedVersion}
-										onCheckedChange={(next) => {
-											setUsePinnedVersion(Boolean(next));
-											setOffset(0);
-										}}
-									/>
-									Minecraft {pinnedGameVersion}
-								</label>
-							)}
-						</div>
-					</>
-				)}
-
-				{(!hasVersionPin || !usePinnedVersion) && (
-					<>
-						<p className='mt-3'>Game version</p>
-						<Select
-							value={manualGameVersion}
-							onValueChange={(value) => {
-								setManualGameVersion(value);
-								setOffset(0);
-							}}>
-							<SelectTrigger className='w-full'>
-								<SelectValue placeholder='Any version' />
-							</SelectTrigger>
-							<SelectContent>
-								<SelectItem value={ANY_VERSION}>Any version</SelectItem>
-								{releaseGameVersions.map((tag) => (
-									<SelectItem key={tag.version} value={tag.version}>
-										{tag.version}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-					</>
-				)}
-
-				{tags && tags.categories.length > 0 && (
-					<>
-						<p className='mt-3'>Categories</p>
-						<div className='flex gap-2 flex-wrap'>
-							{tags.categories.map((category) => {
-								const checked = activeCategories.includes(category.name);
-								return (
-									<label
-										key={category.name}
-										className='flex items-center gap-2 text-sm rounded-md bg-secondary cursor-pointer px-3 py-2'>
-										<Checkbox
-											checked={checked}
-											onCheckedChange={(next) =>
-												toggleCategory(category.name, Boolean(next))
-											}
-										/>
-										{formatModrinthCategoryLabel(category.name)}
-									</label>
-								);
-							})}
-						</div>
-					</>
-				)}
-			</Container>
-
-			<Container className='w-2/3 p-0 overflow-hidden flex flex-col'>
+			<Container className='flex-1 min-h-0 w-full p-0 overflow-hidden flex flex-col'>
 				{selectedHit ? (
 					<ModrinthProjectDetail
 						projectType={projectType}
