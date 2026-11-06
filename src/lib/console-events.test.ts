@@ -95,6 +95,30 @@ describe('parseConsoleLine', () => {
 		).toBe('Plugin Essentials failed to start');
 	});
 
+	it('recognises Velocity plugins that fail to load or start', () => {
+		expect(parseConsoleLine(paper('Unable to load plugin plugins/Foo-1.0.jar', 'ERROR'))).toMatchObject({
+			kind: 'plugin-failed',
+			title: 'Plugin Foo-1.0 failed to load',
+		});
+		expect(
+			parseConsoleLine(paper('Unable to load plugin C:\\proxy\\plugins\\My Plugin.jar', 'ERROR'))?.title,
+		).toBe('Plugin My Plugin failed to load');
+		const missing = parseConsoleLine(paper("Can't load plugin chatsync due to missing dependency luckperms", 'ERROR'));
+		expect(missing).toMatchObject({ kind: 'plugin-failed', title: 'Plugin chatsync failed to load' });
+		expect(missing?.detail).toContain('needs the luckperms plugin');
+		expect(parseConsoleLine(paper("Can't create plugin chatsync", 'ERROR'))?.title).toBe(
+			'Plugin chatsync failed to start',
+		);
+		expect(parseConsoleLine(paper("Can't create module for plugin chatsync", 'ERROR'))?.title).toBe(
+			'Plugin chatsync failed to start',
+		);
+		expect(
+			parseConsoleLine(paper("[velocity] Couldn't pass ProxyInitializeEvent to chatsync", 'ERROR'))?.title,
+		).toBe('Plugin chatsync failed to start');
+		// Other event errors happen at runtime, not at startup.
+		expect(parseConsoleLine(paper("Couldn't pass PlayerChatEvent to chatsync", 'ERROR'))).toBeNull();
+	});
+
 	it('extracts the player from every not-whitelisted format', () => {
 		const lines = [
 			vanilla('Disconnecting Steve (/127.0.0.1:52134): You are not white-listed on this server!'),

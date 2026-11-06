@@ -58,7 +58,7 @@ export const AutoBackupFields: React.FC<AutoBackupFieldsProps> = ({
 			</ToggleCard>
 			<ToggleCard
 				id={`${idPrefix}-backup-on-close`}
-				title='Also back up when it stops'
+				title='Back up when it stops'
 				description='Saves a copy each time the server stops or crashes.'
 				checked={isOn('on_close')}
 				onCheckedChange={(enabled) => setMode('on_close', enabled)}
