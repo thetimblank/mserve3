@@ -6,6 +6,7 @@ import {
 	type MserveJsonProps,
 	type MserveRepairPayload,
 	type Provider,
+	type RamMode,
 } from '@/lib/mserve-schema';
 
 export type ServerSetupFormData = MserveJsonFormProps;
@@ -28,6 +29,7 @@ export type InitServerPayload = {
 	adopt_existing_directory?: boolean;
 	file: string;
 	ram: number;
+	ram_mode: RamMode;
 	storage_limit: number;
 	auto_restart: boolean;
 	sleep_enabled?: boolean;
@@ -72,6 +74,7 @@ export type MserveRepairPrefill = Pick<
 	RepairMserveJsonPayload,
 	| 'file'
 	| 'ram'
+	| 'ram_mode'
 	| 'storage_limit'
 	| 'auto_backup'
 	| 'auto_backup_interval'
@@ -117,6 +120,7 @@ export const syncMserveJsonWithRepair = async (
 			directory,
 			file: source.file,
 			ram: source.ram,
+			ram_mode: source.ram_mode,
 			storage_limit: source.storage_limit,
 			auto_backup: source.auto_backup,
 			auto_backup_interval: source.auto_backup_interval,

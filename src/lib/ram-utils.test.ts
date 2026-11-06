@@ -6,6 +6,8 @@ import {
 	ramToSliderFraction,
 	sliderFractionToRam,
 	formatHeapSize,
+	formatRamSetting,
+	resolveManualRamGb,
 } from './ram-utils';
 
 describe('clampRamGb', () => {
@@ -70,5 +72,17 @@ describe('slider mapping round-trips', () => {
 	it('degenerate range is handled', () => {
 		expect(ramToSliderFraction(4, 8, 8)).toBe(0);
 		expect(sliderFractionToRam(0.5, 8, 8)).toBe(8);
+	});
+});
+
+describe('auto RAM labels', () => {
+	it('labels auto servers as Auto and keeps the fixed amount for manual ones', () => {
+		expect(formatRamSetting({ ram: 4, ram_mode: 'auto' })).toBe('Auto');
+		expect(formatRamSetting({ ram: 4, ram_mode: 'manual' })).toBe('4GB');
+	});
+
+	it('has no fixed allocation for auto servers', () => {
+		expect(resolveManualRamGb({ ram: 6, ram_mode: 'auto' })).toBeNull();
+		expect(resolveManualRamGb({ ram: 6, ram_mode: 'manual' })).toBe(6);
 	});
 });

@@ -9,6 +9,17 @@ import {
 
 export type AutoBackupMode = 'interval' | 'on_close' | 'on_start';
 /**
+ * How the heap is sized:
+ * - `auto` — mserve picks the max heap at each start from the server type, its
+ *   plugins/mods and player slots, capped by free system memory; `ram` is only
+ *   kept as the manual fallback.
+ * - `manual` — `ram` is the fixed heap (`-Xms` = `-Xmx`).
+ */
+export type RamMode = 'auto' | 'manual';
+
+/** Anything but `auto` reads as `manual` (files from before auto RAM have no key). */
+export const normalizeRamMode = (raw: unknown): RamMode => (raw === 'auto' ? 'auto' : 'manual');
+/**
  * How old backups are cleaned up:
  * - `smart` — keeps everything recent, then thins to one per day, week, month.
  * - `simple` — only the explicit caps (count / age / storage) apply.
@@ -70,6 +81,7 @@ export type MserveJsonProps = {
 	id: string;
 	file: string;
 	ram: number;
+	ram_mode: RamMode;
 	storage_limit: number;
 	auto_backup: AutoBackupMode[];
 	auto_backup_interval: number;
@@ -112,6 +124,7 @@ export type MserveJsonFormProps = {
 	create_directory_if_missing: boolean;
 	file: string;
 	ram: number;
+	ram_mode: RamMode;
 	storage_limit: number;
 	auto_restart: boolean;
 	sleep_enabled: boolean;
@@ -129,6 +142,7 @@ export type MserveRepairPayload = Pick<
 	| 'directory'
 	| 'file'
 	| 'ram'
+	| 'ram_mode'
 	| 'storage_limit'
 	| 'auto_restart'
 	| 'auto_backup'
@@ -153,6 +167,7 @@ export const createDefaultMserveForm = (): MserveJsonFormProps => ({
 	create_directory_if_missing: true,
 	file: '',
 	ram: DEFAULT_RAM_GB,
+	ram_mode: 'auto',
 	storage_limit: DEFAULT_STORAGE_LIMIT_GB,
 	auto_restart: false,
 	sleep_enabled: false,

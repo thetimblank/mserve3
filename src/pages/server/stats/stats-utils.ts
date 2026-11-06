@@ -95,8 +95,11 @@ export const latestReading = (data: ChartPoint[], key: keyof ChartPoint): number
 };
 
 /** RAM in use against the server's allocation, e.g. `1843mb / 4096mb`. */
-export const formatRamUsage = (ramBytes: number, allocatedGb: number): string =>
-	`${Math.round(ramBytes / 1048576)}mb / ${allocatedGb * 1024}mb`;
+/** `allocatedGb` is `null` for auto RAM (no fixed allocation to compare against). */
+export const formatRamUsage = (ramBytes: number, allocatedGb: number | null): string => {
+	const used = `${Math.round(ramBytes / 1048576)}mb`;
+	return allocatedGb == null ? used : `${used} / ${allocatedGb * 1024}mb`;
+};
 
 // One color token per metric. Kept stable across overview + stats page.
 export const METRIC_COLORS = {

@@ -72,6 +72,9 @@ src/app/
     ├── backups.rs         backup copy/restore + retention enforcement
     ├── auto_backup.rs     automatic backups the supervisor triggers (on start/close,
     │                      interval); emits server-backups-changed
+    ├── auto_ram.rs        auto RAM (`ram_mode: "auto"`): the one heap estimate, system
+    │                      cap, elastic -Xms/-Xmx + G1 uncommit flags (get_auto_ram_plan
+    │                      in commands/runtime.rs exposes it)
     ├── scan.rs            enumerate worlds/plugins/datapacks
     ├── items.rs           move items between active/inactive folders
     ├── core.rs            platform helpers (no_window_command, home_dir, file moves)

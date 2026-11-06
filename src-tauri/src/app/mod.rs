@@ -38,6 +38,9 @@ struct InitServerPayload {
     adopt_existing_directory: bool,
     file: String,
     ram: f64,
+    /// "auto" | "manual". Missing means "auto": new servers size themselves.
+    #[serde(default)]
+    ram_mode: Option<String>,
     storage_limit: u32,
     auto_restart: bool,
     #[serde(default)]
@@ -70,6 +73,9 @@ struct RepairMserveJsonPayload {
     directory: String,
     file: String,
     ram: f64,
+    /// `None` keeps the value from the existing mserve.json (if any).
+    #[serde(default)]
+    ram_mode: Option<String>,
     storage_limit: u32,
     auto_backup: Vec<String>,
     auto_backup_interval: u32,
@@ -93,6 +99,9 @@ struct SyncedMserveConfig {
     id: String,
     file: String,
     ram: f64,
+    /// "auto": mserve picks the heap at each start (see `support/auto_ram.rs`)
+    /// and `ram` is only the manual fallback. "manual": `ram` is the fixed heap.
+    ram_mode: String,
     storage_limit: u32,
     auto_backup: Vec<String>,
     auto_backup_interval: u32,
@@ -170,6 +179,9 @@ struct SetBackupLockedPayload {
 struct UpdateServerSettingsPayload {
     directory: String,
     ram: f64,
+    /// `None` keeps the value already in mserve.json.
+    #[serde(default)]
+    ram_mode: Option<String>,
     storage_limit: u32,
     auto_backup: Vec<String>,
     auto_backup_interval: u32,
@@ -225,6 +237,7 @@ struct RuntimeServerConfig {
     id: Option<String>,
     file: String,
     ram: Option<f64>,
+    ram_mode: Option<String>,
     storage_limit: Option<u32>,
     custom_flags: Option<Vec<String>>,
     java_installation: Option<String>,
@@ -988,6 +1001,7 @@ pub fn run() {
             upload_server_item,
             start_server,
             get_server_start_command,
+            get_auto_ram_plan,
             stop_server,
             sleep_server,
             restart_server,

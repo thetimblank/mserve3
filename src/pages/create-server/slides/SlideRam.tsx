@@ -5,7 +5,7 @@ import SlideShell from './SlideShell';
 import RamSelector from '@/components/ram-selector';
 
 const SlideRam: React.FC = () => {
-	const { form, updateField, continueToNext } = useCreateServer();
+	const { form, updateField, continueToNext, providerChoice } = useCreateServer();
 
 	return (
 		<SlideShell
@@ -17,7 +17,14 @@ const SlideRam: React.FC = () => {
 					Continue
 				</Button>
 			}>
-			<RamSelector provider={form.provider} ram={form.ram} updateField={updateField} snapToPreset />
+			<RamSelector
+				provider={form.provider}
+				ram={form.ram}
+				ramMode={form.ram_mode}
+				modpack={providerChoice?.source === 'modpack'}
+				updateField={updateField}
+				snapToPreset
+			/>
 		</SlideShell>
 	);
 };

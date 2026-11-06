@@ -33,6 +33,7 @@ export const mapScannedBackups = (backups: ScannedBackupEntry[]) =>
 /** The settings form as it starts for a server: its saved settings, nothing pending. */
 export const buildSettingsFormFromServer = (server: Server): ServerSettingsForm => ({
 	ram: clampRamGb(server.ram),
+	ram_mode: server.ram_mode,
 	storage_limit: Math.max(1, Number(server.storage_limit) || DEFAULT_STORAGE_LIMIT_GB),
 	auto_backup: server.auto_backup,
 	auto_backup_interval: Math.max(1, server.auto_backup_interval),
@@ -55,6 +56,7 @@ export const buildUpdateServerSettingsPayload = (
 ): UpdateServerSettingsPayload => ({
 	directory,
 	ram: clampRamGb(settingsForm.ram),
+	ram_mode: settingsForm.ram_mode,
 	storage_limit: Math.max(1, Number(settingsForm.storage_limit) || DEFAULT_STORAGE_LIMIT_GB),
 	auto_backup: settingsForm.auto_backup,
 	auto_backup_interval: Math.max(1, Number(settingsForm.auto_backup_interval) || 1),
@@ -88,17 +90,21 @@ export const formatCustomFlagsInput = (custom_flags: string[] | undefined): stri
 
 export const buildServerRunCommandPreview = (config: {
 	ram?: number;
+	/** Auto RAM's elastic heap (from `get_auto_ram_plan`); replaces the fixed `ram`. */
+	auto_heap?: { initialGb: number; capGb: number } | null;
 	file?: string;
 	custom_flags?: string[];
 	/** The already-resolved java executable (from resolveServerJavaExecutable). */
 	java_executable?: string;
 }): string => {
-	const heap = formatHeapSize(config.ram ?? 4);
 	const resolvedFile = config.file?.trim() || 'server.jar';
 	const resolvedJavaInstallation = config.java_executable?.trim() || '<no Java resolved>';
 	const resolvedCustomFlags = (config.custom_flags ?? []).map((flag) => flag.trim()).filter(Boolean);
 
-	const args = [`-Xms${heap}`, `-Xmx${heap}`, '-jar', resolvedFile, ...resolvedCustomFlags];
+	const heapArgs = config.auto_heap
+		? [`-Xmx${formatHeapSize(config.auto_heap.capGb)}`, `-Xms${formatHeapSize(config.auto_heap.initialGb)}`]
+		: [`-Xmx${formatHeapSize(config.ram ?? 4)}`, `-Xms${formatHeapSize(config.ram ?? 4)}`];
+	const args = [...heapArgs, '-jar', resolvedFile, ...resolvedCustomFlags];
 
 	return `${resolvedJavaInstallation} ${args.join(' ')}`;
 };

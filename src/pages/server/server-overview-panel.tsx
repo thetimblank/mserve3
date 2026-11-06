@@ -55,6 +55,7 @@ import { usePublicIp } from '@/hooks/use-ip-address';
 import MetricCard from './stats/metric-card';
 import { useServerTelemetryHistory } from './stats/use-server-telemetry-history';
 import { METRIC_COLORS, formatPercent, formatRamUsage, latestReading, toChartData } from './stats/stats-utils';
+import { formatRamSetting, resolveManualRamGb } from '@/lib/ram-utils';
 
 type Props = {
 	server: Server;
@@ -327,7 +328,7 @@ const ServerOverviewPanel: React.FC<Props> = ({
 											<>
 												{formatPercent(server.stats.ram_used)}
 												<div className='text-xs font-normal text-muted-foreground mt-0.5 leading-none'>
-													{formatRamUsage(latestRamBytes, server.ram)}
+													{formatRamUsage(latestRamBytes, resolveManualRamGb(server))}
 												</div>
 											</>
 										) : (
@@ -427,7 +428,7 @@ const ServerOverviewPanel: React.FC<Props> = ({
 							)}
 							{server.ram != null && (
 								<DetailItem icon={<MemoryStick />} label='Allocated RAM'>
-									{server.ram}GB
+									{formatRamSetting(server)}
 								</DetailItem>
 							)}
 							{effectiveJavaRuntimeLabel && (

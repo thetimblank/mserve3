@@ -1,5 +1,5 @@
 import type { AutoBackupMode, BackupPolicy, BackupScopeItem, Server as MserveServer } from '@/data/servers';
-import type { Provider } from '@/lib/mserve-schema';
+import type { Provider, RamMode } from '@/lib/mserve-schema';
 
 export type ServerOutputEvent = {
 	directory: string;
@@ -125,6 +125,7 @@ export type TelemetryHistoryPoint = {
 export type UpdateServerSettingsPayload = {
 	directory: string;
 	ram: number;
+	ram_mode: RamMode;
 	storage_limit: number;
 	auto_backup: AutoBackupMode[];
 	auto_backup_interval: number;
@@ -192,6 +193,7 @@ export type ServerContentTab =
 
 export type ServerSettingsForm = {
 	ram: number;
+	ram_mode: RamMode;
 	storage_limit: number;
 	auto_backup: AutoBackupMode[];
 	auto_backup_interval: number;

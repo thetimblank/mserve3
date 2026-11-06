@@ -18,6 +18,7 @@ import {
 	createDefaultServerSetupForm,
 } from '@/lib/mserve-sync';
 import { registerMserveRepairHandler } from '@/lib/mserve-repair-controller';
+import { normalizeRamMode } from '@/lib/mserve-schema';
 import {
 	DEFAULT_AUTO_BACKUP_INTERVAL_MINUTES,
 	DEFAULT_RAM_GB,
@@ -37,6 +38,7 @@ const toInitialForm = (options: PromptMserveRepairOptions): ServerSetupFormData 
 	create_directory_if_missing: options.create_directory_if_missing ?? true,
 	file: options.file,
 	ram: options.ram,
+	ram_mode: normalizeRamMode(options.ram_mode),
 	storage_limit: options.storage_limit,
 	auto_restart: options.auto_restart,
 	sleep_enabled: options.sleep_enabled ?? false,
@@ -150,6 +152,7 @@ const MserveRepairDialog: React.FC = () => {
 			create_directory_if_missing: form.create_directory_if_missing,
 			file,
 			ram: Math.max(1, Number(form.ram) || DEFAULT_RAM_GB),
+			ram_mode: form.ram_mode,
 			storage_limit: Math.max(1, Number(form.storage_limit) || DEFAULT_STORAGE_LIMIT_GB),
 			auto_backup: form.auto_backup,
 			auto_backup_interval: Math.max(

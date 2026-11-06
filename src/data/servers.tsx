@@ -14,7 +14,7 @@ import {
 import { getErrorMessage } from '@/lib/utils';
 
 export type { AutoBackupMode, BackupPolicy, BackupScopeItem } from '@/lib/mserve-schema';
-import { normalizeBackupPolicy, normalizeBackupScope } from '@/lib/mserve-schema';
+import { normalizeBackupPolicy, normalizeBackupScope, normalizeRamMode } from '@/lib/mserve-schema';
 
 export type ServerStatus = 'online' | 'offline' | 'starting' | 'closing' | 'crashed' | 'sleeping';
 
@@ -338,6 +338,8 @@ const normalizeServer = (server: Server): Server => {
 		telemetry_host: server.telemetry_host,
 		telemetry_port: server.telemetry_port,
 		ram: server.ram,
+		// Defaulted for servers persisted before auto RAM (they keep a fixed heap).
+		ram_mode: normalizeRamMode(server.ram_mode),
 		storage_limit: server.storage_limit,
 		auto_backup: server.auto_backup,
 		auto_backup_interval: server.auto_backup_interval,
@@ -451,6 +453,7 @@ export const ServersProvider: React.FC<{ children: React.ReactNode }> = ({ child
 				server.id !== config.id ||
 				server.file !== config.file ||
 				server.ram !== config.ram ||
+				server.ram_mode !== normalizeRamMode(config.ram_mode) ||
 				server.storage_limit !== config.storage_limit ||
 				server.auto_backup_interval !== config.auto_backup_interval ||
 				server.backup_policy !== normalizeBackupPolicy(config.backup_policy) ||

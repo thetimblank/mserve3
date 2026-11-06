@@ -1,9 +1,9 @@
 use super::super::support::{
-    DEFAULT_SLEEP_IDLE_MINUTES, DEFAULT_SLEEP_MOTD, copy_jar_to_server_directory,
+    DEFAULT_SLEEP_IDLE_MINUTES, DEFAULT_SLEEP_MOTD, RAM_MODE_AUTO, copy_jar_to_server_directory,
     default_backup_policy, default_backup_scope, default_provider_for_file, default_synced_config,
     default_telemetry_host, detect_default_telemetry_port, ensure_default_motd,
     find_first_jar_file_name, generate_server_id, has_required_mserve_json_fields,
-    normalize_auto_backup_modes, normalize_custom_flags, normalize_provider,
+    normalize_auto_backup_modes, normalize_custom_flags, normalize_provider, normalize_ram_mode,
     parse_mserve_top_level_object, resolve_repair_file, sanitize_mserve_value_config,
     synced_mserve_json_string, validate_mserve_json_keys, write_eula, write_synced_mserve_json,
 };
@@ -115,6 +115,7 @@ pub(in crate::app) fn initialize_server(
         id: server_id.clone(),
         file: resolved_file.clone(),
         ram: payload.ram.max(0.25),
+        ram_mode: normalize_ram_mode(payload.ram_mode.as_deref(), RAM_MODE_AUTO),
         storage_limit: payload.storage_limit.max(1),
         auto_backup,
         auto_backup_interval: payload.auto_backup_interval.max(1),
@@ -357,6 +358,13 @@ pub(in crate::app) fn repair_server_mserve_json(
             .map_or_else(generate_server_id, |config| config.id.clone()),
         file: resolved_file,
         ram: payload.ram.max(0.25),
+        ram_mode: normalize_ram_mode(
+            payload
+                .ram_mode
+                .as_deref()
+                .or_else(|| existing.as_ref().map(|config| config.ram_mode.as_str())),
+            RAM_MODE_AUTO,
+        ),
         storage_limit: payload.storage_limit.max(1),
         auto_backup,
         auto_backup_interval: payload.auto_backup_interval.max(1),
@@ -442,6 +450,7 @@ mod tests {
             adopt_existing_directory: true,
             file: file.to_string(),
             ram: 2.0,
+            ram_mode: None,
             storage_limit: 10,
             auto_restart: false,
             sleep_enabled: false,

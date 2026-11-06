@@ -85,11 +85,22 @@ export const ServerSetupFormFields: React.FC<ServerSetupFormFieldsProps> = ({
 				</div>
 			</Field>
 
-			<RamSliderField
-				id={`${idPrefix}-ram`}
-				value={form.ram}
-				onChange={(value) => onFieldChange('ram', value)}
-			/>
+			<Field>
+				<Label className='flex items-center gap-3'>
+					<Checkbox
+						checked={form.ram_mode === 'auto'}
+						onCheckedChange={(checked) => onFieldChange('ram_mode', checked === true ? 'auto' : 'manual')}
+					/>
+					Set memory automatically (recommended)
+				</Label>
+			</Field>
+			{form.ram_mode !== 'auto' && (
+				<RamSliderField
+					id={`${idPrefix}-ram`}
+					value={form.ram}
+					onChange={(value) => onFieldChange('ram', value)}
+				/>
+			)}
 
 			<Field>
 				<Label htmlFor={`${idPrefix}-java-installation`}>Java installation override (optional)</Label>

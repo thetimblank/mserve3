@@ -17,6 +17,9 @@ type RamSliderFieldProps = {
 	id: string;
 	value: number;
 	onChange: (value: number) => void;
+	/** Called only when the user drags the slider (not when it clamps the value). */
+	onUserChange?: () => void;
+	label?: string;
 	className?: string;
 };
 
@@ -41,7 +44,14 @@ const snapRam = (gb: number, max: number) => {
 	return Math.max(RAM_MIN_GB, Math.min(stepped, max));
 };
 
-const RamSliderField: React.FC<RamSliderFieldProps> = ({ id, value, onChange, className }) => {
+const RamSliderField: React.FC<RamSliderFieldProps> = ({
+	id,
+	value,
+	onChange,
+	onUserChange,
+	label = 'Memory',
+	className,
+}) => {
 	const systemMemoryGb = useSystemMemoryGb();
 
 	const maxRam = Math.max(10, systemMemoryGb ?? 16);
@@ -68,7 +78,7 @@ const RamSliderField: React.FC<RamSliderFieldProps> = ({ id, value, onChange, cl
 			<div className='flex items-center justify-between gap-3'>
 				<Tooltip>
 					<Label htmlFor={id}>
-						Memory{' '}
+						{label}{' '}
 						<TooltipTrigger>
 							<Info className='size-4' />
 						</TooltipTrigger>
@@ -96,6 +106,7 @@ const RamSliderField: React.FC<RamSliderFieldProps> = ({ id, value, onChange, cl
 					const position = nextValue[0] ?? 0;
 					const ram = sliderFractionToRam(position / SLIDER_RESOLUTION, RAM_MIN_GB, maxRam);
 					onChange(snapRam(ram, maxRam));
+					onUserChange?.();
 				}}
 			/>
 			<div className='relative h-1'>

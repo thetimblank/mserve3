@@ -6,6 +6,7 @@ import { useCreateServer } from '../CreateServerContext';
 import { describeAutoBackup } from '../review-summary';
 import SlideShell from './SlideShell';
 import { Container } from '@/components/ui/container';
+import { formatRamLabel } from '@/lib/ram-utils';
 
 const SlideReview: React.FC = () => {
 	const {
@@ -83,7 +84,7 @@ const SlideReview: React.FC = () => {
 				<div className='grid grid-cols-2 gap-4'>
 					<div>
 						<p className='text-sm text-muted-foreground'>RAM</p>
-						<p>{form.ram} GB</p>
+						<p>{form.ram_mode === 'auto' ? 'Auto' : formatRamLabel(form.ram)}</p>
 					</div>
 					<div>
 						<p className='text-sm text-muted-foreground'>Auto restart</p>

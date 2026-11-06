@@ -23,6 +23,7 @@ import {
 } from '@/data/servers';
 import { useServerControls } from '@/hooks/use-server-controls';
 import { getPrimaryMinecraftVersion } from '@/lib/utils';
+import { formatRamSetting } from '@/lib/ram-utils';
 
 type Props = { server: Server; delay?: number };
 
@@ -72,7 +73,7 @@ const ServerTile: React.FC<Props> = ({ server, delay = 0 }) => {
 					{server.ram ? (
 						<span className='flex items-center gap-1'>
 							<MemoryStick className='size-3.5' />
-							{server.ram}GB
+							{formatRamSetting(server)}
 						</span>
 					) : null}
 				</div>

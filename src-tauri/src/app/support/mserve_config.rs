@@ -1,6 +1,7 @@
 use super::super::{MserveProvider, SyncedMserveConfig};
 use super::copy_jar_to_server_directory;
 use super::server_properties::read_property;
+use super::{RAM_MODE_AUTO, RAM_MODE_MANUAL, normalize_ram_mode};
 use serde::Deserialize;
 use serde::de::{self, MapAccess, Visitor};
 use serde_json::{Map, Value};
@@ -462,6 +463,9 @@ pub(in crate::app) fn default_synced_config(directory: &Path) -> SyncedMserveCon
         id: generate_server_id(),
         file: fallback_file.clone(),
         ram: 4.0,
+        // A config mserve creates from scratch (import without mserve.json) sizes
+        // itself; an existing file without the key keeps its fixed heap (below).
+        ram_mode: RAM_MODE_AUTO.to_string(),
         storage_limit: 200,
         auto_backup: default_auto_backup(),
         auto_backup_interval: 120,
@@ -604,6 +608,11 @@ pub(in crate::app) fn sanitize_mserve_value_config(
         .filter(|value| value.is_finite())
         .map_or(4.0, |value| value.max(0.25));
 
+    let normalized_ram_mode = normalize_ram_mode(
+        object.get("ram_mode").and_then(|value| value.as_str()),
+        RAM_MODE_MANUAL,
+    );
+
     let normalized_storage_limit = object
         .get("storage_limit")
         .and_then(serde_json::Value::as_u64)
@@ -721,6 +730,7 @@ pub(in crate::app) fn sanitize_mserve_value_config(
     config.file = normalized_file;
     config.id = normalized_id;
     config.ram = normalized_ram;
+    config.ram_mode = normalized_ram_mode;
     config.storage_limit = normalized_storage_limit;
     config.auto_backup = normalized_auto_backup;
     config.auto_backup_interval = normalized_interval;
@@ -750,6 +760,7 @@ pub(in crate::app) fn synced_mserve_json_value(config: &SyncedMserveConfig) -> s
         "id": config.id,
         "file": config.file,
         "ram": config.ram.max(0.25),
+        "ram_mode": config.ram_mode,
         "storage_limit": config.storage_limit.max(1),
         "auto_backup": config.auto_backup,
         "auto_backup_interval": config.auto_backup_interval.max(1),
@@ -798,6 +809,7 @@ pub(in crate::app) fn validate_mserve_json_keys(
         "id",
         "file",
         "ram",
+        "ram_mode",
         "storage_limit",
         "auto_backup",
         "auto_backup_interval",
@@ -1234,6 +1246,32 @@ mod tests {
         let map = object.as_object().unwrap().clone();
         let config = sanitize_mserve_value_config(dir.path(), &map);
         assert_eq!(config.sleep_motd, DEFAULT_SLEEP_MOTD);
+    }
+
+    #[test]
+    fn ram_mode_defaults_to_manual_for_existing_files_and_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        // A file written before auto RAM keeps its fixed heap.
+        let config = sanitize_mserve_value_config(dir.path(), &serde_json::Map::new());
+        assert_eq!(config.ram_mode, "manual");
+
+        let object = json!({ "ram": 6.0, "ram_mode": "auto" });
+        let config = sanitize_mserve_value_config(dir.path(), object.as_object().unwrap());
+        assert_eq!(config.ram_mode, "auto");
+        assert_eq!(synced_mserve_json_value(&config)["ram_mode"], json!("auto"));
+
+        let object = json!({ "ram_mode": "bogus" });
+        let config = sanitize_mserve_value_config(dir.path(), object.as_object().unwrap());
+        assert_eq!(config.ram_mode, "manual");
+
+        let keys = json!({ "id": "srv-1", "ram_mode": "auto" });
+        assert!(validate_mserve_json_keys(keys.as_object().unwrap()).is_ok());
+    }
+
+    #[test]
+    fn a_fresh_default_config_sizes_itself() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(default_synced_config(dir.path()).ram_mode, "auto");
     }
 
     #[test]

@@ -30,6 +30,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import OpenFolderButton from '@/components/open-folder-button';
 import { formatUptime, getPrimaryMinecraftVersion } from '@/lib/utils';
 import { useServerControls } from '@/hooks/use-server-controls';
+import { formatRamSetting } from '@/lib/ram-utils';
 
 interface Props {
 	server: Server;
@@ -88,7 +89,7 @@ const ServerCard: React.FC<Props> = ({ server, delay }) => {
 								<TooltipTrigger>
 									<div className='flex items-center lg:text-lg gap-2'>
 										<MemoryStick className='size-5' />
-										{server.ram}GB
+										{formatRamSetting(server)}
 									</div>
 								</TooltipTrigger>
 								<TooltipContent>
