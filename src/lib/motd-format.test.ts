@@ -21,6 +21,17 @@ describe('legacy MOTD store/load round-trip (server.properties)', () => {
 		expect(stored).toBe('\\u00A7cHello\\nWorld');
 	});
 
+	it('escapes every non-ASCII character, not only the section sign', () => {
+		const escape = (hex: string) => `\\u${hex}`;
+		const stored = `Caf${escape('00E9')} ${escape('D83D')}${escape('DE42')}`;
+
+		expect(getStoredMotdValue('Caf\u{e9} \u{1F642}', 'legacy')).toBe(stored);
+		// Lowercase escapes (as other tools write them) decode too.
+		expect(getEditableMotdValue(stored.toLowerCase().replace('caf', 'Caf'), 'legacy')).toBe(
+			'Caf\u{e9} \u{1F642}',
+		);
+	});
+
 	it('restores the two lines from the stored literal \\n', () => {
 		const stored = '\\u00A7cHello\\nWorld';
 		const editable = getEditableMotdValue(stored, 'legacy');

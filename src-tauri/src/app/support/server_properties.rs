@@ -149,3 +149,129 @@ fn generate_password() -> String {
         .map(char::from)
         .collect()
 }
+
+/// Escapes a value for a `.properties` file the way Java's `Properties.store`
+/// does, so the server reads back exactly `value`: backslashes and control
+/// characters are escaped, a leading space survives as `\ `, and anything outside
+/// printable ASCII becomes a `\uXXXX` escape (the server may read the file as
+/// ISO-8859-1). This matches the MOTD editor, which stores `§` as `§`.
+pub(in crate::app) fn escape_property_value(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for (index, ch) in value.chars().enumerate() {
+        match ch {
+            '\\' => out.push_str(r"\\"),
+            '\n' => out.push_str(r"\n"),
+            '\r' => out.push_str(r"\r"),
+            '\t' => out.push_str(r"\t"),
+            '\u{c}' => out.push_str(r"\f"),
+            ' ' if index == 0 => out.push_str(r"\ "),
+            ' '..='~' => out.push(ch),
+            _ => {
+                let mut units = [0u16; 2];
+                for unit in ch.encode_utf16(&mut units) {
+                    out.push_str(&format!(r"\u{unit:04X}"));
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Writes `motd=<motd>` when `server.properties` has no MOTD yet (no file, no
+/// key, or an empty value). Creates the file if needed; the server fills in the
+/// rest of its defaults on first launch. Returns whether anything was written.
+pub(in crate::app) fn ensure_default_motd(directory: &Path, motd: &str) -> Result<bool, String> {
+    if motd.trim().is_empty() {
+        return Ok(false);
+    }
+    // A file we can't read as text (e.g. saved as ISO-8859-1 by another tool) is
+    // left alone: rewriting it would drop every other setting in it.
+    if let Err(err) = fs::read_to_string(properties_path(directory))
+        && err.kind() != std::io::ErrorKind::NotFound
+    {
+        return Ok(false);
+    }
+    if read_property(directory, "motd").is_some() {
+        return Ok(false);
+    }
+    apply_properties(directory, &[("motd", escape_property_value(motd))])?;
+    Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn escape_keeps_plain_ascii() {
+        assert_eq!(escape_property_value("My Server 2"), "My Server 2");
+    }
+
+    #[test]
+    fn escape_handles_backslash_leading_space_and_unicode() {
+        assert_eq!(escape_property_value(r"a\b"), r"a\\b");
+        assert_eq!(escape_property_value("  hi"), r"\  hi");
+        assert_eq!(
+            escape_property_value("\u{a7}aCaf\u{e9}"),
+            format!("{}aCaf{}", unicode_escape("00A7"), unicode_escape("00E9"))
+        );
+        // Characters outside the BMP become a UTF-16 surrogate pair.
+        assert_eq!(
+            escape_property_value("\u{1F642}"),
+            format!("{}{}", unicode_escape("D83D"), unicode_escape("DE42"))
+        );
+    }
+
+    /// `\u` followed by `hex`, spelled out so the expectation stays readable.
+    fn unicode_escape(hex: &str) -> String {
+        format!(r"\u{hex}")
+    }
+
+    #[test]
+    fn default_motd_creates_the_file_when_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(ensure_default_motd(dir.path(), "Survival").unwrap());
+        assert_eq!(
+            fs::read_to_string(dir.path().join("server.properties")).unwrap(),
+            "motd=Survival\n"
+        );
+    }
+
+    #[test]
+    fn default_motd_never_replaces_an_existing_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("server.properties");
+        fs::write(&path, "motd=Hello there\nserver-port=25570\n").unwrap();
+        assert!(!ensure_default_motd(dir.path(), "Survival").unwrap());
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            "motd=Hello there\nserver-port=25570\n"
+        );
+    }
+
+    #[test]
+    fn default_motd_leaves_an_unreadable_file_untouched() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("server.properties");
+        // ISO-8859-1 bytes (0xE9 = e-acute) are not valid UTF-8.
+        let latin1 = b"server-port=25570\nlevel-name=Caf\xe9\n".to_vec();
+        fs::write(&path, &latin1).unwrap();
+        assert!(!ensure_default_motd(dir.path(), "Survival").unwrap());
+        assert_eq!(fs::read(&path).unwrap(), latin1);
+    }
+
+    #[test]
+    fn default_motd_fills_an_empty_value_and_keeps_other_keys() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("server.properties");
+        fs::write(&path, "# generated\nmotd=\nserver-port=25570\n").unwrap();
+        assert!(ensure_default_motd(dir.path(), "Caf\u{e9}").unwrap());
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            format!(
+                "# generated\nmotd=Caf{}\nserver-port=25570\n",
+                unicode_escape("00E9")
+            )
+        );
+    }
+}

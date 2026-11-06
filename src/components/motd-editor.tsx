@@ -41,12 +41,15 @@ import {
 	type MotdPreviewRun,
 	type MotdPreviewStyle,
 } from '@/lib/motd-format';
-import { Container } from './ui/container';
+import { MOTD_BACKGROUND_STYLE } from '@/lib/motd-background';
 
 const EDIT_MODE_OPTIONS: SegmentedControlOption<'editor' | 'source'>[] = [
 	{ value: 'editor', label: 'Editor', icon: Type },
 	{ value: 'source', label: 'Source', icon: Code },
 ];
+
+/** A line shows how many characters are left only once it gets this close to the limit. */
+const REMAINING_HINT_THRESHOLD = 5;
 
 type MotdEditorProps = {
 	value: string;
@@ -55,7 +58,11 @@ type MotdEditorProps = {
 	advancedMode?: boolean;
 	disabled?: boolean;
 	label: string;
-	description: string;
+	description: React.ReactNode;
+	/** Shown above the message in white, like the server name in the multiplayer list. */
+	title?: React.ReactNode;
+	/** Rendered left of the message, like the server icon in the multiplayer list. */
+	icon?: React.ReactNode;
 	className?: string;
 };
 
@@ -802,6 +809,8 @@ const MotdEditor: React.FC<MotdEditorProps> = ({
 	disabled = false,
 	label,
 	description,
+	title,
+	icon,
 	className,
 }) => {
 	const lineRefs = React.useRef<Array<HTMLDivElement | null>>([]);
@@ -838,7 +847,6 @@ const MotdEditor: React.FC<MotdEditorProps> = ({
 		const lines = value.replace(/\r\n?/g, '\n').split('\n');
 		return [lines[0] ?? '', lines[1] ?? ''];
 	}, [value]);
-	const formatLabel = format === 'legacy' ? 'Legacy section codes' : 'MiniMessage';
 
 	const readLinesFromDom = React.useCallback(
 		() =>
@@ -1290,20 +1298,10 @@ const MotdEditor: React.FC<MotdEditorProps> = ({
 
 	return (
 		<div className={cn('space-y-4 max-w-3xl', className)}>
-			<div className='space-y-1'>
-				<p className='text-base leading-snug font-semibold'>{label}</p>
-				<p className='text-sm text-muted-foreground'>{description}</p>
-			</div>
-
-			<div className='flex flex-wrap items-center justify-between gap-3 text-xs'>
-				<div className='flex flex-wrap items-center gap-2'>
-					<Container className='px-3 py-1'>{formatLabel}</Container>
-					<Container className='px-3 py-1'>
-						Line lengths{'  '}
-						<span className='font-bold'>
-							{lineStats.map((stat) => `${stat.used}/${stat.max}`).join('  ')}
-						</span>
-					</Container>
+			<div className='flex flex-wrap items-start justify-between gap-3'>
+				<div className='min-w-0 flex-1 space-y-1'>
+					<p className='text-base leading-snug font-semibold'>{label}</p>
+					<div className='text-sm text-muted-foreground'>{description}</div>
 				</div>
 				{advancedMode && (
 					<SegmentedControl
@@ -1434,71 +1432,92 @@ const MotdEditor: React.FC<MotdEditorProps> = ({
 				</div>
 
 				<div
+					style={MOTD_BACKGROUND_STYLE}
 					className={cn(
-						'overflow-hidden rounded-lg border-2 bg-background shadow-xs transition-colors focus-within:border-ring focus-within:ring-ring/50 focus-within:ring-[3px]',
+						'flex items-start gap-3 overflow-hidden rounded-lg border-2 p-2 text-[#aaaaaa] shadow-xs transition-colors focus-within:border-ring focus-within:ring-ring/50 focus-within:ring-[3px]',
 						isLocked && 'opacity-60',
 					)}>
-					{!sourceMode
-						? richLines.map((_, lineIndex) => (
-								<div
-									key={`motd-line-${lineIndex}`}
-									ref={(node) => {
-										lineRefs.current[lineIndex] = node;
-									}}
-									data-motd-line={lineIndex}
-									role='textbox'
-									aria-label={`${label} line ${lineIndex + 1}`}
-									aria-multiline='false'
-									contentEditable={!isLocked}
-									suppressContentEditableWarning
-									spellCheck={false}
-									data-placeholder={
-										lineIndex === 0 ? 'Server message line 1' : 'Server message line 2'
-									}
-									className={cn(
-										'min-h-12 px-4 py-3 font-minecraft text-sm leading-6 whitespace-pre-wrap outline-none empty:before:text-muted-foreground/55 empty:before:content-[attr(data-placeholder)]',
-										lineIndex === 0 && 'border-b-2',
-										activeLine === lineIndex && 'bg-muted/30',
-										isLocked ? 'cursor-not-allowed' : 'cursor-text',
+					{icon}
+					<div className='min-w-0 flex-1'>
+						{title && (
+							<p className='truncate px-1.5 font-minecraft text-sm leading-6 text-white'>{title}</p>
+						)}
+						{(sourceMode ? sourceLines : richLines).map((_, lineIndex) => {
+							const stat = lineStats[lineIndex];
+							const remaining = Math.max(0, stat.max - stat.used);
+							const lineClassName = cn(
+								'min-h-6 rounded-sm py-0 pr-8 pl-1.5 text-sm leading-6 outline-none',
+								isLocked ? 'cursor-not-allowed' : 'cursor-text',
+							);
+
+							return (
+								<div key={`motd-line-${lineIndex}`} className='relative'>
+									{!sourceMode ? (
+										<div
+											ref={(node) => {
+												lineRefs.current[lineIndex] = node;
+											}}
+											data-motd-line={lineIndex}
+											role='textbox'
+											aria-label={`${label} line ${lineIndex + 1}`}
+											aria-multiline='false'
+											contentEditable={!isLocked}
+											suppressContentEditableWarning
+											spellCheck={false}
+											data-placeholder={
+												lineIndex === 0 ? 'Server message line 1' : 'Server message line 2'
+											}
+											className={cn(
+												lineClassName,
+												'font-minecraft whitespace-pre-wrap empty:before:text-white/35 empty:before:content-[attr(data-placeholder)]',
+												activeLine === lineIndex && 'bg-white/[0.07]',
+											)}
+											onBeforeInput={handleBeforeInput}
+											onInput={handleRichInput}
+											onFocus={() => {
+												setActiveLine(lineIndex);
+												window.requestAnimationFrame(captureSelection);
+											}}
+											onMouseUp={captureSelection}
+											onKeyUp={captureSelection}
+											onKeyDown={(event) => handleLineKeyDown(event, lineIndex)}
+											onPaste={handlePaste}
+										/>
+									) : (
+										<input
+											ref={(node) => {
+												sourceRefs.current[lineIndex] = node;
+											}}
+											type='text'
+											value={sourceLines[lineIndex]}
+											spellCheck={false}
+											disabled={isLocked}
+											aria-label={`${label} source line ${lineIndex + 1}`}
+											placeholder={
+												lineIndex === 0
+													? 'Server message line 1 (codes shown)'
+													: 'Server message line 2 (codes shown)'
+											}
+											className={cn(
+												lineClassName,
+												'block w-full bg-transparent font-mono placeholder:text-white/35',
+												activeSourceLine === lineIndex && 'bg-white/[0.07]',
+											)}
+											onFocus={() => setActiveSourceLine(lineIndex)}
+											onChange={(event) => updateSourceLine(lineIndex, event.target.value)}
+										/>
 									)}
-									onBeforeInput={handleBeforeInput}
-									onInput={handleRichInput}
-									onFocus={() => {
-										setActiveLine(lineIndex);
-										window.requestAnimationFrame(captureSelection);
-									}}
-									onMouseUp={captureSelection}
-									onKeyUp={captureSelection}
-									onKeyDown={(event) => handleLineKeyDown(event, lineIndex)}
-									onPaste={handlePaste}
-								/>
-							))
-						: sourceLines.map((line, lineIndex) => (
-								<input
-									key={`motd-source-line-${lineIndex}`}
-									ref={(node) => {
-										sourceRefs.current[lineIndex] = node;
-									}}
-									type='text'
-									value={line}
-									spellCheck={false}
-									disabled={isLocked}
-									aria-label={`${label} source line ${lineIndex + 1}`}
-									placeholder={
-										lineIndex === 0
-											? 'Server message line 1 (codes shown)'
-											: 'Server message line 2 (codes shown)'
-									}
-									className={cn(
-										'block w-full min-h-12 px-4 py-3 font-mono text-sm leading-6 bg-transparent outline-none placeholder:text-muted-foreground/55',
-										lineIndex === 0 && 'border-b-2',
-										activeSourceLine === lineIndex && 'bg-muted/30',
-										isLocked ? 'cursor-not-allowed' : 'cursor-text',
+									{remaining <= REMAINING_HINT_THRESHOLD && (
+										<span
+											className='pointer-events-none absolute top-0 right-1.5 font-minecraft text-xs leading-6 text-[#ffaa00]'
+											title={`${remaining} characters left on this line`}>
+											{remaining}
+										</span>
 									)}
-									onFocus={() => setActiveSourceLine(lineIndex)}
-									onChange={(event) => updateSourceLine(lineIndex, event.target.value)}
-								/>
-							))}
+								</div>
+							);
+						})}
+					</div>
 				</div>
 			</div>
 		</div>
