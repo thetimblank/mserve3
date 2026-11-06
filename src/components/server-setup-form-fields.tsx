@@ -112,7 +112,12 @@ export const ServerSetupFormFields: React.FC<ServerSetupFormFieldsProps> = ({
 				/>
 			</Field>
 
-			<AutoBackupFields values={form} onFieldChange={onFieldChange} idPrefix={idPrefix} />
+			<AutoBackupFields
+				values={form}
+				onFieldChange={onFieldChange}
+				idPrefix={idPrefix}
+				directory={form.directory}
+			/>
 			<Field>
 				<Label className='flex items-center gap-3'>
 					<Checkbox

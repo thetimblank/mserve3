@@ -15,6 +15,7 @@ import {
 	Cpu,
 	Gauge,
 	Globe,
+	HardDrive,
 	KeyRound,
 	Layers,
 	ListFilter,
@@ -103,6 +104,16 @@ export const HELP_TOPICS: Record<HelpTopicId, HelpTopic> = {
 					'Every backup from the last 2 days',
 					'Older ones thinned to one per day, one per week, and one per month',
 					'Count, age, and storage limits can cap it further',
+				],
+			},
+			{
+				icon: HardDrive,
+				title: 'How much space backups get',
+				body: 'The storage limit is suggested from the drive your server is on:',
+				bullets: [
+					'About 30% of the free space, between 5 and 200 GB',
+					"Space other servers' backups may still need is set aside",
+					'At least 20 GB (or 10% of the drive) always stays free',
 				],
 			},
 			{

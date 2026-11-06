@@ -627,6 +627,16 @@ struct ServerStorageInfo {
     backups_bytes: u64,
 }
 
+/// Size and free space of the disk (volume) that holds a path.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DiskSpaceInfo {
+    total_bytes: u64,
+    available_bytes: u64,
+    /// Where the disk is mounted, e.g. `C:\` on Windows or `/home` on Linux.
+    mount_point: String,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ScannedBackup {
@@ -968,6 +978,7 @@ pub fn run() {
             get_server_icon,
             read_server_icon_source,
             get_servers_storage,
+            get_disk_space,
             read_networks_config,
             write_networks_config,
             read_server_network_file,
@@ -998,6 +1009,7 @@ pub fn run() {
             force_kill_all_servers,
             run_in_background,
             send_server_command,
+            get_online_players,
             get_server_runtime,
             get_server_telemetry_history,
             scan_server_contents,

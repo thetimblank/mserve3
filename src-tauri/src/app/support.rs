@@ -12,6 +12,7 @@ mod mc_protocol;
 mod mserve_config;
 // Namespaced (not glob re-exported) so its generically-named helpers
 // (`read_secret`, `start_tunnel`, …) stay under `support::playit::`.
+mod players;
 pub(in crate::app) mod playit;
 mod process;
 mod rcon;
@@ -38,6 +39,7 @@ pub(super) use items::*;
 #[cfg(target_os = "linux")]
 pub(super) use linux_firewall::*;
 pub(super) use mserve_config::*;
+pub(super) use players::{OnlinePlayers, query_online_players};
 pub(super) use process::*;
 pub(super) use rcon::*;
 pub(super) use runtime_io::*;
