@@ -14,19 +14,23 @@ type SlideshowContextValue = {
 	slide: number;
 	nextSlide: () => void;
 	prevSlide: () => void;
+	/** Jumps to a slide index (for branching flows like the hosting setup). */
+	goToSlide: (index: number) => void;
 };
 
 const SlideshowContext = React.createContext<SlideshowContextValue | undefined>(undefined);
 
 export const SlideshowProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 	const [slide, setSlide] = React.useState(0);
+	const goToSlide = React.useCallback((index: number) => setSlide(Math.max(0, index)), []);
 	const value = React.useMemo<SlideshowContextValue>(
 		() => ({
 			slide,
 			nextSlide: () => setSlide((prev) => prev + 1),
 			prevSlide: () => setSlide((prev) => Math.max(0, prev - 1)),
+			goToSlide,
 		}),
-		[slide],
+		[slide, goToSlide],
 	);
 	return <SlideshowContext.Provider value={value}>{children}</SlideshowContext.Provider>;
 };

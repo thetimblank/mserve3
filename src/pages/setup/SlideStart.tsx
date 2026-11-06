@@ -1,26 +1,26 @@
 import { SlideFrame } from '@/components/slideshow';
-import { Circle, CircleCheck } from 'lucide-react';
-import { Server, useServers } from '@/data/servers';
+import { Circle, CircleCheck, Plus, ServerOff } from 'lucide-react';
+import { useServers } from '@/data/servers';
 import { Button } from '@/components/ui/button';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import EmptyState from '@/components/empty-state';
 import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
 	DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { useSetup } from './SetupContext';
 import { useUser } from '@/data/user';
-import { useServerJavaResolver } from '@/data/java-download';
-import { startServer } from '@/lib/server-controls';
+import { useSetupStartServer } from './use-setup-start-server';
 
-export default function Slide4() {
-	const { servers, setServerStatus, updateServerStats } = useServers();
+export default function SlideStart() {
+	const { servers } = useServers();
 	const { data } = useSetup();
 	const { updateUserField } = useUser();
-	const resolveServerJava = useServerJavaResolver();
-	const [isBusy, setIsBusy] = useState(false);
+	const { start, isBusy } = useSetupStartServer();
+	const navigate = useNavigate();
 	const hasRecordedCompletionRef = useRef(false);
 	// `online` comes from the backend's lifecycle event, so this only counts a
 	// server that actually finished booting.
@@ -37,18 +37,6 @@ export default function Slide4() {
 		hasRecordedCompletionRef.current = true;
 	}, [data.port, onlineServersCount, updateUserField]);
 
-	const handleStart = async (server: Server) => {
-		if (isBusy) return;
-		setIsBusy(true);
-		try {
-			const javaExecutable = await resolveServerJava(server);
-			if (!javaExecutable) return;
-			await startServer({ server, javaExecutable, setServerStatus, updateServerStats });
-		} finally {
-			setIsBusy(false);
-		}
-	};
-
 	return onlineServersCount > 0 ? (
 		<SlideFrame className='flex flex-col items-center text-center'>
 			<CircleCheck className='size-20 text-green-500 mb-6' />
@@ -63,18 +51,27 @@ export default function Slide4() {
 			<Circle className='size-20 text-yellow-500 mb-6' />
 			<p className='text-3xl font-bold flex gap-5 items-center mb-2 w-fit'>Almost There</p>
 			<p className='mb-10'>Start a server to let players join!</p>
-			<DropdownMenu>
-				<DropdownMenuTrigger asChild>
-					<Button>Start Server</Button>
-				</DropdownMenuTrigger>
-				<DropdownMenuContent>
-					{servers.map((server, i) => (
-						<DropdownMenuItem onClick={() => handleStart(server)} key={i}>
-							Start {server.name}
-						</DropdownMenuItem>
-					))}
-				</DropdownMenuContent>
-			</DropdownMenu>
+			{servers.length === 0 ? (
+				<EmptyState
+					icon={<ServerOff />}
+					title='No servers yet'
+					description='Create a server, then start it to let players join.'
+					action={{ label: 'Create a server', icon: Plus, onClick: () => navigate('/servers/new') }}
+				/>
+			) : (
+				<DropdownMenu>
+					<DropdownMenuTrigger asChild>
+						<Button disabled={isBusy}>Start Server</Button>
+					</DropdownMenuTrigger>
+					<DropdownMenuContent>
+						{servers.map((server) => (
+							<DropdownMenuItem onClick={() => start(server)} key={server.id}>
+								Start {server.name}
+							</DropdownMenuItem>
+						))}
+					</DropdownMenuContent>
+				</DropdownMenu>
+			)}
 		</SlideFrame>
 	);
 }
