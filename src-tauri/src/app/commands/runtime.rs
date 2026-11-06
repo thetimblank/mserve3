@@ -73,12 +73,136 @@ fn resolve_launch_argfile(directory: &Path, config: &RuntimeServerConfig) -> Opt
     None
 }
 
+/// JVM options that take their value as the next token (`--add-opens x=y`).
+const JVM_OPTIONS_WITH_SEPARATE_VALUE: &[&str] = &[
+    "--add-opens",
+    "--add-exports",
+    "--add-reads",
+    "--add-modules",
+    "--enable-native-access",
+    "--module-path",
+    "--upgrade-module-path",
+    "--patch-module",
+    "--limit-modules",
+    "-cp",
+    "-classpath",
+    "--class-path",
+];
+
+/// True for a flag the JVM reads (it must come before `-jar`). Everything else,
+/// like `--nogui` or Paper's `-o false`, is an argument for the server itself.
+/// Case matters: `-D`/`-X` are Java's, lowercase `-d`/`-x` are not. Java's
+/// short `-p` (module path) is left out: Paper uses `-p` for the port.
+fn is_jvm_flag(flag: &str) -> bool {
+    const PREFIXES: &[&str] = &[
+        "-X",
+        "-D",
+        // A JVM argfile, like Forge's `@user_jvm_args.txt`.
+        "@",
+        "-javaagent:",
+        "-agentlib:",
+        "-agentpath:",
+        "-verbose",
+        "-ea:",
+        "-da:",
+        "-enableassertions",
+        "-disableassertions",
+        "--add-opens",
+        "--add-exports",
+        "--add-reads",
+        "--add-modules",
+        "--enable-native-access",
+        "--enable-preview",
+        "--illegal-access",
+        "--sun-misc-unsafe-memory-access",
+        "--module-path",
+        "--upgrade-module-path",
+        "--patch-module",
+        "--limit-modules",
+        "--class-path",
+    ];
+    const EXACT: &[&str] = &[
+        "-ea",
+        "-da",
+        "-esa",
+        "-dsa",
+        "-server",
+        "-client",
+        "-cp",
+        "-classpath",
+    ];
+    EXACT.contains(&flag) || PREFIXES.iter().any(|prefix| flag.starts_with(prefix))
+}
+
+/// Heap-size options. mserve sets the heap itself (the Memory setting), so
+/// these are left out of the launch instead of silently overriding it.
+fn is_heap_size_flag(flag: &str) -> bool {
+    ["-Xmx", "-Xms", "-XX:MaxHeapSize=", "-XX:InitialHeapSize="]
+        .iter()
+        .any(|prefix| flag.starts_with(prefix))
+}
+
+/// The per-server extra flags, sorted for the launch command.
+#[derive(Debug, Default, PartialEq)]
+struct SplitFlags {
+    /// JVM options, placed before `-jar`.
+    jvm: Vec<String>,
+    /// Server arguments, placed after the jar.
+    server: Vec<String>,
+    /// Heap sizes left out (see `is_heap_size_flag`).
+    ignored_heap: Vec<String>,
+}
+
+/// Splits the per-server extra flags into JVM options (before `-jar`) and
+/// server arguments (after it), keeping each group's order. A JVM option whose
+/// value is the next token takes that token with it. Mirrored by
+/// `splitCustomFlags` in `src/lib/server-flags-service.ts`.
+fn split_custom_flags(flags: &[String]) -> SplitFlags {
+    let mut split = SplitFlags::default();
+    let mut tokens = flags.iter();
+    while let Some(flag) = tokens.next() {
+        if is_heap_size_flag(flag) {
+            split.ignored_heap.push(flag.clone());
+        } else if is_jvm_flag(flag) {
+            split.jvm.push(flag.clone());
+            if JVM_OPTIONS_WITH_SEPARATE_VALUE.contains(&flag.as_str())
+                && let Some(value) = tokens.next()
+            {
+                split.jvm.push(value.clone());
+            }
+        } else {
+            split.server.push(flag.clone());
+        }
+    }
+    split
+}
+
+fn split_config_flags(config: &RuntimeServerConfig) -> SplitFlags {
+    split_custom_flags(config.custom_flags.as_deref().unwrap_or_default())
+}
+
+/// The `system` console line for heap sizes left out of the extra flags.
+fn describe_ignored_heap_flags(ignored: &[String]) -> Option<String> {
+    (!ignored.is_empty()).then(|| {
+        format!(
+            "Skipped {} from the extra launch flags: memory is set by the server's Memory setting.",
+            ignored.join(" ")
+        )
+    })
+}
+
 fn resolve_server_start_args(
     directory: &Path,
     config: &RuntimeServerConfig,
     heap: &HeapSettings,
 ) -> Vec<String> {
     let mut args = heap.jvm_args();
+    let SplitFlags {
+        jvm: jvm_flags,
+        server: server_flags,
+        ..
+    } = split_config_flags(config);
+    args.extend(jvm_flags);
 
     // Forge/NeoForge installations launch through their generated argfile;
     // everything else is a plain executable jar.
@@ -94,7 +218,7 @@ fn resolve_server_start_args(
         args.push(file);
     }
 
-    args.extend(config.custom_flags.clone().unwrap_or_default());
+    args.extend(server_flags);
     args
 }
 
@@ -600,6 +724,9 @@ pub(in crate::app) fn start_server_internal(
         eprintln!("[Server] Executing: {command_str}");
         if let Some(plan) = &auto_plan {
             emit_system_line(&app, &directory, describe_auto_heap(plan, &heap));
+        }
+        if let Some(line) = describe_ignored_heap_flags(&split_config_flags(&config).ignored_heap) {
+            emit_system_line(&app, &directory, line);
         }
 
         // Persist a reassigned port so future starts and the frontend stay in sync.
@@ -1647,6 +1774,82 @@ mod tests {
                 "--nogui"
             ]
         );
+    }
+
+    #[test]
+    fn jvm_flags_go_before_the_jar_and_server_flags_after() {
+        let mut config = config(Some("manual"));
+        config.custom_flags = Some(
+            [
+                "--nogui",
+                "-XX:+UseZGC",
+                "-Dfile.encoding=UTF-8",
+                "--add-opens",
+                "java.base/java.lang=ALL-UNNAMED",
+                "-o",
+                "false",
+            ]
+            .map(str::to_string)
+            .to_vec(),
+        );
+        let (heap, _) = resolve_heap(&config, None, &HashMap::new(), "a");
+        let args = resolve_server_start_args(Path::new("."), &config, &heap);
+        assert_eq!(
+            args,
+            vec![
+                "-Xmx4G",
+                "-Xms4G",
+                "-XX:+UseZGC",
+                "-Dfile.encoding=UTF-8",
+                "--add-opens",
+                "java.base/java.lang=ALL-UNNAMED",
+                "-jar",
+                "paper.jar",
+                "--nogui",
+                "-o",
+                "false",
+            ]
+        );
+    }
+
+    #[test]
+    fn heap_sizes_in_extra_flags_are_skipped_and_explained() {
+        let flags = [
+            "-Xmx12G",
+            "-XX:+UseZGC",
+            "-Xms2G",
+            "@user_jvm_args.txt",
+            "nogui",
+        ]
+        .map(str::to_string)
+        .to_vec();
+        assert_eq!(
+            split_custom_flags(&flags),
+            SplitFlags {
+                jvm: vec!["-XX:+UseZGC".into(), "@user_jvm_args.txt".into()],
+                server: vec!["nogui".into()],
+                ignored_heap: vec!["-Xmx12G".into(), "-Xms2G".into()],
+            }
+        );
+        let line = describe_ignored_heap_flags(&["-Xmx12G".to_string()]).unwrap();
+        assert!(line.starts_with("Skipped -Xmx12G"), "{line}");
+        assert!(!line.contains('\u{2014}'));
+        assert!(describe_ignored_heap_flags(&[]).is_none());
+    }
+
+    #[test]
+    fn jvm_flag_detection_is_case_sensitive() {
+        assert!(is_jvm_flag("-Xss2M"));
+        assert!(is_jvm_flag("-javaagent:agent.jar"));
+        assert!(is_jvm_flag("--enable-preview"));
+        assert!(is_jvm_flag("-ea"));
+        // Paper's date format / world options, not Java's.
+        assert!(!is_jvm_flag("-d"));
+        assert!(!is_jvm_flag("-w"));
+        // Paper's port option, not Java's module path.
+        assert!(!is_jvm_flag("-p"));
+        assert!(!is_jvm_flag("nogui"));
+        assert!(!is_jvm_flag("--forceUpgrade"));
     }
 
     #[test]

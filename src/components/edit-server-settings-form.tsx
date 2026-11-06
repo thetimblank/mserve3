@@ -738,9 +738,9 @@ export const JavaSettingsSection: React.FC = () => {
 
 			{isAdvanced && (
 				<SettingsRow
-					title='Extra Java flags'
+					title='Extra launch flags'
 					htmlFor='edit-custom-flags'
-					description='Added to the start command, one flag per line.'>
+					description='One flag per line. Java options (like -XX:… or -D…) go to Java, anything else (like --nogui) goes to the server.'>
 					<Textarea
 						id='edit-custom-flags'
 						className='min-h-32 font-mono'
