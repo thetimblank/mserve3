@@ -10,6 +10,7 @@ import { AlertTriangle, HardDrive, MemoryStick, Server as ServerIcon, Users } fr
 import type { Server } from '@/data/servers';
 import { METRIC_COLORS } from '@/pages/server/stats/stats-utils';
 import { formatBytes } from '@/lib/utils';
+import { resolveHeapGb } from '@/lib/ram-utils';
 
 import { BENTO_METRICS_GRID_CLASSES } from './bento-shapes';
 import StatCard from './stat-card';
@@ -24,13 +25,19 @@ type Props = {
 	trailing?: React.ReactNode;
 };
 
+/** Auto heaps come in 256 MB steps; keep the totals to two decimals. */
+const roundGb = (gb: number) => Math.round(gb * 100) / 100;
+
 const DashboardMetrics: React.FC<Props> = ({ servers, activity, storage, trailing }) => {
 	const summary = React.useMemo(() => {
 		const online = servers.filter((server) => server.status === 'online');
 		const playersOnline = online.reduce((sum, server) => sum + (server.stats.players_online ?? 0), 0);
 		const playersMax = online.reduce((sum, server) => sum + (server.stats.players_max ?? 0), 0);
-		const ramAllocatedTotal = servers.reduce((sum, server) => sum + (server.ram ?? 0), 0);
-		const ramAllocatedOnline = online.reduce((sum, server) => sum + (server.ram ?? 0), 0);
+		// Running servers count their live max heap (auto RAM picks it at each
+		// start); stopped auto servers have no allocation until they start.
+		const heapOf = (server: Server) => resolveHeapGb(server) ?? 0;
+		const ramAllocatedTotal = roundGb(servers.reduce((sum, server) => sum + heapOf(server), 0));
+		const ramAllocatedOnline = roundGb(online.reduce((sum, server) => sum + heapOf(server), 0));
 		const crashedCount = servers.filter((server) => server.status === 'crashed').length;
 		return {
 			onlineCount: online.length,

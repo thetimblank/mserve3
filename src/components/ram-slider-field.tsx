@@ -9,8 +9,10 @@ import {
 	formatRamLabel,
 	RAM_MIN_GB,
 	ramToSliderFraction,
+	resolveRamSliderMaxGb,
 	sliderFractionToRam,
 } from '@/lib/ram-utils';
+import { isWindows } from '@/lib/platform';
 import { useSystemMemoryGb } from '@/hooks/use-system-memory';
 
 type RamSliderFieldProps = {
@@ -54,7 +56,7 @@ const RamSliderField: React.FC<RamSliderFieldProps> = ({
 }) => {
 	const systemMemoryGb = useSystemMemoryGb();
 
-	const maxRam = Math.max(10, systemMemoryGb ?? 16);
+	const maxRam = resolveRamSliderMaxGb(systemMemoryGb, isWindows);
 	const warningStartRam = Math.max(1, maxRam - warningBufferGb);
 	const clampedRam = Math.max(RAM_MIN_GB, Math.min(value, maxRam));
 	const sliderPosition = Math.round(

@@ -339,10 +339,13 @@ struct TelemetrySample {
     server_version: Option<String>,
     provider_version: Option<String>,
     tps: Option<f64>,
-    /// Percent of the configured heap.
+    /// Process memory as a percent of `heap_max_gb`.
     ram_used: Option<f64>,
     /// Resident set size in bytes (for absolute graphs).
     ram_bytes: Option<u64>,
+    /// The max heap (`-Xmx`) this run started with, in GB: the live cap auto
+    /// RAM picked, or the fixed manual heap. Live only (not stored).
+    heap_max_gb: Option<f64>,
     /// Process CPU percent.
     cpu_used: Option<f64>,
     /// RFC3339 process start time.

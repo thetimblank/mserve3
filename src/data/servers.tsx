@@ -209,6 +209,7 @@ const sameStats = (left: MserveStats, right: MserveStats): boolean =>
 	left.provider_version === right.provider_version &&
 	left.tps === right.tps &&
 	left.ram_used === right.ram_used &&
+	(left.heap_max_gb ?? null) === (right.heap_max_gb ?? null) &&
 	left.cpu_used === right.cpu_used &&
 	sameDateValue(left.uptime, right.uptime) &&
 	left.worlds_size_bytes === right.worlds_size_bytes &&
@@ -227,6 +228,8 @@ const mergeStatsPatch = (current: MserveStats, patch: Partial<MserveStats>): Mse
 			: toNullableString(patch.provider_version),
 	tps: patch.tps === undefined ? current.tps : toNullableNumber(patch.tps),
 	ram_used: patch.ram_used === undefined ? current.ram_used : toNullableNumber(patch.ram_used),
+	heap_max_gb:
+		patch.heap_max_gb === undefined ? (current.heap_max_gb ?? null) : toNullableNumber(patch.heap_max_gb),
 	cpu_used: patch.cpu_used === undefined ? current.cpu_used : toNullableNumber(patch.cpu_used),
 	uptime: patch.uptime === undefined ? current.uptime : patch.uptime ? toDate(patch.uptime) : null,
 	worlds_size_bytes:
@@ -324,6 +327,7 @@ const normalizeServer = (server: Server): Server => {
 				toNullableString(rawStats.provider_version) ?? toNullableString(provider.provider_version),
 			tps,
 			ram_used: toNullableNumber(rawStats.ram_used),
+			heap_max_gb: toNullableNumber(rawStats.heap_max_gb),
 			cpu_used: toNullableNumber(rawStats.cpu_used),
 			uptime: rawStats.uptime ? toDate(rawStats.uptime) : null,
 			worlds_size_bytes: Math.max(0, Number(rawStats.worlds_size_bytes) || 0),

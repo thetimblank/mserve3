@@ -634,6 +634,9 @@ pub(in crate::app) fn spawn_supervisor(
                     tps,
                     ram_used: metrics.ram_used,
                     ram_bytes: metrics.ram_bytes,
+                    // Only a run mserve spawned has a known heap; an adopted
+                    // server's `-Xmx` is whatever it was started with.
+                    heap_max_gb: snapshot.configured_ram.filter(|_| snapshot.has_child),
                     cpu_used: metrics.cpu_used,
                     uptime: Some(snapshot.started_at.to_rfc3339()),
                 })

@@ -5,7 +5,9 @@
  *
  *  - `server-runtime-state`: drives each server's status and recovers boot
  *    failures (shared with the page through `lib/server-start-recovery`).
- *  - `server-telemetry`: keeps dashboard/network stats fresh.
+ *  - `server-telemetry`: keeps dashboard/network stats fresh, and feeds the
+ *    low-TPS / high-memory alerts (`lib/telemetry-alert-store`) for every
+ *    server, open or not.
  *  - `server-output`: only used to flag why a boot failed.
  *  - `server-backups-changed`: rescans a server's backups after an automatic
  *    backup (for every server, open or not).
@@ -34,6 +36,7 @@ import {
 import { getErrorMessage, stripAnsi } from '@/lib/utils';
 import { setServerJavaInstallation } from '@/lib/java-runtime-service';
 import { scanServerContents } from '@/lib/server-contents';
+import { noteServerTelemetry, resetTelemetryTracker } from '@/lib/telemetry-alert-store';
 import {
 	createResolvedStartRecovery,
 	hasFlaggedBootFailure,
@@ -251,6 +254,41 @@ export const ServerRuntimeMonitor: React.FC = () => {
 			if (unlisten) unlisten();
 		};
 	}, [updateServerStats]);
+
+	// Activity feed alerts, tracked for every server (claimed or not) so they
+	// don't depend on what the server's page currently shows.
+	React.useEffect(() => {
+		let active = true;
+		const unlisteners: UnlistenFn[] = [];
+		const keep = (pending: Promise<UnlistenFn>) => {
+			pending
+				.then((cleanup) => {
+					if (!active) cleanup();
+					else unlisteners.push(cleanup);
+				})
+				.catch(() => {});
+		};
+
+		keep(
+			listen<ServerTelemetryEvent>('server-telemetry', (event) => {
+				if (!active) return;
+				const { directory, sample } = event.payload;
+				const server = serversRef.current.find((item) => item.directory === directory);
+				if (!server) return;
+				noteServerTelemetry(directory, sample, server.ram_mode);
+			}),
+		);
+		keep(
+			listen<ServerRuntimeStateEvent>('server-runtime-state', (event) => {
+				if (active && event.payload.state !== 'online') resetTelemetryTracker(event.payload.directory);
+			}),
+		);
+
+		return () => {
+			active = false;
+			for (const cleanup of unlisteners) cleanup();
+		};
+	}, []);
 
 	// An automatic backup finished (or failed) in the backend: refresh that
 	// server's backup list, whether or not its page is open.
