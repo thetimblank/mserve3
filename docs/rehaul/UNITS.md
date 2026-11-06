@@ -26,7 +26,7 @@ Wave 2 (after their deps):         D1 · D2 · O · A · C3 · F2 · J1 · J2 ·
 | E | `feat/content-tabs-rework` | M | W0-2b | [x] #35 |
 | G | `feat/java-guide-feedback-polish` | S | W0-2a | [x] #37 |
 | F1 | `feat/hosting-guide-split-path` | L | W0-3 | [x] #39 |
-| H | `feat/dashboard-bento-v2` | L | W0-2a | [ ] |
+| H | `feat/dashboard-bento-v2` | L | W0-2a | [x] #41 |
 | D1 | `feat/server-settings-tidy` | S/M | B | [ ] |
 | D2 | `feat/motd-server-list` | M | B, D1 | [ ] |
 | O | `feat/beginner-overview` | S | B | [ ] |
