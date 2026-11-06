@@ -37,7 +37,7 @@ Wave 2 (after their deps):         D1 · D2 · O · A · C3 · F2 · J1 · J2 ·
 | J2 | `feat/beginner-player-actions` | L | J1 | [ ] |
 | I1 | `feat/auto-ram` | L | C3, D1 | [ ] |
 | I2 | `feat/auto-ram-learning` | L | I1 | [ ] |
-| S | `feat/auto-storage-limit` | M | C3, E | [ ] |
+| S | `feat/auto-storage-limit` | M | C3, E | [x] #59 |
 
 ---
 

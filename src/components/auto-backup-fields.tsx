@@ -1,10 +1,9 @@
 import * as React from 'react';
 import { AnimatePresence, m } from 'motion/react';
 import { DurationPicker } from '@/components/duration-picker';
+import { StorageLimitField } from '@/components/storage-limit-field';
 import { ToggleCard } from '@/components/toggle-card';
-import { Field } from '@/components/ui/field';
 import { Label } from '@/components/ui/label';
-import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group';
 import { AUTO_BACKUP_INTERVAL_PRESETS_MINUTES } from '@/lib/mserve-consts';
 import type { AutoBackupMode, MserveJsonFormProps } from '@/lib/mserve-schema';
 import { toggleBackupMode } from '@/pages/server/server-utils';
@@ -13,15 +12,10 @@ type AutoBackupFieldsProps = {
 	values: Pick<MserveJsonFormProps, 'auto_backup' | 'storage_limit' | 'auto_backup_interval'>;
 	onFieldChange: <K extends keyof MserveJsonFormProps>(key: K, value: MserveJsonFormProps[K]) => void;
 	idPrefix: string;
+	/** The server folder (or the folder a new server goes in), to size the storage limit from its drive. */
+	directory: string;
 	/** Offer the "when it starts" mode too. The wizard leaves it out to stay short. */
 	showOnStart?: boolean;
-};
-
-// Never below 0, but 0 is allowed while typing (an emptied field), so the user
-// can clear it and type a new value; saving clamps to at least 1.
-const parseNonNegative = (value: string, fallback: number) => {
-	const parsed = Number(value);
-	return Number.isFinite(parsed) ? Math.max(0, parsed) : fallback;
 };
 
 const reveal = {
@@ -36,6 +30,7 @@ export const AutoBackupFields: React.FC<AutoBackupFieldsProps> = ({
 	values,
 	onFieldChange,
 	idPrefix,
+	directory,
 	showOnStart = true,
 }) => {
 	const isOn = (mode: AutoBackupMode) => values.auto_backup.includes(mode);
@@ -80,29 +75,14 @@ export const AutoBackupFields: React.FC<AutoBackupFieldsProps> = ({
 			<AnimatePresence initial={false}>
 				{values.auto_backup.length > 0 && (
 					<m.div {...reveal} className='overflow-hidden'>
-						<Field className='pt-3'>
-							<Label htmlFor={`${idPrefix}-storage-limit`}>Space for backups</Label>
-							<InputGroup>
-								<InputGroupInput
-									id={`${idPrefix}-storage-limit`}
-									type='number'
-									min={1}
-									value={values.storage_limit}
-									onChange={(event) =>
-										onFieldChange(
-											'storage_limit',
-											parseNonNegative(event.target.value, values.storage_limit),
-										)
-									}
-								/>
-								<InputGroupAddon className='font-mono font-bold uppercase text-xs' align='inline-end'>
-									GB
-								</InputGroupAddon>
-							</InputGroup>
-							<p className='text-sm text-muted-foreground'>
-								When backups reach this size, the oldest ones are deleted to make room.
-							</p>
-						</Field>
+						<div className='pt-3'>
+							<StorageLimitField
+								id={`${idPrefix}-storage-limit`}
+								value={values.storage_limit}
+								onChange={(gb) => onFieldChange('storage_limit', gb)}
+								directory={directory}
+							/>
+						</div>
 					</m.div>
 				)}
 			</AnimatePresence>
