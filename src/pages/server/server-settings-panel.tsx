@@ -15,6 +15,7 @@ import {
 import SecuritySettingsSection from './security/security-settings-section';
 import ServerConfigFileEditor from '@/components/server-config-file-editor';
 import { TunnelSettingsSection } from './tunnel-settings-section';
+import { ServerListSettingsSection } from './server-list-settings-section';
 import { HelpButton } from '@/components/help/help-button';
 import { type SettingsGroup, type SettingsSection, SettingsLayout } from '@/components/settings/settings-layout';
 import { SettingsRow, SettingsRows } from '@/components/settings/settings-row';
@@ -57,6 +58,7 @@ type Props = {
 
 type FormSectionId =
 	| 'general'
+	| 'server-list'
 	| 'performance'
 	| 'java'
 	| 'sleep'
@@ -113,6 +115,33 @@ const GENERAL_SECTION: SectionConfig = {
 		'mserve.json',
 	],
 	render: () => <GeneralSettingsSection />,
+};
+
+const SERVER_LIST_SECTION: SectionConfig = {
+	id: 'server-list',
+	group: 'server',
+	title: 'Server List',
+	description: 'The message and icon players see in their multiplayer server list.',
+	keywords: [
+		'motd',
+		'message',
+		'server list',
+		'multiplayer',
+		'description',
+		'icon',
+		'server-icon',
+		'favicon',
+		'logo',
+		'image',
+		'picture',
+	],
+	render: (props) => (
+		<ServerListSettingsSection
+			server={props.server}
+			disabled={props.isLocked}
+			onPropertiesSaved={props.onConfigFilesChanged}
+		/>
+	),
 };
 
 const SLEEP_SECTION: SectionConfig = {
@@ -216,6 +245,7 @@ const DANGER_ZONE_SECTION: SectionConfig = {
 // intentionally editable while the server is running.
 const LOCKED_SECTION_IDS: ReadonlySet<SectionId> = new Set<SectionId>([
 	'general',
+	'server-list',
 	'java',
 	'provider-telemetry',
 	'location',
@@ -441,7 +471,7 @@ export default function ServerSettingsPanel({
 	]);
 
 	const baseSections = React.useMemo(() => {
-		const sections: SectionConfig[] = [GENERAL_SECTION, JAVA_SECTION];
+		const sections: SectionConfig[] = [GENERAL_SECTION, SERVER_LIST_SECTION, JAVA_SECTION];
 		// Sleep mode wakes a server from its own port and the security audit reads
 		// server.properties; proxies (velocity.toml, member orchestration) get
 		// neither in v1.

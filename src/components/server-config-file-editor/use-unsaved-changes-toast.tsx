@@ -15,6 +15,7 @@ export const useUnsavedChangesToast = ({
 	isSaving,
 	onReset,
 	onSave,
+	saveLabel = 'Save file',
 }: {
 	toastId: string;
 	isDirty: boolean;
@@ -22,6 +23,8 @@ export const useUnsavedChangesToast = ({
 	isSaving: boolean;
 	onReset: () => void;
 	onSave: () => Promise<void>;
+	/** The save button's label. */
+	saveLabel?: string;
 }) => {
 	React.useEffect(() => {
 		if (isLocked || !isDirty) {
@@ -41,10 +44,10 @@ export const useUnsavedChangesToast = ({
 					</Button>
 					<Button type='button' onClick={() => void onSave()}>
 						{isSaving ? <Loader className='size-4 animate-spin' /> : <Save className='size-4' />}
-						{isSaving ? 'Saving...' : 'Save file'}
+						{isSaving ? 'Saving...' : saveLabel}
 					</Button>
 				</div>
 			),
 		});
-	}, [isDirty, isLocked, isSaving, onReset, onSave, toastId]);
+	}, [isDirty, isLocked, isSaving, onReset, onSave, saveLabel, toastId]);
 };

@@ -1,11 +1,11 @@
 use super::super::support::{
     DEFAULT_SLEEP_IDLE_MINUTES, DEFAULT_SLEEP_MOTD, copy_jar_to_server_directory,
     default_backup_policy, default_backup_scope, default_provider_for_file, default_synced_config,
-    default_telemetry_host, detect_default_telemetry_port, find_first_jar_file_name,
-    generate_server_id, has_required_mserve_json_fields, normalize_auto_backup_modes,
-    normalize_custom_flags, normalize_provider, parse_mserve_top_level_object, resolve_repair_file,
-    sanitize_mserve_value_config, synced_mserve_json_string, validate_mserve_json_keys, write_eula,
-    write_synced_mserve_json,
+    default_telemetry_host, detect_default_telemetry_port, ensure_default_motd,
+    find_first_jar_file_name, generate_server_id, has_required_mserve_json_fields,
+    normalize_auto_backup_modes, normalize_custom_flags, normalize_provider,
+    parse_mserve_top_level_object, resolve_repair_file, sanitize_mserve_value_config,
+    synced_mserve_json_string, validate_mserve_json_keys, write_eula, write_synced_mserve_json,
 };
 use super::super::{
     InitServerPayload, InitServerResult, RepairMserveJsonPayload, SyncMserveJsonResult,
@@ -26,6 +26,14 @@ fn resolve_sleep_idle_minutes(minutes: Option<u32>) -> u32 {
 fn resolve_sleep_motd(motd: Option<&str>) -> String {
     motd.filter(|value| !value.trim().is_empty())
         .map_or_else(|| DEFAULT_SLEEP_MOTD.to_string(), str::to_string)
+}
+
+/// Proxies (Velocity, BungeeCord, Waterfall) don't read `server.properties`.
+fn is_proxy_provider_name(name: &str) -> bool {
+    matches!(
+        name.trim().to_ascii_lowercase().as_str(),
+        "velocity" | "bungeecord" | "waterfall"
+    )
 }
 
 /// The existing mserve.json, normalized, when it parses as a JSON object. Unknown
@@ -137,6 +145,15 @@ pub(in crate::app) fn initialize_server(
 
     if payload.auto_agree_eula {
         write_eula(&directory)?;
+    }
+
+    // A new server shows its own name in the multiplayer list rather than "A
+    // Minecraft Server". Best-effort: a missing MOTD must never fail a create.
+    // Proxies keep their MOTD in their own config file (velocity.toml…).
+    if !is_proxy_provider_name(&config.provider.name)
+        && let Some(name) = directory.file_name().and_then(|name| name.to_str())
+    {
+        let _ = ensure_default_motd(&directory, name);
     }
 
     Ok(InitServerResult {
@@ -412,4 +429,55 @@ pub(in crate::app) fn repair_server_mserve_json(
         config: Some(config),
         updated: true,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn adopt_payload(directory: &Path, file: &str) -> InitServerPayload {
+        InitServerPayload {
+            directory: directory.to_string_lossy().to_string(),
+            create_directory_if_missing: false,
+            adopt_existing_directory: true,
+            file: file.to_string(),
+            ram: 2.0,
+            storage_limit: 10,
+            auto_restart: false,
+            sleep_enabled: false,
+            sleep_idle_minutes: None,
+            sleep_motd: None,
+            auto_backup: Vec::new(),
+            auto_backup_interval: 60,
+            auto_agree_eula: false,
+            java_installation: None,
+            custom_flags: None,
+            provider: None,
+        }
+    }
+
+    #[test]
+    fn init_writes_the_server_name_as_the_default_motd() {
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join("Survival World");
+        fs::create_dir(&directory).unwrap();
+
+        let result = initialize_server(adopt_payload(&directory, "paper-1.21.4-100.jar")).unwrap();
+        assert!(result.ok, "{}", result.message);
+        assert_eq!(
+            fs::read_to_string(directory.join("server.properties")).unwrap(),
+            "motd=Survival World\n"
+        );
+    }
+
+    #[test]
+    fn init_leaves_proxies_without_server_properties() {
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join("Proxy");
+        fs::create_dir(&directory).unwrap();
+
+        let result = initialize_server(adopt_payload(&directory, "velocity-3.4.0.jar")).unwrap();
+        assert!(result.ok, "{}", result.message);
+        assert!(!directory.join("server.properties").exists());
+    }
 }

@@ -213,9 +213,31 @@ const popMatchingFrame = (
 	}
 };
 
-const decodeLegacyMotdText = (value: string) => normalizeLineBreaks(value).replace(/\\u00a7/gi, '§');
+// server.properties may be read as ISO-8859-1, so everything outside printable
+// ASCII is stored as a `\uXXXX` escape: `§` and accented letters alike (mserve
+// writes a new server's name the same way).
+const PROPERTIES_UNICODE_ESCAPE = /\\u([0-9a-fA-F]{4})/g;
 
-const encodeLegacyMotdText = (value: string) => decodeLegacyMotdText(value).replace(/§/g, '\\u00A7');
+const decodeLegacyMotdText = (value: string) =>
+	normalizeLineBreaks(value).replace(PROPERTIES_UNICODE_ESCAPE, (_, hex: string) =>
+		String.fromCharCode(Number.parseInt(hex, 16)),
+	);
+
+const isPrintableAscii = (code: number) => code >= 0x20 && code <= 0x7e;
+
+const encodeLegacyMotdText = (value: string) => {
+	const decoded = decodeLegacyMotdText(value);
+	let output = '';
+	// Per UTF-16 code unit, so characters outside the BMP become a surrogate pair.
+	for (let index = 0; index < decoded.length; index += 1) {
+		const code = decoded.charCodeAt(index);
+		output +=
+			isPrintableAscii(code) || decoded[index] === '\n'
+				? decoded[index]
+				: `\\u${code.toString(16).toUpperCase().padStart(4, '0')}`;
+	}
+	return output;
+};
 
 const clampMotdLines = (value: string, maxLines = MOTD_MAX_LINES) =>
 	normalizeLineBreaks(value).split('\n').slice(0, maxLines).join('\n');

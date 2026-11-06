@@ -54,6 +54,7 @@ tokio-util = "0.7"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 sha1 = "0.10"
 sha2 = "0.10"
+base64 = "0.22"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [
