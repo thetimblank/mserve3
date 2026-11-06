@@ -40,6 +40,7 @@ import { useServerBackupActions } from './server/hooks/use-server-backup-actions
 import { useServerRuntime } from './server/hooks/use-server-runtime';
 import ServerOverviewPanel from './server/server-overview-panel';
 import ServerActivityFeed from './server/server-activity-feed';
+import ServerPlayersPanel from './server/server-players-panel';
 import { useServerActivity } from './server/hooks/use-server-activity';
 import CrashDetailsPanel from './server/crash-details-panel';
 import ServerStatisticsTab from './server/server-statistics-tab';
@@ -398,14 +399,27 @@ const Server: React.FC = () => {
 							onForceKill={handleForceKill}
 						/>
 						{showActivityFeed ? (
-							<ServerActivityFeed
-								directory={server.directory}
-								events={activityEvents}
-								canSendCommands={server.status === 'online' && !isBusy}
-								showRawConsole={showRawConsole}
-								onShowRawConsoleChange={setShowRawConsole}>
-								{terminalPanel}
-							</ServerActivityFeed>
+							<div className='flex flex-col gap-4 lg:flex-row'>
+								<ServerActivityFeed
+									directory={server.directory}
+									events={activityEvents}
+									canSendCommands={server.status === 'online' && !isBusy}
+									showRawConsole={showRawConsole}
+									onShowRawConsoleChange={setShowRawConsole}>
+									{terminalPanel}
+								</ServerActivityFeed>
+								{server.status === 'online' && providerCapabilities.kind !== 'proxy' && (
+									<ServerPlayersPanel
+										directory={server.directory}
+										minecraftVersion={
+											server.stats.server_version ?? server.provider.minecraft_version ?? null
+										}
+										playersOnline={server.stats.players_online ?? null}
+										isBusy={isBusy}
+										className='lg:w-80 lg:shrink-0 lg:rounded-t-none lg:border-t-0 xl:w-96'
+									/>
+								)}
+							</div>
 						) : (
 							terminalPanel
 						)}

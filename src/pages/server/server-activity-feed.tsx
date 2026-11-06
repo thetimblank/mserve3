@@ -142,7 +142,7 @@ const ServerActivityFeed: React.FC<Props> = ({
 	);
 
 	return (
-		<div className='flex flex-1 flex-col'>
+		<div className='flex min-w-0 flex-1 flex-col'>
 			<div className='flex items-center justify-between gap-4 border-x-2 border-b-2 bg-card px-6 py-3 dark:border-none dark:bg-secondary/40'>
 				<h3 className='text-xs font-semibold uppercase tracking-wide text-muted-foreground'>
 					{showRawConsole ? 'Console' : 'Activity'}

@@ -995,6 +995,7 @@ pub fn run() {
             force_kill_all_servers,
             run_in_background,
             send_server_command,
+            get_online_players,
             get_server_runtime,
             get_server_telemetry_history,
             scan_server_contents,
