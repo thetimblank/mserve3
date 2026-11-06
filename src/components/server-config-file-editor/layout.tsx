@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { Info, Loader, RefreshCcw } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import type { UserData } from '@/data/user';
+import { useExperience } from '@/data/user';
 import type { ManagedServerConfigFileDefinition } from '@/lib/server-config-files';
 
 export const EditorHeader = ({
@@ -35,40 +35,36 @@ export const EditorHeader = ({
 	</div>
 );
 
-export const NetworkingDisclaimer = ({
-	user,
-	definition,
-}: {
-	user: UserData;
-	definition: ManagedServerConfigFileDefinition;
-}) => {
-	if (!definition.networkingDisclaimer || !user.advanced_mode) return null;
+const ExperienceSettingsLink = () => (
+	<Link to='/settings' className='font-medium text-foreground underline underline-offset-4'>
+		Advanced experience level
+	</Link>
+);
+
+export const NetworkingDisclaimer = ({ definition }: { definition: ManagedServerConfigFileDefinition }) => {
+	const { isAdvanced } = useExperience();
+	if (!definition.networkingDisclaimer || !isAdvanced) return null;
 
 	return (
 		<div className='rounded-md border-2 border-warning bg-warning/10 font-semibold p-4 text-sm text-warning-foreground flex gap-3 items-center'>
 			<Info className='text-warning-foreground size-8 shrink-0' />
 			<div>
-				Server networking is automatically managed by MSERVE. You may still enter values when in{' '}
-				<Link to='/settings' className='font-medium text-foreground underline underline-offset-4'>
-					advanced mode
-				</Link>{' '}
-				to override mserve's automatic networking (not recommended).
+				Server networking is automatically managed by MSERVE. Values entered here override mserve's
+				automatic networking (not recommended).
 			</div>
 		</div>
 	);
 };
 
-export const AdvancedModeDisclaimer = ({ user }: { user: UserData }) => {
-	if (user.advanced_mode) {
+export const AdvancedModeDisclaimer = () => {
+	const { isAdvanced } = useExperience();
+	if (isAdvanced) {
 		return (
 			<div className='rounded-md border-2 border-warning bg-warning/10 font-semibold p-4 text-sm text-warning-foreground flex gap-3 items-center'>
 				<Info className='text-warning-foreground size-8 shrink-0' />
 				<div>
-					You have{' '}
-					<Link to='/settings' className='font-medium text-foreground underline underline-offset-4'>
-						advanced mode
-					</Link>{' '}
-					enabled. Certain properties that may be dangerous to modify are now shown.
+					You are using the <ExperienceSettingsLink />. Certain properties that may be dangerous to
+					modify are now shown.
 				</div>
 			</div>
 		);
@@ -78,11 +74,8 @@ export const AdvancedModeDisclaimer = ({ user }: { user: UserData }) => {
 		<div className='rounded-md border-2 bg-muted font-semibold p-4 text-sm text-foreground flex gap-3 items-center'>
 			<Info className='text-foreground size-8 shrink-0' />
 			<div>
-				Certain properties are hidden that you can only access when{' '}
-				<Link to='/settings' className='font-medium text-foreground underline underline-offset-4'>
-					advanced mode
-				</Link>{' '}
-				is turned on. (not recommended for inexperienced hosts)
+				Certain properties are hidden. Switch to the <ExperienceSettingsLink /> to edit them (not
+				recommended for inexperienced hosts).
 			</div>
 		</div>
 	);

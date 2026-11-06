@@ -1,7 +1,6 @@
 import React from 'react';
 
 import { Textarea } from '@/components/ui/textarea';
-import { useUser } from '@/data/user';
 
 import { EditorError, EditorHeader, LoadingFileContents, NetworkingDisclaimer } from './layout';
 import { validatePlainTextContent } from './text-validation';
@@ -12,7 +11,6 @@ const PlainTextConfigFileEditor: React.FC<ServerConfigFileEditorProps> = (props)
 	const { definition } = props;
 	const [content, setContent] = React.useState('');
 	const [originalContent, setOriginalContent] = React.useState('');
-	const { user } = useUser();
 
 	const isDirty = content !== originalContent;
 	const { isLoading, isLocked, error, setError, reload } = useManagedConfigFile({
@@ -32,7 +30,7 @@ const PlainTextConfigFileEditor: React.FC<ServerConfigFileEditorProps> = (props)
 	return (
 		<div className='space-y-6'>
 			<EditorHeader definition={definition} isDirty={isDirty} onReload={reload} disabled={isLocked} />
-			<NetworkingDisclaimer user={user} definition={definition} />
+			<NetworkingDisclaimer definition={definition} />
 			{isLoading ? (
 				<LoadingFileContents />
 			) : (

@@ -6,13 +6,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
 import JavaRuntimeSelect from '@/components/java-runtime-select';
-import { useUser } from '@/data/user';
+import { useExperience, useUser } from '@/data/user';
 import { useJavaRuntimes } from '@/data/java-runtimes';
 
 const SettingsJavaCard: React.FC = () => {
 	const { user, updateUserField } = useUser();
 	const { runtimes, isLoading, rescan } = useJavaRuntimes();
-	const advancedMode = user.advanced_mode;
+	const { isAdvanced } = useExperience();
 
 	const [javaDefault, setJavaDefault] = React.useState(user.java_installation_default);
 
@@ -75,7 +75,7 @@ const SettingsJavaCard: React.FC = () => {
 						</p>
 					</div>
 
-					{advancedMode && (
+					{isAdvanced && (
 						<div className='space-y-2'>
 							<Label htmlFor='settings-java-default-path'>Manual path override</Label>
 							<InputGroup>

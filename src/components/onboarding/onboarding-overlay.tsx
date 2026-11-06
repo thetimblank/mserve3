@@ -1,7 +1,7 @@
 /**
  * First-launch welcome tour. Shown once (until finished or skipped —
  * `user.onboarding_completed`), it personalizes the app in under a minute:
- * experience level (advanced mode), theme, and what the user wants to build,
+ * experience level, theme, and what the user wants to build,
  * then points them at the right starting place.
  */
 import React from 'react';
@@ -12,13 +12,11 @@ import {
 	ArrowRight,
 	Blocks,
 	Compass,
-	Gauge,
 	Lightbulb,
 	Moon,
 	MonitorCog,
 	Network,
 	Plug,
-	Signpost,
 	Sun,
 	Swords,
 } from 'lucide-react';
@@ -27,7 +25,8 @@ import clsx from 'clsx';
 import Logo from '@/components/logo';
 import { Button } from '@/components/ui/button';
 import { useTheme } from '@/components/theme-provider';
-import { useUser } from '@/data/user';
+import { type ExperienceLevel, useUser } from '@/data/user';
+import { EXPERIENCE_LEVEL_COPY } from '@/lib/experience-level-copy';
 
 type OnboardingGoal = 'survival' | 'modded' | 'plugins' | 'network' | 'explore';
 
@@ -121,8 +120,8 @@ export const OnboardingOverlay: React.FC = () => {
 	const [[slide, direction], setSlideState] = React.useState<[number, 1 | -1]>([0, 1]);
 	// `null` until the user picks: users from before the tour see it once too,
 	// and their saved setting must not be replaced by the tour's default.
-	const [advancedChoice, setAdvanced] = React.useState<boolean | null>(null);
-	const advanced = advancedChoice ?? user.advanced_mode;
+	const [levelChoice, setLevelChoice] = React.useState<ExperienceLevel | null>(null);
+	const level = levelChoice ?? user.experience_level;
 	const [goal, setGoal] = React.useState<OnboardingGoal | null>(null);
 
 	if (!isReady || user.onboarding_completed) return null;
@@ -132,9 +131,9 @@ export const OnboardingOverlay: React.FC = () => {
 
 	const finish = (destination?: string) => {
 		updateUser(
-			advancedChoice === null
+			levelChoice === null
 				? { onboarding_completed: true }
-				: { advanced_mode: advancedChoice, onboarding_completed: true },
+				: { experience_level: levelChoice, onboarding_completed: true },
 		);
 		if (destination) navigate(destination);
 	};
@@ -175,20 +174,16 @@ export const OnboardingOverlay: React.FC = () => {
 										You can change this anytime in Settings.
 									</p>
 									<div className='flex w-full flex-col gap-3'>
-										<ChoiceCard
-											icon={Signpost}
-											title='Guided'
-											description='Easy defaults and recommendations. Advanced options stay out of the way.'
-											selected={!advanced}
-											onSelect={() => setAdvanced(false)}
-										/>
-										<ChoiceCard
-											icon={Gauge}
-											title='Advanced'
-											description='Show every knob: custom flags, manual jars, forwarding secrets, host overrides.'
-											selected={advanced}
-											onSelect={() => setAdvanced(true)}
-										/>
+										{EXPERIENCE_LEVEL_COPY.map((entry) => (
+											<ChoiceCard
+												key={entry.value}
+												icon={entry.icon}
+												title={entry.label}
+												description={entry.description}
+												selected={level === entry.value}
+												onSelect={() => setLevelChoice(entry.value)}
+											/>
+										))}
 									</div>
 								</>
 							)}

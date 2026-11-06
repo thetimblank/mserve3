@@ -6,12 +6,12 @@ import { Button } from '@/components/ui/button';
 import { Container } from '@/components/ui/container';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { AlertTriangle, RefreshCcw } from 'lucide-react';
-import { useUser } from '@/data/user';
+import { useExperience } from '@/data/user';
 import { useJavaRuntimes } from '@/data/java-runtimes';
 
 export default function Slide2() {
 	const { nextSlide } = useSlideshow();
-	const { user } = useUser();
+	const { isAdvanced } = useExperience();
 	const { runtimes, warnings, scannedCandidates, isLoading, error, rescan } = useJavaRuntimes();
 
 	const sourceLabel = (source: string) => {
@@ -34,7 +34,7 @@ export default function Slide2() {
 						{scannedCandidates} Java executable{scannedCandidates !== 1 && 's'}
 					</span>
 				)}
-				{user.advanced_mode ? ' from PATH, JAVA_HOME, and common install folders.' : '.'}
+				{isAdvanced ? ' from PATH, JAVA_HOME, and common install folders.' : '.'}
 			</p>
 			<div className='flex flex-col items-center'>
 				{isLoading && (

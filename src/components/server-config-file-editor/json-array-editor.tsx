@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { useUser } from '@/data/user';
 
 import {
 	areJsonRowsEqual,
@@ -31,7 +30,6 @@ const JsonArrayConfigFileEditor: React.FC<ServerConfigFileEditorProps> = (props)
 	const [isSelectionMode, setIsSelectionMode] = React.useState(false);
 	const [selectedRowIds, setSelectedRowIds] = React.useState<string[]>([]);
 	const [currentPage, setCurrentPage] = React.useState(1);
-	const { user } = useUser();
 
 	const isDirty = React.useMemo(() => !areJsonRowsEqual(rows, originalRows), [originalRows, rows]);
 
@@ -169,7 +167,7 @@ const JsonArrayConfigFileEditor: React.FC<ServerConfigFileEditorProps> = (props)
 				onReload={reload}
 				disabled={isLocked}
 			/>
-			<NetworkingDisclaimer user={user} definition={definition} />
+			<NetworkingDisclaimer definition={definition} />
 			<div className='space-y-4'>
 				<div className='flex flex-wrap items-center justify-between gap-3'>
 					<div className='flex flex-wrap items-center gap-2'>

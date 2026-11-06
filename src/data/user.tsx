@@ -1,6 +1,22 @@
 import React from 'react';
 import { hasLocalStorage, readStoredJson, toDate, writeStoredString } from '@/lib/local-storage';
 
+/** Experience tiers, from fewest to most options shown. */
+export const EXPERIENCE_LEVELS = ['beginner', 'standard', 'advanced'] as const;
+export type ExperienceLevel = (typeof EXPERIENCE_LEVELS)[number];
+export const DEFAULT_EXPERIENCE_LEVEL: ExperienceLevel = 'standard';
+
+const isExperienceLevel = (value: unknown): value is ExperienceLevel =>
+	(EXPERIENCE_LEVELS as readonly unknown[]).includes(value);
+
+/** A stored level, or the default for a missing/unknown one (no migration from `advanced_mode`). */
+export const normalizeExperienceLevel = (value: unknown): ExperienceLevel =>
+	isExperienceLevel(value) ? value : DEFAULT_EXPERIENCE_LEVEL;
+
+/** True when `level` shows at least as much as `minimum`. */
+export const isExperienceAtLeast = (level: ExperienceLevel, minimum: ExperienceLevel) =>
+	EXPERIENCE_LEVELS.indexOf(level) >= EXPERIENCE_LEVELS.indexOf(minimum);
+
 export interface UserData {
 	accessibility: {
 		logo_animation: boolean;
@@ -10,7 +26,8 @@ export interface UserData {
 	dashboard_background: boolean;
 	java_installation_default: string;
 	servers_root_path: string;
-	advanced_mode: boolean;
+	/** How much of the app to show. Gate UI through `useExperience()`, not this field. */
+	experience_level: ExperienceLevel;
 	suppress_close_warning: boolean;
 	auto_check_server_updates: boolean;
 	completed_setup_hosting_ports: number[];
@@ -99,7 +116,7 @@ const createDefaultUserData = (): UserData => {
 		dashboard_background: false,
 		java_installation_default: '',
 		servers_root_path: '',
-		advanced_mode: false,
+		experience_level: DEFAULT_EXPERIENCE_LEVEL,
 		suppress_close_warning: false,
 		auto_check_server_updates: true,
 		completed_setup_hosting_ports: [],
@@ -125,7 +142,7 @@ const normalizeUserData = (user: Partial<UserData> | null | undefined): UserData
 		// to Automatic so resolution picks a real, compatible runtime.
 		java_installation_default: normalizeJavaDefault(user?.java_installation_default),
 		servers_root_path: toTrimmedString(user?.servers_root_path),
-		advanced_mode: user?.advanced_mode ?? false,
+		experience_level: normalizeExperienceLevel(user?.experience_level),
 		suppress_close_warning: user?.suppress_close_warning ?? false,
 		auto_check_server_updates: user?.auto_check_server_updates ?? true,
 		completed_setup_hosting_ports: normalizePortList(user?.completed_setup_hosting_ports),
@@ -239,3 +256,25 @@ export const useUser = () => {
  */
 export const useReducedMotionSetting = () =>
 	React.useContext(UserContext)?.user.accessibility.reduced_motion ?? false;
+
+export type Experience = {
+	level: ExperienceLevel;
+	isBeginner: boolean;
+	isAdvanced: boolean;
+	/** True when the user's level shows at least as much as `minimum`. */
+	atLeast: (minimum: ExperienceLevel) => boolean;
+};
+
+/** The user's experience tier. The one place UI decides what to show per tier. */
+export const useExperience = (): Experience => {
+	const level = useUser().user.experience_level;
+	return React.useMemo(
+		() => ({
+			level,
+			isBeginner: level === 'beginner',
+			isAdvanced: level === 'advanced',
+			atLeast: (minimum: ExperienceLevel) => isExperienceAtLeast(level, minimum),
+		}),
+		[level],
+	);
+};

@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label';
 import { SegmentedControl, type SegmentedControlOption } from '@/components/ui/segmented-control';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
-import { useUser } from '@/data/user';
+import { useExperience } from '@/data/user';
 import { useJavaRuntimes } from '@/data/java-runtimes';
 import {
 	downloadAndResolveJarRow,
@@ -41,7 +41,6 @@ const SOURCE_MODE_OPTIONS: SegmentedControlOption<SourceMode>[] = [
 ];
 
 const SlideJarFile: React.FC = () => {
-	const { user } = useUser();
 	const { form, updateField, nextSlide, setError, clearError, modpack, setModpack } =
 		useCreateServer();
 	const [sourceMode, setSourceMode] = React.useState<SourceMode>(
@@ -60,7 +59,7 @@ const SlideJarFile: React.FC = () => {
 		[runtimes],
 	);
 
-	const isAdvancedMode = user.advanced_mode;
+	const { isAdvanced } = useExperience();
 
 	const applyInferredMetadata = React.useCallback(
 		(filePath: string) => {
@@ -221,7 +220,7 @@ const SlideJarFile: React.FC = () => {
 			fullWidth
 			title='Choose the server software'
 			helpTopic='providers'
-			description='Browse and download a supported server jar, or build the server from a Modrinth modpack. Advanced mode enables manual file and provider selection.'
+			description='Browse and download a supported server jar, or build the server from a Modrinth modpack. The Advanced experience level adds manual file and provider selection.'
 			actions={
 				<Button
 					type='button'
@@ -314,7 +313,7 @@ const SlideJarFile: React.FC = () => {
 				</Field>
 				)}
 
-				{sourceMode === 'software' && isAdvancedMode && (
+				{sourceMode === 'software' && isAdvanced && (
 					<>
 						<Field>
 							<Label htmlFor='create-server-file'>Jar file location</Label>
@@ -442,7 +441,7 @@ const SlideJarFile: React.FC = () => {
 							</Label>
 						</Field>
 						<p className='text-sm text-amber-600'>
-							Advanced mode is enabled. Manual jar flow requires complete provider metadata.
+							You are using the Advanced experience level. Manual jar flow requires complete provider metadata.
 						</p>
 					</>
 				)}

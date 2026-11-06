@@ -1,6 +1,6 @@
 import React from 'react';
 
-import { useUser } from '@/data/user';
+import { useExperience } from '@/data/user';
 
 import { AdvancedPropertiesSection } from './advanced-properties-section';
 import { FeaturedPropertyFields } from './featured-property-fields';
@@ -12,7 +12,7 @@ import { sameStringRecord } from './utils';
 
 const VelocityTomlEditor: React.FC<ServerConfigFileEditorProps> = (props) => {
 	const { definition } = props;
-	const { user } = useUser();
+	const { isAdvanced } = useExperience();
 	const [values, setValues] = React.useState<PropertyValues>({});
 	const [originalValues, setOriginalValues] = React.useState<PropertyValues>({});
 	const [root, setRoot] = React.useState<TomlRoot>({});
@@ -61,22 +61,22 @@ const VelocityTomlEditor: React.FC<ServerConfigFileEditorProps> = (props) => {
 	return (
 		<div className='space-y-8'>
 			<EditorHeader definition={definition} isDirty={isDirty} onReload={reload} disabled={isLocked} />
-			<NetworkingDisclaimer user={user} definition={definition} />
-			<AdvancedModeDisclaimer user={user} />
+			<NetworkingDisclaimer definition={definition} />
+			<AdvancedModeDisclaimer />
 			<FeaturedPropertyFields
 				properties={definition.featuredProperties}
 				values={values}
 				defaultMotdFormat='minimessage'
-				advancedMode={user.advanced_mode}
+				advancedMode={isAdvanced}
 				disabled={isLocked}
 				onChange={updateValue}
 			/>
-			{user.advanced_mode && (
+			{isAdvanced && (
 				<AdvancedPropertiesSection
 					fileName={definition.fileName}
 					keys={advancedTomlKeys}
 					values={values}
-					description='All non-featured velocity.toml settings stay editable here when advanced mode is on.'
+					description='All non-featured velocity.toml settings stay editable here at the Advanced experience level.'
 					disabled={isLocked}
 					getKind={(key) => inferTomlValueKind(root[key])}
 					onChange={updateValue}

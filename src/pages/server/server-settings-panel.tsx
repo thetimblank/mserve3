@@ -17,7 +17,7 @@ import {
 import SecuritySettingsSection from './security/security-settings-section';
 import ServerConfigFileEditor from '@/components/server-config-file-editor';
 import { TunnelSettingsSection } from './tunnel-settings-section';
-import { useUser } from '@/data/user';
+import { isExperienceAtLeast, useExperience } from '@/data/user';
 import { Button } from '@/components/ui/button';
 import {
 	AlertDialog,
@@ -43,6 +43,7 @@ import {
 	type ManagedServerConfigFileKind,
 	getManagedServerConfigFileDefinitions,
 	getManagedServerConfigFileKeywords,
+	isConfigFileVisibleAtLevel,
 } from '@/lib/server-config-files';
 import { getErrorMessage } from '@/lib/utils';
 
@@ -316,7 +317,7 @@ export default function ServerSettingsPanel({
 	const navigate = useNavigate();
 	const { hash } = useLocation();
 	const { removeServer, updateServer } = useServers();
-	const { user } = useUser();
+	const experienceLevel = useExperience().level;
 	const [query, setQuery] = React.useState('');
 	const [activeSectionId, setActiveSectionId] = React.useState<SectionId>(
 		() => (hash.slice(1) as SectionId) || 'rename',
@@ -433,12 +434,15 @@ export default function ServerSettingsPanel({
 		if (providerKind !== 'proxy') {
 			sections.push(SLEEP_SECTION, SECURITY_SECTION);
 		}
-		sections.push(PROVIDER_TELEMETRY_SECTION, TUNNEL_SECTION);
-		if (user.advanced_mode) {
+		if (isExperienceAtLeast(experienceLevel, 'standard')) {
+			sections.push(PROVIDER_TELEMETRY_SECTION);
+		}
+		sections.push(TUNNEL_SECTION);
+		if (experienceLevel === 'advanced') {
 			sections.push(LOCATION_SECTION);
 		}
 		return sections;
-	}, [providerKind, user.advanced_mode]);
+	}, [providerKind, experienceLevel]);
 
 	const visibleManagedConfigDefinitions = React.useMemo(() => {
 		const statusMap = new Map(managedConfigFileStatuses.map((entry) => [entry.fileName, entry.exists]));
@@ -447,13 +451,9 @@ export default function ServerSettingsPanel({
 				return false;
 			}
 
-			if (definition.format === 'yaml' && !user.advanced_mode) {
-				return false;
-			}
-
-			return true;
+			return isConfigFileVisibleAtLevel(definition, experienceLevel);
 		});
-	}, [managedConfigFileDefinitions, managedConfigFileStatuses, user.advanced_mode]);
+	}, [managedConfigFileDefinitions, managedConfigFileStatuses, experienceLevel]);
 
 	const configFileSections = React.useMemo(
 		() => visibleManagedConfigDefinitions.map(getConfigFileSection),

@@ -5,7 +5,13 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
-import { useUser } from '@/data/user';
+import { SegmentedControl, type SegmentedControlOption } from '@/components/ui/segmented-control';
+import { type ExperienceLevel, useUser } from '@/data/user';
+import { EXPERIENCE_LEVEL_COPY, getExperienceLevelCopy } from '@/lib/experience-level-copy';
+
+const EXPERIENCE_LEVEL_OPTIONS: SegmentedControlOption<ExperienceLevel>[] = EXPERIENCE_LEVEL_COPY.map(
+	({ value, label, icon }) => ({ value, label, icon }),
+);
 
 const SettingsBehaviorCard: React.FC = () => {
 	const { user, updateUserField } = useUser();
@@ -16,10 +22,9 @@ const SettingsBehaviorCard: React.FC = () => {
 		toast.success(enabled ? 'Close warning disabled.' : 'Close warning enabled.');
 	};
 
-	const handleAdvancedModeChange = (checked: boolean | 'indeterminate') => {
-		const enabled = checked === true;
-		updateUserField('advanced_mode', enabled);
-		toast.success(`Advanced mode ${enabled ? 'enabled' : 'disabled'}.`);
+	const handleExperienceLevelChange = (level: ExperienceLevel) => {
+		updateUserField('experience_level', level);
+		toast.success(`Experience level set to ${getExperienceLevelCopy(level).label}.`);
 	};
 
 	const handleAutoCheckServerUpdatesChange = (checked: boolean | 'indeterminate') => {
@@ -52,12 +57,15 @@ const SettingsBehaviorCard: React.FC = () => {
 					</p>
 				</div>
 				<div className='space-y-2'>
-					<Label className='flex items-center gap-3'>
-						<Checkbox checked={user.advanced_mode} onCheckedChange={handleAdvancedModeChange} />
-						Advanced Mode
-					</Label>
+					<p className='text-sm font-medium'>Experience level</p>
+					<SegmentedControl
+						aria-label='Experience level'
+						value={user.experience_level}
+						onValueChange={handleExperienceLevelChange}
+						options={EXPERIENCE_LEVEL_OPTIONS}
+					/>
 					<p className='text-sm text-muted-foreground'>
-						Unlocks per-server overrides, sub-gigabyte RAM, and bypasses RAM safety caps.
+						{getExperienceLevelCopy(user.experience_level).description}
 					</p>
 				</div>
 				<div className='space-y-2'>
