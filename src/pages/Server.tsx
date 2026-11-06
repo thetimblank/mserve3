@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { isStoppedStatus, useServers } from '@/data/servers';
-import { useUser } from '@/data/user';
+import { useExperience, useUser } from '@/data/user';
 import { useNetworks } from '@/data/networks';
 import { Button } from '@/components/ui/button';
 import {
@@ -39,6 +39,8 @@ import { useServerTerminal } from './server/hooks/use-server-terminal';
 import { useServerBackupActions } from './server/hooks/use-server-backup-actions';
 import { useServerRuntime } from './server/hooks/use-server-runtime';
 import ServerOverviewPanel from './server/server-overview-panel';
+import ServerActivityFeed from './server/server-activity-feed';
+import { useServerActivity } from './server/hooks/use-server-activity';
 import CrashDetailsPanel from './server/crash-details-panel';
 import ServerStatisticsTab from './server/server-statistics-tab';
 import { getServerProviderCapabilities } from '@/lib/server-provider-capabilities';
@@ -55,6 +57,7 @@ const Server: React.FC = () => {
 	const { serverId: routeServerId, tab: routeTab } = useParams();
 	const resolvedServerId = routeServerId ? decodeURIComponent(routeServerId) : undefined;
 	const { user } = useUser();
+	const { isBeginner } = useExperience();
 	const { servers, isReady, setServerStatus, updateServer, updateServerStats } = useServers();
 	const { runtimes: javaRuntimes } = useJavaRuntimes();
 	const resolveServerJava = useServerJavaResolver();
@@ -100,6 +103,15 @@ const Server: React.FC = () => {
 	const terminalStoreKey = server?.directory ?? '';
 	const { terminalLines, terminalOutputRef, clearTerminalSession, jumpTerminalToBottom, appendTerminalLine } =
 		useServerTerminal(terminalStoreKey);
+
+	// Beginners get a readable activity feed in place of the raw console.
+	const [showRawConsole, setShowRawConsole] = React.useState(false);
+	const showActivityFeed = isBeginner && activeTab === 'overview';
+	const activityEvents = useServerActivity({
+		server,
+		terminalLines,
+		enabled: showActivityFeed && !showRawConsole,
+	});
 
 	const showError = React.useCallback(
 		(error: unknown, fallback: string) => {
@@ -247,6 +259,21 @@ const Server: React.FC = () => {
 		);
 	}
 
+	const terminalPanel = (
+		<ServerTerminalPanel
+			isVisible
+			isBusy={isBusy}
+			status={server.status}
+			terminalLines={terminalLines}
+			terminalInput={terminalInput}
+			onTerminalInputChange={setTerminalInput}
+			onSubmit={handleTerminalCommandSubmit}
+			onClearConsole={clearTerminalSession}
+			onJumpToBottom={jumpTerminalToBottom}
+			terminalOutputRef={terminalOutputRef}
+		/>
+	);
+
 	// Content files are read by a live (or starting, or adopted) JVM, so they
 	// only change while the process is fully stopped.
 	const isContentLocked = isBusy || !isStoppedStatus(server.status);
@@ -370,18 +397,18 @@ const Server: React.FC = () => {
 							onRestart={handleRestart}
 							onForceKill={handleForceKill}
 						/>
-						<ServerTerminalPanel
-							isVisible
-							isBusy={isBusy}
-							status={server.status}
-							terminalLines={terminalLines}
-							terminalInput={terminalInput}
-							onTerminalInputChange={setTerminalInput}
-							onSubmit={handleTerminalCommandSubmit}
-							onClearConsole={clearTerminalSession}
-							onJumpToBottom={jumpTerminalToBottom}
-							terminalOutputRef={terminalOutputRef}
-						/>
+						{showActivityFeed ? (
+							<ServerActivityFeed
+								directory={server.directory}
+								events={activityEvents}
+								canSendCommands={server.status === 'online' && !isBusy}
+								showRawConsole={showRawConsole}
+								onShowRawConsoleChange={setShowRawConsole}>
+								{terminalPanel}
+							</ServerActivityFeed>
+						) : (
+							terminalPanel
+						)}
 					</div>
 				)}
 
