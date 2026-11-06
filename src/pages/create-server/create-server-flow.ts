@@ -107,6 +107,9 @@ export const isSameProviderChoice = (left: ProviderChoice | null, right: Provide
 	return left.source === 'modpack' || (right.source === 'software' && left.provider === right.provider);
 };
 
+/** Router state other pages pass to `/servers/new` to preselect the provider slide. */
+export type CreateServerPreset = { source?: 'software'; provider: ProviderName } | { source: 'modpack' };
+
 /**
  * Reads the wizard preset other pages pass through router state
  * (`navigate('/servers/new', { state: { provider: 'paper' } })`). Returns `null`

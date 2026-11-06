@@ -111,9 +111,9 @@ const RootLayout: React.FC = () => {
 													<ServerRuntimeMonitor />
 													<MserveRepairDialog />
 													<CloseWarningDialog />
-													<OnboardingOverlay />
 													<Nav />
 													<AppSidebar />
+													<OnboardingOverlay />
 													<SidebarInset className='h-full min-h-0 overflow-hidden'>
 														<Routes>
 															<Route path='/' element={<Home />} />
