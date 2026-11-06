@@ -3,27 +3,66 @@ import { m } from 'motion/react';
 import { Spinner } from '@/components/ui/spinner';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
-import { Container } from '@/components/ui/container';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { AlertTriangle, RefreshCcw } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { AlertTriangle, Clipboard, ClipboardCheck, RefreshCcw } from 'lucide-react';
 import { useExperience } from '@/data/user';
 import { useJavaRuntimes } from '@/data/java-runtimes';
+import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
+import type { JavaRuntimeInfo } from '@/lib/java-runtime-service';
+
+const sourceLabel = (source: string) => {
+	if (source === 'path') return 'PATH';
+	if (source === 'java_home') return 'JAVA_HOME';
+	if (source === 'common_install_dir') return 'Installed JDK folder';
+	if (source === 'managed') return 'Downloaded by mserve';
+	return source;
+};
+
+/** One detected runtime: a solid card with the path tucked behind a copy button. */
+export function RuntimeCard({ runtime }: { runtime: JavaRuntimeInfo }) {
+	const { copied, copy } = useCopyToClipboard();
+
+	return (
+		<li className='flex items-center gap-3 rounded-lg bg-secondary/60 px-4 py-3'>
+			<div className='flex min-w-0 flex-1 flex-wrap items-center gap-2'>
+				<p className='font-semibold'>
+					Java {runtime.majorVersion}
+					<span className='text-muted-foreground'>
+						{runtime.version.replace(String(runtime.majorVersion), '')}
+					</span>
+				</p>
+				<span className='text-xs rounded-full bg-accent text-accent-foreground px-2 py-1'>
+					{sourceLabel(runtime.source)}
+				</span>
+			</div>
+			<Tooltip>
+				<TooltipTrigger asChild>
+					<Button
+						variant='ghost'
+						size='icon-sm'
+						aria-label={copied ? 'Path copied' : `Copy path: ${runtime.executablePath}`}
+						className='shrink-0 text-muted-foreground hover:text-foreground'
+						onClick={() => copy(runtime.executablePath)}>
+						{copied ? <ClipboardCheck /> : <Clipboard />}
+					</Button>
+				</TooltipTrigger>
+				<TooltipContent className='max-w-sm'>
+					<p className='font-mono break-all'>{runtime.executablePath}</p>
+					<p className='mt-1 opacity-70'>{copied ? 'Copied' : 'Click to copy'}</p>
+				</TooltipContent>
+			</Tooltip>
+		</li>
+	);
+}
 
 export default function Slide2() {
 	const { nextSlide } = useSlideshow();
 	const { isAdvanced } = useExperience();
 	const { runtimes, warnings, scannedCandidates, isLoading, error, rescan } = useJavaRuntimes();
 
-	const sourceLabel = (source: string) => {
-		if (source === 'path') return 'PATH';
-		if (source === 'java_home') return 'JAVA_HOME';
-		if (source === 'common_install_dir') return 'Installed JDK folder';
-		if (source === 'managed') return 'Downloaded by mserve';
-		return source;
-	};
-
 	return (
-		<SlideFrame className='flex flex-col items-center max-w-lg'>
+		<SlideFrame className='flex flex-col items-center w-full max-w-lg'>
 			<p className='text-center text-3xl font-bold flex gap-5 items-center mb-2 w-fit'>
 				Detected Java Runtimes
 			</p>
@@ -36,7 +75,7 @@ export default function Slide2() {
 				)}
 				{isAdvanced ? ' from PATH, JAVA_HOME, and common install folders.' : '.'}
 			</p>
-			<div className='flex flex-col items-center'>
+			<div className='flex w-full flex-col items-center'>
 				{isLoading && (
 					<div className='rounded-lg border-2 p-6 flex items-center gap-3'>
 						<Spinner />
@@ -58,24 +97,13 @@ export default function Slide2() {
 					</div>
 				)}
 
-				{!isLoading &&
-					!error &&
-					runtimes.map((runtime) => (
-						<Container key={runtime.executablePath} className='space-y-1 p-4 mb-2 w-full'>
-							<div className='flex flex-wrap items-center gap-2'>
-								<p className='font-semibold'>
-									Java {runtime.majorVersion}
-									<span className='text-muted-foreground'>
-										{runtime.version.replace(String(runtime.majorVersion), '')}
-									</span>
-								</p>
-								<span className='text-xs rounded-full bg-accent text-accent-foreground px-2 py-1'>
-									{sourceLabel(runtime.source)}
-								</span>
-							</div>
-							<p className='text-sm text-muted-foreground break-all'>{runtime.executablePath}</p>
-						</Container>
-					))}
+				{!isLoading && !error && runtimes.length > 0 && (
+					<ul className='flex w-full flex-col gap-2'>
+						{runtimes.map((runtime) => (
+							<RuntimeCard key={runtime.executablePath} runtime={runtime} />
+						))}
+					</ul>
+				)}
 
 				{runtimes.length === 0 && !isLoading && !error && (
 					<m.section

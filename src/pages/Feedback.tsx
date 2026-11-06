@@ -114,7 +114,7 @@ const Feedback: React.FC = () => {
 						initial={{ scale: 0.75, y: 10, opacity: 0 }}
 						whileInView={{ scale: 1, y: 0, opacity: 1 }}
 						transition={{ type: 'spring', duration: 0.5, delay: 0.05, bounce: 0 }}>
-						<Card>
+						<Card className='border-none bg-secondary/60'>
 							<CardHeader>
 								<CardTitle className='flex items-center gap-2'>
 									{isBug ? <Bug className='w-5 h-5' /> : <Lightbulb className='w-5 h-5' />}
@@ -172,7 +172,8 @@ const Feedback: React.FC = () => {
 								</div>
 								<p className='text-xs text-muted-foreground'>
 									The GitHub button opens your browser with the details above pre-filled.
-									Review and submit there. GitHub issues are public.
+									Review and submit there. GitHub issues are public and need a GitHub
+									account. No account? Use Discord instead.
 								</p>
 							</CardContent>
 						</Card>
@@ -183,7 +184,7 @@ const Feedback: React.FC = () => {
 						initial={{ scale: 0.75, y: 10, opacity: 0 }}
 						whileInView={{ scale: 1, y: 0, opacity: 1 }}
 						transition={{ type: 'spring', duration: 0.5, delay: 0.1, bounce: 0 }}>
-						<Card>
+						<Card className='border-none bg-secondary/60'>
 							<CardHeader>
 								<CardTitle className='flex items-center gap-2'>
 									<Send className='w-5 h-5' />
