@@ -4,7 +4,7 @@ import { useCreateServer } from '../CreateServerContext';
 import SlideShell from './SlideShell';
 
 const SlideBackups: React.FC = () => {
-	const { form, updateField, continueToNext } = useCreateServer();
+	const { form, serversRootPath, updateField, continueToNext } = useCreateServer();
 
 	return (
 		<SlideShell
@@ -20,6 +20,7 @@ const SlideBackups: React.FC = () => {
 				values={form}
 				onFieldChange={updateField}
 				idPrefix='create-server'
+				directory={serversRootPath}
 				showOnStart={false}
 			/>
 		</SlideShell>

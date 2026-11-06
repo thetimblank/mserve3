@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { useJavaRuntimes } from '@/data/java-runtimes';
 import { useServers, type Server } from '@/data/servers';
 import { useUser } from '@/data/user';
+import { useStorageRecommendation } from '@/hooks/use-storage-recommendation';
 import { buildCreatedServer } from '@/lib/mserve-server-mapper';
 import type { Provider } from '@/lib/mserve-schema';
 import {
@@ -101,7 +102,6 @@ const isFormDirty = (form: ServerSetupFormData, serverName: string) => {
 	if (serverName.trim().length > 0) return true;
 	if (form.file !== DEFAULT_FORM.file) return true;
 	if (form.ram !== DEFAULT_FORM.ram) return true;
-	if (form.storage_limit !== DEFAULT_FORM.storage_limit) return true;
 	if (form.auto_restart !== DEFAULT_FORM.auto_restart) return true;
 	if (!sameArray(form.auto_backup, DEFAULT_FORM.auto_backup)) return true;
 	if (form.auto_backup_interval !== DEFAULT_FORM.auto_backup_interval) return true;
@@ -178,6 +178,8 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 	const [providerChoice, setProviderChoice] = React.useState<ProviderChoice | null>(null);
 	// Read synchronously by chooseProvider to tell a re-pick from a switch.
 	const providerChoiceRef = React.useRef<ProviderChoice | null>(null);
+	// The storage limit is prefilled from the drive until the user picks one.
+	const [storageLimitTouched, setStorageLimitTouched] = React.useState(false);
 	const { runtimes: javaRuntimes } = useJavaRuntimes();
 
 	React.useEffect(() => {
@@ -215,6 +217,18 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 		[serverName, serversRootPath],
 	);
 
+	// Backups live in the new server's folder, on the drive of the servers root.
+	const { recommendation: storageRecommendation } = useStorageRecommendation(serversRootPath);
+	const recommendedStorageLimitGb = storageRecommendation?.recommendedGb ?? null;
+	React.useEffect(() => {
+		if (storageLimitTouched || recommendedStorageLimitGb === null) return;
+		setForm((previous) =>
+			previous.storage_limit === recommendedStorageLimitGb
+				? previous
+				: { ...previous, storage_limit: recommendedStorageLimitGb },
+		);
+	}, [form.storage_limit, recommendedStorageLimitGb, storageLimitTouched]);
+
 	const activeSlide = React.useMemo(
 		() => getCreateServerVisibleSlide(slide, form.provider),
 		[form.provider, slide],
@@ -232,6 +246,9 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 		<K extends keyof ServerSetupFormData>(key: K, value: ServerSetupFormData[K]) => {
 			if (key === 'provider') {
 				providerRef.current = value as Provider;
+			}
+			if (key === 'storage_limit') {
+				setStorageLimitTouched(true);
 			}
 			setForm((prev) => ({ ...prev, [key]: value }));
 			setHasStarted(true);
@@ -314,6 +331,7 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 		setModpackInstallProgress(null);
 		setProviderChoice(null);
 		providerChoiceRef.current = null;
+		setStorageLimitTouched(false);
 	}, []);
 
 	const goToCreatedServer = React.useCallback(() => {
@@ -607,7 +625,8 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 			showBackButton,
 			showStepIndicator,
 			hasStarted,
-			isDirty: isFormDirty(form, serverName) || modpack !== null || providerChoice !== null,
+			isDirty:
+				isFormDirty(form, serverName) || storageLimitTouched || modpack !== null || providerChoice !== null,
 			createdServerId,
 			error,
 			isSubmitting,
@@ -658,6 +677,7 @@ export const CreateServerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 			showStepIndicator,
 			slide,
 			startFlow,
+			storageLimitTouched,
 			totalSteps,
 			updateField,
 			setServerName,

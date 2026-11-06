@@ -5,8 +5,8 @@ use super::super::support::{
     toggle_item_activation,
 };
 use super::super::{
-    ExportWorldResult, ItemActionPayload, ServerScanResult, ServerStorageInfo, ToggleItemPayload,
-    UploadItemPayload,
+    DiskSpaceInfo, ExportWorldResult, ItemActionPayload, ServerScanResult, ServerStorageInfo,
+    ToggleItemPayload, UploadItemPayload,
 };
 use super::run_blocking;
 use std::fs;
@@ -266,5 +266,142 @@ fn server_storage(directory: String) -> ServerStorageInfo {
         total_bytes,
         worlds_bytes,
         backups_bytes,
+    }
+}
+
+/// Size and free space of the disk that holds `path`, for the backup storage
+/// limit recommendation. The path may not exist yet (the wizard asks before the
+/// server folder is created), so the nearest existing ancestor is measured.
+#[tauri::command]
+pub(in crate::app) async fn get_disk_space(path: String) -> Result<DiskSpaceInfo, String> {
+    run_blocking(move || disk_space_for_path(&path)).await
+}
+
+fn disk_space_for_path(path: &str) -> Result<DiskSpaceInfo, String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err("No folder was given to check disk space for.".to_string());
+    }
+
+    let existing = Path::new(trimmed)
+        .ancestors()
+        .find(|candidate| !candidate.as_os_str().is_empty() && candidate.exists())
+        .ok_or_else(|| format!("Could not find the drive for {trimmed}."))?;
+    let canonical = dunce::canonicalize(existing).map_err(|err| err.to_string())?;
+
+    let disks = sysinfo::Disks::new_with_refreshed_list();
+    let candidates: Vec<(PathBuf, u64, u64)> = disks
+        .list()
+        .iter()
+        .map(|disk| {
+            (
+                disk.mount_point().to_path_buf(),
+                disk.total_space(),
+                disk.available_space(),
+            )
+        })
+        .collect();
+
+    let index = pick_disk_for_path(&canonical, &candidates, cfg!(windows))
+        .ok_or_else(|| format!("Could not find the drive for {trimmed}."))?;
+    let (mount_point, total_bytes, available_bytes) = &candidates[index];
+    Ok(DiskSpaceInfo {
+        total_bytes: *total_bytes,
+        available_bytes: *available_bytes,
+        mount_point: mount_point.to_string_lossy().into_owned(),
+    })
+}
+
+/// Index of the disk whose mount point is the longest (component-wise) prefix
+/// of `path`. Windows paths compare case-insensitively.
+fn pick_disk_for_path(
+    path: &Path,
+    disks: &[(PathBuf, u64, u64)],
+    case_insensitive: bool,
+) -> Option<usize> {
+    let normalize = |value: &Path| -> PathBuf {
+        if case_insensitive {
+            PathBuf::from(value.to_string_lossy().to_lowercase())
+        } else {
+            value.to_path_buf()
+        }
+    };
+    let target = normalize(path);
+    disks
+        .iter()
+        .enumerate()
+        .filter(|(_, (mount, _, _))| target.starts_with(normalize(mount)))
+        .max_by_key(|(_, (mount, _, _))| mount.components().count())
+        .map(|(index, _)| index)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn disk(mount: &str) -> (PathBuf, u64, u64) {
+        (PathBuf::from(mount), 100, 50)
+    }
+
+    #[test]
+    fn picks_the_longest_matching_mount_point() {
+        let disks = [disk("/"), disk("/home"), disk("/home/user/games")];
+        let path = Path::new("/home/user/games/survival");
+        assert_eq!(pick_disk_for_path(path, &disks, false), Some(2));
+        assert_eq!(
+            pick_disk_for_path(Path::new("/home/other"), &disks, false),
+            Some(1)
+        );
+        assert_eq!(
+            pick_disk_for_path(Path::new("/srv/mc"), &disks, false),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn matches_whole_components_only() {
+        let disks = [disk("/"), disk("/home")];
+        assert_eq!(
+            pick_disk_for_path(Path::new("/homestead/mc"), &disks, false),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn returns_none_without_a_matching_disk() {
+        let disks = [disk("/mnt/data")];
+        assert_eq!(
+            pick_disk_for_path(Path::new("/srv/mc"), &disks, false),
+            None
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_drive_letters_compare_case_insensitively() {
+        let disks = [disk(r"C:\"), disk(r"D:\")];
+        assert_eq!(
+            pick_disk_for_path(Path::new(r"d:\Servers\Survival"), &disks, true),
+            Some(1)
+        );
+        assert_eq!(
+            pick_disk_for_path(Path::new(r"C:\Users\me"), &disks, true),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn measures_the_nearest_existing_ancestor() {
+        let missing = std::env::temp_dir()
+            .join("mserve-disk-space-test-missing")
+            .join("server");
+        let info = disk_space_for_path(&missing.to_string_lossy()).expect("disk for temp dir");
+        assert!(info.total_bytes > 0);
+        assert!(!info.mount_point.is_empty());
+    }
+
+    #[test]
+    fn rejects_an_empty_path() {
+        assert!(disk_space_for_path("   ").is_err());
     }
 }

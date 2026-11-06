@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import OpenFolderButton from '@/components/open-folder-button';
 import EmptyState from '@/components/empty-state';
+import { StorageLimitField } from '@/components/storage-limit-field';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -38,7 +39,6 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group';
 import { DurationPicker } from '@/components/duration-picker';
 import { type Server } from '@/data/servers';
 import type { AutoBackupMode, BackupPolicy, BackupScopeItem } from '@/lib/mserve-schema';
@@ -324,24 +324,14 @@ const BackupSettingsDrawer: React.FC<{
 								</div>
 							</div>
 
-							<div className='space-y-1.5'>
-								<Label htmlFor='backup-storage-limit'>Storage limit</Label>
-								<InputGroup>
-									<InputGroupInput
-										id='backup-storage-limit'
-										type='number'
-										min={1}
-										value={storageLimit}
-										onChange={(event) => setStorageLimit(Math.max(1, Number(event.target.value) || 1))}
-									/>
-									<InputGroupAddon className='font-mono text-xs font-bold uppercase' align='inline-end'>
-										Gigabytes
-									</InputGroupAddon>
-								</InputGroup>
-								<p className='text-[11px] text-muted-foreground'>
-									Hard cap for all backups combined. Oldest unlocked backups are removed to stay under it.
-								</p>
-							</div>
+							<StorageLimitField
+								id='backup-storage-limit'
+								label='Storage limit'
+								description='Hard cap for all backups combined. Oldest unlocked backups are removed to stay under it.'
+								value={storageLimit}
+								onChange={setStorageLimit}
+								directory={server.directory}
+							/>
 						</div>
 					</section>
 				</div>
