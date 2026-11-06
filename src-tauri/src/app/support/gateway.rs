@@ -7,16 +7,25 @@ use std::net::Ipv4Addr;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct DefaultRoute {
     gateway: Ipv4Addr,
-    /// The local address of the interface it leaves through (Windows only).
+    /// The local address of the interface it leaves through: read directly on
+    /// Windows, inferred from the interface's subnet routes on Linux. `None`
+    /// when unknown.
     interface: Option<Ipv4Addr>,
     metric: u32,
 }
 
-/// Picks the route the OS most likely uses: the one leaving through the
-/// interface that owns `local_ip` when known, otherwise the lowest metric.
+/// Picks the route the OS most likely uses: the lowest-metric route leaving
+/// through the interface that owns `local_ip` (this PC's address on the home
+/// network) when there is one, otherwise the lowest metric overall. The
+/// local-network preference skips VPN routes that win on metric alone.
 fn pick_default_route(routes: &[DefaultRoute], local_ip: Option<Ipv4Addr>) -> Option<Ipv4Addr> {
     local_ip
-        .and_then(|local| routes.iter().find(|route| route.interface == Some(local)))
+        .and_then(|local| {
+            routes
+                .iter()
+                .filter(|route| route.interface == Some(local))
+                .min_by_key(|route| route.metric)
+        })
         .or_else(|| routes.iter().min_by_key(|route| route.metric))
         .map(|route| route.gateway)
 }
@@ -54,14 +63,34 @@ fn parse_windows_route_print(output: &str) -> Vec<DefaultRoute> {
         .collect()
 }
 
-/// Parses `/proc/net/route`. Addresses are the kernel's in-memory (little
-/// endian) `u32` printed as hex, so `0101A8C0` is `192.168.1.1`.
+/// One row of `/proc/net/route`.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-fn parse_linux_proc_net_route(contents: &str) -> Vec<DefaultRoute> {
+struct LinuxRoute<'a> {
+    iface: &'a str,
+    destination: Ipv4Addr,
+    gateway: Ipv4Addr,
+    flags: u32,
+    metric: u32,
+    mask: Ipv4Addr,
+}
+
+/// Parses `/proc/net/route`. Addresses are the kernel's in-memory (little
+/// endian) `u32` printed as hex, so `0101A8C0` is `192.168.1.1`. The file has
+/// no interface addresses, so `local_ip` is matched against each interface's
+/// on-link subnet routes (`192.168.1.0/24 dev eth0`): default routes leaving
+/// through the most specific interface holding it get
+/// `interface: Some(local_ip)`, as Windows reports them.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn parse_linux_proc_net_route(contents: &str, local_ip: Option<Ipv4Addr>) -> Vec<DefaultRoute> {
     const RTF_UP: u32 = 0x1;
     const RTF_GATEWAY: u32 = 0x2;
 
-    contents
+    let address = |value: &str| {
+        u32::from_str_radix(value, 16)
+            .ok()
+            .map(|raw| Ipv4Addr::from(raw.to_le_bytes()))
+    };
+    let rows: Vec<LinuxRoute> = contents
         .lines()
         .skip(1)
         .filter_map(|line| {
@@ -69,26 +98,33 @@ fn parse_linux_proc_net_route(contents: &str) -> Vec<DefaultRoute> {
             if fields.len() < 8 {
                 return None;
             }
-            let hex = |value: &str| u32::from_str_radix(value, 16).ok();
-            let destination = hex(fields[1])?;
-            let gateway = Ipv4Addr::from(hex(fields[2])?.to_le_bytes());
-            let flags = hex(fields[3])?;
-            let metric: u32 = fields[6].parse().ok()?;
-            let mask = hex(fields[7])?;
-            if destination != 0 || mask != 0 {
-                return None;
-            }
-            if flags & (RTF_UP | RTF_GATEWAY) != (RTF_UP | RTF_GATEWAY) {
-                return None;
-            }
-            if !is_usable_gateway(gateway) {
-                return None;
-            }
-            Some(DefaultRoute {
-                gateway,
-                interface: None,
-                metric,
+            Some(LinuxRoute {
+                iface: fields[0],
+                destination: address(fields[1])?,
+                gateway: address(fields[2])?,
+                flags: u32::from_str_radix(fields[3], 16).ok()?,
+                metric: fields[6].parse().ok()?,
+                mask: address(fields[7])?,
             })
+        })
+        .filter(|row| row.flags & RTF_UP != 0)
+        .collect();
+
+    let local_iface = local_ip.and_then(|local| {
+        rows.iter()
+            .filter(|row| !row.mask.is_unspecified() && row.flags & RTF_GATEWAY == 0)
+            .filter(|row| u32::from(local) & u32::from(row.mask) == u32::from(row.destination))
+            .max_by_key(|row| u32::from(row.mask).count_ones())
+            .map(|row| row.iface)
+    });
+
+    rows.iter()
+        .filter(|row| row.destination.is_unspecified() && row.mask.is_unspecified())
+        .filter(|row| row.flags & RTF_GATEWAY != 0 && is_usable_gateway(row.gateway))
+        .map(|row| DefaultRoute {
+            gateway: row.gateway,
+            interface: local_ip.filter(|_| local_iface == Some(row.iface)),
+            metric: row.metric,
         })
         .collect()
 }
@@ -111,7 +147,8 @@ pub(in crate::app) fn resolve_default_gateway() -> Option<String> {
     };
 
     #[cfg(target_os = "linux")]
-    let routes = parse_linux_proc_net_route(&std::fs::read_to_string("/proc/net/route").ok()?);
+    let routes =
+        parse_linux_proc_net_route(&std::fs::read_to_string("/proc/net/route").ok()?, local_ip);
 
     #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     let routes: Vec<DefaultRoute> = Vec::new();
@@ -193,11 +230,41 @@ eth0\t00000000\t0101A8C0\t0003\t0\t0\t100\t00000000\t0\t0\t0
 eth0\t0001A8C0\t00000000\t0001\t0\t0\t100\t00FFFFFF\t0\t0\t0
 wlan0\t00000000\t0100000A\t0003\t0\t0\t600\t00000000\t0\t0\t0
 ";
-        let routes = parse_linux_proc_net_route(contents);
+        let routes = parse_linux_proc_net_route(contents, None);
         assert_eq!(routes.len(), 2);
         assert_eq!(
             pick_default_route(&routes, None),
             Some(Ipv4Addr::new(192, 168, 1, 1))
+        );
+    }
+
+    #[test]
+    fn linux_prefers_the_route_of_the_local_ip_network() {
+        // A VPN (tun0) wins on metric, but this PC's LAN address is on wlan0.
+        let contents = "\
+Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT
+tun0\t00000000\t0100080A\t0003\t0\t0\t50\t00000000\t0\t0\t0
+tun0\t0000080A\t00000000\t0001\t0\t0\t50\t0000FFFF\t0\t0\t0
+wlan0\t00000000\t0101A8C0\t0003\t0\t0\t600\t00000000\t0\t0\t0
+wlan0\t0001A8C0\t00000000\t0001\t0\t0\t600\t00FFFFFF\t0\t0\t0
+";
+        let local = Ipv4Addr::new(192, 168, 1, 42);
+        let routes = parse_linux_proc_net_route(contents, Some(local));
+        assert_eq!(
+            routes
+                .iter()
+                .map(|route| route.interface)
+                .collect::<Vec<_>>(),
+            vec![None, Some(local)]
+        );
+        assert_eq!(
+            pick_default_route(&routes, Some(local)),
+            Some(Ipv4Addr::new(192, 168, 1, 1))
+        );
+        // Unknown local IP: the lowest metric (the VPN) wins.
+        assert_eq!(
+            pick_default_route(&parse_linux_proc_net_route(contents, None), None),
+            Some(Ipv4Addr::new(10, 8, 0, 1))
         );
     }
 
@@ -208,6 +275,6 @@ Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tI
 tun0\t00000000\t00000000\t0001\t0\t0\t0\t00000000\t0\t0\t0
 eth0\t00000000\t0101A8C0\t0002\t0\t0\t100\t00000000\t0\t0\t0
 ";
-        assert!(parse_linux_proc_net_route(contents).is_empty());
+        assert!(parse_linux_proc_net_route(contents, None).is_empty());
     }
 }
