@@ -1,3 +1,4 @@
+import * as React from 'react';
 import { SlideFrame, useSlideshow } from '@/components/slideshow';
 import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
@@ -5,12 +6,24 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { Clipboard, ClipboardCheck, Pin, SquareArrowOutUpRight } from 'lucide-react';
+import { Clipboard, ClipboardCheck, Globe, Pin, Router, Smartphone, SquareArrowOutUpRight } from 'lucide-react';
+import { SegmentedControl, type SegmentedControlOption } from '@/components/ui/segmented-control';
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
-import { useLocalIp } from '@/hooks/use-ip-address';
+import { type IpAddressValue, useDefaultGateway, useLocalIp } from '@/hooks/use-ip-address';
+import { AppMock, WebsitePanelMock } from './router-mock-forms';
 import { SetupBullets, SetupCallout } from './setup-callout';
 import { isValidPort } from './setup-steps';
 import { useSetup } from './SetupContext';
+
+type RouterGuide = 'website' | 'app';
+
+const GUIDE_OPTIONS: SegmentedControlOption<RouterGuide>[] = [
+	{ value: 'website', label: 'Website panel', icon: Globe },
+	{ value: 'app', label: 'App', icon: Smartphone },
+];
+
+/** Routers that don't report a gateway are usually at one of these. */
+const COMMON_ROUTER_ADDRESSES = ['192.168.0.1', '10.0.0.1'];
 
 const RouterLink: React.FC<{ url: string }> = ({ url }) => (
 	<Button variant='link' className='h-auto gap-1 px-0 font-semibold' onClick={() => openUrl(url)}>
@@ -19,13 +32,47 @@ const RouterLink: React.FC<{ url: string }> = ({ url }) => (
 	</Button>
 );
 
+/** Where the router's admin page probably is: the detected gateway, or the common guesses. */
+const RouterAddress: React.FC<{ gateway: IpAddressValue }> = ({ gateway }) => (
+	<div className='flex w-full items-center gap-3 rounded-xl bg-secondary/50 px-3 py-2 text-sm'>
+		<Router className='size-4 shrink-0 text-muted-foreground' />
+		{gateway === null ? (
+			<span className='text-muted-foreground'>Looking for your router…</span>
+		) : typeof gateway === 'string' ? (
+			<>
+				<span className='flex-1'>
+					Your router is probably at <span className='font-mono font-semibold'>{gateway}</span>
+				</span>
+				<Button size='sm' variant='secondary' onClick={() => openUrl(`http://${gateway}`)}>
+					Open
+					<SquareArrowOutUpRight className='size-3' />
+				</Button>
+			</>
+		) : (
+			<span className='flex-1'>
+				Couldn&apos;t find your router. Its page is often at{' '}
+				{COMMON_ROUTER_ADDRESSES.map((address, i) => (
+					<React.Fragment key={address}>
+						{i > 0 && ' or '}
+						<RouterLink url={`http://${address}`} />
+					</React.Fragment>
+				))}
+				.
+			</span>
+		)}
+	</div>
+);
+
 export default function SlideRouter() {
 	const { nextSlide } = useSlideshow();
 	const { data, updateData, choosePath } = useSetup();
 	const localIp = useLocalIp();
 	const { copied, copy } = useCopyToClipboard();
 	const portIsValid = isValidPort(data.port);
+	const gateway = useDefaultGateway();
+	const [guide, setGuide] = React.useState<RouterGuide>('website');
 	const localIpText = typeof localIp === 'string' ? localIp : "this PC's local IP";
+	const gatewayText = typeof gateway === 'string' ? gateway : undefined;
 
 	return (
 		<SlideFrame className='flex w-full max-w-2xl flex-col items-center'>
@@ -70,24 +117,62 @@ export default function SlideRouter() {
 					</div>
 				</div>
 
-				<ol className='list-decimal space-y-1.5 pl-5'>
-					<li>
-						Open your router&apos;s settings: its app from your internet provider, or the admin page in a
-						browser (often <RouterLink url='http://192.168.0.1' /> or{' '}
-						<RouterLink url='http://10.0.0.1' />).
-					</li>
-					<li>Log in. The default login is often on a sticker on the router.</li>
-					<li>
-						Find <span className='font-semibold'>Port Forwarding</span> (sometimes under Advanced, NAT,
-						Firewall, or Virtual Server).
-					</li>
-					<li>
-						Add a rule: port <span className='font-mono font-semibold'>{data.port}</span> (external and
-						internal), protocol <span className='font-semibold'>TCP</span>, device or IP{' '}
-						<span className='font-mono font-semibold'>{localIpText}</span>.
-					</li>
-					<li>Save. Some routers need a restart before the rule works.</li>
-				</ol>
+				<RouterAddress gateway={gateway} />
+
+				<div className='flex w-full flex-col gap-4'>
+					<SegmentedControl
+						aria-label='How you manage your router'
+						value={guide}
+						onValueChange={setGuide}
+						options={GUIDE_OPTIONS}
+						fullWidth
+					/>
+					{guide === 'website' ? (
+						<>
+							<ol className='list-decimal space-y-1.5 pl-5'>
+								<li>
+									Open{' '}
+									{typeof gateway === 'string' ? (
+										<span className='font-mono font-semibold'>{gateway}</span>
+									) : (
+										"your router's address"
+									)}{' '}
+									in a browser.
+								</li>
+								<li>Log in. The default login is often on a sticker on the router.</li>
+								<li>
+									Find <span className='font-semibold'>Port Forwarding</span> (sometimes under Advanced,
+									NAT, Firewall, or Virtual Server).
+								</li>
+								<li>
+									Add a rule with the values below. If it asks for a port range, put {data.port} in both
+									boxes.
+								</li>
+								<li>Save. Some routers need a restart before the rule works.</li>
+							</ol>
+							<WebsitePanelMock port={data.port} localIp={localIpText} routerAddress={gatewayText} />
+						</>
+					) : (
+						<>
+							<ol className='list-decimal space-y-1.5 pl-5'>
+								<li>
+									Open the app for your internet or Wi-Fi (Xfinity, Google Home, Eero, Orbi, TP-Link Deco,
+									and so on).
+								</li>
+								<li>
+									Find <span className='font-semibold'>Port forwarding</span>. It is usually under
+									Network, Advanced settings, or in the settings of a device.
+								</li>
+								<li>
+									Pick this PC from the device list. If you can&apos;t tell which one it is, look for{' '}
+									<span className='font-mono font-semibold'>{localIpText}</span>.
+								</li>
+								<li>Add a forward with the values below, then save.</li>
+							</ol>
+							<AppMock port={data.port} localIp={localIpText} />
+						</>
+					)}
+				</div>
 
 				<SetupCallout icon={Pin} title="Keep this PC's local IP fixed">
 					<p>

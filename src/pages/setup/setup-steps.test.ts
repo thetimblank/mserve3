@@ -16,7 +16,7 @@ describe('resolveSetupSteps', () => {
 	it('puts the router step before the PC firewall step', () => {
 		const forward = resolveSetupSteps('forward');
 		expect(forward.indexOf('forward-router')).toBeLessThan(forward.indexOf('forward-firewall'));
-		expect(forward.slice(-2)).toEqual(['forward-address', 'forward-start']);
+		expect(forward.slice(-3)).toEqual(['forward-address', 'forward-start', 'forward-test']);
 	});
 });
 

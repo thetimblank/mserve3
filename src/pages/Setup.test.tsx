@@ -9,6 +9,7 @@ vi.mock('@/data/user', () => ({
 		user: { initial_setup_hosting_tutorial_completed: false, completed_setup_hosting_ports: [] },
 		updateUserField: vi.fn(),
 	}),
+	useReducedMotionSetting: () => false,
 }));
 
 beforeAll(() => {
@@ -31,6 +32,22 @@ const renderSetup = () =>
 	);
 
 describe('Setup hosting guide', () => {
+	it('shows the detected router address and both visual guides', async () => {
+		mockInvoke('get_default_gateway', () => '192.168.40.1');
+		renderSetup();
+
+		fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+		fireEvent.click(screen.getByRole('button', { name: 'Port forward' }));
+		fireEvent.click(screen.getByRole('button', { name: 'I can change my router' }));
+
+		expect(await screen.findByText(/Your router is probably at/)).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Open' })).toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: 'http://10.0.0.1' })).not.toBeInTheDocument();
+
+		fireEvent.click(screen.getByRole('radio', { name: 'App' }));
+		expect(screen.getByRole('img', { name: /Example router app/ })).toBeInTheDocument();
+	});
+
 	it('offers both paths with pros and cons after the intro', () => {
 		mockInvoke('get_local_ip', () => '192.168.1.20');
 		renderSetup();
@@ -64,7 +81,7 @@ describe('Setup hosting guide', () => {
 		fireEvent.click(screen.getByRole('button', { name: 'Port forward' }));
 		fireEvent.click(screen.getByRole('button', { name: 'I can change my router' }));
 		expect(screen.getByRole('heading', { name: 'Forward the port on your router' })).toBeInTheDocument();
-		expect(screen.getByText('TCP')).toBeInTheDocument();
+		expect(screen.getByRole('img', { name: /protocol TCP/ })).toBeInTheDocument();
 
 		fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 		expect(screen.getByRole('heading', { name: 'Allow the port on this PC' })).toBeInTheDocument();

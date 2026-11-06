@@ -4,7 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 /** `null` while loading, `false` when the lookup failed. */
 export type IpAddressValue = string | null | false;
 
-type IpCommand = 'get_public_ip' | 'get_local_ip';
+type IpCommand = 'get_public_ip' | 'get_local_ip' | 'get_default_gateway';
 
 // One successful lookup per app session; a failure is retried on the next mount.
 const pending = new Map<IpCommand, Promise<string | false>>();
@@ -45,3 +45,6 @@ export const usePublicIp = () => useIpAddress('get_public_ip');
 
 /** This machine's LAN IP. */
 export const useLocalIp = () => useIpAddress('get_local_ip');
+
+/** The IPv4 default gateway: on a home network, the router's admin address. */
+export const useDefaultGateway = () => useIpAddress('get_default_gateway');

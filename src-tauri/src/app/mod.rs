@@ -929,6 +929,7 @@ pub fn run() {
             forward_port_firewall,
             validate_path,
             get_local_ip,
+            get_default_gateway,
             get_public_ip,
             get_system_memory_gb,
             detect_java_runtimes,

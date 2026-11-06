@@ -3,6 +3,7 @@ mod backups;
 mod content_meta;
 mod core;
 mod download;
+mod gateway;
 mod items;
 #[cfg(target_os = "linux")]
 mod linux_firewall;
@@ -30,6 +31,7 @@ pub(super) use backups::*;
 pub(super) use content_meta::*;
 pub(super) use core::*;
 pub(super) use download::*;
+pub(super) use gateway::resolve_default_gateway;
 pub(super) use items::*;
 #[cfg(target_os = "linux")]
 pub(super) use linux_firewall::*;
