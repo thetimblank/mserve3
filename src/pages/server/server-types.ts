@@ -175,6 +175,8 @@ export type PlayitTunnelStateEvent = {
 	status: TunnelStatus;
 	address: string | null;
 	error: string | null;
+	/** Progress text while starting (playit's own status for a tunnel it is still setting up). */
+	message: string | null;
 };
 
 /** Payload of the `playit-claim-state` event. */

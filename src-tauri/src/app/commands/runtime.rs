@@ -547,7 +547,30 @@ fn launch_tunnel(
     playit::emit_tunnel_state(&app, &directory, "starting", None, None);
 
     tauri::async_runtime::spawn(async move {
-        match playit::start_tunnel(secret, server_name, server_port, stored_id).await {
+        let progress = {
+            let app = app.clone();
+            let directory = directory.clone();
+            let directory_path = directory_path.clone();
+            move |update: playit::TunnelProgress| match update {
+                // Save the id the moment the tunnel exists, so a start that times
+                // out while playit is still allocating reuses it next time.
+                playit::TunnelProgress::Created(id) => {
+                    let _ =
+                        patch_mserve_json(&directory_path, &[("tunnel_id", serde_json::json!(id))]);
+                }
+                playit::TunnelProgress::Pending(status) => {
+                    playit::emit_tunnel_progress(
+                        &app,
+                        &directory,
+                        "starting",
+                        None,
+                        None,
+                        Some(status),
+                    );
+                }
+            }
+        };
+        match playit::start_tunnel(secret, server_name, server_port, stored_id, progress).await {
             Ok(handle) => {
                 // Attach the stop handle to the runtime — but only if this server is
                 // still the same live generation. If it went down (or restarted)

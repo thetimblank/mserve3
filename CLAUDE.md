@@ -87,7 +87,7 @@ the **run-debug** skill.
   - `server-jar-download-progress` — server jar download % (`commands/network.rs`)
   - `modpack-install-progress` — `.mrpack` install stage/progress (`commands/modpack.rs`)
   - `playit-claim-state` — playit.gg account claim flow (`support/playit.rs`)
-  - `playit-tunnel-state` — per-server tunnel status/address (`support/playit.rs`)
+  - `playit-tunnel-state` — per-server tunnel status/address, plus playit's progress text while starting (`support/playit.rs`)
   - `app-close-requested` — window close/tray quit, carrying the servers a quit would kill (`app/mod.rs`)
   - `server-backups-changed` — an automatic backup (on start, on close, interval) finished or failed (`support/auto_backup.rs`)
 - **Automatic backups run in the backend:** the supervisor triggers the

@@ -12,6 +12,8 @@ export type ServerTunnel = {
 	status: TunnelStatus;
 	address: string | null;
 	error: string | null;
+	/** playit's progress text while the tunnel is starting. */
+	message: string | null;
 	busy: boolean;
 	/** Enables/disables tunneling for this server. */
 	setEnabled: (next: boolean) => Promise<void>;
@@ -29,6 +31,7 @@ export function useServerTunnel(directory: string): ServerTunnel {
 	const [status, setStatus] = React.useState<TunnelStatus>('disabled');
 	const [address, setAddress] = React.useState<string | null>(null);
 	const [error, setError] = React.useState<string | null>(null);
+	const [message, setMessage] = React.useState<string | null>(null);
 	const [busy, setBusy] = React.useState(false);
 
 	// Initial tunnel snapshot.
@@ -60,6 +63,7 @@ export function useServerTunnel(directory: string): ServerTunnel {
 			if (event.payload.address) setAddress(event.payload.address);
 			if (event.payload.status === 'online') setEnabledState(true);
 			setError(event.payload.error);
+			setMessage(event.payload.status === 'starting' ? (event.payload.message ?? null) : null);
 		})
 			.then((cleanup) => {
 				if (!active) {
@@ -98,5 +102,5 @@ export function useServerTunnel(directory: string): ServerTunnel {
 		[directory, status],
 	);
 
-	return { enabled, status, address, error, busy, setEnabled };
+	return { enabled, status, address, error, message, busy, setEnabled };
 }

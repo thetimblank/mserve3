@@ -44,7 +44,7 @@ The ten backend → frontend events and where they're consumed:
 | `server-jar-download-progress` | `{ downloadId, downloadedBytes, totalBytes, progress, done }` | `pages/create-server/slides/SlideVersion.tsx` |
 | `modpack-install-progress` | `{ installId, stage, message, filesDone, filesTotal, progress, done }` | `pages/create-server/CreateServerContext.tsx` |
 | `playit-claim-state` | `{ status, claimUrl, error }` | `hooks/use-playit-account.ts` |
-| `playit-tunnel-state` | `{ directory, status, address, error }` | `pages/server/hooks/use-server-tunnel.ts` |
+| `playit-tunnel-state` | `{ directory, status, address, error, message }` | `pages/server/hooks/use-server-tunnel.ts` |
 | `app-close-requested` | `{ runningServerDirectories }` | `components/close-warning-dialog.tsx` |
 | `server-backups-changed` | `{ directory, reason, deletedBackupsCount, error }` | `components/server-runtime-monitor.tsx` (rescans the server's backups) |
 
