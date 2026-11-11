@@ -9,11 +9,13 @@
 //!     secret), driven with the official `playit-api-client`.
 //!   * **Tunnels** — per server. We find-or-create a `minecraft-java` TCP tunnel
 //!     (REST) whose origin points at the server's loopback port, and surface its
-//!     persistent `assigned_domain` as the public address.
+//!     persistent `display_address` (from the v1 run data, the same source the
+//!     official agent reads) as the public address. A new tunnel sits in playit's
+//!     `pending` list for a while; its status text is streamed to the UI.
 //!   * **Agent** — per server we run `playit_agent_core::PlayitAgent` on Tauri's
 //!     async runtime. An `OriginLookup` maps the tunnel to `127.0.0.1:<port>`.
-//!     The agent's `keep_running` flag is the stop handle: flip it to `false` and
-//!     the run loop unwinds. Lifecycle is tied to the Minecraft process — the
+//!     Its `CancellationToken` is the stop handle: cancel it and the run loop
+//!     unwinds. Lifecycle is tied to the Minecraft process — the
 //!     supervisor / stop paths cancel the agent when the server goes down.
 //!
 //! NOTE: one agent connection per tunneled server, all sharing the global secret.
@@ -41,8 +43,9 @@ use playit_agent_core::playit_agent::{PlayitAgent, PlayitAgentSettings};
 use playit_agent_proto::PortProto;
 use playit_api_client::PlayitApi;
 use playit_api_client::api::{
-    AgentTunnel, AssignedAgentCreate, ClaimAgentType, ClaimSetupResponse, PortType,
-    ReqClaimExchange, ReqClaimSetup, ReqTunnelsCreate, TunnelOriginCreate, TunnelType,
+    AgentNoticePriority, AgentPendingTunnelV1, AgentRunDataV1, AgentTunnelV1, AssignedAgentCreate,
+    ClaimAgentType, ClaimSetupResponse, PortType, ReqClaimExchange, ReqClaimSetup,
+    ReqTunnelsCreate, TunnelOriginCreate, TunnelType,
 };
 
 const API_BASE: &str = "https://api.playit.gg";
@@ -56,9 +59,6 @@ const CLAIM_BASE: &str = "https://playit.gg/claim";
 /// playit reject tunnel creation with `AgentVersionTooOld`. Bump this to track
 /// playit's current release (https://github.com/playit-cloud/playit-agent/releases).
 const AGENT_VERSION: &str = "playit 1.0.10";
-/// Standard Minecraft Java port; playit minecraft-java tunnels expose an
-/// SRV-backed domain so the bare hostname is joinable when the public port is 25565.
-const DEFAULT_MC_PORT: u16 = 25565;
 
 // ---------------------------------------------------------------------------
 // Events
@@ -84,6 +84,8 @@ struct PlayitTunnelStateEvent {
     status: String,
     address: Option<String>,
     error: Option<String>,
+    /// Progress text while starting (playit's own status for a pending tunnel).
+    message: Option<String>,
 }
 
 fn emit_claim(
@@ -110,6 +112,18 @@ pub(in crate::app) fn emit_tunnel_state(
     address: Option<String>,
     error: Option<String>,
 ) {
+    emit_tunnel_progress(app, directory, status, address, error, None);
+}
+
+/// Emits a `playit-tunnel-state` transition carrying progress text.
+pub(in crate::app) fn emit_tunnel_progress(
+    app: &tauri::AppHandle,
+    directory: &str,
+    status: &str,
+    address: Option<String>,
+    error: Option<String>,
+    message: Option<String>,
+) {
     let _ = app.emit(
         TUNNEL_STATE_EVENT,
         PlayitTunnelStateEvent {
@@ -117,6 +131,7 @@ pub(in crate::app) fn emit_tunnel_state(
             status: status.to_string(),
             address,
             error,
+            message,
         },
     );
 }
@@ -272,6 +287,8 @@ pub(in crate::app) async fn drive_claim(app: tauri::AppHandle, code: String) {
                     return;
                 }
                 emit_claim(&app, "claimed", None, None);
+                // playit's claim page waits for the agent to connect once.
+                announce_agent(secret.secret_key).await;
                 return;
             }
             Err(err) => {
@@ -286,6 +303,16 @@ pub(in crate::app) async fn drive_claim(app: tauri::AppHandle, code: String) {
 // Tunnel provisioning + in-process agent
 // ---------------------------------------------------------------------------
 
+/// How long a just-created tunnel may sit in playit's `pending` list before we give
+/// up. A brand-new account's first tunnel can take a minute or two to get an
+/// address, so this is deliberately generous (the server is already running).
+const TUNNEL_READY_TIMEOUT: Duration = Duration::from_secs(180);
+/// How often to re-read the agent run data while a tunnel is pending.
+const TUNNEL_POLL_INTERVAL: Duration = Duration::from_secs(3);
+/// How long to keep the agent connected after a claim, so playit's claim page
+/// sees it come online and finishes ("Agent is offline" otherwise).
+const CLAIM_ANNOUNCE_DURATION: Duration = Duration::from_secs(120);
+
 /// A live tunnel: the public address to surface, the persisted tunnel id, and the
 /// agent stop handle (cancel it to shut the agent down).
 pub(in crate::app) struct TunnelHandle {
@@ -294,15 +321,48 @@ pub(in crate::app) struct TunnelHandle {
     pub(in crate::app) cancel: CancellationToken,
 }
 
-/// Public address to display for a tunnel. minecraft-java tunnels are SRV-backed,
-/// so the bare hostname is joinable when the public port is the default 25565;
-/// otherwise we append the explicit port.
-fn tunnel_address(tunnel: &AgentTunnel) -> String {
-    if tunnel.port.from == DEFAULT_MC_PORT {
-        tunnel.assigned_domain.clone()
-    } else {
-        format!("{}:{}", tunnel.assigned_domain, tunnel.port.from)
+/// Progress reported while a tunnel comes up, so the caller can persist and display it.
+pub(in crate::app) enum TunnelProgress {
+    /// The tunnel exists (just created, or found while playit is still setting it
+    /// up). Persist its id right away so a retry reuses it instead of creating a
+    /// duplicate.
+    Created(String),
+    /// playit is still setting the tunnel up; the text is playit's own status.
+    Pending(String),
+}
+
+/// A tunnel that is ready to route: `(uuid, internal_id, public_address)`.
+type ReadyTunnel = (String, u64, String);
+
+/// Connects the agent once right after a claim and keeps it up briefly. playit's
+/// claim page waits for the agent to come online before it finishes, and mserve
+/// otherwise only runs the agent while a tunneled server is up.
+async fn announce_agent(secret: String) {
+    let settings = PlayitAgentSettings {
+        api_url: API_BASE.to_string(),
+        secret_key: secret,
+        tcp_settings: TcpSettings::default(),
+        udp_settings: UdpSettings::default(),
+    };
+    match PlayitAgent::new(settings, Arc::new(OriginLookup::default())).await {
+        Ok(agent) => {
+            let cancel = agent.cancellation_token();
+            tauri::async_runtime::spawn(agent.run());
+            tokio::time::sleep(CLAIM_ANNOUNCE_DURATION).await;
+            cancel.cancel();
+        }
+        Err(err) => eprintln!("[playit] post-claim agent connect failed: {err:?}"),
     }
+}
+
+/// The local port a tunnel routes to, from its agent config.
+fn tunnel_local_port(tunnel: &AgentTunnelV1) -> Option<u16> {
+    tunnel
+        .agent_config
+        .fields
+        .iter()
+        .find(|field| field.name == "local_port")
+        .and_then(|field| field.value.parse().ok())
 }
 
 /// An `OriginTarget` pointing at the server's loopback port (where the agent routes
@@ -315,9 +375,8 @@ fn loopback_target(port: u16) -> OriginTarget {
 }
 
 /// Turns a `tunnels_create` failure into a user-facing message. playit's API can
-/// return newer error variants than the pinned `playit-api-client` knows about — in
-/// particular `AgentVersionTooOld`, which then surfaces as a raw JSON parse error —
-/// so we sniff the stringified error for the ones worth explaining plainly.
+/// return newer error variants than the pinned `playit-api-client` knows about, so
+/// we sniff the stringified error for the ones worth explaining plainly.
 fn map_tunnel_create_error(err: impl std::fmt::Display) -> String {
     let text = err.to_string();
     if text.contains("AgentVersionTooOld") || text.contains("AgentNotFound") {
@@ -334,50 +393,87 @@ fn map_tunnel_create_error(err: impl std::fmt::Display) -> String {
     format!("Failed to create playit tunnel: {text}")
 }
 
-/// Locates this server's existing tunnel in the agent run data, preferring a
-/// match on the stored tunnel id and falling back to a minecraft-java tunnel that
-/// already targets this loopback port.
-fn find_existing_tunnel<'a>(
-    tunnels: &'a [AgentTunnel],
+/// Locates this server's live tunnel, preferring the stored tunnel id and falling
+/// back to a minecraft-java tunnel that already targets this local port.
+fn find_live_tunnel<'a>(
+    tunnels: &'a [AgentTunnelV1],
     stored_id: Option<&str>,
     local_port: u16,
-) -> Option<&'a AgentTunnel> {
+) -> Option<&'a AgentTunnelV1> {
     if let Some(id) = stored_id
         && let Some(found) = tunnels.iter().find(|t| t.id.to_string() == id)
     {
         return Some(found);
     }
-    tunnels
+    tunnels.iter().find(|t| {
+        t.tunnel_type.as_deref() == Some("minecraft-java")
+            && tunnel_local_port(t) == Some(local_port)
+    })
+}
+
+/// Locates this server's tunnel while playit is still setting it up: by the stored
+/// id, or by name (covers a first attempt that timed out before the id was saved).
+fn find_pending_tunnel<'a>(
+    pending: &'a [AgentPendingTunnelV1],
+    stored_id: Option<&str>,
+    server_name: &str,
+) -> Option<&'a AgentPendingTunnelV1> {
+    if let Some(id) = stored_id
+        && let Some(found) = pending.iter().find(|t| t.id.to_string() == id)
+    {
+        return Some(found);
+    }
+    pending
         .iter()
-        .find(|t| t.tunnel_type.as_deref() == Some("minecraft-java") && t.local_port == local_port)
+        .find(|t| t.tunnel_type.as_deref() == Some("minecraft-java") && t.name == server_name)
+}
+
+/// The account-level notices playit flags as important (unverified email, limits),
+/// joined for an error message.
+fn important_notices(run_data: &AgentRunDataV1) -> Option<String> {
+    let notices: Vec<&str> = run_data
+        .notices
+        .iter()
+        .filter(|n| n.priority != AgentNoticePriority::Low)
+        .map(|n| n.message.as_ref())
+        .collect();
+    (!notices.is_empty()).then(|| notices.join(" "))
+}
+
+/// A live tunnel's routing info, or `None` while it has no public address yet.
+fn ready_tunnel(tunnel: &AgentTunnelV1) -> Option<ReadyTunnel> {
+    let address = tunnel.display_address.trim();
+    (!address.is_empty()).then(|| {
+        (
+            tunnel.id.to_string(),
+            tunnel.internal_id,
+            address.to_string(),
+        )
+    })
 }
 
 /// Provisions (find-or-create) a minecraft-java tunnel for `local_port` and starts
 /// an in-process agent routing it to `127.0.0.1:local_port`.
 ///
 /// **Ordering matters.** playit gates tunnel creation on a *live, registered* agent,
-/// so we start the agent — which connects to playit's control server and registers
-/// its version during `PlayitAgent::new` — *before* creating the tunnel. Doing it the
-/// other way (create tunnel, then start agent) means no agent has ever connected at
-/// creation time, and playit rejects it with `AgentVersionTooOld` / "agent offline".
+/// so we start the agent (which connects to playit's control server and registers
+/// its version during `PlayitAgent::new`) *before* creating the tunnel.
 pub(in crate::app) async fn start_tunnel(
     secret: String,
     server_name: String,
     local_port: u16,
     stored_tunnel_id: Option<String>,
+    progress: impl Fn(TunnelProgress) + Send + Sync,
 ) -> Result<TunnelHandle, String> {
     let api = PlayitApi::create(API_BASE.to_string(), Some(secret.clone()));
 
     let run_data = api
-        .agents_rundata()
+        .v1_agents_rundata()
         .await
         .map_err(|err| format!("Failed to read playit account: {err}"))?;
-    let agent_id = run_data.agent_id;
 
-    // Start the agent first. `PlayitAgent::new` authenticates + registers the agent
-    // (with its version) against playit's control server, so by the time it returns
-    // the agent is online. It routes inbound traffic via the shared `OriginLookup`,
-    // which we populate with the tunnel mapping once the tunnel id is known.
+    // Start the agent first. It routes inbound traffic via the shared
+    // `OriginLookup`, which we populate once the tunnel id is known.
     let lookup = Arc::new(OriginLookup::default());
     let settings = PlayitAgentSettings {
         api_url: API_BASE.to_string(),
@@ -395,11 +491,11 @@ pub(in crate::app) async fn start_tunnel(
     // the agent we just started back down so it doesn't linger.
     let (tunnel_uuid, internal_id, address) = match provision_tunnel(
         &api,
-        &run_data.tunnels,
+        &run_data,
         stored_tunnel_id.as_deref(),
         &server_name,
-        agent_id,
         local_port,
+        &progress,
     )
     .await
     {
@@ -429,26 +525,35 @@ pub(in crate::app) async fn start_tunnel(
     })
 }
 
-/// Resolves this server's tunnel: reuse an existing one, or create a fresh
-/// minecraft-java tunnel. Returns `(uuid, internal_id, public_address)`.
+/// Resolves this server's tunnel: reuse a live one, wait on one playit is still
+/// setting up, or create a fresh minecraft-java tunnel and wait for its address.
 async fn provision_tunnel(
     api: &PlayitApi,
-    existing: &[AgentTunnel],
+    run_data: &AgentRunDataV1,
     stored_tunnel_id: Option<&str>,
     server_name: &str,
-    agent_id: uuid::Uuid,
     local_port: u16,
-) -> Result<(String, u64, String), String> {
-    if let Some(found) = find_existing_tunnel(existing, stored_tunnel_id, local_port) {
-        return Ok((
-            found.id.to_string(),
-            found.internal_id,
-            tunnel_address(found),
-        ));
+    progress: &(impl Fn(TunnelProgress) + Send + Sync),
+) -> Result<ReadyTunnel, String> {
+    if let Some(found) = find_live_tunnel(&run_data.tunnels, stored_tunnel_id, local_port) {
+        if let Some(reason) = &found.disabled_reason {
+            return Err(format!("playit disabled this server's tunnel: {reason}"));
+        }
+        if let Some(ready) = ready_tunnel(found) {
+            return Ok(ready);
+        }
+        return wait_for_tunnel(api, &found.id.to_string(), progress).await;
     }
 
-    let created = create_tunnel_with_retry(api, server_name, agent_id, local_port).await?;
-    wait_for_tunnel(api, &created).await
+    if let Some(pending) = find_pending_tunnel(&run_data.pending, stored_tunnel_id, server_name) {
+        let id = pending.id.to_string();
+        progress(TunnelProgress::Created(id.clone()));
+        return wait_for_tunnel(api, &id, progress).await;
+    }
+
+    let created = create_tunnel_with_retry(api, server_name, run_data.agent_id, local_port).await?;
+    progress(TunnelProgress::Created(created.clone()));
+    wait_for_tunnel(api, &created, progress).await
 }
 
 /// Creates a minecraft-java tunnel targeting the agent, retrying through the brief
@@ -496,37 +601,62 @@ async fn create_tunnel_with_retry(
     }
 }
 
-/// Polls the agent run data until a just-created tunnel shows up with an assigned
-/// public address (newly created tunnels start out in `pending`).
+/// Polls the agent run data until the tunnel has a public address. A new tunnel
+/// first shows up in `pending` with a status message, which is reported through
+/// `progress` so the UI shows what playit is doing instead of a bare spinner.
 async fn wait_for_tunnel(
     api: &PlayitApi,
     tunnel_id: &str,
-) -> Result<(String, u64, String), String> {
-    let deadline = Instant::now() + Duration::from_secs(30);
-    loop {
-        let run_data = api
-            .agents_rundata()
-            .await
-            .map_err(|err| format!("Failed to read playit tunnels: {err}"))?;
+    progress: &(impl Fn(TunnelProgress) + Send + Sync),
+) -> Result<ReadyTunnel, String> {
+    let deadline = Instant::now() + TUNNEL_READY_TIMEOUT;
+    let mut last_status: Option<String> = None;
+    let mut notices: Option<String> = None;
 
-        if let Some(found) = run_data
-            .tunnels
-            .iter()
-            .find(|t| t.id.to_string() == tunnel_id && !t.assigned_domain.is_empty())
-        {
-            return Ok((
-                found.id.to_string(),
-                found.internal_id,
-                tunnel_address(found),
-            ));
+    loop {
+        // A failed poll is retried until the deadline (playit's API blips are
+        // common right after a tunnel is created).
+        match api.v1_agents_rundata().await {
+            Ok(run_data) => {
+                notices = important_notices(&run_data);
+                if let Some(found) = run_data
+                    .tunnels
+                    .iter()
+                    .find(|t| t.id.to_string() == tunnel_id)
+                {
+                    if let Some(reason) = &found.disabled_reason {
+                        return Err(format!("playit disabled this server's tunnel: {reason}"));
+                    }
+                    if let Some(ready) = ready_tunnel(found) {
+                        return Ok(ready);
+                    }
+                } else if let Some(pending) = run_data
+                    .pending
+                    .iter()
+                    .find(|t| t.id.to_string() == tunnel_id)
+                {
+                    let status = pending.status_msg.trim().to_string();
+                    if !status.is_empty() && last_status.as_deref() != Some(status.as_str()) {
+                        progress(TunnelProgress::Pending(status.clone()));
+                        last_status = Some(status);
+                    }
+                }
+            }
+            Err(err) => eprintln!("[playit] rundata poll failed: {err}"),
         }
 
         if Instant::now() >= deadline {
-            return Err(
-                "playit tunnel was created but no address was assigned in time.".to_string(),
-            );
+            let mut message = String::from("playit is still setting up this tunnel");
+            if let Some(status) = &last_status {
+                message.push_str(&format!(" ({status})"));
+            }
+            message.push_str(". Restart the server in a minute to try again.");
+            if let Some(notices) = &notices {
+                message.push_str(&format!(" playit says: {notices}"));
+            }
+            return Err(message);
         }
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        tokio::time::sleep(TUNNEL_POLL_INTERVAL).await;
     }
 }
 

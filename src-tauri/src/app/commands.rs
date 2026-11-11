@@ -14,6 +14,7 @@ mod runtime;
 mod settings;
 mod setup;
 mod telemetry;
+mod upnp;
 
 pub(super) use backups::*;
 pub(super) use config_files::*;
@@ -31,6 +32,7 @@ pub(super) use runtime::*;
 pub(super) use settings::*;
 pub(super) use setup::*;
 pub(super) use telemetry::*;
+pub(super) use upnp::*;
 
 /// Runs blocking command work (downloads, spawns, port probes, RCON, bulk file
 /// I/O, bounded waits) on the blocking pool. Synchronous Tauri commands execute

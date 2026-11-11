@@ -416,14 +416,12 @@ pub(in crate::app) fn spawn_supervisor(
                             runtime.stdin = None;
                             runtime.pid = None;
                             runtime.latest_sample = None;
-                            // Tear the playit tunnel down with the server it fronts —
-                            // except into sleep, where the wake listener takes over the
-                            // port and tunnel players must still be able to wake it.
+                            // Tear the playit tunnel and UPnP forward down with the
+                            // server they front, except into sleep, where the wake
+                            // listener takes over the port and players must still be
+                            // able to reach it to wake the server.
                             if !matches!(next, LifecycleState::Sleeping) {
-                                if let Some(stop) = runtime.playit_stop.take() {
-                                    playit::stop_agent(&stop);
-                                }
-                                runtime.tunnel_address = None;
+                                runtime.stop_public_access();
                             }
 
                             if matches!(next, LifecycleState::Sleeping) {
@@ -560,9 +558,7 @@ pub(in crate::app) fn spawn_supervisor(
                                 // A start already replaced this runtime.
                                 return;
                             };
-                            if let Some(stop) = removed.playit_stop.take() {
-                                playit::stop_agent(&stop);
-                            }
+                            removed.stop_public_access();
                             let _ = app.emit(
                                 "server-runtime-state",
                                 offline_state_event(directory.clone(), server_port),

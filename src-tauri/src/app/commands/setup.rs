@@ -140,6 +140,7 @@ pub(in crate::app) fn initialize_server(
         tunnel_enabled: false,
         tunnel_id: None,
         tunnel_address: None,
+        upnp_enabled: false,
     };
 
     write_synced_mserve_json(&directory, &config)?;
@@ -422,6 +423,7 @@ pub(in crate::app) fn repair_server_mserve_json(
         tunnel_address: existing
             .as_ref()
             .and_then(|config| config.tunnel_address.clone()),
+        upnp_enabled: existing.as_ref().is_some_and(|config| config.upnp_enabled),
     };
 
     write_synced_mserve_json(&directory_path, &config)?;

@@ -1,3 +1,4 @@
+import * as React from 'react';
 import { SlideFrame, useSlideshow } from '@/components/slideshow';
 import { Circle, CircleCheck, Plus, ServerOff } from 'lucide-react';
 import { useServers } from '@/data/servers';
@@ -10,14 +11,27 @@ import {
 	DropdownMenuItem,
 	DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useSetupStartServer } from './use-setup-start-server';
+import { enableServerUpnp, useSetupStartServer } from './use-setup-start-server';
+import { useSetup } from './SetupContext';
 
 /** Gets a server online before the friend test (completion is recorded there). */
 export default function SlideStart() {
 	const { nextSlide } = useSlideshow();
 	const { servers } = useServers();
 	const { start, isBusy } = useSetupStartServer();
+	const { data } = useSetup();
 	const navigate = useNavigate();
+	// Automatic forwarding was set up on the router slide: a server that is
+	// already online turns it on too (a server started below gets it on start).
+	const upnpEnabledRef = React.useRef(new Set<string>());
+	React.useEffect(() => {
+		if (!data.upnp) return;
+		for (const server of servers) {
+			if (server.status !== 'online' || upnpEnabledRef.current.has(server.directory)) continue;
+			upnpEnabledRef.current.add(server.directory);
+			void enableServerUpnp(server);
+		}
+	}, [data.upnp, servers]);
 	// `online` comes from the backend's lifecycle event, so this only counts a
 	// server that actually finished booting.
 	const onlineServersCount = servers.filter((server) => server.status === 'online').length;
@@ -48,7 +62,7 @@ export default function SlideStart() {
 					</DropdownMenuTrigger>
 					<DropdownMenuContent>
 						{servers.map((server) => (
-							<DropdownMenuItem onClick={() => start(server)} key={server.id}>
+							<DropdownMenuItem onClick={() => start(server, { upnp: data.upnp })} key={server.id}>
 								Start {server.name}
 							</DropdownMenuItem>
 						))}

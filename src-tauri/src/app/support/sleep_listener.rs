@@ -254,10 +254,8 @@ fn wake_server(processes: &Processes, app: &tauri::AppHandle, params: &SleepList
         // Couldn't wake. Only clean up if the map still holds *our* sleeping
         // runtime: when a concurrent start (e.g. the user clicking Start) won the
         // race, the error is "already running" and that runtime must survive.
-        if let Some(mut removed) = remove_if_current(processes, &params.key, params.generation)
-            && let Some(stop) = removed.playit_stop.take()
-        {
-            playit::stop_agent(&stop);
+        if let Some(mut removed) = remove_if_current(processes, &params.key, params.generation) {
+            removed.stop_public_access();
         }
         let replaced = processes
             .lock()

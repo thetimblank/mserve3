@@ -491,6 +491,7 @@ pub(in crate::app) fn default_synced_config(directory: &Path) -> SyncedMserveCon
         tunnel_enabled: false,
         tunnel_id: None,
         tunnel_address: None,
+        upnp_enabled: false,
     }
 }
 
@@ -734,6 +735,11 @@ pub(in crate::app) fn sanitize_mserve_value_config(
         .filter(|value| !value.is_empty())
         .map(std::string::ToString::to_string);
 
+    let normalized_upnp_enabled = object
+        .get("upnp_enabled")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+
     config.file = normalized_file;
     config.id = normalized_id;
     config.ram = normalized_ram;
@@ -758,6 +764,7 @@ pub(in crate::app) fn sanitize_mserve_value_config(
     config.tunnel_enabled = normalized_tunnel_enabled;
     config.tunnel_id = normalized_tunnel_id;
     config.tunnel_address = normalized_tunnel_address;
+    config.upnp_enabled = normalized_upnp_enabled;
 
     config
 }
@@ -788,11 +795,12 @@ pub(in crate::app) fn synced_mserve_json_value(config: &SyncedMserveConfig) -> s
         "tunnel_enabled": config.tunnel_enabled,
         "tunnel_id": config.tunnel_id,
         "tunnel_address": config.tunnel_address,
+        "upnp_enabled": config.upnp_enabled,
     })
 }
 
 /// Every top-level key this version of mserve reads and writes.
-const MSERVE_JSON_KEYS: [&str; 24] = [
+const MSERVE_JSON_KEYS: [&str; 25] = [
     "id",
     "file",
     "ram",
@@ -817,6 +825,7 @@ const MSERVE_JSON_KEYS: [&str; 24] = [
     "tunnel_enabled",
     "tunnel_id",
     "tunnel_address",
+    "upnp_enabled",
 ];
 
 /// Top-level entries this version doesn't know, such as a key a newer mserve

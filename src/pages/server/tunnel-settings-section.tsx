@@ -43,9 +43,16 @@ export const TunnelStatusDetails: React.FC<{
 					</Button>
 				</div>
 			) : isStarting ? (
-				<div className='flex items-center gap-2 text-sm text-muted-foreground'>
-					<Loader2 className='size-4 animate-spin' />
-					<span>Starting tunnel...</span>
+				<div className='space-y-1 text-sm text-muted-foreground'>
+					<div className='flex items-center gap-2'>
+						<Loader2 className='size-4 animate-spin' />
+						<span>Starting tunnel...</span>
+					</div>
+					{tunnel.message && (
+						<p className='pl-6'>
+							playit: {tunnel.message.replace(/[.\s]+$/, '')}. A new tunnel can take a minute or two.
+						</p>
+					)}
 				</div>
 			) : tunnel.status === 'error' ? (
 				<p className='flex items-center gap-2 text-sm text-destructive'>

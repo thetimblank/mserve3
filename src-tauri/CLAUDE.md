@@ -48,6 +48,8 @@ src/app/
 │   ├── modpack.rs        install_modrinth_modpack (.mrpack, + modpack-install-progress)
 │   ├── telemetry.rs      get_server_telemetry_history
 │   ├── playit.rs         playit.gg account: get_playit_status, start_playit_claim, disconnect
+│   ├── upnp.rs           UPnP router forwarding: set/get_server_upnp, check_upnp (setup
+│   │                     guide), and the per-run map/renew/remove task the start path launches
 │   └── navigation.rs     open_server_folder, open_server_path
 └── support/          # subsystems & helpers (not directly exposed to the frontend)
     ├── supervisor.rs      per-server lifecycle owner (see below)
@@ -67,6 +69,9 @@ src/app/
     ├── playit.rs          playit.gg tunneling: REST claim/tunnel + in-process agent
     │                      (set_server_tunnel/get_server_tunnel live in commands/runtime.rs;
     │                      emits playit-claim-state + playit-tunnel-state)
+    ├── upnp.rs            UPnP (IGD) router port mapping via `igd-next`: leased + renewed,
+    │                      CGNAT detection, per-port ownership so a restart's old task can't
+    │                      remove the new mapping; emits server-upnp-state
     ├── runtime_io.rs      stream child stdout/stderr → server-output events, stdin writes
     ├── process.rs         OS process plumbing (job object / process groups, port→PID kill)
     ├── backups.rs         backup copy/restore + retention enforcement

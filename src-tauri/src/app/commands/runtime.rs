@@ -15,7 +15,7 @@ use super::super::{
     LifecycleState, RuntimeServerConfig, RuntimeState, ServerRuntime, ServerRuntimeSnapshot,
     ServerRuntimeStateEvent, ServerTunnelInfo, TpsCommandState,
 };
-use super::{inspect_java_executable, run_blocking};
+use super::{inspect_java_executable, launch_upnp, run_blocking};
 use std::collections::{HashMap, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -471,6 +471,9 @@ fn new_runtime(
         sleep_motd: default_sleep_motd(),
         sleep_requested: false,
         sleep_stop: None,
+        upnp_stop: None,
+        upnp_address: None,
+        upnp_error: None,
     }
 }
 
@@ -547,7 +550,30 @@ fn launch_tunnel(
     playit::emit_tunnel_state(&app, &directory, "starting", None, None);
 
     tauri::async_runtime::spawn(async move {
-        match playit::start_tunnel(secret, server_name, server_port, stored_id).await {
+        let progress = {
+            let app = app.clone();
+            let directory = directory.clone();
+            let directory_path = directory_path.clone();
+            move |update: playit::TunnelProgress| match update {
+                // Save the id the moment the tunnel exists, so a start that times
+                // out while playit is still allocating reuses it next time.
+                playit::TunnelProgress::Created(id) => {
+                    let _ =
+                        patch_mserve_json(&directory_path, &[("tunnel_id", serde_json::json!(id))]);
+                }
+                playit::TunnelProgress::Pending(status) => {
+                    playit::emit_tunnel_progress(
+                        &app,
+                        &directory,
+                        "starting",
+                        None,
+                        None,
+                        Some(status),
+                    );
+                }
+            }
+        };
+        match playit::start_tunnel(secret, server_name, server_port, stored_id, progress).await {
             Ok(handle) => {
                 // Attach the stop handle to the runtime — but only if this server is
                 // still the same live generation. If it went down (or restarted)
@@ -672,9 +698,7 @@ pub(in crate::app) fn start_server_internal(
                 sleeping_port = Some(existing.server_port);
             }
             stop_sleep_listener(existing);
-            if let Some(stop) = existing.playit_stop.take() {
-                playit::stop_agent(&stop);
-            }
+            existing.stop_public_access();
         }
 
         // Sequential port assignment: if the resolved port is already claimed by
@@ -825,6 +849,16 @@ pub(in crate::app) fn start_server_internal(
             server_port,
             generation,
         );
+        // Likewise ask the router to forward the port (UPnP), when enabled.
+        launch_upnp(
+            app.clone(),
+            processes.clone(),
+            key.clone(),
+            directory.clone(),
+            config.upnp_enabled,
+            server_port,
+            generation,
+        );
 
         spawn_supervisor(processes.clone(), app.clone(), key.clone(), generation);
 
@@ -972,10 +1006,7 @@ fn stop_sleep_listener(runtime: &mut ServerRuntime) {
 /// fronting it, returning the offline event to emit once the entry is removed.
 pub(in crate::app) fn release_sleeping(runtime: &mut ServerRuntime) -> ServerRuntimeStateEvent {
     stop_sleep_listener(runtime);
-    if let Some(stop) = runtime.playit_stop.take() {
-        playit::stop_agent(&stop);
-    }
-    runtime.tunnel_address = None;
+    runtime.stop_public_access();
     offline_state_event(runtime.directory.clone(), runtime.server_port)
 }
 
@@ -1307,9 +1338,7 @@ pub(in crate::app) fn force_kill_all_servers(state: State<'_, RuntimeState>) -> 
         mark_stopping(runtime);
         // Release any wake listener so its port is freed on shutdown.
         stop_sleep_listener(runtime);
-        if let Some(stop) = runtime.playit_stop.take() {
-            playit::stop_agent(&stop);
-        }
+        runtime.stop_public_access();
         if let Some(child) = runtime.child.as_mut() {
             kill_child_process_group(child);
             let _ = child.kill();
