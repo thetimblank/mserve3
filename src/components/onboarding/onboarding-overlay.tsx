@@ -185,8 +185,9 @@ export const OnboardingOverlay: React.FC = () => {
 		// z-50 (not higher) so quick-help dialogs and tooltips, which portal to the
 		// end of <body> at z-50, open on top of the tour. Mounted after <Nav /> so
 		// it still covers the title bar.
-		<div className='fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-background'>
-			<div className='flex w-full max-w-xl flex-col px-8 py-10'>
+		<div className='fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-background'>
+			{/* `my-auto` centers it, but a short window scrolls from the top instead of clipping it. */}
+			<div className='my-auto flex w-full max-w-xl flex-col px-8 py-10'>
 				<div className='relative min-h-105'>
 					<AnimatePresence mode='popLayout' custom={direction} initial={false}>
 						<m.div

@@ -54,7 +54,9 @@ export const SlideshowPage: React.FC<{ slides: React.ReactNode[] }> = ({ slides 
 					<ArrowLeft className='size-10' />
 				</Button>
 			)}
-			<div className='pt-15 h-full min-h-0 flex items-center justify-center p-12 w-full overflow-y-auto app-scroll-area'>
+			{/* `my-auto` (not `items-center`) centers a slide that fits; a taller one
+			    starts at the top instead of overflowing above the scroll area. */}
+			<div className='pt-15 h-full min-h-0 flex items-start justify-center p-12 w-full overflow-y-auto app-scroll-area [&>*]:my-auto'>
 				{slides[slide]}
 			</div>
 		</main>
