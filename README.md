@@ -47,15 +47,11 @@ Using semver `vmajor.minor.fix` e.g. `v4.0.12`
 - rework MC settings for non-advanced users (Like the server.properties, velocity.toml, etc. make these more user friendly for non-advanced users)
 - relocate some settings to better match the function, e.g. backups settings are now in the backups tab.
 
-- improve current help pages and maybe add some more smaller ones
-- improve some UI like the plugins, datapacks, and backups pages, and more
-- clean up all of the animations
 - Verify error reporting
 
 Bugs
 
 - Add &r at end of the first line/content to fix motd formatting
-- Better sleeping UX for player (Works, but server says its stopped and doesnt ping at all while its waking/starting)
 
 Supported Providers
 

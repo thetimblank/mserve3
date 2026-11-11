@@ -5,13 +5,10 @@
 //! and `banned-players.json` lists who can be unbanned.
 
 use super::super::RconConfig;
-use super::rcon::RconClient;
+use super::rcon::{RconClient, RconSession};
 use serde::Serialize;
 use std::collections::HashSet;
 use std::path::Path;
-use std::time::Duration;
-
-const RCON_TIMEOUT: Duration = Duration::from_millis(1500);
 
 /// `list uuids` prints account names (plain `list` prints display names, which
 /// plugins and teams decorate). `minecraft:list uuids` skips a plugin (such as
@@ -185,15 +182,18 @@ fn query_keep_inventory(client: &mut RconClient) -> Option<(bool, String)> {
     })
 }
 
-/// Connects over RCON and reads the online players and the keep inventory rule.
+/// Reads the online players and the keep inventory rule on the server's shared
+/// RCON session (a connection per poll would spam the server console).
 pub(in crate::app) fn query_online_players(
     host: &str,
     rcon: &RconConfig,
+    session: &RconSession,
     directory: &Path,
 ) -> Result<OnlinePlayers, String> {
-    let mut client = RconClient::connect(host, rcon.port, &rcon.password, RCON_TIMEOUT)?;
-    let list = query_player_list(&mut client)?;
-    let keep_inventory = query_keep_inventory(&mut client);
+    let (list, keep_inventory) = session.run(host, rcon, |client| {
+        let list = query_player_list(client)?;
+        Ok((list, query_keep_inventory(client)))
+    })?;
 
     let ops = read_listed_names(&directory.join("ops.json"));
     let whitelist = read_listed_names(&directory.join("whitelist.json"));
@@ -349,7 +349,13 @@ mod tests {
             port: server.rcon_port.unwrap(),
             password: "secret".to_string(),
         };
-        let result = query_online_players(&server.host, &rcon, directory.path()).unwrap();
+        let result = query_online_players(
+            &server.host,
+            &rcon,
+            &RconSession::default(),
+            directory.path(),
+        )
+        .unwrap();
 
         assert_eq!((result.online, result.max), (2, 20));
         assert_eq!(
@@ -383,6 +389,14 @@ mod tests {
             password: "secret".to_string(),
         };
         let directory = tempfile::tempdir().unwrap();
-        assert!(query_online_players(&server.host, &rcon, directory.path()).is_err());
+        assert!(
+            query_online_players(
+                &server.host,
+                &rcon,
+                &RconSession::default(),
+                directory.path()
+            )
+            .is_err()
+        );
     }
 }

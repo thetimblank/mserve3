@@ -382,6 +382,10 @@ struct ServerRuntime {
     exit_code: Option<i32>,
     stderr_tail: VecDeque<String>,
     rcon: Option<RconConfig>,
+    /// The one RCON connection every caller shares for this run (telemetry,
+    /// players panel, commands), so the server doesn't log a connect and a
+    /// disconnect for each request.
+    rcon_session: support::RconSession,
     host: String,
     server_port: u16,
     is_proxy: bool,

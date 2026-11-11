@@ -3,9 +3,15 @@
 //! dependency. We connect to the server's telemetry host (loopback unless the
 //! server pins `server-ip`). Used for command execution and reliable TPS
 //! retrieval (a real request/response instead of stdout scraping).
+//!
+//! Every connection makes the server log a "Thread RCON Client … started" /
+//! "… shutting down" pair to its console, so callers go through one
+//! [`RconSession`] per running server instead of connecting per request.
 
-use std::io::{Read, Write};
+use super::super::RconConfig;
+use std::io::{ErrorKind, Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 const TYPE_AUTH: i32 = 3;
@@ -22,10 +28,67 @@ const FRAGMENT_WAIT: Duration = Duration::from_millis(150);
 /// Upper bound on packets examined per command (stale leftovers + fragments).
 const MAX_PACKETS_PER_COMMAND: usize = 64;
 
+/// Read/write timeout for the shared session's connection.
+const SESSION_TIMEOUT: Duration = Duration::from_millis(1500);
+
+/// The one RCON connection of a running server, shared by telemetry, the
+/// players panel and console commands. It connects on first use and stays open
+/// until the server closes it or a command fails, then reconnects on next use.
+/// Cloning shares the connection. The inner lock is held for a whole exchange,
+/// so callers never interleave packets on the socket.
+#[derive(Clone, Default)]
+pub(in crate::app) struct RconSession {
+    client: Arc<Mutex<Option<RconClient>>>,
+}
+
+impl RconSession {
+    /// Runs `exchange` on the open connection, connecting first when there is
+    /// none or the server has closed it. Connect errors are returned as is. A
+    /// command that fails mid-exchange drops the connection (its stream may be
+    /// out of sync), so the next call starts fresh.
+    pub(in crate::app) fn run<T>(
+        &self,
+        host: &str,
+        rcon: &RconConfig,
+        exchange: impl FnOnce(&mut RconClient) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let mut slot = self
+            .client
+            .lock()
+            .map_err(|_| "RCON session lock failed.".to_string())?;
+        if slot.as_ref().is_some_and(|client| !client.is_open()) {
+            *slot = None;
+        }
+        let client = match slot.as_mut() {
+            Some(client) => client,
+            None => slot.insert(RconClient::connect(
+                host,
+                rcon.port,
+                &rcon.password,
+                SESSION_TIMEOUT,
+            )?),
+        };
+        let result = exchange(client);
+        if client.broken {
+            *slot = None;
+        }
+        result
+    }
+
+    /// Whether a connection is currently held (for tests).
+    #[cfg(test)]
+    pub(in crate::app) fn is_connected(&self) -> bool {
+        self.client.lock().is_ok_and(|slot| slot.is_some())
+    }
+}
+
 pub(in crate::app) struct RconClient {
     stream: TcpStream,
     next_id: i32,
     timeout: Duration,
+    /// A command failed on this connection: the stream may hold a half-read
+    /// packet, so it must not be reused.
+    broken: bool,
 }
 
 impl RconClient {
@@ -54,6 +117,7 @@ impl RconClient {
             stream,
             next_id: 1,
             timeout,
+            broken: false,
         };
         client.authenticate(password)?;
         Ok(client)
@@ -87,6 +151,29 @@ impl RconClient {
     /// fills a whole fragment may continue in follow-up packets, which are
     /// collected until the server goes quiet.
     pub(in crate::app) fn command(&mut self, command: &str) -> Result<String, String> {
+        let result = self.exchange(command);
+        if result.is_err() {
+            self.broken = true;
+        }
+        result
+    }
+
+    /// Whether the server still has this connection open: a non-blocking peek
+    /// sees EOF once it has closed the socket. Pending bytes (a stale fragment)
+    /// still count as open; `command` skips packets with another id.
+    fn is_open(&self) -> bool {
+        if self.broken || self.stream.set_nonblocking(true).is_err() {
+            return false;
+        }
+        let mut probe = [0u8; 1];
+        let open = match self.stream.peek(&mut probe) {
+            Ok(read) => read > 0,
+            Err(err) => err.kind() == ErrorKind::WouldBlock,
+        };
+        self.stream.set_nonblocking(false).is_ok() && open
+    }
+
+    fn exchange(&mut self, command: &str) -> Result<String, String> {
         let request_id = self.send_packet(TYPE_EXEC, command)?;
 
         let mut body = None;
@@ -265,6 +352,84 @@ mod tests {
         });
         let mut client = RconClient::connect("127.0.0.1", port, "pw", TIMEOUT).unwrap();
         assert_eq!(client.command("help").unwrap(), expected);
+    }
+
+    #[test]
+    fn session_reuses_one_connection() {
+        // Regression: each request used to open its own connection, and Paper
+        // logs every connect and disconnect to the console.
+        let server = FakeMinecraftServer::start(FakeServerConfig::default());
+        let rcon = RconConfig {
+            port: server.rcon_port.unwrap(),
+            password: "secret".to_string(),
+        };
+        let session = RconSession::default();
+        for _ in 0..3 {
+            let reply = session.run(&server.host, &rcon, |client| client.command("tps"));
+            assert!(reply.unwrap().starts_with("TPS"));
+        }
+        // A clone shares the connection too (the players panel and telemetry).
+        let clone = session.clone();
+        clone
+            .run(&server.host, &rcon, |client| client.command("list"))
+            .unwrap();
+        assert_eq!(
+            server
+                .rcon_connections
+                .load(std::sync::atomic::Ordering::SeqCst),
+            1
+        );
+    }
+
+    #[test]
+    fn session_reconnects_after_the_server_closes_it() {
+        // Accepts two connections; closes the first right after one command.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for reply in ["first", "second"] {
+                let (mut stream, _) = listener.accept().unwrap();
+                let auth_id = read_request(&mut stream);
+                write_response(&mut stream, auth_id, "");
+                let command_id = read_request(&mut stream);
+                write_response(&mut stream, command_id, reply);
+                // Dropping `stream` closes the connection.
+            }
+        });
+        let rcon = RconConfig {
+            port,
+            password: "pw".to_string(),
+        };
+        let session = RconSession::default();
+        let run = || session.run("127.0.0.1", &rcon, |client| client.command("list"));
+        assert_eq!(run().unwrap(), "first");
+        // Let the close reach the client before the next call checks for it.
+        std::thread::sleep(Duration::from_millis(100));
+        assert_eq!(run().unwrap(), "second");
+    }
+
+    #[test]
+    fn session_drops_a_connection_after_a_failed_command() {
+        // Answers auth, then closes without replying to the command.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let auth_id = read_request(&mut stream);
+            write_response(&mut stream, auth_id, "");
+            read_request(&mut stream);
+        });
+        let rcon = RconConfig {
+            port,
+            password: "pw".to_string(),
+        };
+        let session = RconSession::default();
+        assert!(
+            session
+                .run("127.0.0.1", &rcon, |client| client.command("list"))
+                .is_err()
+        );
+        assert!(!session.is_connected());
     }
 
     #[test]

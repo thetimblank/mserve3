@@ -84,7 +84,7 @@ export default function SlideChoosePath() {
 	return (
 		<SlideFrame className='flex w-full max-w-4xl flex-col items-center text-center'>
 			<h1 className='mb-2 text-3xl font-bold'>How will friends join?</h1>
-			<p className='mb-6 text-muted-foreground'>Pick one. You can switch later.</p>
+			<p className='mb-6 text-muted-foreground'>You can switch later.</p>
 
 			<div className='mb-8 flex items-center gap-2 rounded-xl bg-secondary/50 px-4 py-2 text-left text-sm'>
 				<House className='size-4 shrink-0 text-muted-foreground' />

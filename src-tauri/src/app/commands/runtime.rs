@@ -1,7 +1,7 @@
 use super::super::support::playit;
 use super::super::support::wait_for_auto_backup;
 use super::super::support::{
-    AutoRamPlan, HeapSettings, OnlinePlayers, RconClient, ServerFootprint, emit_output_reader,
+    AutoRamPlan, HeapSettings, OnlinePlayers, RconSession, ServerFootprint, emit_output_reader,
     emit_system_line, ensure_rcon_enabled, format_ram_label, get_runtime_config,
     infer_provider_version, is_auto_ram_mode, is_restoring, isolate_in_own_process_group,
     kill_child_process_group, kill_process_tree, next_generation, no_window_command,
@@ -448,6 +448,7 @@ fn new_runtime(
         exit_code: None,
         stderr_tail: VecDeque::new(),
         rcon: None,
+        rcon_session: RconSession::default(),
         host,
         server_port,
         is_proxy: provider_is_proxy(config),
@@ -1071,20 +1072,26 @@ fn stop_server_blocking(
     let host = runtime.host.clone();
     let generation = runtime.generation;
     let command = runtime.shutdown_commands.first().copied().unwrap_or("stop");
+    let session = runtime.rcon_session.clone();
     drop(guard);
-    let mut client =
-        RconClient::connect(&host, rcon.port, &rcon.password, Duration::from_millis(900))
-            .map_err(|err| format!("Could not reach the server over RCON to stop it ({err})."))?;
-    // Connected: the shutdown is going out. A server that stops quickly can drop
-    // the socket before replying, so a missing reply doesn't mean it ignored us.
-    mark_stopping_if_current(processes, &key, generation, app);
-    if let Err(err) = client.command(command) {
-        return Err(format!(
+    let mut connected = false;
+    let result = session.run(&host, &rcon, |client| {
+        // Connected: the shutdown is going out. A server that stops quickly can
+        // drop the socket before replying, so a missing reply doesn't mean it
+        // ignored us.
+        connected = true;
+        mark_stopping_if_current(processes, &key, generation, app);
+        client.command(command)
+    });
+    match result {
+        Ok(_) => Ok("Stopping server.".to_string()),
+        Err(err) if !connected => Err(format!(
+            "Could not reach the server over RCON to stop it ({err})."
+        )),
+        Err(err) => Err(format!(
             "Sent the stop over RCON but got no reply ({err}); the server may still be shutting down."
-        ));
+        )),
     }
-
-    Ok("Stopping server.".to_string())
 }
 
 #[tauri::command]
@@ -1358,15 +1365,16 @@ fn send_server_command_blocking(
     };
     let host = runtime.host.clone();
     let generation = runtime.generation;
+    let session = runtime.rcon_session.clone();
     drop(guard);
-    let mut client =
-        RconClient::connect(&host, rcon.port, &rcon.password, Duration::from_millis(900))?;
-    // Mark before sending: a shutdown command can close the socket before it
-    // replies (see `stop_server_blocking`).
-    if is_stop {
-        mark_stopping_if_current(processes, &key, generation, app);
-    }
-    client.command(&normalized)?;
+    session.run(&host, &rcon, |client| {
+        // Mark before sending: a shutdown command can close the socket before
+        // it replies (see `stop_server_blocking`).
+        if is_stop {
+            mark_stopping_if_current(processes, &key, generation, app);
+        }
+        client.command(&normalized)
+    })?;
     Ok(())
 }
 
@@ -1386,18 +1394,23 @@ fn get_online_players_blocking(
     processes: &Processes,
 ) -> Result<OnlinePlayers, String> {
     let key = server_key(directory);
-    let (rcon, host, is_proxy) = {
+    let (rcon, host, is_proxy, session) = {
         let guard = processes.lock().map_err(|_| "Runtime lock failed.")?;
         let runtime = guard
             .get(&key)
             .ok_or_else(|| "Server is not running.".to_string())?;
-        (runtime.rcon.clone(), runtime.host.clone(), runtime.is_proxy)
+        (
+            runtime.rcon.clone(),
+            runtime.host.clone(),
+            runtime.is_proxy,
+            runtime.rcon_session.clone(),
+        )
     };
     if is_proxy {
         return Err("Proxies don't have a player list.".to_string());
     }
     let rcon = rcon.ok_or_else(|| "RCON isn't set up for this server.".to_string())?;
-    query_online_players(&host, &rcon, Path::new(directory))
+    query_online_players(&host, &rcon, &session, Path::new(directory))
 }
 
 /// Who is online (names, op and whitelist status) plus the keep inventory rule,

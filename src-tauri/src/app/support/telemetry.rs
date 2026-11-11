@@ -1,6 +1,6 @@
 use super::super::{RconConfig, RuntimeServerConfig, TpsCommandState};
 use super::mserve_config::{default_telemetry_host, detect_default_telemetry_port};
-use super::rcon::RconClient;
+use super::rcon::RconSession;
 use super::server_properties::read_property;
 use serde_json::Value;
 use std::io::{Read, Write};
@@ -391,40 +391,28 @@ fn parse_tick_query_tps(response: &str) -> Option<f64> {
     Some((1000.0 / mspt).min(20.0))
 }
 
-const RCON_TIMEOUT: Duration = Duration::from_millis(900);
-
-/// Runs `command` on the persistent RCON client, lazily (re)connecting. If the
-/// connection is missing or the server closed it after a previous command (some
-/// servers do this), it reconnects once and retries. Returns `None` only on a
-/// genuine connection failure — never conflate "can't reach RCON right now" with
-/// "this command is unsupported", or detection will give up prematurely.
-fn rcon_run(
-    host: &str,
-    rcon: &RconConfig,
-    client_slot: &mut Option<RconClient>,
-    command: &str,
-) -> Option<String> {
+/// Runs `command` on the server's shared RCON session. If the connection went
+/// away mid-command (the session then drops it), it retries once on a fresh
+/// one. Returns `None` only on a genuine connection failure — never conflate
+/// "can't reach RCON right now" with "this command is unsupported", or
+/// detection will give up prematurely.
+fn rcon_run(host: &str, rcon: &RconConfig, session: &RconSession, command: &str) -> Option<String> {
     for _ in 0..2 {
-        if client_slot.is_none() {
-            match RconClient::connect(host, rcon.port, &rcon.password, RCON_TIMEOUT) {
-                Ok(client) => *client_slot = Some(client),
-                Err(_) => return None,
-            }
-        }
-        match client_slot
-            .as_mut()
-            .and_then(|client| client.command(command).ok())
-        {
-            Some(response) => return Some(response),
-            // Connection went away mid-command: drop it and retry once fresh.
-            None => *client_slot = None,
+        let mut connected = false;
+        match session.run(host, rcon, |client| {
+            connected = true;
+            client.command(command)
+        }) {
+            Ok(response) => return Some(response),
+            Err(_) if !connected => return None,
+            Err(_) => {}
         }
     }
     None
 }
 
-/// Retrieves TPS over RCON, reusing a persistent connection (`client_slot`) to
-/// avoid reconnecting every poll. The command differs by server software, so we
+/// Retrieves TPS over RCON on the server's shared session, so polls don't
+/// reconnect (and log a connect/disconnect pair) every cycle. The command differs by server software, so we
 /// detect which one works once and cache it. Each detection probe uses
 /// `rcon_run`'s reconnect-once behavior so a server that closes the socket after
 /// the first command can't make us wrongly conclude TPS is unsupported.
@@ -432,15 +420,15 @@ pub(in crate::app) fn collect_tps_via_rcon(
     host: &str,
     rcon: &RconConfig,
     state: &mut TpsCommandState,
-    client_slot: &mut Option<RconClient>,
+    session: &RconSession,
 ) -> Option<f64> {
     match *state {
         TpsCommandState::Unsupported => None,
         TpsCommandState::Paper => {
-            rcon_run(host, rcon, client_slot, "tps").and_then(|r| parse_paper_tps(&r))
+            rcon_run(host, rcon, session, "tps").and_then(|r| parse_paper_tps(&r))
         }
         TpsCommandState::TickQuery => {
-            rcon_run(host, rcon, client_slot, "tick query").and_then(|r| parse_tick_query_tps(&r))
+            rcon_run(host, rcon, session, "tick query").and_then(|r| parse_tick_query_tps(&r))
         }
         TpsCommandState::Unknown => {
             // Probe each known command in order; the first that reaches the server
@@ -457,7 +445,7 @@ pub(in crate::app) fn collect_tps_via_rcon(
             ];
 
             for (command, parse, detected) in PROBES {
-                let response = rcon_run(host, rcon, client_slot, command)?;
+                let response = rcon_run(host, rcon, session, command)?;
                 if let Some(tps) = parse(&response) {
                     *state = detected;
                     return Some(tps);
@@ -665,7 +653,7 @@ mod tests {
 /// the in-process fake Minecraft server. No JVM, deterministic, runs in ms.
 #[cfg(test)]
 mod pipeline_tests {
-    use super::{collect_status_ping, collect_tps_via_rcon, probe_port};
+    use super::{RconSession, collect_status_ping, collect_tps_via_rcon, probe_port};
     use crate::app::RconConfig;
     use crate::app::TpsCommandState;
     use crate::app::support::testkit::{FakeMinecraftServer, FakeServerConfig};
@@ -728,9 +716,9 @@ mod pipeline_tests {
             password: "secret".to_string(),
         };
         let mut state = TpsCommandState::Unknown;
-        let mut client = None;
+        let session = RconSession::default();
 
-        let tps = collect_tps_via_rcon(&server.host, &rcon, &mut state, &mut client);
+        let tps = collect_tps_via_rcon(&server.host, &rcon, &mut state, &session);
         assert_eq!(tps, Some(19.5));
         // Detection is cached after the first success.
         assert_eq!(state, TpsCommandState::Paper);
@@ -748,9 +736,9 @@ mod pipeline_tests {
             password: "secret".to_string(),
         };
         let mut state = TpsCommandState::Unknown;
-        let mut client = None;
+        let session = RconSession::default();
 
-        let tps = collect_tps_via_rcon(&server.host, &rcon, &mut state, &mut client);
+        let tps = collect_tps_via_rcon(&server.host, &rcon, &mut state, &session);
         assert_eq!(tps, Some(20.0));
         assert_eq!(state, TpsCommandState::TickQuery);
     }
@@ -767,9 +755,9 @@ mod pipeline_tests {
             password: "secret".to_string(),
         };
         let mut state = TpsCommandState::Unknown;
-        let mut client = None;
+        let session = RconSession::default();
 
-        let tps = collect_tps_via_rcon(&server.host, &rcon, &mut state, &mut client);
+        let tps = collect_tps_via_rcon(&server.host, &rcon, &mut state, &session);
         assert_eq!(tps, None);
         assert_eq!(state, TpsCommandState::Unsupported);
     }

@@ -19,7 +19,7 @@ use super::auto_backup::{
     AutoBackupReason, AutoBackupSettings, run_auto_backup, spawn_auto_backup, try_claim_auto_backup,
 };
 use super::playit;
-use super::rcon::RconClient;
+use super::rcon::RconSession;
 use super::runtime_io::{emit_system_line, stop_request};
 use super::sleep_listener::{SleepListenerParams, spawn_sleep_listener};
 use super::telemetry::{
@@ -217,6 +217,7 @@ struct Snapshot {
     host: String,
     server_port: u16,
     rcon: Option<RconConfig>,
+    rcon_session: RconSession,
     is_proxy: bool,
     server_id: String,
     configured_ram: Option<f64>,
@@ -372,9 +373,6 @@ pub(in crate::app) fn spawn_supervisor(
 ) {
     std::thread::spawn(move || {
         let mut external_miss_streak: u32 = 0;
-        // Persistent RCON connection for TPS, reused across polls so we don't
-        // reconnect (and spam the server log with connect/disconnect) every cycle.
-        let mut rcon_client: Option<RconClient> = None;
         // When the server first went empty (for sleep mode). Reset on any player
         // or an unknown reading; set once players hit zero while online.
         let mut idle_since: Option<Instant> = None;
@@ -480,6 +478,7 @@ pub(in crate::app) fn spawn_supervisor(
                                 host: runtime.host.clone(),
                                 server_port: runtime.server_port,
                                 rcon: runtime.rcon.clone(),
+                                rcon_session: runtime.rcon_session.clone(),
                                 is_proxy: runtime.is_proxy,
                                 server_id: runtime.server_id.clone(),
                                 configured_ram: runtime.configured_ram,
@@ -613,7 +612,7 @@ pub(in crate::app) fn spawn_supervisor(
                             &snapshot.host,
                             rcon,
                             &mut local_tps_state,
-                            &mut rcon_client,
+                            &snapshot.rcon_session,
                         )
                     })
                 };

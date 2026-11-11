@@ -381,9 +381,6 @@ const ServerOverviewPanel: React.FC<Props> = ({
 				{/* Static details */}
 				{showDetails && (
 					<div className='space-y-3'>
-						<h3 className='text-xs font-semibold uppercase tracking-wide text-muted-foreground'>
-							Details
-						</h3>
 						<div className='grid gap-x-8 gap-y-2.5 sm:grid-cols-2'>
 							{displayVersion &&
 								(() => {

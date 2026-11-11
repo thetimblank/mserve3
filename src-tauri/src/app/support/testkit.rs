@@ -9,6 +9,8 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 
 /// How the fake server should behave for a single test.
@@ -45,6 +47,8 @@ pub(in crate::app) struct FakeMinecraftServer {
     pub host: String,
     pub game_port: u16,
     pub rcon_port: Option<u16>,
+    /// RCON connections accepted so far (a real server logs each one).
+    pub rcon_connections: Arc<AtomicUsize>,
 }
 
 impl FakeMinecraftServer {
@@ -61,6 +65,8 @@ impl FakeMinecraftServer {
             }
         });
 
+        let rcon_connections = Arc::new(AtomicUsize::new(0));
+        let accepted = rcon_connections.clone();
         let rcon_port = config.rcon_password.as_ref().map(|password| {
             let rcon_listener = TcpListener::bind("127.0.0.1:0").expect("bind rcon port");
             let port = rcon_listener.local_addr().unwrap().port();
@@ -76,6 +82,7 @@ impl FakeMinecraftServer {
             thread::spawn(move || {
                 for stream in rcon_listener.incoming() {
                     let Ok(stream) = stream else { continue };
+                    accepted.fetch_add(1, Ordering::SeqCst);
                     let password = password.clone();
                     let commands = commands.clone();
                     thread::spawn(move || handle_rcon(stream, &password, &commands));
@@ -88,6 +95,7 @@ impl FakeMinecraftServer {
             host: "127.0.0.1".to_string(),
             game_port,
             rcon_port,
+            rcon_connections,
         }
     }
 }
