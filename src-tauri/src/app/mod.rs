@@ -133,6 +133,8 @@ struct SyncedMserveConfig {
     tunnel_id: Option<String>,
     /// Last-known public tunnel address, surfaced even while offline.
     tunnel_address: Option<String>,
+    /// Whether mserve asks the router (UPnP) to forward the port while running.
+    upnp_enabled: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -250,6 +252,8 @@ struct RuntimeServerConfig {
     tunnel_id: Option<String>,
     #[serde(default)]
     tunnel_address: Option<String>,
+    #[serde(default)]
+    upnp_enabled: bool,
     backup_policy: Option<String>,
     backup_max_count: Option<u32>,
     backup_max_age_days: Option<u32>,
@@ -269,6 +273,18 @@ struct RuntimeServerConfig {
 #[serde(rename_all = "camelCase")]
 struct PlayitStatus {
     claimed: bool,
+}
+
+/// Per-server UPnP router-forward snapshot for a freshly mounted UI.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ServerUpnpInfo {
+    enabled: bool,
+    /// "active" | "starting" | "error" | "off" | "disabled"
+    status: String,
+    /// Public `ip:port` while the forward is active.
+    address: Option<String>,
+    error: Option<String>,
 }
 
 /// Per-server tunnel snapshot for a freshly-mounted UI.
@@ -424,6 +440,29 @@ struct ServerRuntime {
     sleep_requested: bool,
     /// Shutdown flag for the wake listener while `state == Sleeping`.
     sleep_stop: Option<Arc<std::sync::atomic::AtomicBool>>,
+    /// Stop handle for this run's UPnP router mapping task (when `upnp_enabled`):
+    /// cancel it and the task removes the mapping. Set as soon as the task starts.
+    upnp_stop: Option<tokio_util::sync::CancellationToken>,
+    /// Public `ip:port` once the router accepted the forward.
+    upnp_address: Option<String>,
+    /// Why this run's forward failed (kept for a freshly mounted settings UI).
+    upnp_error: Option<String>,
+}
+
+impl ServerRuntime {
+    /// Takes down what makes the server publicly reachable: the playit agent and
+    /// the UPnP router mapping. Both tasks clean up after themselves on cancel.
+    fn stop_public_access(&mut self) {
+        if let Some(stop) = self.playit_stop.take() {
+            stop.cancel();
+        }
+        self.tunnel_address = None;
+        if let Some(stop) = self.upnp_stop.take() {
+            stop.cancel();
+        }
+        self.upnp_address = None;
+        self.upnp_error = None;
+    }
 }
 
 #[derive(Default, Clone)]
@@ -1023,6 +1062,9 @@ pub fn run() {
             disconnect_playit_account,
             set_server_tunnel,
             get_server_tunnel,
+            set_server_upnp,
+            get_server_upnp,
+            check_upnp,
             complete_startup,
             confirm_close
         ])

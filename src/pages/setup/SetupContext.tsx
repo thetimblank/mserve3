@@ -7,6 +7,8 @@ type SetupData = {
 	ip_hidden: boolean;
 	/** The branch picked on the choice slide (`null` until then). */
 	path: HostingPath | null;
+	/** The router forwards the port on request (UPnP), so servers started here use it. */
+	upnp: boolean;
 };
 
 type SetupContextType = {
@@ -25,6 +27,7 @@ export const SetupProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 		port: DEFAULT_MINECRAFT_PORT,
 		ip_hidden: true,
 		path: null,
+		upnp: false,
 	});
 
 	const updateData = React.useCallback(<K extends keyof SetupData>(key: K, value: SetupData[K]) => {

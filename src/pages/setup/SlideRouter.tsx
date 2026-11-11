@@ -11,6 +11,7 @@ import { SegmentedControl, type SegmentedControlOption } from '@/components/ui/s
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 import { type IpAddressValue, useDefaultGateway, useLocalIp } from '@/hooks/use-ip-address';
 import { AppMock, WebsitePanelMock } from './router-mock-forms';
+import { AutomaticForward } from './automatic-forward';
 import { SetupBullets, SetupCallout } from './setup-callout';
 import { isValidPort } from './setup-steps';
 import { useSetup } from './SetupContext';
@@ -116,6 +117,8 @@ export default function SlideRouter() {
 						</div>
 					</div>
 				</div>
+
+				<AutomaticForward portIsValid={portIsValid} onDone={nextSlide} />
 
 				<RouterAddress gateway={gateway} />
 

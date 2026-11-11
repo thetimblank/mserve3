@@ -179,6 +179,27 @@ export type PlayitTunnelStateEvent = {
 	message: string | null;
 };
 
+/** Per-server UPnP router-forward status (mirrors the Rust `ServerUpnpInfo.status`
+ * strings and the `server-upnp-state` event). */
+export type UpnpStatus = 'active' | 'starting' | 'error' | 'off' | 'disabled';
+
+/** One-shot snapshot returned by the `get_server_upnp` command. */
+export type ServerUpnpInfo = {
+	enabled: boolean;
+	status: UpnpStatus;
+	/** Public `ip:port` while the forward is active. */
+	address: string | null;
+	error: string | null;
+};
+
+/** Payload of the `server-upnp-state` event. */
+export type ServerUpnpStateEvent = {
+	directory: string;
+	status: Exclude<UpnpStatus, 'disabled'>;
+	address: string | null;
+	error: string | null;
+};
+
 /** Payload of the `playit-claim-state` event. */
 export type PlayitClaimStateEvent = {
 	status: 'pending' | 'claimed' | 'error';

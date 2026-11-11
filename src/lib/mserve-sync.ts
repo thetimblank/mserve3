@@ -19,6 +19,7 @@ export type SyncedMserveConfig = Omit<MserveJsonProps, 'java_installation'> & {
 	tunnel_enabled: boolean;
 	tunnel_id: string | null;
 	tunnel_address: string | null;
+	upnp_enabled: boolean;
 };
 
 /** Payload for the `initialize_server` command (create flow). */

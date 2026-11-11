@@ -15,6 +15,7 @@ import {
 import SecuritySettingsSection from './security/security-settings-section';
 import ServerConfigFileEditor from '@/components/server-config-file-editor';
 import { TunnelSettingsSection } from './tunnel-settings-section';
+import { UpnpSettingsSection } from './upnp-settings-section';
 import { ServerListSettingsSection } from './server-list-settings-section';
 import { HelpButton } from '@/components/help/help-button';
 import { type SettingsGroup, type SettingsSection, SettingsLayout } from '@/components/settings/settings-layout';
@@ -65,6 +66,7 @@ type FormSectionId =
 	| 'security'
 	| 'provider-telemetry'
 	| 'tunnel'
+	| 'router-forwarding'
 	| 'location';
 
 type SectionId = FormSectionId | 'danger-zone' | ManagedServerConfigFileKind;
@@ -219,6 +221,15 @@ const TUNNEL_SECTION: SectionConfig = {
 		'remote',
 	],
 	render: (props) => <TunnelSettingsSection server={props.server} />,
+};
+
+const UPNP_SECTION: SectionConfig = {
+	id: 'router-forwarding',
+	group: 'server',
+	title: 'Router forwarding',
+	description: "Have mserve forward this server's port on your router (UPnP) while it runs.",
+	keywords: ['upnp', 'port forward', 'router', 'nat', 'public', 'internet', 'public ip', 'external', 'remote'],
+	render: (props) => <UpnpSettingsSection server={props.server} />,
 };
 
 const LOCATION_SECTION: SectionConfig = {
@@ -481,7 +492,7 @@ export default function ServerSettingsPanel({
 		if (isExperienceAtLeast(experienceLevel, 'standard')) {
 			sections.push(PROVIDER_TELEMETRY_SECTION);
 		}
-		sections.push(TUNNEL_SECTION);
+		sections.push(TUNNEL_SECTION, UPNP_SECTION);
 		if (experienceLevel === 'advanced') {
 			sections.push(LOCATION_SECTION);
 		}

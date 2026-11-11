@@ -25,6 +25,7 @@ mod telemetry;
 mod telemetry_store;
 #[cfg(test)]
 mod testkit;
+pub(in crate::app) mod upnp;
 #[cfg(windows)]
 mod windows_firewall;
 

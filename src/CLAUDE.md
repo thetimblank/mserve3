@@ -33,7 +33,7 @@ await invoke('start_server', { directory, javaExecutable });
 const unlisten = await listen('server-runtime-state', (e) => { /* e.payload */ });
 ```
 
-The ten backend → frontend events and where they're consumed:
+The eleven backend → frontend events and where they're consumed:
 
 | Event | Payload (camelCase) | Primary consumer |
 | --- | --- | --- |
@@ -45,6 +45,7 @@ The ten backend → frontend events and where they're consumed:
 | `modpack-install-progress` | `{ installId, stage, message, filesDone, filesTotal, progress, done }` | `pages/create-server/CreateServerContext.tsx` |
 | `playit-claim-state` | `{ status, claimUrl, error }` | `hooks/use-playit-account.ts` |
 | `playit-tunnel-state` | `{ directory, status, address, error, message }` | `pages/server/hooks/use-server-tunnel.ts` |
+| `server-upnp-state` | `{ directory, status, address, error }` | `pages/server/hooks/use-server-upnp.ts` |
 | `app-close-requested` | `{ runningServerDirectories }` | `components/close-warning-dialog.tsx` |
 | `server-backups-changed` | `{ directory, reason, deletedBackupsCount, error }` | `components/server-runtime-monitor.tsx` (rescans the server's backups) |
 

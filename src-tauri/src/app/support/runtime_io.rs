@@ -1,5 +1,4 @@
 use super::super::{ServerOutputEvent, ServerRuntime};
-use super::playit;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::process::ChildStdin;
@@ -137,10 +136,8 @@ pub(in crate::app) fn terminate_runtime(runtime: &mut ServerRuntime) -> Result<(
     if let Some(flag) = runtime.sleep_stop.take() {
         flag.store(true, std::sync::atomic::Ordering::Relaxed);
     }
-    // Stop the playit tunnel agent alongside the server it fronts.
-    if let Some(stop) = runtime.playit_stop.take() {
-        playit::stop_agent(&stop);
-    }
+    // Stop the playit tunnel agent and UPnP mapping alongside the server.
+    runtime.stop_public_access();
 
     if let Some(stop) = stop_request(runtime) {
         stop.send();
